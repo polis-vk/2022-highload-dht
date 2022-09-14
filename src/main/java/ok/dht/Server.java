@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author incubos
  */
-public class Server {
+public final class Server {
     private static final Logger log = LoggerFactory.getLogger(Server.class);
 
     private Server() {
