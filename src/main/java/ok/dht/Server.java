@@ -11,6 +11,10 @@ import org.slf4j.LoggerFactory;
 public class Server {
     private static final Logger log = LoggerFactory.getLogger(Server.class);
 
+    private Server() {
+        // Only main method
+    }
+
     public static void main(String[] args) {
         log.error("Implement me!");
     }
