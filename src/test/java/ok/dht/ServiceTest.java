@@ -84,7 +84,7 @@ public @interface ServiceTest {
                     }
 
                     if (maxFactories.isEmpty()) {
-                        throw new IllegalStateException("No DaoFactory declared under ok.dht.test.<username> package");
+                        throw new IllegalStateException("No Factory declared under ok.dht.test.<username> package");
                     }
                     context.getStore(NAMESPACE).put("factories", maxFactories);
                 }
@@ -98,7 +98,7 @@ public @interface ServiceTest {
             List<Class<?>> maxFactories = getFactories(context);
 
             if (maxFactories.isEmpty()) {
-                throw new IllegalStateException("No DaoFactory declared under ru.mail.polis.test.<username> package");
+                throw new IllegalStateException("No Factory declared under ru.mail.polis.test.<username> package");
             }
 
             return maxFactories.stream().map(c -> {
@@ -196,7 +196,7 @@ public @interface ServiceTest {
                 List<Class<?>> factories = getFactories(context);
                 int minStage = context.getRequiredTestMethod().getAnnotation(ServiceTest.class).stage();
                 if (factories.isEmpty()) {
-                    throw new IllegalStateException("No DaoFactory declared under ok.dht.test.<username> package");
+                    throw new IllegalStateException("No Factory declared under ok.dht.test.<username> package");
                 }
                 if (minStage > factories.get(0).getAnnotation(ServiceFactory.class).stage()) {
                     return ConditionEvaluationResult.disabled("Implementation is not ready");

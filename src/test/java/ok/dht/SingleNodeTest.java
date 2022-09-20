@@ -85,7 +85,7 @@ class SingleNodeTest extends TestBase {
 
         // Check
         HttpResponse<byte[]> response = service.get(key);
-        assertEquals(HttpURLConnection.HTTP_CREATED, response.statusCode());
+        assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
         assertArrayEquals(value, response.body());
     }
 
