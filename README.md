@@ -30,7 +30,7 @@ $ ./gradlew run
 
 **ВНИМАНИЕ!** При запуске тестов или сервера в IDE необходимо передавать Java опцию `-Xmx128m`.
 
-В своём Java package `ok.dht.<username>` реализуйте интерфейс [`Service`](src/main/java/ok/dht/Service.java) и поддержите следующий HTTP REST API протокол:
+В своём Java package `ok.dht.test.<username>` реализуйте интерфейсы [`Service`](src/main/java/ok/dht/Service.java) и [`ServiceFactory.Factory`](src/main/java/ok/dht/test/ServiceFactory.java) и поддержите следующий HTTP REST API протокол:
 * HTTP `GET /v0/entity?id=<ID>` -- получить данные по ключу `<ID>`. Возвращает `200 OK` и данные или `404 Not Found`.
 * HTTP `PUT /v0/entity?id=<ID>` -- создать/перезаписать (upsert) данные по ключу `<ID>`. Возвращает `201 Created`.
 * HTTP `DELETE /v0/entity?id=<ID>` -- удалить данные по ключу `<ID>`. Возвращает `202 Accepted`.
