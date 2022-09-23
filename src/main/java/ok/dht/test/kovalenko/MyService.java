@@ -37,10 +37,10 @@ public class MyService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        this.dao = new LSMDao(config);
-        server = new HttpServer(createConfigFromPort(config.selfPort()));
-        server.start();
-        server.addRequestHandlers(this);
+        this.dao = new LSMDao(this.config);
+        this.server = new MyServer(createConfigFromPort(this.config.selfPort()));
+        this.server.start();
+        this.server.addRequestHandlers(this);
         return CompletableFuture.completedFuture(null);
     }
 
@@ -58,7 +58,7 @@ public class MyService implements Service {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
             ByteBuffer key = daoFactory.fromString(id);
-            TypedEntry response = dao.get(key);
+            TypedEntry response = this.dao.get(key);
             if (response == null) {
                 return new Response(Response.NOT_FOUND, Response.EMPTY);
             }
@@ -80,7 +80,7 @@ public class MyService implements Service {
             if (daoFactory.toString(value).isEmpty()) {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
-            dao.upsert(new TypedBaseEntry(key, value));
+            this.dao.upsert(new TypedBaseEntry(key, value));
             return new Response(Response.CREATED, Response.EMPTY);
         } catch (RuntimeException e) {
             return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
@@ -95,8 +95,8 @@ public class MyService implements Service {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
             ByteBuffer key = daoFactory.fromString(id);
-            dao.upsert(new TypedBaseEntry(key, null));
-            return new Response(Response.CREATED, Response.EMPTY);
+            this.dao.upsert(new TypedBaseEntry(key, null));
+            return new Response(Response.ACCEPTED, Response.EMPTY);
         } catch (RuntimeException e) {
             return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
         }
@@ -109,18 +109,5 @@ public class MyService implements Service {
         acceptor.reusePort = true;
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
         return httpConfig;
-    }
-
-    @ServiceFactory(stage = 1, week = 1)
-    public static class Factory implements ServiceFactory.Factory {
-
-        @Override
-        public Service create(ServiceConfig config) {
-            try {
-                return new MyService(config);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        }
     }
 }

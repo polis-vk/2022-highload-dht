@@ -45,8 +45,7 @@ public class FlushRunnable implements Runnable {
             this.sstablesForFlush.add(memorySSTable);
             this.serializer.write(memorySSTable.values().iterator(), pairedFiles);
             this.sstablesForFlush.remove(memorySSTable); // It is impossible that any other thread will capture memorySSTable
-            memorySSTable.clear();
-            this.sstablesForWrite.add(memorySSTable);
+            this.sstablesForWrite.add(new MemorySSTable());
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

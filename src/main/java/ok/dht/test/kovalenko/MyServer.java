@@ -1,6 +1,7 @@
 package ok.dht.test.kovalenko;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.drozdov.DemoService;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -12,9 +13,9 @@ import java.nio.file.Files;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
-public final class Server extends HttpServer {
+public final class MyServer extends HttpServer {
 
-    public Server(HttpServerConfig config, Object... routers) throws IOException {
+    public MyServer(HttpServerConfig config, Object... routers) throws IOException {
         super(config, routers);
     }
 
