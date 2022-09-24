@@ -9,7 +9,6 @@ import ok.dht.test.kurdyukov.db.base.Config;
 import ok.dht.test.kurdyukov.db.base.Dao;
 import ok.dht.test.kurdyukov.db.base.Entry;
 import ok.dht.test.kurdyukov.db.storage.MemorySegmentDao;
-
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -35,7 +34,6 @@ public class ServiceImpl implements Service {
 
     private HttpServer httpServer;
     private Dao<MemorySegment, Entry<MemorySegment>> memorySegmentDao;
-
 
     public ServiceImpl(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
@@ -210,7 +208,7 @@ public class ServiceImpl implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 1, week = 1)
+    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
