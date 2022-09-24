@@ -92,7 +92,7 @@ public final class DaoUtils {
                         + (valueBytes == null ? 0 : valueBytes.length)
                         + BYTES_IN_INT // размер всей записи
                         + BYTES_IN_INT // DELETED_MARK or EXISTING_MARK
-                        + 1; // размер '\n';
+                        + 1; // размер '\n'
                 if (writeBuffer.position() + entrySize > writeBuffer.capacity()) {
                     writeBuffer.flip();
                     channel.write(writeBuffer);

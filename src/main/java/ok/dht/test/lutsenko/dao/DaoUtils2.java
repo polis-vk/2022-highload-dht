@@ -13,7 +13,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.EnumSet;
 
-public class DaoUtils2 {
+public final class DaoUtils2 {
 
     private DaoUtils2() {
     }

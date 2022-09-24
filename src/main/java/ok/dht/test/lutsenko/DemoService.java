@@ -14,11 +14,13 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Base64;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class DemoService implements Service {
@@ -26,7 +28,7 @@ public class DemoService implements Service {
     private final ServiceConfig config;
     private PersistenceRangeDao dao;
     private HttpServer server;
-    private HttpSession lastSession;
+    private Set<HttpSession> sessions;
 
     public DemoService(ServiceConfig config) {
         this.config = config;
@@ -47,13 +49,13 @@ public class DemoService implements Service {
             public void handleDefault(Request request, HttpSession session) throws IOException {
                 Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
                 session.sendResponse(response);
-                lastSession = session;
+                sessions.add(session);
             }
 
             @Override
             public void handleRequest(Request request, HttpSession session) throws IOException {
                 super.handleRequest(request, session);
-                lastSession = session;
+                sessions.add(session);
             }
         };
         server.start();
@@ -63,9 +65,7 @@ public class DemoService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        if (lastSession != null) {
-            lastSession.close();
-        }
+        sessions.forEach(Session::close);
         server.stop();
         dao.close();
         return CompletableFuture.completedFuture(null);
