@@ -13,12 +13,12 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 
-public class ServiceImpl implements Service {
+public class RocksDBService implements Service {
     private final ServiceConfig config;
     private RocksDBDao dao;
     private HttpServer server;
 
-    public ServiceImpl(ServiceConfig config) {
+    public RocksDBService(ServiceConfig config) {
         this.config = config;
     }
 
@@ -117,7 +117,7 @@ public class ServiceImpl implements Service {
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
-            return new ServiceImpl(config);
+            return new RocksDBService(config);
         }
     }
 }

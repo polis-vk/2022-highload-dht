@@ -16,7 +16,7 @@ public class Main {
                 Collections.singletonList(url),
                 Files.createTempDirectory("server")
         );
-        Service service = new ServiceImpl(cfg);
+        Service service = new RocksDBService(cfg);
         service.start().get(1, TimeUnit.SECONDS);
         System.out.println("Socket is ready: " + url);
     }
