@@ -119,7 +119,7 @@ public class ServiceImpl implements Service {
         }
 
         MemorySegment memorySegmentId = MemorySegment.ofArray(id.getBytes());
-        Entry<MemorySegment> entry = new BaseEntry<MemorySegment>(memorySegmentId, null);
+        Entry<MemorySegment> entry = new BaseEntry<>(memorySegmentId, null);
         dao.upsert(entry);
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
