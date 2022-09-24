@@ -91,7 +91,7 @@ public final class DaoUtils {
                         + BYTES_IN_INT // размер численного значения для длины значения
                         + (valueBytes == null ? 0 : valueBytes.length)
                         + BYTES_IN_INT // размер всей записи
-                        + BYTES_IN_INT // DELETED_MARK or EXISTING_MARK;
+                        + BYTES_IN_INT // DELETED_MARK or EXISTING_MARK
                         + 1; // размер '\n';
                 if (writeBuffer.position() + entrySize > writeBuffer.capacity()) {
                     writeBuffer.flip();

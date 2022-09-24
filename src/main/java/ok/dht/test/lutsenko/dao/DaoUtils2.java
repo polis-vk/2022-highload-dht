@@ -15,6 +15,9 @@ import java.util.EnumSet;
 
 public class DaoUtils2 {
 
+    private DaoUtils2() {
+    }
+
     public static String preprocess(String str) {
         if (str == null) {
             return null;
