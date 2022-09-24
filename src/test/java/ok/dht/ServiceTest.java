@@ -52,6 +52,8 @@ public @interface ServiceTest {
     int clusterSize() default 1;
     boolean prestartCluster() default true;
 
+    int bonusForWeek() default 0;
+
     class ServiceList implements ArgumentsProvider, ExecutionCondition {
         private static final AtomicInteger ID = new AtomicInteger();
         private static final ExtensionContext.Namespace NAMESPACE = ExtensionContext.Namespace.create("dao");
@@ -96,6 +98,21 @@ public @interface ServiceTest {
         @Override
         public Stream<? extends Arguments> provideArguments(ExtensionContext context) throws Exception {
             List<Class<?>> maxFactories = getFactories(context);
+
+            ServiceTest test = context.getRequiredTestMethod().getAnnotation(ServiceTest.class);
+            if (test.bonusForWeek() != 0) {
+                String testId = context.getRequiredTestMethod().getDeclaringClass().getSimpleName()
+                        + "#" + context.getRequiredTestMethod().getName();
+                maxFactories.removeIf(factory -> {
+                        String[] bonuses = factory.getAnnotation(ServiceFactory.class).bonuses();
+                        for (String bonus : bonuses) {
+                            if (bonus.equals(testId)) {
+                                return false;
+                            }
+                        }
+                        return true;
+                });
+            }
 
             if (maxFactories.isEmpty()) {
                 throw new IllegalStateException("No Factory declared under ru.mail.polis.test.<username> package");
@@ -194,12 +211,26 @@ public @interface ServiceTest {
         public ConditionEvaluationResult evaluateExecutionCondition(ExtensionContext context) {
             try {
                 List<Class<?>> factories = getFactories(context);
-                int minStage = context.getRequiredTestMethod().getAnnotation(ServiceTest.class).stage();
                 if (factories.isEmpty()) {
                     throw new IllegalStateException("No Factory declared under ok.dht.test.<username> package");
                 }
+                ServiceTest test = context.getRequiredTestMethod().getAnnotation(ServiceTest.class);
+                int minStage = test.stage();
                 if (minStage > factories.get(0).getAnnotation(ServiceFactory.class).stage()) {
                     return ConditionEvaluationResult.disabled("Implementation is not ready");
+                }
+                if (test.bonusForWeek() != 0) {
+                    String testId = context.getRequiredTestMethod().getDeclaringClass().getSimpleName()
+                            + "#" +context.getRequiredTestMethod().getName();
+                    for (Class<?> factory : factories) {
+                        String[] bonuses = factory.getAnnotation(ServiceFactory.class).bonuses();
+                        for (String bonus : bonuses) {
+                            if (bonus.equals(testId)) {
+                                return ConditionEvaluationResult.enabled("Implementation is ready");
+                            }
+                        }
+                    }
+                    return ConditionEvaluationResult.disabled("Implementation is not ready for bonuses");
                 }
                 return ConditionEvaluationResult.enabled("Implementation is ready");
             } catch (Exception e) {
