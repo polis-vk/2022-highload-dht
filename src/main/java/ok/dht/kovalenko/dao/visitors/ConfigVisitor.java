@@ -66,7 +66,7 @@ public class ConfigVisitor
         for (int priority = 1; priority <= this.dataFiles.size(); ++priority) {
             Path dataFile = dataIterator.next();
             Path indexesFile = indexesIterator.next();
-            checkIfFilesAreNotPaired(dataFile, indexesFile, priority);
+            checkIfFilesArePaired(dataFile, indexesFile, priority);
         }
 
         return FileVisitResult.CONTINUE;
@@ -138,7 +138,7 @@ public class ConfigVisitor
         }
     }
 
-    private void checkIfFilesAreNotPaired(Path dataFile, Path indexesFile, int priority) {
+    private void checkIfFilesArePaired(Path dataFile, Path indexesFile, int priority) {
         if (areNotPairedFiles(dataFile, indexesFile, priority)) {
             throw new IllegalStateException("Illegal order of data- and indexes-files");
         }

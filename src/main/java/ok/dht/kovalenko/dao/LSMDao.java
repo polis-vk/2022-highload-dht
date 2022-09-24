@@ -46,10 +46,14 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
         try {
             this.config = config;
             this.serializer = new Serializer(this.config);
-            Files.walkFileTree(
-                    config.workingDir(),
-                    new ConfigVisitor(this.config, this.serializer)
-            );
+            if (Files.exists(config.workingDir())) {
+                Files.walkFileTree(
+                        config.workingDir(),
+                        new ConfigVisitor(this.config, this.serializer)
+                );
+            } else {
+                Files.createDirectory(config.workingDir());
+            }
 
             for (int i = 0; i < N_MEMORY_SSTABLES; ++i) {
                 this.memoryWriteSSTables.add(new MemorySSTable());
@@ -85,10 +89,11 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
         this.rwlock.writeLock().lock();
         try {
             if (this.curBytesForEntries.get() >= FLUSH_TRESHOLD_BYTES) {
-                this.flushRunnable.run();
-                //this.service.submit(this.flushRunnable);
-                this.wasCompacted.set(false);
-                this.curBytesForEntries.set(0);
+//                this.flushRunnable.run();
+//                this.service.submit(this.flushRunnable);
+//                this.wasCompacted.set(false);
+//                this.curBytesForEntries.set(0);
+                this.flush();
             }
 
             if (this.memoryWriteSSTables.isEmpty()) {
@@ -97,6 +102,8 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
 
             this.memoryWriteSSTables.peek().put(entry.key(), entry);
             this.curBytesForEntries.addAndGet(DiskSSTable.sizeOf(entry));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         } finally {
             this.rwlock.writeLock().unlock();
         }
@@ -107,15 +114,16 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
         if (DaoUtils.isEmpty(this.memoryWriteSSTables)) {
             return;
         }
-        this.flushRunnable.run();
-        //this.service.submit(this.flushRunnable);
+        //this.flushRunnable.run();
+        this.service.submit(this.flushRunnable);
         this.wasCompacted.set(false);
+        this.curBytesForEntries.set(0);
     }
 
     @Override
     public synchronized void close() throws IOException {
         try {
-            flush();
+            this.flush();
             service.shutdown();
             if (!service.awaitTermination(5, TimeUnit.MINUTES)) {
                 throw new RuntimeException("Very large number of tasks, impossible to close Dao");

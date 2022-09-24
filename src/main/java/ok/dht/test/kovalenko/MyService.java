@@ -55,14 +55,23 @@ public class MyService implements Service {
     public Response handleGet(@Param(value = "id", required = true) String id) {
         try {
             if (id.isEmpty()) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+                Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+                response.addHeader("Connection: close");
+                return response;
             }
+
             ByteBuffer key = daoFactory.fromString(id);
-            TypedEntry response = this.dao.get(key);
-            if (response == null) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
+            TypedEntry res = this.dao.get(key);
+
+            if (res == null) {
+                Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
+                response.addHeader("Connection: close");
+                return response;
             }
-            return Response.ok(response.toString());
+
+            Response response = Response.ok(res.value().array());
+            response.addHeader("Connection: close");
+            return response;
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
         }
@@ -75,13 +84,13 @@ public class MyService implements Service {
             if (id.isEmpty()) {
                 return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
+
             ByteBuffer key = daoFactory.fromString(id);
             ByteBuffer value = ByteBuffer.wrap(request.getBody());
-            if (daoFactory.toString(value).isEmpty()) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
             this.dao.upsert(new TypedBaseEntry(key, value));
-            return new Response(Response.CREATED, Response.EMPTY);
+            Response response = new Response(Response.CREATED, Response.EMPTY);
+            response.addHeader("Connection: close");
+            return response;
         } catch (RuntimeException e) {
             return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
         }
@@ -96,7 +105,9 @@ public class MyService implements Service {
             }
             ByteBuffer key = daoFactory.fromString(id);
             this.dao.upsert(new TypedBaseEntry(key, null));
-            return new Response(Response.ACCEPTED, Response.EMPTY);
+            Response response = new Response(Response.ACCEPTED, Response.EMPTY);
+            response.addHeader("Connection: close");
+            return response;
         } catch (RuntimeException e) {
             return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
         }

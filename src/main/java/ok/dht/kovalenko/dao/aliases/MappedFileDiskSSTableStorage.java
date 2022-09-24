@@ -51,7 +51,7 @@ public class MappedFileDiskSSTableStorage
                 while (!Thread.currentThread().isInterrupted()) {
                     try (Stream<Path> paths = Files.list(config.workingDir())) {
                         long pathsCount = paths.count();
-                        serializer.get(pathsCount / 2);
+                        serializer.get(pathsCount/2);
                     } catch (NullPointerException ignored) {
                     }
                 }
