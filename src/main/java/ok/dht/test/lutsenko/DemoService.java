@@ -63,7 +63,7 @@ public class DemoService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        if (lastSession  != null) {
+        if (lastSession != null) {
             lastSession.close();
         }
         server.stop();

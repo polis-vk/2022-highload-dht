@@ -12,6 +12,9 @@ import java.nio.file.StandardOpenOption;
 import java.util.EnumSet;
 import java.util.Iterator;
 
+import static ok.dht.test.lutsenko.dao.DaoUtils2.postprocess;
+import static ok.dht.test.lutsenko.dao.DaoUtils2.preprocess;
+
 public final class DaoUtils {
 
     public static final int WRITE_BUFFER_SIZE = 16384;
@@ -86,9 +89,9 @@ public final class DaoUtils {
                 int entrySize = BYTES_IN_INT // размер численного значения для длины ключа
                         + keyBytes.length
                         + BYTES_IN_INT // размер численного значения для длины значения
-                        + (baseEntry.value() == null ? 0 : valueBytes.length)
+                        + (valueBytes == null ? 0 : valueBytes.length)
                         + BYTES_IN_INT // размер всей записи
-                        + BYTES_IN_INT // DELETED_MARK или EXISTING_MARK;
+                        + BYTES_IN_INT // DELETED_MARK or EXISTING_MARK;
                         + 1; // размер '\n';
                 if (writeBuffer.position() + entrySize > writeBuffer.capacity()) {
                     writeBuffer.flip();
@@ -151,10 +154,7 @@ public final class DaoUtils {
             position = (left + right) / 2;
             byteBuffer.mark();
             byteBuffer.position((int) position);
-            int leastPartOfLineLength = 0;
-            while (byteBuffer.get() != NEXT_LINE_BYTE) {
-                leastPartOfLineLength++;
-            }
+            int leastPartOfLineLength = getLeastPartOfLineLength(byteBuffer);
             int readBytes = leastPartOfLineLength + BYTES_IN_INT; // BYTES_IN_INT -> prevEntryLength
             prevEntryLength = byteBuffer.getInt();
             if (position + readBytes >= right) {
@@ -190,63 +190,12 @@ public final class DaoUtils {
         return left == 0 ? readEntry(byteBuffer) : null;
     }
 
-    public static String preprocess(String str) {
-        if (str == null) {
-            return null;
+    private static int getLeastPartOfLineLength(ByteBuffer byteBuffer) {
+        int leastPartOfLineLength = 0;
+        while (byteBuffer.get() != NEXT_LINE_BYTE) {
+            leastPartOfLineLength++;
         }
-        int i = -1;
-        for (int j = 0; j < str.length(); j++) {
-            char c = str.charAt(j);
-            if (c == '\n' || c == '\\') {
-                i = j;
-                break;
-            }
-        }
-        if (i == -1) {
-            return str;
-        }
-        StringBuilder stringBuilder = new StringBuilder(str.substring(0, i));
-        while (i < str.length()) {
-            char c = str.charAt(i);
-            if (c == '\\') {
-                stringBuilder.append("\\\\");
-            } else if (c == '\n') {
-                stringBuilder.append("\\n");
-            } else {
-                stringBuilder.append(c);
-            }
-            i++;
-        }
-        return stringBuilder.toString();
-    }
-
-    public static String postprocess(byte[] bytes) {
-        int i = 0;
-        for (byte b : bytes) {
-            if (b == (byte)'\\') {
-                break;
-            }
-            i++;
-        }
-        if (i == bytes.length) {
-            return Utf8.toString(bytes);
-        }
-        StringBuilder stringBuilder = new StringBuilder();
-        for (int j = 0; j < i; j++) {
-            stringBuilder.append((char) bytes[j]);
-        }
-        while (i < bytes.length) {
-            while (i < bytes.length && bytes[i] != '\\') {
-                stringBuilder.append((char)bytes[i]);
-                i++;
-            }
-            if (i < bytes.length - 1) {
-                // Все слэши парные, поэтому после слэша гарантированно идет 'n' или еще один слэш
-                stringBuilder.append(bytes[i + 1] ==  (byte)'n' ? '\n' : '\\');
-                i += 2;
-            }
-        }
-        return stringBuilder.toString();
+        return leastPartOfLineLength;
     }
 
     public static boolean isEnd(ByteBuffer byteBuffer) {
