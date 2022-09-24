@@ -1,4 +1,4 @@
-package ok.dht.test.shashulovskiy.dao.implementation;
+package ok.dht.test.shashulovskiy.dao.drozdov;
 
 public class StorageClosedException extends RuntimeException {
 

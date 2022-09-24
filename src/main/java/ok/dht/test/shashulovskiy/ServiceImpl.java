@@ -4,23 +4,24 @@ import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.drozdov.DemoService;
 import ok.dht.test.shashulovskiy.dao.BaseEntry;
 import ok.dht.test.shashulovskiy.dao.Config;
 import ok.dht.test.shashulovskiy.dao.Dao;
 import ok.dht.test.shashulovskiy.dao.Entry;
-import ok.dht.test.shashulovskiy.dao.implementation.MemorySegmentDao;
+import ok.dht.test.shashulovskiy.dao.drozdov.MemorySegmentDao;
 import one.nio.http.*;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
+
+    private static final long THRESHOLD_BYTES = 1 << 29;
 
     private final ServiceConfig config;
     private HttpServer server;
@@ -33,13 +34,22 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        this.dao = new MemorySegmentDao(new Config(config.workingDir(), 1 << 20));
+        this.dao = new MemorySegmentDao(new Config(config.workingDir(), THRESHOLD_BYTES));
 
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
                 Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
                 session.sendResponse(response);
+            }
+
+            @Override
+            public synchronized void stop() {
+                for (SelectorThread selector : selectors) {
+                    selector.selector.forEach(Session::close);
+                }
+
+                super.stop();
             }
         };
         server.start();
@@ -71,7 +81,6 @@ public class ServiceImpl implements Service {
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
                 Entry<MemorySegment> memorySegmentEntry = dao.get(stringToMemorySegment(id));
-
                 if (memorySegmentEntry == null) {
                     return new Response(Response.NOT_FOUND, Response.EMPTY);
                 } else {

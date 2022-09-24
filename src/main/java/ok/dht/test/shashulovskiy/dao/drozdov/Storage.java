@@ -1,4 +1,4 @@
-package ok.dht.test.shashulovskiy.dao.implementation;
+package ok.dht.test.shashulovskiy.dao.drozdov;
 
 import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;
