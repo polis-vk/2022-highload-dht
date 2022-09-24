@@ -22,234 +22,257 @@ request = function()
 end
 ```
 
-Скрипт для запуска профайлинга и wrk2:
+Команда wrk2 для put запросов:
 ```shell
-#!/bin/bash
-#paths to scripts
-lua_put_path="put.lua"
-lua_get_path="get.lua"
-path_to_async_profiler="/Users/michael/Desktop/async-profiler/async-profiler"
-
-#server configuration
-server_host="localhost"
-server_port=25565
-server_name="Server"
-
-#wrk2 configuration
-wrk2_duration=60
-wrk2_threads=1
-wrk2_connections=1
-
-function wrk2_start() {
-  local rate=$1
-  local type=$2
-  local type_request=$3
-  local file_name="wrk2_${type_request}_rate_${rate}.txt"
-  local file_path="$PWD/$file_name"
-  wrk2 -d $wrk2_duration -t $wrk2_threads -c $wrk2_connections -R "$rate" -s "$type" -L "http://${server_host}:${server_port}" > "$file_path"
-}
-
-function async_profiler_start() {
-  local file_name=$1
-  local file_path="$PWD/$file_name"
-  local path=$PWD
-  cd $path_to_async_profiler || exit
-  source "./profiler.sh" -e cpu,alloc --alloc 512 -f "$file_path" start Server
-  echo "async-profiler started"
-  cd "$path" || exit
-}
-
-function async_profiler_stop() {
-  local file_name=$1
-  local file_path="$PWD/$file_name"
-  local path=$PWD
-  cd $path_to_async_profiler || exit
-  source "./profiler.sh" -f "$file_path" stop "$server_name"
-  echo "async-profiler stopped"
-  cd "$path" || exit
-}
-
-echo "      ___                       ___           ___                  "
-echo "     /  /\          ___        /  /\         /  /\          ___    "
-echo "    /  /:/_        /  /\      /  /::\       /  /::\        /  /\   "
-echo "   /  /:/ /\      /  /:/     /  /:/\:\     /  /:/\:\      /  /:/   "
-echo "  /  /:/ /::\    /  /:/     /  /:/~/::\   /  /:/~/:/     /  /:/    "
-echo " /__/:/ /:/\:\  /  /::\    /__/:/ /:/\:\ /__/:/ /:/___  /  /::\    "
-echo " \  \:\/:/~/:/ /__/:/\:\   \  \:\/:/__\/ \  \:\/:::::/ /__/:/\:\   "
-echo "  \  \::/ /:/  \__\/  \:\   \  \::/       \  \::/~~~~  \__\/  \:\  "
-echo "   \__\/ /:/        \  \:\   \  \:\        \  \:\           \  \:\ "
-echo "     /__/:/          \__\/    \  \:\        \  \:\           \__\/ "
-echo "     \__\/                     \__\/         \__\/                 "
-echo "                                                                   "
-
-rates=(1000 3000 5000 8000 12000 15000 20000)
-
-for rate in "${rates[@]}"; do
-  type_request="put"
-  file_name="async-profiler_${type_request}_rate_${rate}.jfr"
-  async_profiler_start "$file_name"
-  wrk2_start "$rate" $lua_put_path $type_request
-  async_profiler_stop "$file_name"
-done
-
-for rate in "${rates[@]}"; do
-  type_request="get"
-  file_name="async-profiler_${type_request}_rate_${rate}.jfr"
-  async_profiler_start "$file_name"
-  wrk2_start "$rate" $lua_get_path $type_request
-  async_profiler_stop "$file_name"
-done
+wrk2 -d 60 -t 1 -c 1 -R 5000 -s put.lua -L http://localhost:25565
 ```
 
-Скрипт для конвертации jfr в HTML:
-```shell
-#!/bin/bash
-path_to_async_profiler="/Users/michael/Desktop/async-profiler/async-profiler"
+```text
+michael@MacBook-Pro-3 report % wrk2 -d 60 -t 1 -c 1 -R 5000 -s put.lua -L http://localhost:25565
+Running 1m test @ http://localhost:25565
+  1 threads and 1 connections
+  Thread calibration: mean lat.: 1.557ms, rate sampling interval: 10ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     2.10ms    7.64ms 119.55ms   97.77%
+    Req/Sec     5.29k     1.03k   16.89k    93.49%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%    1.08ms
+ 75.000%    1.51ms
+ 90.000%    2.00ms
+ 99.000%   46.30ms
+ 99.900%   89.79ms
+ 99.990%  116.93ms
+ 99.999%  119.49ms
+100.000%  119.61ms
 
-function run_jfr2flame_alloc() {
-  local src_name=$1
-  local dst_name=$2
-  local src_path="$PWD/$src_name"
-  local dst_path="$PWD/$dst_name"
-  local path=$PWD
-  cd $path_to_async_profiler || exit
-  java -cp "$path_to_async_profiler/build/converter.jar" jfr2heat --alloc "$src_path" "$dst_path"
-  cd "$path" || exit
-}
+  Detailed Percentile spectrum:
+       Value   Percentile   TotalCount 1/(1-Percentile)
 
-function run_jfr2flame_cpu() {
-  local src_name=$1
-  local dst_name=$2
-  local src_path="$PWD/$src_name"
-  local dst_path="$PWD/$dst_name"
-  local path=$PWD
-  cd $path_to_async_profiler || exit
-  java -cp "$path_to_async_profiler/build/converter.jar" jfr2heat "$src_path" "$dst_path"
-  cd "$path" || exit
-}
-
-rates=(1000 3000 5000 8000 12000 15000 20000)
-
-for rate in "${rates[@]}"; do
-  type_request="put"
-  file_name="async-profiler_${type_request}_rate_${rate}.jfr"
-  run_jfr2flame_alloc "$file_name" "async-profiler_${type_request}_alloc_rate_${rate}.html"
-  run_jfr2flame_cpu "$file_name" "async-profiler_${type_request}_cpu_rate_${rate}.html"
-done
-
-for rate in "${rates[@]}"; do
-  type_request="get"
-  file_name="async-profiler_${type_request}_rate_${rate}.jfr"
-  run_jfr2flame_alloc "$file_name" "async-profiler_${type_request}_alloc_rate_${rate}.html"
-  run_jfr2flame_cpu "$file_name" "async-profiler_${type_request}_cpu_rate_${rate}.html"
-done
+       0.057     0.000000            2         1.00
+       0.313     0.100000        25064         1.11
+       0.532     0.200000        50006         1.25
+       0.736     0.300000        75049         1.43
+       0.918     0.400000       100035         1.67
+       1.076     0.500000       125082         2.00
+       1.148     0.550000       137578         2.22
+       1.223     0.600000       150120         2.50
+       1.298     0.650000       162529         2.86
+       1.385     0.700000       174990         3.33
+       1.513     0.750000       187543         4.00
+       1.584     0.775000       193764         4.44
+       1.661     0.800000       200025         5.00
+       1.739     0.825000       206289         5.71
+       1.821     0.850000       212517         6.67
+       1.909     0.875000       218769         8.00
+       1.955     0.887500       221862         8.89
+       2.003     0.900000       224990        10.00
+       2.055     0.912500       228129        11.43
+       2.111     0.925000       231286        13.33
+       2.175     0.937500       234388        16.00
+       2.211     0.943750       235923        17.78
+       2.251     0.950000       237504        20.00
+       2.301     0.956250       239067        22.86
+       2.363     0.962500       240627        26.67
+       2.465     0.968750       242180        32.00
+       2.601     0.971875       242952        35.56
+       4.387     0.975000       243729        40.00
+      10.855     0.978125       244510        45.71
+      19.487     0.981250       245291        53.33
+      29.327     0.984375       246073        64.00
+      34.431     0.985938       246463        71.11
+      39.263     0.987500       246854        80.00
+      43.359     0.989062       247245        91.43
+      48.095     0.990625       247635       106.67
+      54.815     0.992188       248026       128.00
+      57.727     0.992969       248221       142.22
+      61.055     0.993750       248416       160.00
+      64.127     0.994531       248611       182.86
+      68.095     0.995313       248807       213.33
+      72.447     0.996094       249004       256.00
+      73.983     0.996484       249102       284.44
+      74.879     0.996875       249200       320.00
+      76.223     0.997266       249296       365.71
+      78.271     0.997656       249394       426.67
+      81.791     0.998047       249490       512.00
+      82.751     0.998242       249542       568.89
+      83.711     0.998437       249594       640.00
+      84.543     0.998633       249637       731.43
+      85.311     0.998828       249688       853.33
+      90.559     0.999023       249734      1024.00
+      93.887     0.999121       249759      1137.78
+      96.831     0.999219       249783      1280.00
+      99.711     0.999316       249808      1462.86
+     102.527     0.999414       249832      1706.67
+     105.343     0.999512       249856      2048.00
+     106.943     0.999561       249869      2275.56
+     108.287     0.999609       249881      2560.00
+     109.823     0.999658       249893      2925.71
+     111.231     0.999707       249905      3413.33
+     112.703     0.999756       249917      4096.00
+     113.599     0.999780       249924      4551.11
+     114.367     0.999805       249930      5120.00
+     115.135     0.999829       249936      5851.43
+     115.775     0.999854       249942      6826.67
+     116.415     0.999878       249948      8192.00
+     116.671     0.999890       249951      9102.22
+     117.055     0.999902       249954     10240.00
+     117.375     0.999915       249957     11702.86
+     117.759     0.999927       249960     13653.33
+     118.143     0.999939       249963     16384.00
+     118.335     0.999945       249965     18204.44
+     118.463     0.999951       249966     20480.00
+     118.655     0.999957       249968     23405.71
+     118.783     0.999963       249969     27306.67
+     118.975     0.999969       249971     32768.00
+     119.039     0.999973       249972     36408.89
+     119.039     0.999976       249972     40960.00
+     119.167     0.999979       249973     46811.43
+     119.295     0.999982       249974     54613.33
+     119.423     0.999985       249975     65536.00
+     119.423     0.999986       249975     72817.78
+     119.423     0.999988       249975     81920.00
+     119.487     0.999989       249976     93622.86
+     119.487     0.999991       249976    109226.67
+     119.551     0.999992       249977    131072.00
+     119.551     0.999993       249977    145635.56
+     119.551     0.999994       249977    163840.00
+     119.551     0.999995       249977    187245.71
+     119.551     0.999995       249977    218453.33
+     119.615     0.999996       249978    262144.00
+     119.615     1.000000       249978          inf
+#[Mean    =        2.104, StdDeviation   =        7.640]
+#[Max     =      119.552, Total count    =       249978]
+#[Buckets =           27, SubBuckets     =         2048]
+----------------------------------------------------------
+  299993 requests in 1.00m, 19.17MB read
+Requests/sec:   4999.89
+Transfer/sec:    327.14KB
 ```
 
-Перед профилированием заполнил хранилище 6GB данных.
-Все результаты работы wrk лежат в файлах с расширением txt и имеют префикс "wrk2".
-* Имя файла := "wrk2\_\<Запрос\>\_rate\_\<Number\>"
-* Запрос    := put | get
-* Number    := number
+Команда wrk2 для get запросов:
+```shell
+wrk2 -d 60 -t 1 -c 1 -R 5000 -s put.lua -L http://localhost:25565
+```
 
-Все результаты работы профайлера лежат в файлах с расширением html и имеют префикс "async-profiler".
-* Имя файла := "async-profiler\_\<Запрос\>\_rate\_\<Number\>"
-* Запрос    := put | get
-* Number    := number
----
-Выводы: по выводам wrk2 можно понять, что до rate=8000 сервер чувствовал себя хорошо.
-При rate=12000 заметно сильно увеличился Latency как у get, так и у put запросов.
-В 99 процентиле у put Latency меньше чем у get, что логично, так как используем LSM.
+```text
+michael@MacBook-Pro-3 report % wrk2 -d 60 -t 1 -c 1 -R 5000 -s get.lua -L http://localhost:25565
+Running 1m test @ http://localhost:25565
+  1 threads and 1 connections
+  Thread calibration: mean lat.: 1.999ms, rate sampling interval: 10ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.13ms  700.66us  19.01ms   69.84%
+    Req/Sec     5.28k   524.54    10.22k    70.60%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%    1.10ms
+ 75.000%    1.55ms
+ 90.000%    1.99ms
+ 99.000%    2.46ms
+ 99.900%    7.12ms
+ 99.990%   17.28ms
+ 99.999%   18.94ms
+100.000%   19.02ms
 
-Было замечено, что при пустой базе аллокаций происходит больше. Это связано с аллокациями MemorySegment'ов.
-В отчете я отразил замеры только с наполненным хранилищем, так как это было оговорено на лекции.
----
-Рассмотрим rate=1000:
-# get alloc 1000 rate
-![async-profiler get alloc 1000 rate](./png/async-profiler_get_alloc_rate_1000.png)
-# get cpu 1000 rate
-![async-profiler get cpu 1000 rate](./png/async-profiler_get_cpu_rate_1000.png)
-# put alloc 1000 rate
-![async-profiler put alloc 1000 rate](./png/async-profiler_put_alloc_rate_1000.png)
-# put cpu 1000 rate
-![async-profiler put cpu 1000 rate](./png/async-profiler_put_cpu_rate_1000.png)
+  Detailed Percentile spectrum:
+       Value   Percentile   TotalCount 1/(1-Percentile)
 
----
-Рассмотрим rate=3000:
-# get alloc 3000 rate
-![async-profiler get alloc 3000 rate](./png/async-profiler_get_alloc_rate_3000.png)
-# get cpu 3000 rate
-![async-profiler get cpu 3000 rate](./png/async-profiler_get_cpu_rate_3000.png)
-# put alloc 3000 rate
-![async-profiler put alloc 3000 rate](./png/async-profiler_put_alloc_rate_3000.png)
-# put cpu 3000 rate
-![async-profiler put cpu 3000 rate](./png/async-profiler_put_cpu_rate_3000.png)
-
----
-Рассмотрим rate=5000:
-# get alloc 5000 rate
-![async-profiler get alloc 5000 rate](./png/async-profiler_get_alloc_rate_5000.png)
-# get cpu 5000 rate
-![async-profiler get cpu 5000 rate](./png/async-profiler_get_cpu_rate_5000.png)
-# put alloc 5000 rate
-![async-profiler put alloc 5000 rate](./png/async-profiler_put_alloc_rate_5000.png)
-# put cpu 5000 rate
-![async-profiler put cpu 5000 rate](./png/async-profiler_put_cpu_rate_5000.png)
-
----
-Рассмотрим rate=8000:
-# get alloc 8000 rate
-![async-profiler get alloc 8000 rate](./png/async-profiler_get_alloc_rate_8000.png)
-# get cpu 8000 rate
-![async-profiler get cpu 8000 rate](./png/async-profiler_get_cpu_rate_8000.png)
-# put alloc 8000 rate
-![async-profiler put alloc 8000 rate](./png/async-profiler_put_alloc_rate_8000.png)
-# put cpu 8000 rate
-![async-profiler put cpu 8000 rate](./png/async-profiler_put_cpu_rate_8000.png)
-
----
-Рассмотрим rate=12000:
-# get alloc 12000 rate
-![async-profiler get alloc 12000 rate](./png/async-profiler_get_alloc_rate_12000.png)
-# get cpu 12000 rate
-![async-profiler get cpu 12000 rate](./png/async-profiler_get_cpu_rate_12000.png)
-# put alloc 12000 rate
-![async-profiler put alloc 12000 rate](./png/async-profiler_put_alloc_rate_12000.png)
-# put cpu 12000 rate
-![async-profiler put cpu 12000 rate](./png/async-profiler_put_cpu_rate_12000.png)
-
----
-Рассмотрим rate=15000:
-# get alloc 15000 rate
-![async-profiler get alloc 15000 rate](./png/async-profiler_get_alloc_rate_15000.png)
-# get cpu 15000 rate
-![async-profiler get cpu 15000 rate](./png/async-profiler_get_cpu_rate_15000.png)
-# put alloc 15000 rate
-![async-profiler put alloc 15000 rate](./png/async-profiler_put_alloc_rate_15000.png)
-# put cpu 15000 rate
-![async-profiler put cpu 15000 rate](./png/async-profiler_put_cpu_rate_15000.png)
-
----
-Рассмотрим rate=20000:
-# get alloc 20000 rate
-![async-profiler get alloc 20000 rate](./png/async-profiler_get_alloc_rate_20000.png)
-# get cpu 20000 rate
-![async-profiler get cpu 20000 rate](./png/async-profiler_get_cpu_rate_20000.png)
-# put alloc 20000 rate
-![async-profiler put alloc 20000 rate](./png/async-profiler_put_alloc_rate_20000.png)
-# put cpu 20000 rate
-![async-profiler put cpu 20000 rate](./png/async-profiler_put_cpu_rate_20000.png)
-
----
-
-Большая часть памяти аллоцируется для сети. Так же в бд есть места, где можно сократить аллокацию памяти, но к сожалению
-на png не видно сколько бд аллоцирует памяти. Для более детального изучения можно открыть html.
-Я в основном изучал результаты для rate=8000. По CPU видно, что get тратит больше ресурсов (26%) чем put (7%).
-Это логично, так как мы используем lsm дерево. По ALLOC видно, что для get запросов выделятся в два раза больше памяти (8 766 931 920 bytes),
-а для put запросов выделяется (4 713 341 688 bytes). Это тоже ожидаемое поведение потому что мы ходим в bucket'ы и загружаем весь bucket.
-По ALLOC видно, что для put запросов выделяется память в основном только для работы сервера (98%).
-Как вариант улучшения latency это добавить многопоточность в код сервера.
-На стороне сервера не нашел особых проблем с памятью: используются примитивные массивы и типы. Как вариант можно попробовать в некоторых местах
-перейти с int на short или byte. Тогда незначительно возможно уменьшиться аллокация памяти для one.nio.http.HttpSession.startParsingRequestBody(String, byte[], int, int).
-Сейчас она занимает 85% от всего. Так же наверное это связано с тем, что я передаю в одном put много bytes.
-В LSM можно так же перейти на примитивы, это должно улучшить результаты профилирования CPU и ALLOC.
-
+       0.046     0.000000            1         1.00
+       0.308     0.100000        25018         1.11
+       0.537     0.200000        50003         1.25
+       0.749     0.300000        75075         1.43
+       0.938     0.400000        99997         1.67
+       1.097     0.500000       125038         2.00
+       1.171     0.550000       137582         2.22
+       1.246     0.600000       150133         2.50
+       1.324     0.650000       162498         2.86
+       1.423     0.700000       175005         3.33
+       1.547     0.750000       187569         4.00
+       1.614     0.775000       193822         4.44
+       1.682     0.800000       199997         5.00
+       1.755     0.825000       206280         5.71
+       1.829     0.850000       212494         6.67
+       1.906     0.875000       218731         8.00
+       1.948     0.887500       221900         8.89
+       1.989     0.900000       225049        10.00
+       2.031     0.912500       228138        11.43
+       2.077     0.925000       231256        13.33
+       2.125     0.937500       234384        16.00
+       2.151     0.943750       235994        17.78
+       2.177     0.950000       237519        20.00
+       2.207     0.956250       239087        22.86
+       2.237     0.962500       240654        26.67
+       2.271     0.968750       242191        32.00
+       2.289     0.971875       242959        35.56
+       2.311     0.975000       243759        40.00
+       2.335     0.978125       244565        45.71
+       2.361     0.981250       245320        53.33
+       2.391     0.984375       246112        64.00
+       2.407     0.985938       246490        71.11
+       2.427     0.987500       246884        80.00
+       2.447     0.989062       247269        91.43
+       2.469     0.990625       247634       106.67
+       2.499     0.992188       248027       128.00
+       2.523     0.992969       248231       142.22
+       2.553     0.993750       248419       160.00
+       2.591     0.994531       248619       182.86
+       2.637     0.995313       248807       213.33
+       2.693     0.996094       248997       256.00
+       2.729     0.996484       249096       284.44
+       2.775     0.996875       249196       320.00
+       2.841     0.997266       249291       365.71
+       2.975     0.997656       249389       426.67
+       3.459     0.998047       249485       512.00
+       4.447     0.998242       249534       568.89
+       5.067     0.998437       249583       640.00
+       5.579     0.998633       249632       731.43
+       6.443     0.998828       249682       853.33
+       7.203     0.999023       249729      1024.00
+       8.011     0.999121       249754      1137.78
+       8.447     0.999219       249778      1280.00
+       8.743     0.999316       249803      1462.86
+       9.079     0.999414       249828      1706.67
+       9.503     0.999512       249851      2048.00
+       9.775     0.999561       249864      2275.56
+       9.927     0.999609       249876      2560.00
+      10.711     0.999658       249888      2925.71
+      12.103     0.999707       249900      3413.33
+      13.487     0.999756       249912      4096.00
+      14.239     0.999780       249919      4551.11
+      14.903     0.999805       249925      5120.00
+      15.559     0.999829       249931      5851.43
+      16.095     0.999854       249937      6826.67
+      16.735     0.999878       249943      8192.00
+      17.087     0.999890       249946      9102.22
+      17.391     0.999902       249949     10240.00
+      17.663     0.999915       249952     11702.86
+      17.903     0.999927       249955     13653.33
+      18.047     0.999939       249958     16384.00
+      18.191     0.999945       249960     18204.44
+      18.287     0.999951       249961     20480.00
+      18.351     0.999957       249963     23405.71
+      18.383     0.999963       249964     27306.67
+      18.559     0.999969       249966     32768.00
+      18.623     0.999973       249967     36408.89
+      18.623     0.999976       249967     40960.00
+      18.687     0.999979       249968     46811.43
+      18.783     0.999982       249969     54613.33
+      18.879     0.999985       249970     65536.00
+      18.879     0.999986       249970     72817.78
+      18.879     0.999988       249970     81920.00
+      18.943     0.999989       249971     93622.86
+      18.943     0.999991       249971    109226.67
+      18.975     0.999992       249972    131072.00
+      18.975     0.999993       249972    145635.56
+      18.975     0.999994       249972    163840.00
+      18.975     0.999995       249972    187245.71
+      18.975     0.999995       249972    218453.33
+      19.023     0.999996       249973    262144.00
+      19.023     1.000000       249973          inf
+#[Mean    =        1.133, StdDeviation   =        0.701]
+#[Max     =       19.008, Total count    =       249973]
+#[Buckets =           27, SubBuckets     =         2048]
+----------------------------------------------------------
+  299994 requests in 1.00m, 2.45GB read
+  Non-2xx or 3xx responses: 1
+Requests/sec:   4999.90
+Transfer/sec:     41.77MB
+```
