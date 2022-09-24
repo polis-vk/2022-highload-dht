@@ -5,6 +5,8 @@ import jdk.incubator.foreign.MemorySegment;
 import jdk.incubator.foreign.ResourceScope;
 import ok.dht.test.shashulovskiy.dao.Config;
 import ok.dht.test.shashulovskiy.dao.Entry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.ref.Cleaner;
@@ -16,6 +18,8 @@ import java.util.Collection;
 import java.util.Iterator;
 
 public class StorageCompanion {
+    private static final Logger LOG = LoggerFactory.getLogger(StorageCompanion.class);
+
     static final long VERSION = 0;
     static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
     static final int INDEX_RECORD_SIZE = Long.BYTES;
@@ -34,6 +38,7 @@ public class StorageCompanion {
 
         @Override
         public void run() {
+            LOG.info("Running Storage-Cleaner");
             super.run();
         }
     });
