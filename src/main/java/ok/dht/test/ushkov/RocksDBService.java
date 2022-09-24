@@ -7,7 +7,9 @@ import ok.dht.test.ushkov.dao.BaseEntry;
 import ok.dht.test.ushkov.dao.Entry;
 import ok.dht.test.ushkov.dao.rocksdb.RocksDBDao;
 import one.nio.http.*;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -37,6 +39,18 @@ public class RocksDBService implements Service {
             public void handleDefault(Request request, HttpSession session) throws IOException {
                 Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
                 session.sendResponse(response);
+            }
+
+            @Override
+            public synchronized void stop() {
+                // HttpServer.stop() doesn't close sockets
+                for (SelectorThread thread : selectors) {
+                    for (Session session : thread.selector) {
+                        session.socket().close();
+                    }
+                }
+
+                super.stop();
             }
         };
     }
