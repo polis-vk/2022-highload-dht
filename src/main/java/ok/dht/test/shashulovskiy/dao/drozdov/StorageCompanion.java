@@ -26,16 +26,11 @@ public class StorageCompanion {
     static final String FILE_EXT_TMP = ".tmp";
     static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
 
-    static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
+    static final Cleaner CLEANER = Cleaner.create(r -> new Thread(r, "Storage-Cleaner") {
         @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
-                @Override
-                public synchronized void start() {
-                    setDaemon(true);
-                    super.start();
-                }
-            };
+        public synchronized void start() {
+            setDaemon(true);
+            super.start();
         }
     });
 
@@ -67,7 +62,7 @@ public class StorageCompanion {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (Entry<MemorySegment> entry: entries) {
+            for (Entry<MemorySegment> entry : entries) {
                 size += getSize(entry);
                 if (entry.isTombstone()) {
                     hasTombstone = true;
@@ -87,7 +82,7 @@ public class StorageCompanion {
 
             long index = 0;
             long offset = dataStart;
-            for (Entry<MemorySegment> entry: entries) {
+            for (Entry<MemorySegment> entry : entries) {
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
                 offset += writeRecord(nextSSTable, offset, entry.key());

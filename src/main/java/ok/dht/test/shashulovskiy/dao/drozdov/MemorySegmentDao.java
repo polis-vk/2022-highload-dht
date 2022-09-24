@@ -8,16 +8,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.Iterator;
+import java.util.List;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -223,7 +216,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         try {
             //noinspection StatementWithEmptyBody
             while (!executor.awaitTermination(10, TimeUnit.DAYS)) {
-                System.out.println("Awaiting termination");
+                LOG.info("Awaiting termination");
                 // No op
             }
         } catch (InterruptedException e) {

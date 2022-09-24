@@ -20,16 +20,6 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.CLEANER;
-import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.COMPACTED_FILE;
-import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.Data;
-import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.FILE_EXT;
-import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.FILE_NAME;
-import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.INDEX_HEADER_SIZE;
-import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.INDEX_RECORD_SIZE;
-import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.getSize;
-import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.save;
-
 final class Storage implements Closeable {
 
     private static final Logger LOG = LoggerFactory.getLogger(Storage.class);
@@ -42,17 +32,17 @@ final class Storage implements Closeable {
 
     static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
-        Path compactedFile = config.basePath().resolve(COMPACTED_FILE);
+        Path compactedFile = config.basePath().resolve(StorageCompanion.COMPACTED_FILE);
         if (Files.exists(compactedFile)) {
             finishCompact(config, compactedFile);
         }
 
         ArrayList<MemorySegment> sstables = new ArrayList<>();
-        ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
+        ResourceScope scope = ResourceScope.newSharedScope(StorageCompanion.CLEANER);
 
         // check existing files
         for (int i = 0; true; i++) {
-            Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
+            Path nextFile = basePath.resolve(StorageCompanion.FILE_NAME + i + StorageCompanion.FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));
             } catch (NoSuchFileException e) {
@@ -65,7 +55,7 @@ final class Storage implements Closeable {
     }
 
     public static long getSizeOnDisk(Entry<MemorySegment> entry) {
-        return getSize(entry) + INDEX_RECORD_SIZE;
+        return StorageCompanion.getSize(entry) + StorageCompanion.INDEX_RECORD_SIZE;
     }
 
     @SuppressWarnings("DuplicateThrows")
@@ -75,21 +65,21 @@ final class Storage implements Closeable {
         return MemorySegment.mapFile(file, 0, size, FileChannel.MapMode.READ_ONLY, scope);
     }
 
-    public static void compact(Config config, Data data) throws IOException {
-        Path compactedFile = config.basePath().resolve(COMPACTED_FILE);
-        save(data, compactedFile);
+    public static void compact(Config config, StorageCompanion.Data data) throws IOException {
+        Path compactedFile = config.basePath().resolve(StorageCompanion.COMPACTED_FILE);
+        StorageCompanion.save(data, compactedFile);
         finishCompact(config, compactedFile);
     }
 
     private static void finishCompact(Config config, Path compactedFile) throws IOException {
         for (int i = 0; ; i++) {
-            Path nextFile = config.basePath().resolve(FILE_NAME + i + FILE_EXT);
+            Path nextFile = config.basePath().resolve(StorageCompanion.FILE_NAME + i + StorageCompanion.FILE_EXT);
             if (!Files.deleteIfExists(nextFile)) {
                 break;
             }
         }
 
-        Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
+        Files.move(compactedFile, config.basePath().resolve(StorageCompanion.FILE_NAME + 0 + StorageCompanion.FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
     }
 
     private Storage(ResourceScope scope, List<MemorySegment> sstables, boolean hasTombstones) {
@@ -125,7 +115,7 @@ final class Storage implements Closeable {
         while (left <= right) {
             long mid = (left + right) >>> 1;
 
-            long keyPos = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + mid * INDEX_RECORD_SIZE);
+            long keyPos = MemoryAccess.getLongAtOffset(sstable, StorageCompanion.INDEX_HEADER_SIZE + mid * StorageCompanion.INDEX_RECORD_SIZE);
             long keySize = MemoryAccess.getLongAtOffset(sstable, keyPos);
 
             MemorySegment keyForCheck = sstable.asSlice(keyPos + Long.BYTES, keySize);
@@ -144,7 +134,7 @@ final class Storage implements Closeable {
 
     private Entry<MemorySegment> entryAt(MemorySegment sstable, long keyIndex) {
         try {
-            long offset = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + keyIndex * INDEX_RECORD_SIZE);
+            long offset = MemoryAccess.getLongAtOffset(sstable, StorageCompanion.INDEX_HEADER_SIZE + keyIndex * StorageCompanion.INDEX_RECORD_SIZE);
             long keySize = MemoryAccess.getLongAtOffset(sstable, offset);
             long valueOffset = offset + Long.BYTES + keySize;
             long valueSize = MemoryAccess.getLongAtOffset(sstable, valueOffset);
