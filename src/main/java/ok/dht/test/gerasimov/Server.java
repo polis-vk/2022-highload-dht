@@ -12,7 +12,7 @@ import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
 public final class Server {
-    private static final int PORT = 25565;
+    private static final int PORT = 8000;
     private static final String URL = "http://localhost:";
 
     public Server() {
