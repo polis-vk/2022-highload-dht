@@ -20,15 +20,16 @@ import one.nio.server.AcceptorConfig;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class DemoService implements Service {
 
     private final ServiceConfig config;
+    private final Set<HttpSession> sessions = new HashSet<>();
     private PersistenceRangeDao dao;
     private HttpServer server;
-    private Set<HttpSession> sessions;
 
     public DemoService(ServiceConfig config) {
         this.config = config;
