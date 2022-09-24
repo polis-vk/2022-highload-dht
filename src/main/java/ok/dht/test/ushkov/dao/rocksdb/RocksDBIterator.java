@@ -14,10 +14,10 @@ public class RocksDBIterator implements Iterator<Entry<ByteBuffer>> {
 
     public RocksDBIterator(RocksDB db, ByteBuffer from, ByteBuffer to) {
         rocksIterator = db.newIterator();
-        if (from != null) {
-            rocksIterator.seek(from);
-        } else {
+        if (from == null) {
             rocksIterator.seekToFirst();
+        } else {
+            rocksIterator.seek(from);
         }
         this.to = to;
     }

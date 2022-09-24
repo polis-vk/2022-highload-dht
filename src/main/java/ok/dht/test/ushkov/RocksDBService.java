@@ -6,11 +6,19 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.ushkov.dao.BaseEntry;
 import ok.dht.test.ushkov.dao.Entry;
 import ok.dht.test.ushkov.dao.rocksdb.RocksDBDao;
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
@@ -84,10 +92,10 @@ public class RocksDBService implements Service {
         try {
             ByteBuffer key = ByteBuffer.wrap(Utf8.toBytes(id));
             Entry<ByteBuffer> entry = dao.get(key);
-            if (entry != null) {
-                return new Response(Response.OK, entry.value().array());
-            } else {
+            if (entry == null) {
                 return new Response(Response.NOT_FOUND, Response.EMPTY);
+            } else {
+                return new Response(Response.OK, entry.value().array());
             }
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
