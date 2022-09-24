@@ -67,6 +67,7 @@ public class DemoService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         sessions.forEach(Session::close);
+        sessions.clear();
         server.stop();
         dao.close();
         return CompletableFuture.completedFuture(null);
