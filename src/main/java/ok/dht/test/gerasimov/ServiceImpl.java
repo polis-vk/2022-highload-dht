@@ -23,25 +23,20 @@ import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 
 import java.io.IOException;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
-    private static final String PATH = "/v0/entity";
     private static final String INVALID_ID_MESSAGE = "Invalid id";
     private static final int FLUSH_THRESHOLD_BYTES = 4096;
-    private static final Set<Integer> SUPPORTED_METHODS_TYPE = Set.of(
-            Request.METHOD_GET,
-            Request.METHOD_PUT,
-            Request.METHOD_DELETE
-    );
 
     private HttpServer httpServer;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final ValidationService validationService;
     private final ServiceConfig serviceConfig;
 
-    public ServiceImpl(ServiceConfig serviceConfig) {
+    public ServiceImpl(ServiceConfig serviceConfig, ValidationService validationService) throws IOException {
         this.serviceConfig = serviceConfig;
+        this.validationService = validationService;
     }
 
     @Override
@@ -49,11 +44,8 @@ public class ServiceImpl implements Service {
         this.httpServer = new HttpServer(createServerConfig(serviceConfig)) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
-                if (PATH.equals(request.getPath()) && !SUPPORTED_METHODS_TYPE.contains(request.getMethod())) {
-                    session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-                } else {
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                }
+                Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+                session.sendResponse(response);
             }
 
             @Override
@@ -70,8 +62,8 @@ public class ServiceImpl implements Service {
         this.dao = new MemorySegmentDao(
                 new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES)
         );
-        httpServer.addRequestHandlers(this);
         httpServer.start();
+        httpServer.addRequestHandlers(this);
         return CompletableFuture.completedFuture(null);
     }
 
@@ -82,10 +74,10 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path(PATH)
+    @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGetRequest(@Param(value = "id", required = true) String id) {
-        if (!checkId(id)) {
+    public Response handleGetRequest(@Param(value = "id", required = true) String id) throws IOException {
+        if (!validationService.checkId(id)) {
             return createBadRequest(INVALID_ID_MESSAGE);
         }
 
@@ -104,10 +96,10 @@ public class ServiceImpl implements Service {
         }
     }
 
-    @Path(PATH)
+    @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePutRequest(@Param(value = "id", required = true) String id, Request request) {
-        if (!checkId(id)) {
+        if (!validationService.checkId(id)) {
             return createBadRequest(INVALID_ID_MESSAGE);
         }
 
@@ -119,15 +111,15 @@ public class ServiceImpl implements Service {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path(PATH)
+    @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDeleteRequest(@Param(value = "id", required = true) String id) {
-        if (!checkId(id)) {
+        if (!validationService.checkId(id)) {
             return createBadRequest(INVALID_ID_MESSAGE);
         }
 
         MemorySegment memorySegmentId = MemorySegment.ofArray(id.getBytes());
-        Entry<MemorySegment> entry = new BaseEntry<>(memorySegmentId, null);
+        Entry<MemorySegment> entry = new BaseEntry<MemorySegment>(memorySegmentId, null);
         dao.upsert(entry);
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
@@ -152,16 +144,19 @@ public class ServiceImpl implements Service {
         return new Response(Response.INTERNAL_ERROR, Utf8.toBytes(message));
     }
 
-    private static boolean checkId(String id) {
-        return !id.isBlank() && id.chars().noneMatch(Character::isWhitespace);
-    }
-
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 1, week = 1)
     public static class Factory implements ServiceFactory.Factory {
+        private ValidationService createValidationService() {
+            return new ValidationService();
+        }
 
         @Override
         public Service create(ServiceConfig config) {
-            return new ServiceImpl(config);
+            try {
+                return new ServiceImpl(config, createValidationService());
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 }
