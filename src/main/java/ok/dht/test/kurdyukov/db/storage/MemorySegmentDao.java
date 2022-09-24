@@ -93,7 +93,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
 
         if (runFlush) {
-            flushInBg(false);
+            flushInBg(false).isCancelled();
         }
     }
 
@@ -255,10 +255,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
         public TombstoneFilteringIterator(Iterator<Entry<MemorySegment>> iterator) {
             this.iterator = iterator;
-        }
-
-        public Entry<MemorySegment> peek() {
-            return hasNext() ? current : null;
         }
 
         @Override
