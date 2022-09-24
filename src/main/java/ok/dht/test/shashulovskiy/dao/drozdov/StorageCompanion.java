@@ -14,7 +14,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.concurrent.ThreadFactory;
 
 public class StorageCompanion {
     static final long VERSION = 0;
@@ -31,6 +30,11 @@ public class StorageCompanion {
         public synchronized void start() {
             setDaemon(true);
             super.start();
+        }
+
+        @Override
+        public void run() {
+            super.run();
         }
     });
 

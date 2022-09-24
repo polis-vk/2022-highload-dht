@@ -79,7 +79,11 @@ final class Storage implements Closeable {
             }
         }
 
-        Files.move(compactedFile, config.basePath().resolve(StorageCompanion.FILE_NAME + 0 + StorageCompanion.FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
+        Files.move(
+                compactedFile,
+                config.basePath().resolve(StorageCompanion.FILE_NAME + 0 + StorageCompanion.FILE_EXT),
+                StandardCopyOption.ATOMIC_MOVE
+        );
     }
 
     private Storage(ResourceScope scope, List<MemorySegment> sstables, boolean hasTombstones) {
@@ -115,7 +119,10 @@ final class Storage implements Closeable {
         while (left <= right) {
             long mid = (left + right) >>> 1;
 
-            long keyPos = MemoryAccess.getLongAtOffset(sstable, StorageCompanion.INDEX_HEADER_SIZE + mid * StorageCompanion.INDEX_RECORD_SIZE);
+            long keyPos = MemoryAccess.getLongAtOffset(
+                    sstable,
+                    StorageCompanion.INDEX_HEADER_SIZE + mid * StorageCompanion.INDEX_RECORD_SIZE
+            );
             long keySize = MemoryAccess.getLongAtOffset(sstable, keyPos);
 
             MemorySegment keyForCheck = sstable.asSlice(keyPos + Long.BYTES, keySize);
@@ -134,7 +141,10 @@ final class Storage implements Closeable {
 
     private Entry<MemorySegment> entryAt(MemorySegment sstable, long keyIndex) {
         try {
-            long offset = MemoryAccess.getLongAtOffset(sstable, StorageCompanion.INDEX_HEADER_SIZE + keyIndex * StorageCompanion.INDEX_RECORD_SIZE);
+            long offset = MemoryAccess.getLongAtOffset(
+                    sstable,
+                    StorageCompanion.INDEX_HEADER_SIZE + keyIndex * StorageCompanion.INDEX_RECORD_SIZE
+            );
             long keySize = MemoryAccess.getLongAtOffset(sstable, offset);
             long valueOffset = offset + Long.BYTES + keySize;
             long valueSize = MemoryAccess.getLongAtOffset(sstable, valueOffset);
