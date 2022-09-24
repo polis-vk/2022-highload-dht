@@ -1,6 +1,8 @@
 package ok.dht.test.shashulovskiy;
 
 import ok.dht.ServiceConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -10,6 +12,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public final class ServerImpl {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ServerImpl.class);
 
     private ServerImpl() {
         // Only main
@@ -26,10 +30,10 @@ public final class ServerImpl {
                     Files.createTempDirectory("server")
             );
             new ServiceImpl(cfg).start().get(1, TimeUnit.SECONDS);
-            System.out.println("Socket is ready: " + url);
-            System.out.println("Volumes mounted on " + cfg.workingDir());
+            LOG.info("Socket is ready: " + url);
+            LOG.info("Volumes mounted on " + cfg.workingDir());
         } catch (IOException | InterruptedException | ExecutionException | TimeoutException e) {
-            System.err.println("Unable to start server: " + e.getMessage());
+            LOG.error("Unable to start server: " + e.getMessage());
         }
     }
 }

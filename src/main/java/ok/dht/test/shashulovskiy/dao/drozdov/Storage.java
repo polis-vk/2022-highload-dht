@@ -6,6 +6,8 @@ import jdk.incubator.foreign.ResourceScope;
 import ok.dht.test.shashulovskiy.dao.BaseEntry;
 import ok.dht.test.shashulovskiy.dao.Config;
 import ok.dht.test.shashulovskiy.dao.Entry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -18,9 +20,19 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.*;
+import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.CLEANER;
+import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.COMPACTED_FILE;
+import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.Data;
+import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.FILE_EXT;
+import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.FILE_NAME;
+import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.INDEX_HEADER_SIZE;
+import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.INDEX_RECORD_SIZE;
+import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.getSize;
+import static ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion.save;
 
-class Storage implements Closeable {
+final class Storage implements Closeable {
+
+    private static final Logger LOG = LoggerFactory.getLogger(Storage.class);
 
     // supposed to have fresh files first
 
@@ -183,9 +195,9 @@ class Storage implements Closeable {
 
     // last is newer
     // it is ok to mutate list after
-    public ArrayList<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
+    public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
         try {
-            ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
+            List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
             for (MemorySegment sstable : sstables) {
                 iterators.add(iterate(sstable, keyFrom, keyTo));
             }
@@ -211,7 +223,7 @@ class Storage implements Closeable {
                 return;
             } catch (IllegalStateException ignored) {
                 // Ignored
-                System.err.println("Error on closing scope");
+                LOG.error("Error on closing scope");
             }
         }
     }
