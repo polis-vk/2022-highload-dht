@@ -24,7 +24,7 @@ public class Main {
         try {
             service.start().get(10, TimeUnit.SECONDS);
         } catch (InterruptedException | ExecutionException | TimeoutException e) {
-            e.printStackTrace();
+            System.err.println("Fail start service.");;
         }
     }
 }
