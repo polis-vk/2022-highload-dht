@@ -23,11 +23,8 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.http.HttpClient;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.security.CodeSource;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -99,8 +96,9 @@ public @interface ServiceTest {
         public Stream<? extends Arguments> provideArguments(ExtensionContext context) throws Exception {
             List<Class<?>> maxFactories = getFactories(context);
 
+            ServiceFactory firstFactoryAnnotations = maxFactories.get(0).getAnnotation(ServiceFactory.class);
             ServiceTest test = context.getRequiredTestMethod().getAnnotation(ServiceTest.class);
-            if (test.bonusForWeek() != 0) {
+            if (test.stage() == firstFactoryAnnotations.stage() && test.bonusForWeek() == firstFactoryAnnotations.week()) {
                 String testId = context.getRequiredTestMethod().getDeclaringClass().getSimpleName()
                         + "#" + context.getRequiredTestMethod().getName();
                 maxFactories.removeIf(factory -> {
@@ -216,10 +214,11 @@ public @interface ServiceTest {
                 }
                 ServiceTest test = context.getRequiredTestMethod().getAnnotation(ServiceTest.class);
                 int minStage = test.stage();
-                if (minStage > factories.get(0).getAnnotation(ServiceFactory.class).stage()) {
+                ServiceFactory firstFactoryAnnotations = factories.get(0).getAnnotation(ServiceFactory.class);
+                if (minStage > firstFactoryAnnotations.stage()) {
                     return ConditionEvaluationResult.disabled("Implementation is not ready");
                 }
-                if (test.bonusForWeek() != 0) {
+                if (minStage == firstFactoryAnnotations.stage() && test.bonusForWeek() == firstFactoryAnnotations.week()) {
                     String testId = context.getRequiredTestMethod().getDeclaringClass().getSimpleName()
                             + "#" +context.getRequiredTestMethod().getName();
                     for (Class<?> factory : factories) {
