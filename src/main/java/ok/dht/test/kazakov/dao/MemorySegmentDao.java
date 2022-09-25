@@ -180,7 +180,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 return null;
             }
 
-            Storage.compact(
+            StorageHelper.compact(
                     config,
                     () -> MergeIterator.of(
                             freezedState.storage.iterate(VERY_FIRST_KEY,
@@ -414,9 +414,9 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 throw new UnsupportedOperationException("Read-only map");
             }
             final Entry<MemorySegment> segmentEntry = delegate.put(key, entry);
-            long sizeDelta = Storage.getSizeOnDisk(entry);
+            long sizeDelta = StorageHelper.getSizeOnDisk(entry);
             if (segmentEntry != null) {
-                sizeDelta -= Storage.getSizeOnDisk(segmentEntry);
+                sizeDelta -= StorageHelper.getSizeOnDisk(segmentEntry);
             }
             final long newSize = size.addAndGet(sizeDelta);
             if (newSize > sizeThreshold) {
