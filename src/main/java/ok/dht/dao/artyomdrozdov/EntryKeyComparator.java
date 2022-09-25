@@ -1,0 +1,17 @@
+package ok.dht.dao.artyomdrozdov;
+
+import java.util.Comparator;
+import jdk.incubator.foreign.MemorySegment;
+
+public class EntryKeyComparator implements Comparator<Entry<MemorySegment>> {
+
+    public static final Comparator<Entry<MemorySegment>> INSTANCE = new EntryKeyComparator();
+
+    private EntryKeyComparator() {
+    }
+
+    @Override
+    public int compare(Entry<MemorySegment> o1, Entry<MemorySegment> o2) {
+        return MemorySegmentComparator.INSTANCE.compare(o1.key(), o2.key());
+    }
+}
