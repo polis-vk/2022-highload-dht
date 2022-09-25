@@ -5,7 +5,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutionException;
@@ -97,8 +101,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         while (true) {
             upsertLock.writeLock().lock();
             try {
-                State state = accessState();
-                if (state.isFlushing()) {
+                State freezedState = accessState();
+                if (freezedState.isFlushing()) {
                     if (tolerateFlushInProgress) {
                         // or any other completed future
                         return CompletableFuture.completedFuture(null);
@@ -106,8 +110,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                     continue;
                 }
 
-                state = state.prepareForFlush();
-                this.state = state;
+                freezedState = freezedState.prepareForFlush();
+                this.state = freezedState;
                 break;
             } finally {
                 upsertLock.writeLock().unlock();
@@ -206,14 +210,19 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         try {
             future.get();
         } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new RuntimeException(e);
         } catch (final ExecutionException e) {
-            try {
-                throw e.getCause();
-            } catch (final RuntimeException | IOException | Error r) {
-                throw r;
-            } catch (final Throwable t) {
-                throw new RuntimeException(t);
+            final Throwable cause = e.getCause();
+
+            if (cause instanceof RuntimeException) {
+                throw (RuntimeException) cause;
+            } else if (cause instanceof IOException) {
+                throw (IOException) cause;
+            } else if (cause instanceof Error) {
+                throw (Error) cause;
+            } else {
+                throw new RuntimeException(cause);
             }
         }
     }
@@ -228,25 +237,28 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public synchronized void close() throws IOException {
-        State state = this.state;
-        if (state.closed) {
+        State freezedState = this.state;
+        if (freezedState.closed) {
             return;
         }
         executor.shutdown();
         try {
-            while (!executor.awaitTermination(10, TimeUnit.DAYS)) {
-                // no operations
+            while (true) {
+                if (executor.awaitTermination(10, TimeUnit.DAYS)) {
+                    break;
+                }
             }
         } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
         }
-        state = this.state;
-        state.storage.close();
-        this.state = state.afterClosed();
-        if (state.memory.isEmpty()) {
+        freezedState = this.state;
+        freezedState.storage.close();
+        this.state = freezedState.afterClosed();
+        if (freezedState.memory.isEmpty()) {
             return;
         }
-        Storage.save(config, state.storage, state.memory.values());
+        Storage.save(config, freezedState.storage, freezedState.memory.values());
     }
 
     private static class TombstoneFilteringIterator implements Iterator<Entry<MemorySegment>> {

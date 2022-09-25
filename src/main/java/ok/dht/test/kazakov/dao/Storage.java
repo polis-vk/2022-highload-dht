@@ -18,20 +18,14 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.ThreadFactory;
 
 class Storage implements Closeable {
 
-    private static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
+    private static final Cleaner CLEANER = Cleaner.create((runnable) -> new Thread(runnable, "Storage-Cleaner") {
         @Override
-        public Thread newThread(final Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
-                @Override
-                public synchronized void start() {
-                    setDaemon(true);
-                    super.start();
-                }
-            };
+        public synchronized void start() {
+            setDaemon(true);
+            super.start();
         }
     });
 
@@ -62,14 +56,15 @@ class Storage implements Closeable {
         final ArrayList<MemorySegment> sstables = new ArrayList<>();
         final ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
-        // FIXME check existing files
-        for (int i = 0; ; i++) {
+        int i = 0;
+        while (true) {
             final Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));
             } catch (final NoSuchFileException e) {
                 break;
             }
+            i++;
         }
 
         final boolean hasTombstones = !sstables.isEmpty() && MemoryAccess.getLongAtOffset(sstables.get(0), 16) == 1;
@@ -96,12 +91,11 @@ class Storage implements Closeable {
         Files.deleteIfExists(sstableTmpPath);
         Files.createFile(sstableTmpPath);
 
-        try (final ResourceScope writeScope = ResourceScope.newConfinedScope()) {
+        try (@SuppressWarnings("LocalCanBeFinal") ResourceScope writeScope = ResourceScope.newConfinedScope()) {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (final Iterator<Entry<MemorySegment>> iterator = entries.getIterator(); iterator.hasNext(); ) {
-                final Entry<MemorySegment> entry = iterator.next();
+            for (final Entry<MemorySegment> entry : new IterableIteratorWrapper<>(entries.getIterator())) {
                 size += getSize(entry);
                 if (entry.isTombstone()) {
                     hasTombstone = true;
@@ -121,8 +115,7 @@ class Storage implements Closeable {
 
             long index = 0;
             long offset = dataStart;
-            for (final Iterator<Entry<MemorySegment>> iterator = entries.getIterator(); iterator.hasNext(); ) {
-                final Entry<MemorySegment> entry = iterator.next();
+            for (final Entry<MemorySegment> entry : new IterableIteratorWrapper<>(entries.getIterator())) {
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
                 offset += writeRecord(nextSSTable, offset, entry.key());
@@ -165,7 +158,8 @@ class Storage implements Closeable {
     }
 
     @SuppressWarnings("DuplicateThrows")
-    private static MemorySegment mapForRead(final ResourceScope scope, final Path file) throws NoSuchFileException, IOException {
+    private static MemorySegment mapForRead(final ResourceScope scope,
+                                            final Path file) throws NoSuchFileException, IOException {
         final long size = Files.size(file);
 
         return MemorySegment.mapFile(file, 0, size, FileChannel.MapMode.READ_ONLY, scope);
@@ -211,7 +205,6 @@ class Storage implements Closeable {
         }
         final long recordsCount = MemoryAccess.getLongAtOffset(sstable, 8);
         if (key == null) {
-            // fixme
             return recordsCount;
         }
 
