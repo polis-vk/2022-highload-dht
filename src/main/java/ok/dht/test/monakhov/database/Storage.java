@@ -23,18 +23,14 @@ import static ok.dht.test.monakhov.database.StorageUtils.writeRecord;
 
 class Storage implements Closeable {
 
-    private static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
-        @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
-                @Override
-                public synchronized void start() {
-                    setDaemon(true);
-                    super.start();
-                }
-            };
+    private static final Cleaner CLEANER = Cleaner.create(runnable -> new Thread(runnable, "Storage-Cleaner") {
+            @Override
+            public synchronized void start() {
+                setDaemon(true);
+                super.start();
+            }
         }
-    });
+    );
 
     private static final long VERSION = 0;
     private static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
@@ -71,8 +67,8 @@ class Storage implements Closeable {
 
     // it is supposed that entries can not be changed externally during this method call
     static void save(Config config, Storage previousState, Collection<Entry<MemorySegment>> entries)
-        throws IOException
-    {
+        throws IOException {
+
         int nextSSTableIndex = previousState.sstables.size();
         Path sstablePath = config.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
         save(entries::iterator, sstablePath);
@@ -143,7 +139,7 @@ class Storage implements Closeable {
         Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
     }
 
-    private Storage(ResourceScope scope, ArrayList<MemorySegment> sstables, boolean hasTombstones) {
+    private Storage(ResourceScope scope, List<MemorySegment> sstables, boolean hasTombstones) {
         this.scope = scope;
         this.sstables = sstables;
         this.hasTombstones = hasTombstones;
@@ -243,7 +239,7 @@ class Storage implements Closeable {
 
     // last is newer
     // it is ok to mutate list after
-    public ArrayList<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
+    public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
         try {
             ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
             for (MemorySegment sstable : sstables) {

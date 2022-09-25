@@ -5,8 +5,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -46,7 +46,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     private TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment from, MemorySegment to) {
         State accessState = accessState();
 
-        ArrayList<Iterator<Entry<MemorySegment>>> iterators = accessState.storage.iterate(from, to);
+        List<Iterator<Entry<MemorySegment>>> iterators = accessState.storage.iterate(from, to);
 
         iterators.add(accessState.flushing.get(from, to));
         iterators.add(accessState.memory.get(from, to));
@@ -211,7 +211,9 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         executor.shutdown();
         try {
             //noinspection StatementWithEmptyBody
-            while (!executor.awaitTermination(10, TimeUnit.DAYS));
+            while (!executor.awaitTermination(10, TimeUnit.DAYS)) {
+                // no operation
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
