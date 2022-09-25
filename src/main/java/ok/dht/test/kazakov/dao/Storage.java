@@ -6,6 +6,7 @@ import jdk.incubator.foreign.ResourceScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nonnull;
 import java.io.Closeable;
 import java.io.IOException;
 import java.lang.ref.Cleaner;
@@ -18,16 +19,11 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.ThreadFactory;
 
 class Storage implements Closeable {
 
-    private static final Cleaner CLEANER = Cleaner.create((runnable) -> new Thread(runnable, "Storage-Cleaner") {
-        @Override
-        public synchronized void start() {
-            setDaemon(true);
-            super.start();
-        }
-    });
+    private static final Cleaner CLEANER = Cleaner.create(new CleanerThreadFactory());
 
     private static final long VERSION = 0;
     private static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
@@ -57,12 +53,13 @@ class Storage implements Closeable {
         final ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
         int i = 0;
-        while (true) {
+        boolean loadedAll = false;
+        while (!loadedAll) {
             final Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));
             } catch (final NoSuchFileException e) {
-                break;
+                loadedAll = true;
             }
             i++;
         }
@@ -338,6 +335,16 @@ class Storage implements Closeable {
 
     public interface Data {
         Iterator<Entry<MemorySegment>> getIterator() throws IOException;
+    }
+
+    private static final class CleanerThreadFactory implements ThreadFactory {
+
+        @Override
+        public Thread newThread(@Nonnull final Runnable r) {
+            final Thread thread = new Thread(r, "Storage-Cleaner");
+            thread.setDaemon(true);
+            return thread;
+        }
     }
 
 }
