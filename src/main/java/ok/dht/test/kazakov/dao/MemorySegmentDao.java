@@ -7,7 +7,6 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -207,7 +206,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             } else if (cause instanceof Error) {
                 throw (Error) cause;
             } else {
-                throw new IllegalStateException("Unknown exception was thrown", cause);
+                throw new IllegalStateException("Unknown exception was thrown", e);
             }
         }
     }
