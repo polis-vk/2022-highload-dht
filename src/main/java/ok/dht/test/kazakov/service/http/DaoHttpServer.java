@@ -1,6 +1,10 @@
 package ok.dht.test.kazakov.service.http;
 
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Request;
+import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -9,7 +13,7 @@ import java.io.IOException;
 
 public class DaoHttpServer extends HttpServer {
 
-    private final Logger LOG = LoggerFactory.getLogger(DaoHttpServer.class);
+    private static final Logger LOG = LoggerFactory.getLogger(DaoHttpServer.class);
 
     // package-private in one-nio, so copy-pasted here
     private static final String[] METHODS = {

@@ -17,6 +17,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.ThreadFactory;
 
 class Storage implements Closeable {
@@ -44,6 +45,12 @@ class Storage implements Closeable {
     private static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
 
     private static final Logger LOG = LoggerFactory.getLogger(Storage.class);
+
+    // supposed to have fresh files first
+
+    private final ResourceScope scope;
+    private final List<MemorySegment> sstables;
+    private final boolean hasTombstones;
 
     static Storage load(final Config config) throws IOException {
         final Path basePath = config.basePath();
@@ -93,7 +100,7 @@ class Storage implements Closeable {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (final Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
+            for (final Iterator<Entry<MemorySegment>> iterator = entries.getIterator(); iterator.hasNext(); ) {
                 final Entry<MemorySegment> entry = iterator.next();
                 size += getSize(entry);
                 if (entry.isTombstone()) {
@@ -114,7 +121,7 @@ class Storage implements Closeable {
 
             long index = 0;
             long offset = dataStart;
-            for (final Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
+            for (final Iterator<Entry<MemorySegment>> iterator = entries.getIterator(); iterator.hasNext(); ) {
                 final Entry<MemorySegment> entry = iterator.next();
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
@@ -181,13 +188,7 @@ class Storage implements Closeable {
         Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
     }
 
-    // supposed to have fresh files first
-
-    private final ResourceScope scope;
-    private final ArrayList<MemorySegment> sstables;
-    private final boolean hasTombstones;
-
-    private Storage(final ResourceScope scope, final ArrayList<MemorySegment> sstables, final boolean hasTombstones) {
+    private Storage(final ResourceScope scope, final List<MemorySegment> sstables, final boolean hasTombstones) {
         this.scope = scope;
         this.sstables = sstables;
         this.hasTombstones = hasTombstones;
@@ -267,7 +268,9 @@ class Storage implements Closeable {
         }
     }
 
-    private Iterator<Entry<MemorySegment>> iterate(final MemorySegment sstable, final MemorySegment keyFrom, final MemorySegment keyTo) {
+    private Iterator<Entry<MemorySegment>> iterate(final MemorySegment sstable,
+                                                   final MemorySegment keyFrom,
+                                                   final MemorySegment keyTo) {
         final long keyFromPos = greaterOrEqualEntryIndex(sstable, keyFrom);
         final long keyToPos = greaterOrEqualEntryIndex(sstable, keyTo);
 
@@ -290,9 +293,9 @@ class Storage implements Closeable {
 
     // last is newer
     // it is ok to mutate list after
-    public ArrayList<Iterator<Entry<MemorySegment>>> iterate(final MemorySegment keyFrom, final MemorySegment keyTo) {
+    public List<Iterator<Entry<MemorySegment>>> iterate(final MemorySegment keyFrom, final MemorySegment keyTo) {
         try {
-            final ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
+            final List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
             for (final MemorySegment sstable : sstables) {
                 iterators.add(iterate(sstable, keyFrom, keyTo));
             }
@@ -323,7 +326,7 @@ class Storage implements Closeable {
     }
 
     public void maybeClose() {
-
+        // no operations
     }
 
     public boolean isClosed() {
@@ -341,7 +344,7 @@ class Storage implements Closeable {
     }
 
     public interface Data {
-        Iterator<Entry<MemorySegment>> iterator() throws IOException;
+        Iterator<Entry<MemorySegment>> getIterator() throws IOException;
     }
 
 }

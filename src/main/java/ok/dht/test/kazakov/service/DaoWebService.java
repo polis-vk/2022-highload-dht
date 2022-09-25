@@ -1,13 +1,19 @@
 package ok.dht.test.kazakov.service;
 
-import ok.dht.test.kazakov.dao.Config;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.kazakov.dao.Config;
 import ok.dht.test.kazakov.dao.MemorySegmentDao;
 import ok.dht.test.kazakov.service.http.DaoHttpServer;
 import ok.dht.test.kazakov.service.validation.DaoRequestsValidatorBuilder;
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,9 +31,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class DaoWebService implements Service {
 
-    private final static Logger LOG = LoggerFactory.getLogger(DaoWebService.class);
-    private final static int ASYNC_EXECUTOR_THREADS = 1;
-    private final static int FLUSH_THRESHOLD_BYTES = 32 * 1024;
+    private static final Logger LOG = LoggerFactory.getLogger(DaoWebService.class);
+    private static final int ASYNC_EXECUTOR_THREADS = 1;
+    private static final int FLUSH_THRESHOLD_BYTES = 32 * 1024;
 
     private final ServiceConfig config;
     private final Clock clock;
@@ -59,7 +65,9 @@ public class DaoWebService implements Service {
         return runOnAsyncExecutor(() -> {
             final long measureTimeFrom = clock.millis();
             try {
-                final MemorySegmentDao dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+                final MemorySegmentDao dao = new MemorySegmentDao(
+                        new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES)
+                );
                 daoService = new DaoService(dao);
                 daoRequestsValidatorBuilder = new DaoRequestsValidatorBuilder();
 

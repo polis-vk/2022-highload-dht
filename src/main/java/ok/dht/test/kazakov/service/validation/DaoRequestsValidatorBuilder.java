@@ -7,7 +7,7 @@ public final class DaoRequestsValidatorBuilder {
         return validator.get().setValid();
     }
 
-    public final static class Validator extends AbstractValidator<Validator> {
+    public static final class Validator extends AbstractValidator<Validator> {
 
         @Override
         protected Validator getSelf() {
