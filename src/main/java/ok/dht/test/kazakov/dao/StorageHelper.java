@@ -4,19 +4,14 @@ import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;
 import jdk.incubator.foreign.ResourceScope;
 
-import javax.annotation.Nonnull;
 import java.io.IOException;
-import java.lang.ref.Cleaner;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.concurrent.ThreadFactory;
 
-public class StorageHelper {
+public final class StorageHelper {
 
     private static final long VERSION = 0;
 
@@ -27,6 +22,10 @@ public class StorageHelper {
 
     static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
     static final int INDEX_RECORD_SIZE = Long.BYTES;
+
+    private StorageHelper() {
+        throw new UnsupportedOperationException();
+    }
 
     static void save(
             final Storage.Data entries,

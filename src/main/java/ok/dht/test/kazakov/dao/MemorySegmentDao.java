@@ -5,20 +5,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -33,45 +29,41 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     private final ExecutorService executor = Executors.newSingleThreadExecutor(
             r -> new Thread(r, "MemorySegmentDaoBG"));
 
-    private volatile State state;
+    private volatile DaoState state;
 
     private final Config config;
 
     public MemorySegmentDao(final Config config) throws IOException {
         this.config = config;
-        this.state = State.newState(config, Storage.load(config));
+        this.state = DaoState.newState(config, Storage.load(config));
     }
 
     @Override
     public Iterator<Entry<MemorySegment>> get(final MemorySegment from, final MemorySegment to) {
         final MemorySegment internalFrom;
         internalFrom = Objects.requireNonNullElse(from, VERY_FIRST_KEY);
-
         return getTombstoneFilteringIterator(internalFrom, to);
     }
 
     private TombstoneFilteringIterator getTombstoneFilteringIterator(final MemorySegment from, final MemorySegment to) {
-        final State freezedState = accessState();
+        final DaoState freezedState = accessState();
 
         final List<Iterator<Entry<MemorySegment>>> iterators = freezedState.storage.iterate(from, to);
-
         iterators.add(freezedState.flushing.get(from, to));
         iterators.add(freezedState.memory.get(from, to));
 
         final Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
-
         return new TombstoneFilteringIterator(mergeIterator);
     }
 
     @Override
     public Entry<MemorySegment> get(final MemorySegment key) {
-        final State freezedState = accessState();
+        final DaoState freezedState = accessState();
 
         Entry<MemorySegment> result = freezedState.memory.get(key);
         if (result == null) {
             result = freezedState.flushing.get(key);
         }
-
         if (result == null) {
             result = freezedState.storage.get(key);
         }
@@ -81,7 +73,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public void upsert(final Entry<MemorySegment> entry) {
-        final State freezedState = accessState();
+        final DaoState freezedState = accessState();
 
         boolean runFlush;
         // it is intentionally the read lock!!!
@@ -101,7 +93,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         while (true) {
             upsertLock.writeLock().lock();
             try {
-                State freezedState = accessState();
+                DaoState freezedState = accessState();
                 if (freezedState.isFlushing()) {
                     if (tolerateFlushInProgress) {
                         // or any other completed future
@@ -120,7 +112,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
         return executor.submit(() -> {
             try {
-                final State freezedState = accessState();
+                final DaoState freezedState = accessState();
 
                 final Storage storage = freezedState.storage;
                 Storage.save(config, storage, freezedState.flushing.values());
@@ -167,31 +159,25 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public void compact() throws IOException {
-        final State preCompactState = accessState();
-
+        final DaoState preCompactState = accessState();
         if (preCompactState.memory.isEmpty() && preCompactState.storage.isCompacted()) {
             return;
         }
 
         final Future<Object> future = executor.submit(() -> {
-            final State freezedState = accessState();
-
+            final DaoState freezedState = accessState();
             if (freezedState.memory.isEmpty() && freezedState.storage.isCompacted()) {
                 return null;
             }
-
             StorageHelper.compact(
                     config,
                     () -> MergeIterator.of(
-                            freezedState.storage.iterate(VERY_FIRST_KEY,
-                                    null
-                            ),
+                            freezedState.storage.iterate(VERY_FIRST_KEY, null),
                             EntryKeyComparator.INSTANCE
                     )
             );
 
             final Storage storage = Storage.load(config);
-
             upsertLock.writeLock().lock();
             try {
                 this.state = freezedState.afterCompact(storage);
@@ -202,7 +188,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             freezedState.storage.maybeClose();
             return null;
         });
-
         awaitAndUnwrap(future);
     }
 
@@ -222,15 +207,13 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             } else if (cause instanceof Error) {
                 throw (Error) cause;
             } else {
-                final RuntimeException runtimeException = new RuntimeException("Unknown exception was thrown");
-                runtimeException.addSuppressed(cause);
-                throw runtimeException;
+                throw new IllegalStateException("Unknown exception was thrown", cause);
             }
         }
     }
 
-    private State accessState() {
-        final State freezedState = this.state;
+    private DaoState accessState() {
+        final DaoState freezedState = this.state;
         if (freezedState.closed) {
             throw new IllegalStateException("Dao is already closed");
         }
@@ -239,7 +222,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public synchronized void close() throws IOException {
-        State freezedState = this.state;
+        DaoState freezedState = this.state;
         if (freezedState.closed) {
             return;
         }
@@ -261,182 +244,5 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             return;
         }
         Storage.save(config, freezedState.storage, freezedState.memory.values());
-    }
-
-    private static class TombstoneFilteringIterator implements Iterator<Entry<MemorySegment>> {
-        private final Iterator<Entry<MemorySegment>> iterator;
-        private Entry<MemorySegment> current;
-
-        public TombstoneFilteringIterator(final Iterator<Entry<MemorySegment>> iterator) {
-            this.iterator = iterator;
-        }
-
-        @Override
-        public boolean hasNext() {
-            if (current != null) {
-                return true;
-            }
-
-            while (iterator.hasNext()) {
-                final Entry<MemorySegment> entry = iterator.next();
-                if (!entry.isTombstone()) {
-                    this.current = entry;
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        @Override
-        public Entry<MemorySegment> next() {
-            if (!hasNext()) {
-                throw new NoSuchElementException("...");
-            }
-            final Entry<MemorySegment> next = current;
-            current = null;
-            return next;
-        }
-    }
-
-    private static class State {
-        final Config config;
-        final Memory memory;
-        final Memory flushing;
-        final Storage storage;
-        final boolean closed;
-
-        State(final Config config, final Memory memory, final Memory flushing, final Storage storage) {
-            this.config = config;
-            this.memory = memory;
-            this.flushing = flushing;
-            this.storage = storage;
-            this.closed = false;
-        }
-
-        State(final Config config, final Storage storage, final boolean closed) {
-            this.config = config;
-            this.memory = Memory.EMPTY;
-            this.flushing = Memory.EMPTY;
-            this.storage = storage;
-            this.closed = closed;
-        }
-
-        static State newState(final Config config, final Storage storage) {
-            return new State(
-                    config,
-                    new Memory(config.flushThresholdBytes()),
-                    Memory.EMPTY,
-                    storage
-            );
-        }
-
-        public State prepareForFlush() {
-            checkNotClosed();
-            if (isFlushing()) {
-                throw new IllegalStateException("Already flushing");
-            }
-            return new State(
-                    config,
-                    new Memory(config.flushThresholdBytes()),
-                    memory,
-                    storage
-            );
-        }
-
-        public State afterFlush(final Storage storage) {
-            checkNotClosed();
-            if (!isFlushing()) {
-                throw new IllegalStateException("Wasn't flushing");
-            }
-            return new State(
-                    config,
-                    memory,
-                    Memory.EMPTY,
-                    storage
-            );
-        }
-
-        public State afterCompact(final Storage storage) {
-            checkNotClosed();
-            return new State(
-                    config,
-                    memory,
-                    flushing,
-                    storage
-            );
-        }
-
-        public State afterClosed() {
-            checkNotClosed();
-            if (!storage.isClosed()) {
-                throw new IllegalStateException("Storage should be closed early");
-            }
-            return new State(config, storage, true);
-        }
-
-        public void checkNotClosed() {
-            if (closed) {
-                throw new IllegalStateException("Already closed");
-            }
-        }
-
-        public boolean isFlushing() {
-            return this.flushing != Memory.EMPTY;
-        }
-    }
-
-    private static class Memory {
-
-        static final Memory EMPTY = new Memory(-1);
-        private final AtomicLong size = new AtomicLong();
-        private final AtomicBoolean oversized = new AtomicBoolean();
-
-        private final ConcurrentSkipListMap<MemorySegment, Entry<MemorySegment>> delegate =
-                new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
-
-        private final long sizeThreshold;
-
-        Memory(final long sizeThreshold) {
-            this.sizeThreshold = sizeThreshold;
-        }
-
-        public boolean isEmpty() {
-            return delegate.isEmpty();
-        }
-
-        public Collection<Entry<MemorySegment>> values() {
-            return delegate.values();
-        }
-
-        public boolean put(final MemorySegment key, final Entry<MemorySegment> entry) {
-            if (sizeThreshold == -1) {
-                throw new UnsupportedOperationException("Read-only map");
-            }
-            final Entry<MemorySegment> segmentEntry = delegate.put(key, entry);
-            long sizeDelta = StorageHelper.getSizeOnDisk(entry);
-            if (segmentEntry != null) {
-                sizeDelta -= StorageHelper.getSizeOnDisk(segmentEntry);
-            }
-            final long newSize = size.addAndGet(sizeDelta);
-            if (newSize > sizeThreshold) {
-                return !oversized.getAndSet(true);
-            }
-            return false;
-        }
-
-        public boolean overflow() {
-            return !oversized.getAndSet(true);
-        }
-
-        public Iterator<Entry<MemorySegment>> get(final MemorySegment from, final MemorySegment to) {
-            return to == null
-                    ? delegate.tailMap(from).values().iterator()
-                    : delegate.subMap(from, to).values().iterator();
-        }
-
-        public Entry<MemorySegment> get(final MemorySegment key) {
-            return delegate.get(key);
-        }
     }
 }
