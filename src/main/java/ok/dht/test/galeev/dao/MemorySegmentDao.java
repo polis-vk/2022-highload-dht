@@ -1,6 +1,16 @@
 package ok.dht.test.galeev.dao;
 
 import jdk.incubator.foreign.MemorySegment;
+import ok.dht.test.galeev.dao.entry.Entry;
+import ok.dht.test.galeev.dao.iterators.MergeIterator;
+import ok.dht.test.galeev.dao.iterators.PriorityPeekingIterator;
+import ok.dht.test.galeev.dao.iterators.TombstoneRemoverIterator;
+import ok.dht.test.galeev.dao.utils.DBReader;
+import ok.dht.test.galeev.dao.utils.DaoConfig;
+import ok.dht.test.galeev.dao.utils.FileDBWriter;
+import ok.dht.test.galeev.dao.utils.Memory;
+import ok.dht.test.galeev.dao.utils.MemorySegmentComparator;
+import ok.dht.test.galeev.dao.utils.State;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -17,10 +27,10 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static java.util.concurrent.Executors.newSingleThreadExecutor;
 
-public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>> {
+public class MemorySegmentDao {
 
     private final ReadWriteLock memoryLock;
-    private final Config config;
+    private final DaoConfig daoConfig;
     private final AtomicLong newFileId;
     private final ExecutorService flushExecutor;
     private final ExecutorService compactExecutor;
@@ -28,9 +38,9 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     private Future<?> compactFuture;
     private Future<?> flushFuture;
 
-    public MemorySegmentDao(Config config) throws IOException {
-        this.config = config;
-        state = new State(false, new Memory(), null, new DBReader(config.basePath()));
+    public MemorySegmentDao(DaoConfig daoConfig) throws IOException {
+        this.daoConfig = daoConfig;
+        state = new State(false, new Memory(), null, new DBReader(daoConfig.basePath()));
         memoryLock = new ReentrantReadWriteLock();
         newFileId = new AtomicLong(state.storage.getBiggestFileId() + 1);
 
@@ -38,15 +48,14 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         compactExecutor = newSingleThreadExecutor(runnable -> new Thread(runnable, "DAO: compact thread "));
     }
 
-    @Override
-    public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
+    public Iterator<Entry<MemorySegment, MemorySegment>> get(MemorySegment from, MemorySegment to) {
         State currentState = state;
-        Iterator<Entry<MemorySegment>> dataBaseIterator = currentState.memory.get(from, to);
+        Iterator<Entry<MemorySegment, MemorySegment>> dataBaseIterator = currentState.memory.get(from, to);
 
         if (currentState.storage.hasNoReaders() && (state.flushing == null || state.flushing.isEmpty())) {
             return new TombstoneRemoverIterator(new PriorityPeekingIterator<>(1, dataBaseIterator));
         } else {
-            Iterator<Entry<MemorySegment>> flushingIterator;
+            Iterator<Entry<MemorySegment, MemorySegment>> flushingIterator;
             if (currentState.flushing == null) {
                 flushingIterator = Collections.emptyIterator();
             } else {
@@ -64,11 +73,10 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
     }
 
-    @Override
-    public Entry<MemorySegment> get(MemorySegment key) {
+    public Entry<MemorySegment, MemorySegment> get(MemorySegment key) {
         State currentState = state;
 
-        Entry<MemorySegment> entry = currentState.memory.get(key);
+        Entry<MemorySegment, MemorySegment> entry = currentState.memory.get(key);
         if (entry == null) {
             if (!(currentState.flushing == null)) {
                 entry = currentState.flushing.get(key);
@@ -77,12 +85,11 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         if (!(entry == null)) {
             return entry.value() == null ? null : entry;
         }
-        // TODO storage may be closed
+        // storage may be closed
         return currentState.storage.get(key);
     }
 
-    @Override
-    public void upsert(Entry<MemorySegment> entry) {
+    public void upsert(Entry<MemorySegment, MemorySegment> entry) {
         long byteSize;
         memoryLock.readLock().lock();
         try {
@@ -90,8 +97,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         } finally {
             memoryLock.readLock().unlock();
         }
-        if (byteSize > config.flushThresholdBytes()
-                && state.memory.byteSize.compareAndSet(byteSize, 0)) {
+        if (byteSize > daoConfig.flushThresholdBytes()
+                && state.memory.getByteSize().compareAndSet(byteSize, 0)) {
             try {
                 flush();
             } catch (IOException e) {
@@ -101,7 +108,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
     }
 
-    @Override
     public void compact() throws IOException {
         if (state.storage.hasNoReaders()) {
             return;
@@ -122,7 +128,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                         memoryLock.writeLock().lock();
                         try {
                             currentState.storage.clear();
-                            this.state = state.afterCompact(new DBReader(config.basePath()));
+                            this.state = state.afterCompact(new DBReader(daoConfig.basePath()));
                         } finally {
                             memoryLock.writeLock().unlock();
                         }
@@ -136,7 +142,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         });
     }
 
-    @Override
     public synchronized void flush() throws IOException {
         State currentState = this.state;
         if (currentState.memory.isEmpty()) {
@@ -171,7 +176,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         flushFuture = flushExecutor.submit(this::bgFlush);
     }
 
-    @Override
     public void close() throws IOException {
         awaitFuture(compactFuture);
         compactExecutor.shutdown();
@@ -198,7 +202,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     }
 
     private Path getNewFileName() {
-        return config.basePath().resolve(newFileId.getAndIncrement() + ".txt");
+        return daoConfig.basePath().resolve(newFileId.getAndIncrement() + ".txt");
     }
 
     private void bgFlush() {
@@ -208,7 +212,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 writer.writeIterable(state.flushing.values());
                 memoryLock.writeLock().lock();
                 try {
-                    this.state = state.afterFlush(new DBReader(config.basePath()));
+                    this.state = state.afterFlush(new DBReader(daoConfig.basePath()));
                 } finally {
                     memoryLock.writeLock().unlock();
                 }

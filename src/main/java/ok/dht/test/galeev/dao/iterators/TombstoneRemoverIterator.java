@@ -1,14 +1,15 @@
-package ok.dht.test.galeev.dao;
+package ok.dht.test.galeev.dao.iterators;
 
 import jdk.incubator.foreign.MemorySegment;
+import ok.dht.test.galeev.dao.entry.Entry;
 
 import java.util.Iterator;
 
-class TombstoneRemoverIterator implements Iterator<Entry<MemorySegment>> {
+public class TombstoneRemoverIterator implements Iterator<Entry<MemorySegment, MemorySegment>> {
 
-    private final PriorityPeekingIterator<Entry<MemorySegment>> peekingIterator;
+    private final PriorityPeekingIterator<Entry<MemorySegment, MemorySegment>> peekingIterator;
 
-    public TombstoneRemoverIterator(PriorityPeekingIterator<Entry<MemorySegment>> peekingIterator) {
+    public TombstoneRemoverIterator(PriorityPeekingIterator<Entry<MemorySegment, MemorySegment>> peekingIterator) {
         this.peekingIterator = peekingIterator;
     }
 
@@ -19,7 +20,7 @@ class TombstoneRemoverIterator implements Iterator<Entry<MemorySegment>> {
     }
 
     @Override
-    public Entry<MemorySegment> next() {
+    public Entry<MemorySegment, MemorySegment> next() {
         deleteNullEntries();
         return peekingIterator.next();
     }

@@ -1,4 +1,4 @@
-package ok.dht.test.galeev.dao;
+package ok.dht.test.galeev.dao.iterators;
 
 import java.util.Iterator;
 

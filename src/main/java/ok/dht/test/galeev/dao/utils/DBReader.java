@@ -1,6 +1,9 @@
-package ok.dht.test.galeev.dao;
+package ok.dht.test.galeev.dao.utils;
 
 import jdk.incubator.foreign.MemorySegment;
+import ok.dht.test.galeev.dao.iterators.MergeIterator;
+import ok.dht.test.galeev.dao.iterators.PriorityPeekingIterator;
+import ok.dht.test.galeev.dao.entry.Entry;
 
 import java.io.IOException;
 import java.nio.file.FileSystemException;
@@ -51,11 +54,11 @@ public class DBReader implements AutoCloseable {
         return fileReaders.last().getFileID();
     }
 
-    public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
+    public Iterator<Entry<MemorySegment, MemorySegment>> get(MemorySegment from, MemorySegment to) {
         if (fileReaders.isEmpty()) {
             return Collections.emptyIterator();
         }
-        List<PriorityPeekingIterator<Entry<MemorySegment>>> iterators = new ArrayList<>(fileReaders.size());
+        List<PriorityPeekingIterator<Entry<MemorySegment, MemorySegment>>> iterators = new ArrayList<>(fileReaders.size());
         for (FileDBReader reader : fileReaders) {
             FileDBReader.FileIterator fromToIterator = reader.getFromToIterator(from, to);
             if (fromToIterator.hasNext()) {
@@ -65,9 +68,9 @@ public class DBReader implements AutoCloseable {
         return new MergeIterator<>(iterators, MemorySegmentComparator.INSTANCE);
     }
 
-    public Entry<MemorySegment> get(MemorySegment key) {
+    public Entry<MemorySegment, MemorySegment> get(MemorySegment key) {
         for (FileDBReader fileDBReader : fileReaders.descendingSet()) {
-            Entry<MemorySegment> entryByKey = fileDBReader.getEntryByKey(key);
+            Entry<MemorySegment, MemorySegment> entryByKey = fileDBReader.getEntryByKey(key);
             if (entryByKey != null) {
                 return entryByKey.value() == null ? null : entryByKey;
             }

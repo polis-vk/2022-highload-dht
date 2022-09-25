@@ -1,8 +1,8 @@
-package ok.dht.test.galeev.dao;
+package ok.dht.test.galeev.dao.utils;
 
 import java.nio.file.Path;
 
-public record Config(
+public record DaoConfig(
         Path basePath,
         long flushThresholdBytes) {
 }

@@ -1,25 +1,26 @@
-package ok.dht.test.galeev.dao;
+package ok.dht.test.galeev.dao.utils;
 
 import jdk.incubator.foreign.MemorySegment;
+import ok.dht.test.galeev.dao.entry.Entry;
 
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static ru.mail.polis.arturgaleev.FileDBWriter.getEntryLength;
-import static ru.mail.polis.arturgaleev.MemorySegmentComparator.INSTANCE;
+import static ok.dht.test.galeev.dao.utils.FileDBWriter.getEntryLength;
+import static ok.dht.test.galeev.dao.utils.MemorySegmentComparator.INSTANCE;
 
 public class Memory {
-    final AtomicLong byteSize;
-    private final ConcurrentSkipListMap<MemorySegment, Entry<MemorySegment>> delegate;
+    private final AtomicLong byteSize;
+    private final ConcurrentSkipListMap<MemorySegment, Entry<MemorySegment, MemorySegment>> delegate;
 
     public Memory() {
-        delegate = new ConcurrentSkipListMap<>(INSTANCE);
+        delegate = new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
         byteSize = new AtomicLong();
     }
 
-    public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
+    public Iterator<Entry<MemorySegment, MemorySegment>> get(MemorySegment from, MemorySegment to) {
         if (from == null && to == null) {
             return delegate.values().iterator();
         } else if (from != null && to == null) {
@@ -31,12 +32,12 @@ public class Memory {
         }
     }
 
-    public Entry<MemorySegment> get(MemorySegment key) {
+    public Entry<MemorySegment, MemorySegment> get(MemorySegment key) {
         return delegate.get(key);
     }
 
-    public long upsert(Entry<MemorySegment> entry) {
-        Entry<MemorySegment> previousEntry = delegate.put(entry.key(), entry);
+    public long upsert(Entry<MemorySegment, MemorySegment> entry) {
+        Entry<MemorySegment, MemorySegment> previousEntry = delegate.put(entry.key(), entry);
         if (previousEntry != null) {
             byteSize.addAndGet(-getEntryLength(previousEntry));
         }
@@ -47,15 +48,15 @@ public class Memory {
         return delegate.isEmpty();
     }
 
-    public Iterator<Entry<MemorySegment>> iterator() {
+    public Iterator<Entry<MemorySegment, MemorySegment>> iterator() {
         return delegate.values().iterator();
     }
 
-    public long getByteSize() {
-        return byteSize.get();
+    public AtomicLong getByteSize() {
+        return byteSize;
     }
 
-    public Collection<Entry<MemorySegment>> values() {
+    public Collection<Entry<MemorySegment, MemorySegment>> values() {
         return delegate.values();
     }
 }

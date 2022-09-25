@@ -1,8 +1,10 @@
-package ok.dht.test.galeev.dao;
+package ok.dht.test.galeev.dao.utils;
 
 import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;
 import jdk.incubator.foreign.ResourceScope;
+import ok.dht.test.galeev.dao.entry.BaseEntry;
+import ok.dht.test.galeev.dao.entry.Entry;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -11,7 +13,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
-import static ru.mail.polis.arturgaleev.FileDBWriter.updateHash;
+import static ok.dht.test.galeev.dao.utils.FileDBWriter.updateHash;
 
 public class FileDBReader implements AutoCloseable {
 
@@ -79,7 +81,7 @@ public class FileDBReader implements AutoCloseable {
         return fileID;
     }
 
-    private Entry<MemorySegment> readEntryByLink(long linkPos) {
+    private Entry<MemorySegment, MemorySegment> readEntryByLink(long linkPos) {
         long currentLinkPos = linkPos;
         long keyLength = MemoryAccess.getLongAtOffset(pageData, currentLinkPos);
         currentLinkPos += Long.BYTES;
@@ -89,7 +91,7 @@ public class FileDBReader implements AutoCloseable {
                 ((valueLength == -1) ? null : pageData.asSlice(currentLinkPos + keyLength, valueLength)));
     }
 
-    public Entry<MemorySegment> readEntryByPos(long pos) {
+    public Entry<MemorySegment, MemorySegment> readEntryByPos(long pos) {
         if (pos < 0 || pos >= size) {
             return null;
         }
@@ -129,8 +131,8 @@ public class FileDBReader implements AutoCloseable {
         return low;
     }
 
-    public Entry<MemorySegment> getEntryByKey(MemorySegment key) {
-        Entry<MemorySegment> entry = readEntryByPos(getPosByKey(key));
+    public Entry<MemorySegment, MemorySegment> getEntryByKey(MemorySegment key) {
+        Entry<MemorySegment, MemorySegment> entry = readEntryByPos(getPosByKey(key));
         if (entry == null) {
             return null;
         }
@@ -155,13 +157,12 @@ public class FileDBReader implements AutoCloseable {
 
     @Override
     public void close() throws IOException {
-        // TODO
         // We need to read our maps even after their deletions
     }
 
-    public class FileIterator implements java.util.Iterator<Entry<MemorySegment>> {
+    public class FileIterator implements java.util.Iterator<Entry<MemorySegment, MemorySegment>> {
         private long lastPos = size;
-        private long currentPos = -1;
+        private long currentPos;
 
         private FileIterator(long currentPos) {
             this.currentPos = currentPos;
@@ -182,7 +183,7 @@ public class FileDBReader implements AutoCloseable {
         }
 
         @Override
-        public Entry<MemorySegment> next() {
+        public Entry<MemorySegment, MemorySegment> next() {
             return readEntryByPos(currentPos++);
         }
     }

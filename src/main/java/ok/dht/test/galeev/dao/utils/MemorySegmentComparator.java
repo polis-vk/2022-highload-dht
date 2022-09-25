@@ -1,4 +1,4 @@
-package ok.dht.test.galeev.dao;
+package ok.dht.test.galeev.dao.utils;
 
 import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;

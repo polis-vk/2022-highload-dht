@@ -1,4 +1,6 @@
-package ok.dht.test.galeev.dao;
+package ok.dht.test.galeev.dao.iterators;
+
+import ok.dht.test.galeev.dao.entry.Entry;
 
 import java.util.Comparator;
 import java.util.Iterator;
@@ -6,17 +8,17 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.PriorityQueue;
 
-public class MergeIterator<E> implements Iterator<Entry<E>> {
-    private final PriorityQueue<PriorityPeekingIterator<Entry<E>>> iteratorsQueue;
+public class MergeIterator<E, V> implements Iterator<Entry<E, V>> {
+    private final PriorityQueue<PriorityPeekingIterator<Entry<E, V>>> iteratorsQueue;
     private final Comparator<E> keyComparator;
-    private Entry<E> currentEntry;
-    private Comparator<PriorityPeekingIterator<Entry<E>>> iteratorComparator;
+    private Entry<E, V> currentEntry;
+    private Comparator<PriorityPeekingIterator<Entry<E, V>>> iteratorComparator;
 
     // Low priority = old value
     // High priority = new value
     public MergeIterator(
-            PriorityPeekingIterator<Entry<E>> iterator1,
-            PriorityPeekingIterator<Entry<E>> iterator2,
+            PriorityPeekingIterator<Entry<E, V>> iterator1,
+            PriorityPeekingIterator<Entry<E, V>> iterator2,
             Comparator<E> keyComparator
     ) {
         this.keyComparator = keyComparator;
@@ -30,22 +32,22 @@ public class MergeIterator<E> implements Iterator<Entry<E>> {
         }
     }
 
-    public MergeIterator(List<PriorityPeekingIterator<Entry<E>>> iterators, Comparator<E> keyComparator) {
+    public MergeIterator(List<PriorityPeekingIterator<Entry<E, V>>> iterators, Comparator<E> keyComparator) {
         this.keyComparator = keyComparator;
         int iterSize = iterators.isEmpty() ? 1 : iterators.size();
         iteratorsQueue = new PriorityQueue<>(iterSize, getIteratorComparator());
 
-        for (PriorityPeekingIterator<Entry<E>> inFilesIterator : iterators) {
+        for (PriorityPeekingIterator<Entry<E, V>> inFilesIterator : iterators) {
             if (inFilesIterator.hasNext()) {
                 iteratorsQueue.add(inFilesIterator);
             }
         }
     }
 
-    private Comparator<PriorityPeekingIterator<Entry<E>>> getIteratorComparator() {
+    private Comparator<PriorityPeekingIterator<Entry<E, V>>> getIteratorComparator() {
         if (iteratorComparator == null) {
-            iteratorComparator = (PriorityPeekingIterator<Entry<E>> it1,
-                                  PriorityPeekingIterator<Entry<E>> it2
+            iteratorComparator = (PriorityPeekingIterator<Entry<E, V>> it1,
+                                  PriorityPeekingIterator<Entry<E, V>> it2
             ) -> {
                 if (keyComparator.compare(it1.peek().key(), it2.peek().key()) < 0) {
                     return -1;
@@ -70,8 +72,8 @@ public class MergeIterator<E> implements Iterator<Entry<E>> {
     }
 
     @Override
-    public Entry<E> next() {
-        Entry<E> entry = nullableNext();
+    public Entry<E, V> next() {
+        Entry<E, V> entry = nullableNext();
         if (entry == null) {
             throw new NoSuchElementException();
         } else {
@@ -79,9 +81,9 @@ public class MergeIterator<E> implements Iterator<Entry<E>> {
         }
     }
 
-    public Entry<E> nullableNext() {
+    public Entry<E, V> nullableNext() {
         if (currentEntry != null) {
-            Entry<E> prev = currentEntry;
+            Entry<E, V> prev = currentEntry;
             currentEntry = null;
             return prev;
         }
@@ -89,8 +91,8 @@ public class MergeIterator<E> implements Iterator<Entry<E>> {
         return getNotDeletedEntry();
     }
 
-    private Entry<E> getNotDeletedEntry() {
-        Entry<E> entry;
+    private Entry<E, V> getNotDeletedEntry() {
+        Entry<E, V> entry;
 
         while (!iteratorsQueue.isEmpty()) {
             entry = getNextEntry();
@@ -103,9 +105,9 @@ public class MergeIterator<E> implements Iterator<Entry<E>> {
         return null;
     }
 
-    private Entry<E> getNextEntry() {
-        Entry<E> entry;
-        PriorityPeekingIterator<Entry<E>> iterator;
+    private Entry<E, V> getNextEntry() {
+        Entry<E, V> entry;
+        PriorityPeekingIterator<Entry<E, V>> iterator;
         if (iteratorsQueue.size() == 1) {
             iterator = iteratorsQueue.peek();
             entry = iterator.next();
@@ -125,7 +127,7 @@ public class MergeIterator<E> implements Iterator<Entry<E>> {
 
     private void removeElementsWithKey(E lastKey) {
         while (!iteratorsQueue.isEmpty() && keyComparator.compare(lastKey, iteratorsQueue.peek().peek().key()) == 0) {
-            PriorityPeekingIterator<Entry<E>> iterator;
+            PriorityPeekingIterator<Entry<E, V>> iterator;
             if (iteratorsQueue.size() == 1) {
                 iterator = iteratorsQueue.peek();
                 iterator.next();
@@ -144,17 +146,18 @@ public class MergeIterator<E> implements Iterator<Entry<E>> {
         }
     }
 
-    public Entry<E> peek() {
+    public Entry<E, V> peek() {
         if (nullablePeek() == null) {
             throw new NoSuchElementException();
         }
         return currentEntry;
     }
 
-    public Entry<E> nullablePeek() {
+    public Entry<E, V> nullablePeek() {
         if (currentEntry == null) {
             currentEntry = nullableNext();
         }
         return currentEntry;
     }
+
 }

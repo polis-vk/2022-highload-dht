@@ -1,8 +1,9 @@
-package ok.dht.test.galeev.dao;
+package ok.dht.test.galeev.dao.utils;
 
 import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;
 import jdk.incubator.foreign.ResourceScope;
+import ok.dht.test.galeev.dao.entry.Entry;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -27,7 +28,7 @@ public class FileDBWriter implements Closeable {
     }
 
     // first value is number of entries, second is byte size
-    private static IteratorData getIteratorData(Iterator<Entry<MemorySegment>> iterator) {
+    private static IteratorData getIteratorData(Iterator<Entry<MemorySegment, MemorySegment>> iterator) {
         MessageDigest md;
         try {
             md = MessageDigest.getInstance("SHA-256");
@@ -37,7 +38,7 @@ public class FileDBWriter implements Closeable {
         long numberOfElements = 0;
         long byteSize = 0;
         while (iterator.hasNext()) {
-            Entry<MemorySegment> entry = iterator.next();
+            Entry<MemorySegment, MemorySegment> entry = iterator.next();
             byteSize += getEntryLength(entry);
             updateHash(md, entry);
             numberOfElements++;
@@ -46,7 +47,7 @@ public class FileDBWriter implements Closeable {
         return new IteratorData(numberOfElements, byteSize, md.digest());
     }
 
-    static void updateHash(MessageDigest md, Entry<MemorySegment> entry) {
+    static void updateHash(MessageDigest md, Entry<MemorySegment, MemorySegment> entry) {
         md.update(entry.key().asReadOnly().asByteBuffer());
         if (entry.value() == null) {
             md.update(VALUE_FOR_HASH_NULL);
@@ -55,12 +56,12 @@ public class FileDBWriter implements Closeable {
         }
     }
 
-    public static long getEntryLength(Entry<MemorySegment> entry) {
+    public static long getEntryLength(Entry<MemorySegment, MemorySegment> entry) {
         return entry.key().byteSize()
                 + ((entry.value() == null) ? 0 : entry.value().byteSize()) + 2 * Long.BYTES;
     }
 
-    private static long writeEntry(MemorySegment page, long posToWrite, Entry<MemorySegment> baseEntry) {
+    private static long writeEntry(MemorySegment page, long posToWrite, Entry<MemorySegment, MemorySegment> baseEntry) {
         long offset = 0;
 
         MemoryAccess.setLongAtOffset(page, posToWrite + offset, baseEntry.key().byteSize());
@@ -95,7 +96,7 @@ public class FileDBWriter implements Closeable {
     private static void writeIterable(
             MemorySegment page,
             long numberOfEntries,
-            Iterator<Entry<MemorySegment>> iterator,
+            Iterator<Entry<MemorySegment, MemorySegment>> iterator,
             byte[] sha256) {
         MemoryAccess.setLongAtOffset(page, 0, numberOfEntries);
 
@@ -108,7 +109,7 @@ public class FileDBWriter implements Closeable {
         long i = 0;
         long dataWriteOffset = 0;
         while (iterator.hasNext()) {
-            Entry<MemorySegment> entry = iterator.next();
+            Entry<MemorySegment, MemorySegment> entry = iterator.next();
             MemoryAccess.setLongAtOffset(page, Long.BYTES + Long.BYTES * i++, dataWriteOffset);
 
             dataWriteOffset += writeEntry(page, dataBeingOffset + dataWriteOffset, entry);
@@ -123,9 +124,9 @@ public class FileDBWriter implements Closeable {
      * @return if had something been written
      */
     public boolean writeIterable(
-            Iterable<Entry<MemorySegment>> iterableCollection
+            Iterable<Entry<MemorySegment, MemorySegment>> iterableCollection
     ) throws IOException {
-        Iterator<Entry<MemorySegment>> iterator = iterableCollection.iterator();
+        Iterator<Entry<MemorySegment, MemorySegment>> iterator = iterableCollection.iterator();
 
         if (!iterator.hasNext()) {
             return false;
@@ -137,7 +138,7 @@ public class FileDBWriter implements Closeable {
         return true;
     }
 
-    private void writeIteratorWithTempFile(Iterator<Entry<MemorySegment>> iterator,
+    private void writeIteratorWithTempFile(Iterator<Entry<MemorySegment, MemorySegment>> iterator,
                                            IteratorData iteratorData) throws IOException {
         byte[] sha256 = iteratorData.sha256();
         String fileName = path.getFileName().toString();

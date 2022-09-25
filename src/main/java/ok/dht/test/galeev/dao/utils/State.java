@@ -1,12 +1,12 @@
-package ok.dht.test.galeev.dao;
+package ok.dht.test.galeev.dao.utils;
 
 import java.io.IOException;
 
-class State {
-    final boolean isFlushing;
-    final Memory memory;
-    final Memory flushing;
-    final DBReader storage;
+public class State {
+    public final boolean isFlushing;
+    public final Memory memory;
+    public final Memory flushing;
+    public final DBReader storage;
 
     public State(boolean isFlushing, Memory memory, Memory flushing, DBReader storage) {
         this.isFlushing = isFlushing;
