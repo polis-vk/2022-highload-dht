@@ -176,7 +176,7 @@ public class DaoWebService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 1, week = 1)
+    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

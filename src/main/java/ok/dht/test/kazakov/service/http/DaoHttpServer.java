@@ -5,6 +5,8 @@ import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Session;
+import one.nio.server.SelectorThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,5 +45,17 @@ public class DaoHttpServer extends HttpServer {
     public void handleDefault(@Nonnull final Request request, @Nonnull final HttpSession session) throws IOException {
         final Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         session.sendResponse(response);
+    }
+
+    @Override
+    public synchronized void stop() {
+        super.stop();
+
+        // closing all connections
+        for (final SelectorThread selector : selectors) {
+            for (final Session session : selector.selector) {
+                session.close();
+            }
+        }
     }
 }
