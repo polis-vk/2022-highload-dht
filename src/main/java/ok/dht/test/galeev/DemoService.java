@@ -7,7 +7,14 @@ import ok.dht.test.galeev.dao.DaoMiddleLayer;
 import ok.dht.test.galeev.dao.entry.Entry;
 import ok.dht.test.galeev.dao.utils.DaoConfig;
 import ok.dht.test.galeev.dao.utils.StringByteConverter;
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
@@ -18,10 +25,11 @@ import java.util.concurrent.CompletableFuture;
 
 public class DemoService implements Service {
 
-    public static final int FLUSH_THRESHOLD_BYTES = 1048576;
-    public static final String DAO_DIRECTORY = "dao";
-    public static final Response BAD_RESPONSE = new Response(Response.BAD_REQUEST, Response.EMPTY);
-    public static final Response NOT_FOUND_RESPONSE = new Response(Response.NOT_FOUND, Response.EMPTY);
+    public static final int FLUSH_THRESHOLD_BYTES = 8388608; // 8MB
+    public static final Response BAD_RESPONSE
+            = new Response(Response.BAD_REQUEST, Response.EMPTY);
+    public static final Response NOT_FOUND_RESPONSE
+            = new Response(Response.NOT_FOUND, Response.EMPTY);
     private final ServiceConfig config;
     private HttpServer server;
     private DaoMiddleLayer<String, byte[]> dao;
@@ -48,7 +56,8 @@ public class DemoService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id) throws IOException {
+    public Response handleGet(@Param(value = "id", required = true) String id)
+            throws IOException {
         if (id.isEmpty()) {
             return BAD_RESPONSE;
         }
@@ -62,7 +71,8 @@ public class DemoService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(Request request, @Param(value = "id", required = true) String id) {
+    public Response handlePut(Request request,
+                              @Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
             return BAD_RESPONSE;
         }
@@ -80,7 +90,8 @@ public class DemoService implements Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    private static DaoMiddleLayer<String, byte[]> getDao(ServiceConfig config) throws IOException {
+    private static DaoMiddleLayer<String, byte[]> getDao(ServiceConfig config)
+            throws IOException {
         if (!Files.exists(config.workingDir())) {
             Files.createDirectory(config.workingDir());
         }
@@ -96,7 +107,8 @@ public class DemoService implements Service {
     private static HttpServer getCloseableServer(final int port) throws IOException {
         return new HttpServer(createConfigFromPort(port)) {
             @Override
-            public void handleDefault(Request request, HttpSession session) throws IOException {
+            public void handleDefault(Request request,
+                                      HttpSession session) throws IOException {
                 session.sendResponse(BAD_RESPONSE);
             }
 
