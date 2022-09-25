@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -39,11 +40,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-        if (from == null) {
-            from = VERY_FIRST_KEY;
-        }
-
-        return getTombstoneFilteringIterator(from, to);
+        return getTombstoneFilteringIterator(Objects.requireNonNullElse(from, VERY_FIRST_KEY), to);
     }
 
     private TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment from, MemorySegment to) {
@@ -121,7 +118,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 } finally {
                     upsertLock.writeLock().unlock();
                 }
-                storage.maybeClose();
                 return null;
             } catch (Exception e) {
                 LOG.error("Can't flush", e);
@@ -181,7 +177,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 upsertLock.writeLock().unlock();
             }
 
-            accessState.storage.maybeClose();
             return null;
         });
 
@@ -192,9 +187,10 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         try {
             future.get();
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new RuntimeException(e);
         } catch (ExecutionException e) {
-            throw new RuntimeException(e.getCause());
+            throw new RuntimeException(e);
         }
     }
 
@@ -215,9 +211,9 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         executor.shutdown();
         try {
             //noinspection StatementWithEmptyBody
-            while (!executor.awaitTermination(10, TimeUnit.DAYS))
-                ;
+            while (!executor.awaitTermination(10, TimeUnit.DAYS));
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
         }
         accessState = this.state;

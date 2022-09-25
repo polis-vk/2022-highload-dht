@@ -11,7 +11,8 @@ import java.nio.file.Path;
 
 public final class StorageUtils {
 
-    private StorageUtils() {}
+    private StorageUtils() {
+    }
 
     public static long getSize(Entry<MemorySegment> entry) {
         if (entry.value() == null) {

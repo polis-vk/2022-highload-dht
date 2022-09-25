@@ -70,16 +70,15 @@ class Storage implements Closeable {
     }
 
     // it is supposed that entries can not be changed externally during this method call
-    static void save(Config config, Storage previousState, Collection<Entry<MemorySegment>> entries) throws IOException
+    static void save(Config config, Storage previousState, Collection<Entry<MemorySegment>> entries)
+        throws IOException
     {
         int nextSSTableIndex = previousState.sstables.size();
         Path sstablePath = config.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
         save(entries::iterator, sstablePath);
     }
 
-    private static void save(Data entries, Path sstablePath) throws IOException
-    {
-
+    private static void save(Data entries, Path sstablePath) throws IOException {
         Path sstableTmpPath = sstablePath.resolveSibling(sstablePath.getFileName().toString() + FILE_EXT_TMP);
 
         Files.deleteIfExists(sstableTmpPath);
@@ -269,10 +268,6 @@ class Storage implements Closeable {
         while (scope.isAlive()) {
             scope.close();
         }
-    }
-
-    public void maybeClose() {
-        // no operations
     }
 
     public boolean isClosed() {
