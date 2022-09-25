@@ -222,7 +222,9 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             } else if (cause instanceof Error) {
                 throw (Error) cause;
             } else {
-                throw new RuntimeException(cause);
+                final RuntimeException runtimeException = new RuntimeException("Unknown exception was thrown");
+                runtimeException.addSuppressed(cause);
+                throw runtimeException;
             }
         }
     }
