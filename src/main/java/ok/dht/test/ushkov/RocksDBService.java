@@ -3,9 +3,6 @@ package ok.dht.test.ushkov;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.ushkov.dao.BaseEntry;
-import ok.dht.test.ushkov.dao.Entry;
-import ok.dht.test.ushkov.dao.rocksdb.RocksDBDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -18,14 +15,15 @@ import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
+import org.rocksdb.RocksDB;
+import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 
 public class RocksDBService implements Service {
     private final ServiceConfig config;
-    private RocksDBDao dao;
+    private RocksDB db;
     private HttpServer server;
 
     public RocksDBService(ServiceConfig config) {
@@ -34,7 +32,11 @@ public class RocksDBService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        dao = new RocksDBDao(config.workingDir().toString());
+        try {
+            db = RocksDB.open(config.workingDir().toString());
+        } catch (RocksDBException e) {
+            throw new IOException(e);
+        }
         server = createHttpServer(createHttpServerConfigFromPort(config.selfPort()));
         server.addRequestHandlers(this);
         server.start();
@@ -77,8 +79,12 @@ public class RocksDBService implements Service {
         server.stop();
         server = null;
 
-        dao.close();
-        dao = null;
+        try {
+            db.closeE();
+        } catch (RocksDBException e) {
+            throw new IOException(e);
+        }
+        db = null;
 
         return CompletableFuture.completedFuture(null);
     }
@@ -90,14 +96,13 @@ public class RocksDBService implements Service {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         try {
-            ByteBuffer key = ByteBuffer.wrap(Utf8.toBytes(id));
-            Entry<ByteBuffer> entry = dao.get(key);
-            if (entry == null) {
+            byte[] value = db.get(Utf8.toBytes(id));
+            if (value == null) {
                 return new Response(Response.NOT_FOUND, Response.EMPTY);
             } else {
-                return new Response(Response.OK, entry.value().array());
+                return new Response(Response.OK, value);
             }
-        } catch (IOException e) {
+        } catch (RocksDBException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
@@ -109,12 +114,9 @@ public class RocksDBService implements Service {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         try {
-            ByteBuffer key = ByteBuffer.wrap(Utf8.toBytes(id));
-            ByteBuffer value = ByteBuffer.wrap(request.getBody());
-            Entry<ByteBuffer> entry = new BaseEntry<>(key, value);
-            dao.upsert(entry);
+            db.put(Utf8.toBytes(id), request.getBody());
             return new Response(Response.CREATED, Response.EMPTY);
-        } catch (IOException e) {
+        } catch (RocksDBException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
@@ -126,11 +128,9 @@ public class RocksDBService implements Service {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         try {
-            ByteBuffer key = ByteBuffer.wrap(Utf8.toBytes(id));
-            Entry<ByteBuffer> entry = new BaseEntry<>(key, null);
-            dao.upsert(entry);
+            db.delete(Utf8.toBytes(id));
             return new Response(Response.ACCEPTED, Response.EMPTY);
-        } catch (IOException e) {
+        } catch (RocksDBException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
