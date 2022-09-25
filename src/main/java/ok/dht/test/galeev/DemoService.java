@@ -32,7 +32,7 @@ public class DemoService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        dao = getDao();
+        dao = getDao(config);
         server = getCloseableServer(config.selfPort());
         server.start();
         server.addRequestHandlers(this);
@@ -80,10 +80,13 @@ public class DemoService implements Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    private static DaoMiddleLayer<String, byte[]> getDao() throws IOException {
+    private static DaoMiddleLayer<String, byte[]> getDao(ServiceConfig config) throws IOException {
+        if (!Files.exists(config.workingDir())) {
+            Files.createDirectory(config.workingDir());
+        }
         return new DaoMiddleLayer<>(
                 new DaoConfig(
-                        Files.createTempDirectory(DAO_DIRECTORY),
+                        config.workingDir(),
                         FLUSH_THRESHOLD_BYTES //1MB
                 ),
                 new StringByteConverter()
