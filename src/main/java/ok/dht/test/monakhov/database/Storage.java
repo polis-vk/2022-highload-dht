@@ -15,7 +15,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.ThreadFactory;
 
 import static ok.dht.test.monakhov.database.StorageUtils.getSize;
 import static ok.dht.test.monakhov.database.StorageUtils.mapForRead;
@@ -23,14 +22,11 @@ import static ok.dht.test.monakhov.database.StorageUtils.writeRecord;
 
 class Storage implements Closeable {
 
-    private static final Cleaner CLEANER = Cleaner.create(runnable -> new Thread(runnable, "Storage-Cleaner") {
-            @Override
-            public synchronized void start() {
-                setDaemon(true);
-                super.start();
-            }
-        }
-    );
+    private static final Cleaner CLEANER = Cleaner.create(runnable -> {
+            Thread thread = new Thread(runnable, "Storage-Cleaner");
+            thread.setDaemon(true);
+            return thread;
+    });
 
     private static final long VERSION = 0;
     private static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
