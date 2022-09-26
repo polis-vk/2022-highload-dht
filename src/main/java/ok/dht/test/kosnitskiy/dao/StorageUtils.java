@@ -1,5 +1,9 @@
 package ok.dht.test.kosnitskiy.dao;
 
+import jdk.incubator.foreign.MemoryAccess;
+import jdk.incubator.foreign.MemorySegment;
+import jdk.incubator.foreign.ResourceScope;
+
 import java.io.IOException;
 import java.lang.ref.Cleaner;
 import java.nio.channels.FileChannel;
@@ -12,11 +16,11 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.concurrent.ThreadFactory;
 
-import jdk.incubator.foreign.MemoryAccess;
-import jdk.incubator.foreign.MemorySegment;
-import jdk.incubator.foreign.ResourceScope;
-
 public class StorageUtils {
+
+    private StorageUtils() {
+
+    }
 
     public static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
         @Override
@@ -50,7 +54,6 @@ public class StorageUtils {
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
-        // FIXME check existing files
         for (int i = 0; ; i++) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {

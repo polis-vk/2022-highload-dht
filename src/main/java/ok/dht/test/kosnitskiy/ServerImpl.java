@@ -1,13 +1,17 @@
 package ok.dht.test.kosnitskiy;
 
-import java.io.UncheckedIOException;
+import ok.dht.ServiceConfig;
+
 import java.nio.file.Files;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
-import ok.dht.ServiceConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class ServerImpl {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ServerImpl.class);
 
     private ServerImpl() {
         // Only main method
@@ -24,7 +28,7 @@ public final class ServerImpl {
                     Files.createTempDirectory("server")
             );
             new ServiceImpl(cfg).start().get(1, TimeUnit.SECONDS);
-            System.out.println("Socket is ready: " + url);
+            LOG.info("Socket is ready: " + url);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

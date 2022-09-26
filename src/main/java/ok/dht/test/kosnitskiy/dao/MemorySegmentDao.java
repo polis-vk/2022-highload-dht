@@ -5,8 +5,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -37,17 +37,20 @@ public class MemorySegmentDao {
     }
 
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
+        MemorySegment localFrom;
         if (from == null) {
-            from = VERY_FIRST_KEY;
+            localFrom = VERY_FIRST_KEY;
+        } else {
+            localFrom = from;
         }
 
-        return getTombstoneFilteringIterator(from, to);
+        return getTombstoneFilteringIterator(localFrom, to);
     }
 
     private TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment from, MemorySegment to) {
         State state = accessState();
 
-        ArrayList<Iterator<Entry<MemorySegment>>> iterators = state.storage.iterate(from, to);
+        List<Iterator<Entry<MemorySegment>>> iterators = state.storage.iterate(from, to);
 
         iterators.add(state.flushing.get(from, to));
         iterators.add(state.memory.get(from, to));
@@ -196,8 +199,10 @@ public class MemorySegmentDao {
             try {
                 throw e.getCause();
             } catch (RuntimeException | IOException | Error r) {
+                LOG.error(r.getMessage());
                 throw r;
             } catch (Throwable t) {
+                LOG.info(t.getMessage());
                 throw new RuntimeException(t);
             }
         }
@@ -219,7 +224,9 @@ public class MemorySegmentDao {
         executor.shutdown();
         try {
             //noinspection StatementWithEmptyBody
-            while (!executor.awaitTermination(10, TimeUnit.DAYS)) ;
+            while (!executor.awaitTermination(10, TimeUnit.DAYS)) {
+                LOG.info("waiting termination");
+            };
         } catch (InterruptedException e) {
             throw new IllegalStateException(e);
         }

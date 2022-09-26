@@ -1,12 +1,12 @@
 package ok.dht.test.kosnitskiy.dao;
 
+import jdk.incubator.foreign.MemorySegment;
+
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-
-import jdk.incubator.foreign.MemorySegment;
 
 class Memory {
 

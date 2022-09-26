@@ -1,9 +1,9 @@
 package ok.dht.test.kosnitskiy.dao;
 
+import jdk.incubator.foreign.MemorySegment;
+
 import java.util.Iterator;
 import java.util.NoSuchElementException;
-
-import jdk.incubator.foreign.MemorySegment;
 
 class TombstoneFilteringIterator implements Iterator<Entry<MemorySegment>> {
     private final Iterator<Entry<MemorySegment>> iterator;
