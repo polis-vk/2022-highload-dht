@@ -20,18 +20,15 @@ import java.util.Iterator;
 import java.util.List;
 
 class Storage implements Closeable {
+    public static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
+    public static final int INDEX_RECORD_SIZE = Long.BYTES;
     private static final Logger LOG = LoggerFactory.getLogger(Storage.class);
-
     private static final Cleaner CLEANER = Cleaner.create(r -> {
         Thread thread = new Thread(r, "Storage-Cleaner");
         thread.setDaemon(true);
         return thread;
     });
-
     private static final long VERSION = 0;
-    private static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
-    private static final int INDEX_RECORD_SIZE = Long.BYTES;
-
     private static final String FILE_NAME = "data";
     private static final String FILE_EXT = ".dat";
     private static final String FILE_EXT_TMP = ".tmp";
@@ -164,7 +161,7 @@ class Storage implements Closeable {
     }
 
     private long greaterOrEqualEntryIndex(MemorySegment sstable, MemorySegment key) {
-        long index = entryIndex(sstable, key);
+        long index = Utils.entryIndex(sstable, key);
         if (index < 0) {
             return ~index;
         }
@@ -173,34 +170,6 @@ class Storage implements Closeable {
 
     // file structure:
     // (fileVersion)(entryCount)((entryPosition)...)|((keySize/key/valueSize/value)...)
-    private long entryIndex(MemorySegment sstable, MemorySegment key) {
-        long fileVersion = MemoryAccess.getLongAtOffset(sstable, 0);
-        if (fileVersion != 0) {
-            throw new IllegalStateException("Unknown file version: " + fileVersion);
-        }
-        long recordsCount = MemoryAccess.getLongAtOffset(sstable, 8);
-        if (key == null) {
-            return recordsCount;
-        }
-        long left = 0;
-        long right = recordsCount - 1;
-        while (left <= right) {
-            long mid = (left + right) >>> 1;
-            long keyPos = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + mid * INDEX_RECORD_SIZE);
-            long keySize = MemoryAccess.getLongAtOffset(sstable, keyPos);
-            MemorySegment keyForCheck = sstable.asSlice(keyPos + Long.BYTES, keySize);
-            int comparedResult = MemorySegmentComparator.INSTANCE.compare(key, keyForCheck);
-            if (comparedResult > 0) {
-                left = mid + 1;
-            } else if (comparedResult < 0) {
-                right = mid - 1;
-            } else {
-                return mid;
-            }
-        }
-        return ~left;
-    }
-
     private Entry<MemorySegment> entryAt(MemorySegment sstable, long keyIndex) {
         try {
             long offset = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + keyIndex * INDEX_RECORD_SIZE);
@@ -218,7 +187,7 @@ class Storage implements Closeable {
         try {
             for (int i = sstables.size() - 1; i >= 0; i--) {
                 MemorySegment sstable = sstables.get(i);
-                long keyFromPos = entryIndex(sstable, key);
+                long keyFromPos = Utils.entryIndex(sstable, key);
                 if (keyFromPos >= 0) {
                     return entryAt(sstable, keyFromPos);
                 }
