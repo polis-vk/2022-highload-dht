@@ -84,6 +84,5 @@ public final class MergeIterator<E> implements Iterator<E> {
             super(delegate);
             this.index = index;
         }
-
     }
 }

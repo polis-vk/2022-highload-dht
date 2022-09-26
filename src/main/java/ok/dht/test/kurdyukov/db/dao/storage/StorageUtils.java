@@ -6,6 +6,7 @@ import jdk.incubator.foreign.ResourceScope;
 import ok.dht.test.kurdyukov.db.base.Config;
 import ok.dht.test.kurdyukov.db.base.Entry;
 
+import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.lang.ref.Cleaner;
 import java.nio.channels.FileChannel;
@@ -20,18 +21,7 @@ import java.util.concurrent.ThreadFactory;
 
 public class StorageUtils {
 
-    private static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
-        @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
-                @Override
-                public synchronized void start() {
-                    setDaemon(true);
-                    super.start();
-                }
-            };
-        }
-    });
+    private static final Cleaner CLEANER = Cleaner.create(new CleanerThreadFactory());
 
     private static final long VERSION = 0;
     public static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
@@ -41,6 +31,10 @@ public class StorageUtils {
     private static final String FILE_EXT = ".dat";
     private static final String FILE_EXT_TMP = ".tmp";
     private static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
+
+    private StorageUtils() {
+
+    }
 
     public static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
@@ -52,7 +46,6 @@ public class StorageUtils {
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
-        // FIXME check existing files
         for (int i = 0; ; i++) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
@@ -89,8 +82,7 @@ public class StorageUtils {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
-                Entry<MemorySegment> entry = iterator.next();
+            for (Entry<MemorySegment> entry : entries) {
                 size += getSize(entry);
                 if (entry.isTombstone()) {
                     hasTombstone = true;
@@ -110,8 +102,7 @@ public class StorageUtils {
 
             long index = 0;
             long offset = dataStart;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
-                Entry<MemorySegment> entry = iterator.next();
+            for (Entry<MemorySegment> entry : entries) {
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
                 offset += writeRecord(nextSSTable, offset, entry.key());
@@ -175,5 +166,14 @@ public class StorageUtils {
         }
 
         Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
+    }
+
+    private static final class CleanerThreadFactory implements ThreadFactory {
+        @Override
+        public Thread newThread(@Nonnull final Runnable r) {
+            final Thread thread = new Thread(r, "Storage-Cleaner");
+            thread.setDaemon(true);
+            return thread;
+        }
     }
 }
