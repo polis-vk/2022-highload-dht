@@ -1,7 +1,7 @@
 package ok.dht.dao.artyomdrozdov;
 
-import java.util.Comparator;
 import jdk.incubator.foreign.MemorySegment;
+import java.util.Comparator;
 
 public class EntryKeyComparator implements Comparator<Entry<MemorySegment>> {
 

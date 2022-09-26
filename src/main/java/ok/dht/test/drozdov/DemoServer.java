@@ -1,9 +1,10 @@
 package ok.dht.test.drozdov;
 
+import ok.dht.ServiceConfig;
+
 import java.nio.file.Files;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
-import ok.dht.ServiceConfig;
 
 /**
  * Basic server stub.

@@ -1,7 +1,5 @@
 package ok.dht.test.drozdov;
 
-import java.io.IOException;
-import java.util.concurrent.CompletableFuture;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
@@ -13,6 +11,9 @@ import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
+
+import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 
 public class DemoService implements Service {
 

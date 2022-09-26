@@ -1,7 +1,5 @@
 package ok.dht.test.frolovm;
 
-import java.io.IOException;
-import java.util.concurrent.CompletableFuture;
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
@@ -20,6 +18,8 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
+import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
 

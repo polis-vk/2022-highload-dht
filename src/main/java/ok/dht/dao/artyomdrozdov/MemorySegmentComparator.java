@@ -1,8 +1,8 @@
 package ok.dht.dao.artyomdrozdov;
 
-import java.util.Comparator;
 import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;
+import java.util.Comparator;
 
 public class MemorySegmentComparator implements Comparator<MemorySegment> {
 
