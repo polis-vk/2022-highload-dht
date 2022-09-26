@@ -1,5 +1,7 @@
 package ok.dht.test.drozdov;
 
+import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
@@ -12,9 +14,6 @@ import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
 
-import java.io.IOException;
-import java.util.concurrent.CompletableFuture;
-
 public class DemoService implements Service {
 
     private final ServiceConfig config;
@@ -22,6 +21,15 @@ public class DemoService implements Service {
 
     public DemoService(ServiceConfig config) {
         this.config = config;
+    }
+
+    private static HttpServerConfig createConfigFromPort(int port) {
+        HttpServerConfig httpConfig = new HttpServerConfig();
+        AcceptorConfig acceptor = new AcceptorConfig();
+        acceptor.port = port;
+        acceptor.reusePort = true;
+        httpConfig.acceptors = new AcceptorConfig[] {acceptor};
+        return httpConfig;
     }
 
     @Override
@@ -44,15 +52,6 @@ public class DemoService implements Service {
                 Response.OK,
                 Utf8.toBytes("HELLO\n")
         );
-    }
-
-    private static HttpServerConfig createConfigFromPort(int port) {
-        HttpServerConfig httpConfig = new HttpServerConfig();
-        AcceptorConfig acceptor = new AcceptorConfig();
-        acceptor.port = port;
-        acceptor.reusePort = true;
-        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
-        return httpConfig;
     }
 
     @ServiceFactory(stage = 0, week = 1)
