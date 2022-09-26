@@ -1,8 +1,5 @@
 package ok.dht.test.pobedonostsev;
 
-import java.io.IOException;
-import java.util.concurrent.CompletableFuture;
-
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
@@ -22,15 +19,27 @@ import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
 
+import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
+
 public class DemoService implements Service {
 
+    private static final long flushThresholdBytes = 1 << 20;
     private final ServiceConfig config;
     private HttpServer server;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
-    private static final long flushThresholdBytes = 1 << 20;
 
     public DemoService(ServiceConfig config) {
         this.config = config;
+    }
+
+    private static HttpServerConfig createConfigFromPort(int port) {
+        HttpServerConfig httpConfig = new HttpServerConfig();
+        AcceptorConfig acceptor = new AcceptorConfig();
+        acceptor.port = port;
+        acceptor.reusePort = true;
+        httpConfig.acceptors = new AcceptorConfig[] {acceptor};
+        return httpConfig;
     }
 
     @Override
@@ -81,15 +90,6 @@ public class DemoService implements Service {
         }
         dao.upsert(new BaseEntry<>(MemorySegment.ofArray(Utf8.toBytes(key)), null));
         return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    private static HttpServerConfig createConfigFromPort(int port) {
-        HttpServerConfig httpConfig = new HttpServerConfig();
-        AcceptorConfig acceptor = new AcceptorConfig();
-        acceptor.port = port;
-        acceptor.reusePort = true;
-        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
-        return httpConfig;
     }
 
     @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
