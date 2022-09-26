@@ -16,7 +16,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Iterator;
 import java.util.concurrent.ThreadFactory;
 
 public class StorageUtils {
@@ -46,13 +45,10 @@ public class StorageUtils {
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
-        for (int i = 0; ; i++) {
-            Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
-            try {
-                sstables.add(mapForRead(scope, nextFile));
-            } catch (NoSuchFileException e) {
-                break;
-            }
+        Path nextFile = basePath.resolve(FILE_NAME + 0 + FILE_EXT);
+        for (int i = 1; Files.exists(nextFile); i++) {
+            sstables.add(mapForRead(scope, nextFile));
+            nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
         }
 
         boolean hasTombstones = !sstables.isEmpty() && MemoryAccess.getLongAtOffset(sstables.get(0), 16) == 1;
