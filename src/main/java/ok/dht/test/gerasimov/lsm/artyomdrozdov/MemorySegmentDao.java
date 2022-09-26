@@ -9,18 +9,14 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -68,11 +64,11 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public Entry<MemorySegment> get(MemorySegment key) {
-        State state = accessState();
+        State accessState = accessState();
 
-        Entry<MemorySegment> result = state.memory.get(key);
+        Entry<MemorySegment> result = accessState.memory.get(key);
         if (result == null) {
-            result = state.storage.get(key);
+            result = accessState.storage.get(key);
         }
 
         return (result == null || result.isTombstone()) ? null : result;
@@ -80,13 +76,13 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public void upsert(Entry<MemorySegment> entry) {
-        State state = accessState();
+        State accessState = accessState();
 
         boolean runFlush;
         // it is intentionally the read lock!!!
         upsertLock.readLock().lock();
         try {
-            runFlush = state.memory.put(entry.key(), entry);
+            runFlush = accessState.memory.put(entry.key(), entry);
         } finally {
             upsertLock.readLock().unlock();
         }
@@ -99,8 +95,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     private Future<?> flushInBg(boolean tolerateFlushInProgress) {
         upsertLock.writeLock().lock();
         try {
-            State state = accessState();
-            if (state.isFlushing()) {
+            State accessState = accessState();
+            if (accessState.isFlushing()) {
                 if (tolerateFlushInProgress) {
                     // or any other completed future
                     return CompletableFuture.completedFuture(null);
@@ -108,23 +104,23 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 throw new TooManyFlushesInBgException();
             }
 
-            state = state.prepareForFlush();
-            this.state = state;
+            accessState = accessState.prepareForFlush();
+            this.state = accessState;
         } finally {
             upsertLock.writeLock().unlock();
         }
 
         return executor.submit(() -> {
             try {
-                State state = accessState();
+                State accessState = accessState();
 
-                Storage storage = state.storage;
-                Storage.save(config, storage, state.flushing.values());
+                Storage storage = accessState.storage;
+                Storage.save(config, storage, accessState.flushing.values());
                 Storage load = Storage.load(config);
 
                 upsertLock.writeLock().lock();
                 try {
-                    this.state = state.afterFlush(load);
+                    this.state = accessState.afterFlush(load);
                 } finally {
                     upsertLock.writeLock().unlock();
                 }
