@@ -28,7 +28,7 @@ public class DaoMiddleLayer<K, V> {
     }
 
     public void upsert(Entry<K, V> entry) {
-        dao.upsert(converter.EntryToEntryMS(entry));
+        dao.upsert(converter.entryToEntryMS(entry));
     }
 
     public void upsert(K k, V v) {
