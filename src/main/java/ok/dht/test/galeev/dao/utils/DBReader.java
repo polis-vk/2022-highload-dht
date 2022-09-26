@@ -13,19 +13,20 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.NavigableSet;
 import java.util.TreeSet;
 import java.util.stream.Stream;
 
 public class DBReader implements AutoCloseable {
     private static final String DB_FILES_EXTENSION = ".txt";
 
-    private final TreeSet<FileDBReader> fileReaders;
+    private final NavigableSet<FileDBReader> fileReaders;
 
     public DBReader(Path dbDirectoryPath) throws IOException {
         fileReaders = getFileDBReaders(dbDirectoryPath);
     }
 
-    private static TreeSet<FileDBReader> getFileDBReaders(Path dbDirectoryPath) throws IOException {
+    private static NavigableSet<FileDBReader> getFileDBReaders(Path dbDirectoryPath) throws IOException {
         TreeSet<FileDBReader> fileDBReadersSet = new TreeSet<>(Comparator.comparing(FileDBReader::getFileID));
         try (Stream<Path> paths = Files.list(dbDirectoryPath)
                 .filter(path -> path.getFileName().toString().endsWith(DB_FILES_EXTENSION))
