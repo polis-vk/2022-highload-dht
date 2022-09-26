@@ -16,7 +16,9 @@ import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
@@ -27,9 +29,13 @@ public class ServiceImpl implements Service {
     private static final byte[] BAD_ID = Utf8.toBytes("Given id is bad.");
 
     private static final byte[] NO_SUCH_METHOD = Utf8.toBytes("No such method.");
-    private final Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ServiceConfig config;
+    private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private HttpServer server;
+
+    public ServiceImpl(ServiceConfig config) {
+        this.config = config;
+    }
 
     public ServiceImpl(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) {
         this.config = config;
@@ -62,12 +68,31 @@ public class ServiceImpl implements Service {
         return acceptor;
     }
 
+    private void createDao() throws IOException {
+        this.dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+    }
+
     @Override
     public CompletableFuture<?> start() throws IOException {
+        if (dao == null) {
+            createDao();
+        }
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
                 session.sendResponse(emptyResponse(Response.BAD_REQUEST));
+            }
+
+            @Override
+            public synchronized void stop() {
+                closeSessions();
+                super.stop();
+            }
+
+            private void closeSessions() {
+                for (SelectorThread selectorThread : selectors) {
+                    selectorThread.selector.forEach(Session::close);
+                }
             }
         };
         server.start();
@@ -116,20 +141,15 @@ public class ServiceImpl implements Service {
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
         dao.close();
+        dao = null;
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 1, week = 1)
+    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
-            Dao<MemorySegment, Entry<MemorySegment>> dao;
-            try {
-                dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
-            } catch (IOException exception) {
-                throw new IllegalArgumentException("Can't create database. " + exception.getMessage(), exception);
-            }
-            return new ServiceImpl(config, dao);
+            return new ServiceImpl(config);
         }
     }
 }
