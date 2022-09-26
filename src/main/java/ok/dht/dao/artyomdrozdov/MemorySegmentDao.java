@@ -118,7 +118,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 } finally {
                     upsertLock.writeLock().unlock();
                 }
-                storage.maybeClose();
                 return null;
             } catch (Exception e) {
                 LOG.error("Can't flush", e);
@@ -185,7 +184,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 upsertLock.writeLock().unlock();
             }
 
-            state.storage.maybeClose();
             return null;
         });
 
@@ -200,8 +198,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         } catch (ExecutionException e) {
             try {
                 throw e.getCause();
-            } catch (RuntimeException | IOException | Error r) {
-                throw r;
             } catch (Throwable t) {
                 throw new RuntimeException(t);
             }
