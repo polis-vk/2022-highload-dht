@@ -1,4 +1,4 @@
-package ok.dht.test.kurdyukov.db.storage;
+package ok.dht.test.kurdyukov.db.dao;
 
 import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;

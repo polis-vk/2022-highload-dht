@@ -8,7 +8,7 @@ import ok.dht.test.kurdyukov.db.base.BaseEntry;
 import ok.dht.test.kurdyukov.db.base.Config;
 import ok.dht.test.kurdyukov.db.base.Dao;
 import ok.dht.test.kurdyukov.db.base.Entry;
-import ok.dht.test.kurdyukov.db.storage.MemorySegmentDao;
+import ok.dht.test.kurdyukov.db.dao.MemorySegmentDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
