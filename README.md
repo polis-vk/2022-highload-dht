@@ -10,7 +10,7 @@ Cloning into '2022-highload-dht'...
 ...
 $ git remote add upstream git@github.com:polis-vk/2022-highload-dht.git
 $ git fetch upstream
-From github.com:polis-vk/202-highload-dht
+From github.com:polis-vk/2022-highload-dht
  * [new branch]      master     -> upstream/master
 ```
 
