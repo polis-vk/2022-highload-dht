@@ -1,12 +1,11 @@
 package ok.dht.test.galeev.dao.utils;
 
 import jdk.incubator.foreign.MemorySegment;
+import ok.dht.test.galeev.dao.entry.Entry;
 import ok.dht.test.galeev.dao.iterators.MergeIterator;
 import ok.dht.test.galeev.dao.iterators.PriorityPeekingIterator;
-import ok.dht.test.galeev.dao.entry.Entry;
 
 import java.io.IOException;
-import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -55,7 +54,8 @@ public class DBReader implements AutoCloseable {
         if (fileReaders.isEmpty()) {
             return Collections.emptyIterator();
         }
-        List<PriorityPeekingIterator<Entry<MemorySegment, MemorySegment>>> iterators = new ArrayList<>(fileReaders.size());
+        List<PriorityPeekingIterator<Entry<MemorySegment, MemorySegment>>> iterators
+                = new ArrayList<>(fileReaders.size());
         for (FileDBReader reader : fileReaders) {
             FileDBReader.FileIterator fromToIterator = reader.getFromToIterator(from, to);
             if (fromToIterator.hasNext()) {

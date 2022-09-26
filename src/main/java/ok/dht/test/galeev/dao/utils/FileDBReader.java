@@ -17,6 +17,7 @@ import static ok.dht.test.galeev.dao.utils.FileDBWriter.updateHash;
 
 public class FileDBReader implements AutoCloseable {
 
+    private static final boolean OFF_HASH = true;
     private final long size;
     private final long fileID;
     private final ResourceScope scope;
@@ -24,7 +25,6 @@ public class FileDBReader implements AutoCloseable {
     private final MemorySegment pageLinks;
     private final byte[] sha256;
     private final Path path;
-    private final boolean OffHash = true;
 
     public FileDBReader(Path inputPath) throws IOException {
         path = inputPath;
@@ -59,7 +59,7 @@ public class FileDBReader implements AutoCloseable {
 
     // Checks file's hash
     boolean checkIfFileCorrupted() {
-        if (OffHash) {
+        if (OFF_HASH) {
             return true;
         }
         MessageDigest md;

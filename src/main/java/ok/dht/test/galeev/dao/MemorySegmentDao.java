@@ -77,12 +77,10 @@ public class MemorySegmentDao {
         State currentState = state;
 
         Entry<MemorySegment, MemorySegment> entry = currentState.memory.get(key);
-        if (entry == null) {
-            if (!(currentState.flushing == null)) {
-                entry = currentState.flushing.get(key);
-            }
+        if (entry == null && currentState.flushing != null) {
+            entry = currentState.flushing.get(key);
         }
-        if (!(entry == null)) {
+        if (entry != null) {
             return entry.value() == null ? null : entry;
         }
         // storage may be closed
@@ -208,21 +206,25 @@ public class MemorySegmentDao {
     private void bgFlush() {
         try {
             Path filePath = getNewFileName();
-            try (FileDBWriter writer = new FileDBWriter(filePath)) {
-                writer.writeIterable(state.flushing.values());
-                memoryLock.writeLock().lock();
-                try {
-                    this.state = state.afterFlush(new DBReader(daoConfig.basePath()));
-                } finally {
-                    memoryLock.writeLock().unlock();
-                }
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
+            startWriting(filePath);
         } catch (Exception e) {
             throw new RuntimeException(e);
         } finally {
             flushFuture = null;
+        }
+    }
+
+    private void startWriting(Path filePath) {
+        try (FileDBWriter writer = new FileDBWriter(filePath)) {
+            writer.writeIterable(state.flushing.values());
+            memoryLock.writeLock().lock();
+            try {
+                this.state = state.afterFlush(new DBReader(daoConfig.basePath()));
+            } finally {
+                memoryLock.writeLock().unlock();
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 }

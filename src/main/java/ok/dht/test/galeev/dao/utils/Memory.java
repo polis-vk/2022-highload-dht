@@ -9,7 +9,6 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static ok.dht.test.galeev.dao.utils.FileDBWriter.getEntryLength;
-import static ok.dht.test.galeev.dao.utils.MemorySegmentComparator.INSTANCE;
 
 public class Memory {
     private final AtomicLong byteSize;

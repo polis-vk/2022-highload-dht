@@ -18,10 +18,10 @@ import java.util.Iterator;
 
 public class FileDBWriter implements Closeable {
     public static final String FILE_TMP = "file.tmp";
+    private static final boolean OFF_HASH = true;
     public static final byte VALUE_FOR_HASH_NULL = (byte) -1;
     private final Path path;
     private final ResourceScope writeScope;
-    private final boolean OffHash = true;
 
     public FileDBWriter(Path path) {
         this.writeScope = ResourceScope.newConfinedScope();
@@ -29,7 +29,9 @@ public class FileDBWriter implements Closeable {
     }
 
     // first value is number of entries, second is byte size
-    private static IteratorData getIteratorData(Iterator<Entry<MemorySegment, MemorySegment>> iterator, boolean offHash) {
+    private static IteratorData getIteratorData(
+            Iterator<Entry<MemorySegment, MemorySegment>> iterator,
+            boolean offHash) {
         MessageDigest md = null;
         if (!offHash) {
             try {
@@ -128,7 +130,7 @@ public class FileDBWriter implements Closeable {
         page.asSlice(Long.BYTES + Long.BYTES * i, sha256.length).copyFrom(MemorySegment.ofArray(sha256));
     }
 
-    /**
+    /*
      * @param iterableCollection which we are going to write
      * @return if had something been written
      */
@@ -141,7 +143,7 @@ public class FileDBWriter implements Closeable {
             return false;
         }
 
-        IteratorData iteratorData = getIteratorData(iterator, OffHash);
+        IteratorData iteratorData = getIteratorData(iterator, OFF_HASH);
         iterator = iterableCollection.iterator();
         writeIteratorWithTempFile(iterator, iteratorData);
         return true;
@@ -161,10 +163,8 @@ public class FileDBWriter implements Closeable {
         writeIterable(page, iteratorData.numberOfEntries(), iterator, sha256);
 
         FileDBReader reader = new FileDBReader(page);
-        if (!OffHash) {
-            if (reader.checkIfFileCorrupted()) {
-                throw new FileSystemException("File with path: " + path + " has written incorrectly");
-            }
+        if (!OFF_HASH && reader.checkIfFileCorrupted()) {
+            throw new FileSystemException("File with path: " + path + " has written incorrectly");
         }
 
         Files.move(tmpPath, path, StandardCopyOption.ATOMIC_MOVE);

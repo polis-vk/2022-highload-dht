@@ -7,22 +7,22 @@ import java.nio.charset.StandardCharsets;
 
 public class StringByteConverter implements MSConverter<String, byte[]> {
     @Override
-    public String MStoK(MemorySegment ms) {
+    public String getKeyFromMS(MemorySegment ms) {
         return (ms == null) ? null : new String(ms.asReadOnly().toByteArray(), StandardCharsets.UTF_8);
     }
 
     @Override
-    public byte[] MStoV(MemorySegment ms) {
+    public byte[] getValFromMS(MemorySegment ms) {
         return (ms == null) ? null : ms.asReadOnly().toByteArray();
     }
 
     @Override
-    public MemorySegment KtoMS(String key) {
+    public MemorySegment getMSFromKey(String key) {
         return (key == null) ? null : MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
-    public MemorySegment VtoMS(byte[] val) {
+    public MemorySegment getMSFromVal(byte[] val) {
         return (val == null) ? null : MemorySegment.ofArray(val);
     }
 }

@@ -17,29 +17,29 @@ public class DaoMiddleLayer<K, V> {
     }
 
     public Entry<K, V> get(K k) {
-        Entry<MemorySegment, MemorySegment> entry = dao.get(converter.KtoMS(k));
+        Entry<MemorySegment, MemorySegment> entry = dao.get(converter.getMSFromKey(k));
         if (entry == null) {
             return null;
         }
         return new BaseEntry<>(
                 k,
-                converter.MStoV(entry.value())
+                converter.getValFromMS(entry.value())
         );
     }
 
     public void upsert(Entry<K, V> entry) {
-        dao.upsert(converter.EntryToMSE(entry));
+        dao.upsert(converter.EntryToEntryMS(entry));
     }
 
     public void upsert(K k, V v) {
         dao.upsert(new BaseEntry<>(
-                converter.KtoMS(k),
-                converter.VtoMS(v)
+                converter.getMSFromKey(k),
+                converter.getMSFromVal(v)
         ));
     }
 
     public void delete(K k) {
-        dao.upsert(new BaseEntry<>(converter.KtoMS(k), null));
+        dao.upsert(new BaseEntry<>(converter.getMSFromKey(k), null));
     }
 
     public void stop() throws IOException {
