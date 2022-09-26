@@ -212,7 +212,11 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         executor.shutdown();
         try {
             //noinspection StatementWithEmptyBody
-            while (!executor.awaitTermination(10, TimeUnit.DAYS)) ;
+            while (true) {
+                if (executor.awaitTermination(10, TimeUnit.DAYS)) {
+                    break;
+                }
+            }
         } catch (InterruptedException e) {
             throw new IllegalStateException(e);
         }
