@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.rmi.UnexpectedException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -48,12 +49,12 @@ public class MemorySegmentDao {
     }
 
     private TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment from, MemorySegment to) {
-        State aState = accessState();
+        State accState = accessState();
 
-        List<Iterator<Entry<MemorySegment>>> iterators = aState.storage.iterate(from, to);
+        List<Iterator<Entry<MemorySegment>>> iterators = accState.storage.iterate(from, to);
 
-        iterators.add(aState.flushing.get(from, to));
-        iterators.add(aState.memory.get(from, to));
+        iterators.add(accState.flushing.get(from, to));
+        iterators.add(accState.memory.get(from, to));
 
         Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
 
@@ -61,24 +62,24 @@ public class MemorySegmentDao {
     }
 
     public Entry<MemorySegment> get(MemorySegment key) {
-        State aState = accessState();
+        State accState = accessState();
 
-        Entry<MemorySegment> result = aState.memory.get(key);
+        Entry<MemorySegment> result = accState.memory.get(key);
         if (result == null) {
-            result = aState.storage.get(key);
+            result = accState.storage.get(key);
         }
 
         return (result == null || result.isTombstone()) ? null : result;
     }
 
     public void upsert(Entry<MemorySegment> entry) {
-        State aState = accessState();
+        State accState = accessState();
 
         boolean runFlush;
         // it is intentionally the read lock!!!
         upsertLock.readLock().lock();
         try {
-            runFlush = aState.memory.put(entry.key(), entry);
+            runFlush = accState.memory.put(entry.key(), entry);
         } finally {
             upsertLock.readLock().unlock();
         }
@@ -91,8 +92,8 @@ public class MemorySegmentDao {
     private Future<?> flushInBg(boolean tolerateFlushInProgress) {
         upsertLock.writeLock().lock();
         try {
-            State aState = accessState();
-            if (aState.isFlushing()) {
+            State accState = accessState();
+            if (accState.isFlushing()) {
                 if (tolerateFlushInProgress) {
                     // or any other completed future
                     return CompletableFuture.completedFuture(null);
@@ -100,23 +101,23 @@ public class MemorySegmentDao {
                 throw new TooManyFlushesInBgException();
             }
 
-            aState = aState.prepareForFlush();
-            this.state = aState;
+            accState = accState.prepareForFlush();
+            this.state = accState;
         } finally {
             upsertLock.writeLock().unlock();
         }
 
         return executor.submit(() -> {
             try {
-                State aState = accessState();
+                State accState = accessState();
 
-                Storage storage = aState.storage;
-                StorageUtils.save(config, storage, aState.flushing.values());
+                Storage storage = accState.storage;
+                StorageUtils.save(config, storage, accState.flushing.values());
                 Storage load = StorageUtils.load(config);
 
                 upsertLock.writeLock().lock();
                 try {
-                    this.state = aState.afterFlush(load);
+                    this.state = accState.afterFlush(load);
                 } finally {
                     upsertLock.writeLock().unlock();
                 }
@@ -159,16 +160,16 @@ public class MemorySegmentDao {
         }
 
         Future<Object> future = executor.submit(() -> {
-            State state = accessState();
+            State accState = accessState();
 
-            if (state.memory.isEmpty() && state.storage.isCompacted()) {
+            if (accState.memory.isEmpty() && accState.storage.isCompacted()) {
                 return null;
             }
 
             StorageUtils.compact(
                     config,
                     () -> MergeIterator.of(
-                            state.storage.iterate(VERY_FIRST_KEY,
+                            accState.storage.iterate(VERY_FIRST_KEY,
                                     null
                             ),
                             EntryKeyComparator.INSTANCE
@@ -179,7 +180,7 @@ public class MemorySegmentDao {
 
             upsertLock.writeLock().lock();
             try {
-                this.state = state.afterCompact(storage);
+                this.state = accState.afterCompact(storage);
             } finally {
                 upsertLock.writeLock().unlock();
             }
@@ -193,10 +194,7 @@ public class MemorySegmentDao {
     private void awaitAndUnwrap(Future<?> future) throws IOException {
         try {
             future.get();
-        } catch (InterruptedException e) {
-            LOG.error(e.getMessage());
-            throw new RuntimeException(e);
-        } catch (ExecutionException e) {
+        } catch (ExecutionException | InterruptedException e) {
             LOG.error(e.getMessage());
             if (e.getCause() instanceof IOException) {
                 throw (IOException) e.getCause();
@@ -205,16 +203,16 @@ public class MemorySegmentDao {
     }
 
     private State accessState() {
-        State aState = this.state;
-        if (aState.closed) {
+        State accState = this.state;
+        if (accState.closed) {
             throw new IllegalStateException("Dao is already closed");
         }
-        return aState;
+        return accState;
     }
 
     public synchronized void close() throws IOException {
-        State aState = this.state;
-        if (aState.closed) {
+        State accState = this.state;
+        if (accState.closed) {
             return;
         }
         executor.shutdown();
@@ -225,15 +223,15 @@ public class MemorySegmentDao {
             }
         } catch (InterruptedException e) {
             LOG.error(e.getMessage());
-            throw new IllegalStateException(e);
+            throw new UnexpectedException(e.getMessage());
         }
-        aState = this.state;
-        aState.storage.close();
-        this.state = aState.afterClosed();
-        if (aState.memory.isEmpty()) {
+        accState = this.state;
+        accState.storage.close();
+        this.state = accState.afterClosed();
+        if (accState.memory.isEmpty()) {
             return;
         }
-        StorageUtils.save(config, aState.storage, aState.memory.values());
+        StorageUtils.save(config, accState.storage, accState.memory.values());
     }
 
 }
