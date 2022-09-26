@@ -8,8 +8,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -49,7 +49,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     private TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment from, MemorySegment to) {
         State state = accessState();
 
-        ArrayList<Iterator<Entry<MemorySegment>>> iterators = state.storage.iterate(from, to);
+        List<Iterator<Entry<MemorySegment>>> iterators = state.storage.iterate(from, to);
 
         iterators.add(state.flushing.get(from, to));
         iterators.add(state.memory.get(from, to));
@@ -193,19 +193,14 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         awaitAndUnwrap(future);
     }
 
-    private void awaitAndUnwrap(Future<?> future) throws IOException {
+    private void awaitAndUnwrap(Future<?> future) {
         try {
             future.get();
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new RuntimeException(e);
         } catch (ExecutionException e) {
-            try {
-                throw e.getCause();
-            } catch (RuntimeException | IOException | Error r) {
-                throw r;
-            } catch (Throwable t) {
-                throw new RuntimeException(t);
-            }
+            throw new RuntimeException(e);
         }
     }
 
@@ -225,8 +220,11 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
         executor.shutdown();
         try {
-            //noinspection StatementWithEmptyBody
-            while (!executor.awaitTermination(10, TimeUnit.DAYS)) ;
+            while (true) {
+                if (!executor.awaitTermination(10, TimeUnit.DAYS)) {
+                    break;
+                }
+            }
         } catch (InterruptedException e) {
             throw new IllegalStateException(e);
         }

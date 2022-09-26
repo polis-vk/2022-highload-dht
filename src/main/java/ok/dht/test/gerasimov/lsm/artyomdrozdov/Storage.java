@@ -18,6 +18,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 
 import static ok.dht.test.gerasimov.lsm.artyomdrozdov.StorageUtils.getSize;
 import static ok.dht.test.gerasimov.lsm.artyomdrozdov.StorageUtils.mapForRead;
@@ -26,7 +27,7 @@ import static ok.dht.test.gerasimov.lsm.artyomdrozdov.StorageUtils.writeRecord;
 class Storage implements Closeable {
     // supposed to have fresh files first
     private final ResourceScope scope;
-    private final ArrayList<MemorySegment> sstables;
+    private final List<MemorySegment> sstables;
     private final boolean hasTombstones;
 
     private static final Cleaner CLEANER = Cleaner.create(runnable -> {
@@ -49,7 +50,7 @@ class Storage implements Closeable {
         if (Files.exists(compactedFile)) {
             finishCompact(config, compactedFile);
         }
-        ArrayList<MemorySegment> sstables = new ArrayList<>();
+        List<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
         for (int i = 0; ; i++) {
@@ -144,7 +145,7 @@ class Storage implements Closeable {
         Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
     }
 
-    private Storage(ResourceScope scope, ArrayList<MemorySegment> sstables, boolean hasTombstones) {
+    private Storage(ResourceScope scope, List<MemorySegment> sstables, boolean hasTombstones) {
         this.scope = scope;
         this.sstables = sstables;
         this.hasTombstones = hasTombstones;
@@ -244,9 +245,9 @@ class Storage implements Closeable {
 
     // last is newer
     // it is ok to mutate list after
-    public ArrayList<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
+    public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
         try {
-            ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
+            List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
             for (MemorySegment sstable : sstables) {
                 iterators.add(iterate(sstable, keyFrom, keyTo));
             }
