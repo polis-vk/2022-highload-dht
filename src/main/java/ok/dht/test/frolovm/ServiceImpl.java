@@ -5,7 +5,11 @@ import java.util.concurrent.CompletableFuture;
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
-import ok.dht.dao.artyomdrozdov.*;
+import ok.dht.dao.artyomdrozdov.BaseEntry;
+import ok.dht.dao.artyomdrozdov.Config;
+import ok.dht.dao.artyomdrozdov.Dao;
+import ok.dht.dao.artyomdrozdov.Entry;
+import ok.dht.dao.artyomdrozdov.MemorySegmentDao;
 import ok.dht.test.ServiceFactory;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -47,7 +51,7 @@ public class ServiceImpl implements Service {
     private static HttpServerConfig createConfigFromPort(int port) {
         HttpServerConfig httpConfig = new HttpServerConfig();
         AcceptorConfig acceptor = createAcceptorConfig(port);
-        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+        httpConfig.acceptors = new AcceptorConfig[] {acceptor};
         return httpConfig;
     }
 
