@@ -32,11 +32,6 @@ public final class StorageUtils {
             setDaemon(true);
             super.start();
         }
-
-        @Override
-        public void run() {
-            super.run();
-        }
     });
 
     private StorageUtils() {
