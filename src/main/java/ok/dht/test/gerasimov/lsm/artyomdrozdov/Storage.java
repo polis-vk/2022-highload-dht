@@ -20,6 +20,8 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.concurrent.ThreadFactory;
 
+import static ok.dht.test.gerasimov.lsm.artyomdrozdov.StorageUtils.*;
+
 class Storage implements Closeable {
     // supposed to have fresh files first
     private final ResourceScope scope;
@@ -131,34 +133,8 @@ class Storage implements Closeable {
         Files.move(sstableTmpPath, sstablePath, StandardCopyOption.ATOMIC_MOVE);
     }
 
-    private static long getSize(Entry<MemorySegment> entry) {
-        if (entry.value() == null) {
-            return Long.BYTES + entry.key().byteSize() + Long.BYTES;
-        } else {
-            return Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
-        }
-    }
-
     public static long getSizeOnDisk(Entry<MemorySegment> entry) {
         return getSize(entry) + INDEX_RECORD_SIZE;
-    }
-
-    private static long writeRecord(MemorySegment nextSSTable, long offset, MemorySegment record) {
-        if (record == null) {
-            MemoryAccess.setLongAtOffset(nextSSTable, offset, -1);
-            return Long.BYTES;
-        }
-        long recordSize = record.byteSize();
-        MemoryAccess.setLongAtOffset(nextSSTable, offset, recordSize);
-        nextSSTable.asSlice(offset + Long.BYTES, recordSize).copyFrom(record);
-        return Long.BYTES + recordSize;
-    }
-
-    @SuppressWarnings("DuplicateThrows")
-    private static MemorySegment mapForRead(ResourceScope scope, Path file) throws NoSuchFileException, IOException {
-        long size = Files.size(file);
-
-        return MemorySegment.mapFile(file, 0, size, FileChannel.MapMode.READ_ONLY, scope);
     }
 
     public static void compact(Config config, Data data) throws IOException {
@@ -311,10 +287,6 @@ class Storage implements Closeable {
                 // ignored
             }
         }
-    }
-
-    public void maybeClose() {
-
     }
 
     public boolean isClosed() {

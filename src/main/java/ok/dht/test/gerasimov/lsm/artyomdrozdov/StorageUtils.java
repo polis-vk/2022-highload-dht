@@ -10,12 +10,12 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-public final class StorageUtils {
+public class StorageUtils {
 
-    private StorageUtils() {
+    public StorageUtils() {
     }
 
-    public static long getSize(Entry<MemorySegment> entry) {
+    protected static long getSize(Entry<MemorySegment> entry) {
         if (entry.value() == null) {
             return Long.BYTES + entry.key().byteSize() + Long.BYTES;
         } else {
@@ -23,7 +23,7 @@ public final class StorageUtils {
         }
     }
 
-    public static long writeRecord(MemorySegment nextSSTable, long offset, MemorySegment record) {
+    protected static long writeRecord(MemorySegment nextSSTable, long offset, MemorySegment record) {
         if (record == null) {
             MemoryAccess.setLongAtOffset(nextSSTable, offset, -1);
             return Long.BYTES;
@@ -34,7 +34,7 @@ public final class StorageUtils {
         return Long.BYTES + recordSize;
     }
 
-    public static MemorySegment mapForRead(ResourceScope scope, Path file) throws IOException {
+    protected static MemorySegment mapForRead(ResourceScope scope, Path file) throws IOException {
         long size = Files.size(file);
 
         return MemorySegment.mapFile(file, 0, size, FileChannel.MapMode.READ_ONLY, scope);
