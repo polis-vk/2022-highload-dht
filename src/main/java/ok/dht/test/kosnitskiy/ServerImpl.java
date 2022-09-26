@@ -1,13 +1,12 @@
 package ok.dht.test.kosnitskiy;
 
 import ok.dht.ServiceConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public final class ServerImpl {
 

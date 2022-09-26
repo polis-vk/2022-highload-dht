@@ -48,12 +48,12 @@ public class MemorySegmentDao {
     }
 
     private TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment from, MemorySegment to) {
-        State state = accessState();
+        State aState = accessState();
 
-        List<Iterator<Entry<MemorySegment>>> iterators = state.storage.iterate(from, to);
+        List<Iterator<Entry<MemorySegment>>> iterators = aState.storage.iterate(from, to);
 
-        iterators.add(state.flushing.get(from, to));
-        iterators.add(state.memory.get(from, to));
+        iterators.add(aState.flushing.get(from, to));
+        iterators.add(aState.memory.get(from, to));
 
         Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
 
@@ -61,24 +61,24 @@ public class MemorySegmentDao {
     }
 
     public Entry<MemorySegment> get(MemorySegment key) {
-        State state = accessState();
+        State aState = accessState();
 
-        Entry<MemorySegment> result = state.memory.get(key);
+        Entry<MemorySegment> result = aState.memory.get(key);
         if (result == null) {
-            result = state.storage.get(key);
+            result = aState.storage.get(key);
         }
 
         return (result == null || result.isTombstone()) ? null : result;
     }
 
     public void upsert(Entry<MemorySegment> entry) {
-        State state = accessState();
+        State aState = accessState();
 
         boolean runFlush;
         // it is intentionally the read lock!!!
         upsertLock.readLock().lock();
         try {
-            runFlush = state.memory.put(entry.key(), entry);
+            runFlush = aState.memory.put(entry.key(), entry);
         } finally {
             upsertLock.readLock().unlock();
         }
@@ -91,8 +91,8 @@ public class MemorySegmentDao {
     private Future<?> flushInBg(boolean tolerateFlushInProgress) {
         upsertLock.writeLock().lock();
         try {
-            State state = accessState();
-            if (state.isFlushing()) {
+            State aState = accessState();
+            if (aState.isFlushing()) {
                 if (tolerateFlushInProgress) {
                     // or any other completed future
                     return CompletableFuture.completedFuture(null);
@@ -100,23 +100,23 @@ public class MemorySegmentDao {
                 throw new TooManyFlushesInBgException();
             }
 
-            state = state.prepareForFlush();
-            this.state = state;
+            aState = aState.prepareForFlush();
+            this.state = aState;
         } finally {
             upsertLock.writeLock().unlock();
         }
 
         return executor.submit(() -> {
             try {
-                State state = accessState();
+                State aState = accessState();
 
-                Storage storage = state.storage;
-                StorageUtils.save(config, storage, state.flushing.values());
+                Storage storage = aState.storage;
+                StorageUtils.save(config, storage, aState.flushing.values());
                 Storage load = StorageUtils.load(config);
 
                 upsertLock.writeLock().lock();
                 try {
-                    this.state = state.afterFlush(load);
+                    this.state = aState.afterFlush(load);
                 } finally {
                     upsertLock.writeLock().unlock();
                 }
@@ -194,31 +194,27 @@ public class MemorySegmentDao {
         try {
             future.get();
         } catch (InterruptedException e) {
+            LOG.error(e.getMessage());
             throw new RuntimeException(e);
         } catch (ExecutionException e) {
-            try {
-                throw e.getCause();
-            } catch (RuntimeException | IOException | Error r) {
-                LOG.error(r.getMessage());
-                throw r;
-            } catch (Throwable t) {
-                LOG.info(t.getMessage());
-                throw new RuntimeException(t);
+            LOG.error(e.getMessage());
+            if (e.getCause() instanceof IOException) {
+                throw (IOException) e.getCause();
             }
         }
     }
 
     private State accessState() {
-        State state = this.state;
-        if (state.closed) {
+        State aState = this.state;
+        if (aState.closed) {
             throw new IllegalStateException("Dao is already closed");
         }
-        return state;
+        return aState;
     }
 
     public synchronized void close() throws IOException {
-        State state = this.state;
-        if (state.closed) {
+        State aState = this.state;
+        if (aState.closed) {
             return;
         }
         executor.shutdown();
@@ -226,17 +222,18 @@ public class MemorySegmentDao {
             //noinspection StatementWithEmptyBody
             while (!executor.awaitTermination(10, TimeUnit.DAYS)) {
                 LOG.info("waiting termination");
-            };
+            }
         } catch (InterruptedException e) {
+            LOG.error(e.getMessage());
             throw new IllegalStateException(e);
         }
-        state = this.state;
-        state.storage.close();
-        this.state = state.afterClosed();
-        if (state.memory.isEmpty()) {
+        aState = this.state;
+        aState.storage.close();
+        this.state = aState.afterClosed();
+        if (aState.memory.isEmpty()) {
             return;
         }
-        StorageUtils.save(config, state.storage, state.memory.values());
+        StorageUtils.save(config, aState.storage, aState.memory.values());
     }
 
 }

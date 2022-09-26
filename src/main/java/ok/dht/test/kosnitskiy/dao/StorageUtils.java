@@ -16,24 +16,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.concurrent.ThreadFactory;
 
-public class StorageUtils {
-
-    private StorageUtils() {
-
-    }
-
-    public static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
-        @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
-                @Override
-                public synchronized void start() {
-                    setDaemon(true);
-                    super.start();
-                }
-            };
-        }
-    });
+public final class StorageUtils {
 
     public static final long VERSION = 0;
     public static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
@@ -43,6 +26,18 @@ public class StorageUtils {
     public static final String FILE_EXT = ".dat";
     public static final String FILE_EXT_TMP = ".tmp";
     public static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
+
+    public static final Cleaner CLEANER = Cleaner.create(r -> new Thread(r, "Storage-Cleaner") {
+        @Override
+        public synchronized void start() {
+            setDaemon(true);
+            super.start();
+        }
+    });
+
+    private StorageUtils() {
+
+    }
 
     public static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
@@ -54,7 +49,7 @@ public class StorageUtils {
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
-        for (int i = 0; ; i++) {
+        for (int i = 0; i < Integer.MAX_VALUE; i++) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));
@@ -91,7 +86,8 @@ public class StorageUtils {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
+            Iterator<Entry<MemorySegment>> iterator = entries.iterator();
+            while (iterator.hasNext()) {
                 Entry<MemorySegment> entry = iterator.next();
                 size += getSize(entry);
                 if (entry.isTombstone()) {
@@ -112,7 +108,8 @@ public class StorageUtils {
 
             long index = 0;
             long offset = dataStart;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
+            iterator = entries.iterator();
+            while (iterator.hasNext()) {
                 Entry<MemorySegment> entry = iterator.next();
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
