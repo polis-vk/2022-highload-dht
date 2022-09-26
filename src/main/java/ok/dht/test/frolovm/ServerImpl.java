@@ -22,7 +22,6 @@ public final class ServerImpl {
         int port = 42342;
         String url = "http://localhost:42342" + port;
         Path path = Files.createTempDirectory("data");
-        System.out.println(path);
         ServiceConfig cfg = new ServiceConfig(port, url, Collections.singletonList(url), path);
         ServiceImpl.Factory factory = new ServiceImpl.Factory();
         Service server = factory.create(cfg);

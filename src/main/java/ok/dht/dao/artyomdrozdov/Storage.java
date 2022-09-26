@@ -17,7 +17,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ThreadFactory;
 
-class Storage implements Closeable {
+final class Storage implements Closeable {
 
     private static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
         @Override
@@ -44,7 +44,7 @@ class Storage implements Closeable {
     private final List<MemorySegment> sstables;
     private final boolean hasTombstones;
 
-    private Storage(ResourceScope scope, ArrayList<MemorySegment> sstables, boolean hasTombstones) {
+    private Storage(ResourceScope scope, List<MemorySegment> sstables, boolean hasTombstones) {
         this.scope = scope;
         this.sstables = sstables;
         this.hasTombstones = hasTombstones;
@@ -57,7 +57,7 @@ class Storage implements Closeable {
             finishCompact(config, compactedFile);
         }
 
-        ArrayList<MemorySegment> sstables = new ArrayList<>();
+        List<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
         int i = 0;
@@ -97,7 +97,7 @@ class Storage implements Closeable {
             Iterator<Entry<MemorySegment>> iterator = entries.iterator();
             while (iterator.hasNext()) {
                 Entry<MemorySegment> entry = iterator.next();
-                size += getSize(entry);
+                size += StorageUtils.getSize(entry);
                 if (entry.isTombstone()) {
                     hasTombstone = true;
                 }
@@ -133,16 +133,8 @@ class Storage implements Closeable {
         Files.move(sstableTmpPath, sstablePath, StandardCopyOption.ATOMIC_MOVE);
     }
 
-    private static long getSize(Entry<MemorySegment> entry) {
-        if (entry.value() == null) {
-            return Long.BYTES + entry.key().byteSize() + Long.BYTES;
-        } else {
-            return Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
-        }
-    }
-
     public static long getSizeOnDisk(Entry<MemorySegment> entry) {
-        return getSize(entry) + INDEX_RECORD_SIZE;
+        return StorageUtils.getSize(entry) + INDEX_RECORD_SIZE;
     }
 
     private static long writeRecord(MemorySegment nextSSTable, long offset, MemorySegment record) {
@@ -202,8 +194,8 @@ class Storage implements Closeable {
             long keyPos = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + mid * INDEX_RECORD_SIZE);
             long keySize = MemoryAccess.getLongAtOffset(sstable, keyPos);
 
-            MemorySegment keyForCheck = sstable.asSlice(keyPos + Long.BYTES, keySize);
-            int comparedResult = MemorySegmentComparator.INSTANCE.compare(key, keyForCheck);
+            int comparedResult = MemorySegmentComparator.INSTANCE
+                                        .compare(key, sstable.asSlice(keyPos + Long.BYTES, keySize));
             if (comparedResult > 0) {
                 left = mid + 1;
             } else if (comparedResult < 0) {
@@ -245,15 +237,12 @@ class Storage implements Closeable {
     }
 
     private Iterator<Entry<MemorySegment>> iterate(MemorySegment sstable, MemorySegment keyFrom, MemorySegment keyTo) {
-        long keyFromPos = greaterOrEqualEntryIndex(sstable, keyFrom);
-        long keyToPos = greaterOrEqualEntryIndex(sstable, keyTo);
-
         return new Iterator<>() {
-            long pos = keyFromPos;
+            long pos = greaterOrEqualEntryIndex(sstable, keyFrom);
 
             @Override
             public boolean hasNext() {
-                return pos < keyToPos;
+                return pos < greaterOrEqualEntryIndex(sstable, keyTo);
             }
 
             @Override
@@ -267,9 +256,9 @@ class Storage implements Closeable {
 
     // last is newer
     // it is ok to mutate list after
-    public ArrayList<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
+    public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
         try {
-            ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
+            List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
             for (MemorySegment sstable : sstables) {
                 iterators.add(iterate(sstable, keyFrom, keyTo));
             }
