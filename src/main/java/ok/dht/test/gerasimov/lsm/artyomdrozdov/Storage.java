@@ -21,6 +21,10 @@ import java.util.Iterator;
 import java.util.concurrent.ThreadFactory;
 
 class Storage implements Closeable {
+    // supposed to have fresh files first
+    private final ResourceScope scope;
+    private final ArrayList<MemorySegment> sstables;
+    private final boolean hasTombstones;
 
     private static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
         @Override
@@ -78,11 +82,7 @@ class Storage implements Closeable {
         save(entries::iterator, sstablePath);
     }
 
-    private static void save(
-            Data entries,
-            Path sstablePath
-    ) throws IOException {
-
+    private static void save(Data entries, Path sstablePath) throws IOException {
         Path sstableTmpPath = sstablePath.resolveSibling(sstablePath.getFileName().toString() + FILE_EXT_TMP);
 
         Files.deleteIfExists(sstableTmpPath);
@@ -92,8 +92,7 @@ class Storage implements Closeable {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
-                Entry<MemorySegment> entry = iterator.next();
+            for (Entry<MemorySegment> entry : entries ) {
                 size += getSize(entry);
                 if (entry.isTombstone()) {
                     hasTombstone = true;
@@ -113,8 +112,7 @@ class Storage implements Closeable {
 
             long index = 0;
             long offset = dataStart;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
-                Entry<MemorySegment> entry = iterator.next();
+            for (Entry<MemorySegment> entry : entries ) {
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
                 offset += writeRecord(nextSSTable, offset, entry.key());
@@ -179,12 +177,6 @@ class Storage implements Closeable {
 
         Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
     }
-
-    // supposed to have fresh files first
-
-    private final ResourceScope scope;
-    private final ArrayList<MemorySegment> sstables;
-    private final boolean hasTombstones;
 
     private Storage(ResourceScope scope, ArrayList<MemorySegment> sstables, boolean hasTombstones) {
         this.scope = scope;
@@ -339,8 +331,8 @@ class Storage implements Closeable {
         return !hasTombstones;
     }
 
-    public interface Data {
-        Iterator<Entry<MemorySegment>> iterator() throws IOException;
+    public interface Data extends Iterable<Entry<MemorySegment>> {
+        Iterator<Entry<MemorySegment>> iterator();
     }
 
 }

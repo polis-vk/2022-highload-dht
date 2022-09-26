@@ -32,8 +32,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     private final ReadWriteLock upsertLock = new ReentrantReadWriteLock();
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(
-            r -> new Thread(r, "MemorySegmentDaoBG"));
+    private final ExecutorService executor =
+            Executors.newSingleThreadExecutor(r -> new Thread(r, "MemorySegmentDaoBG"));
 
     private volatile State state;
 
