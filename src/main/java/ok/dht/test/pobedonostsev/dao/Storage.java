@@ -234,10 +234,12 @@ class Storage implements Closeable {
         long keyToPos = greaterOrEqualEntryIndex(sstable, keyTo);
         return new Iterator<>() {
             long pos = keyFromPos;
+
             @Override
             public boolean hasNext() {
                 return pos < keyToPos;
             }
+
             @Override
             public Entry<MemorySegment> next() {
                 Entry<MemorySegment> entry = entryAt(sstable, pos);
