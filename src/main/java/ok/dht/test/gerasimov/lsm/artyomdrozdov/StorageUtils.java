@@ -15,7 +15,7 @@ public final class StorageUtils {
     private StorageUtils() {
     }
 
-    protected static long getSize(Entry<MemorySegment> entry) {
+    public static long getSize(Entry<MemorySegment> entry) {
         if (entry.value() == null) {
             return Long.BYTES + entry.key().byteSize() + Long.BYTES;
         } else {
@@ -23,7 +23,7 @@ public final class StorageUtils {
         }
     }
 
-    protected static long writeRecord(MemorySegment nextSSTable, long offset, MemorySegment record) {
+    public static long writeRecord(MemorySegment nextSSTable, long offset, MemorySegment record) {
         if (record == null) {
             MemoryAccess.setLongAtOffset(nextSSTable, offset, -1);
             return Long.BYTES;
@@ -34,7 +34,7 @@ public final class StorageUtils {
         return Long.BYTES + recordSize;
     }
 
-    protected static MemorySegment mapForRead(ResourceScope scope, Path file) throws IOException {
+    public static MemorySegment mapForRead(ResourceScope scope, Path file) throws IOException {
         long size = Files.size(file);
 
         return MemorySegment.mapFile(file, 0, size, FileChannel.MapMode.READ_ONLY, scope);
