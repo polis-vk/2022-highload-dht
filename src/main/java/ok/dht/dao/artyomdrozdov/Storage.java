@@ -19,7 +19,9 @@ import java.util.concurrent.ThreadFactory;
 
 final class Storage implements Closeable {
 
-    private static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
+    private static final Cleaner CLEANER = Cleaner.create(new ThreadFactoryClean());
+
+    private static final class ThreadFactoryClean implements ThreadFactory {
         @Override
         public Thread newThread(Runnable r) {
             return new Thread(r, "Storage-Cleaner") {
@@ -30,7 +32,7 @@ final class Storage implements Closeable {
                 }
             };
         }
-    });
+    }
 
     private static final long VERSION = 0;
     private static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
@@ -61,12 +63,13 @@ final class Storage implements Closeable {
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
         int i = 0;
-        while (true) {
+        boolean isResolve = false;
+        while (!isResolve) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
                 sstables.add(StorageUtils.mapForRead(scope, nextFile));
             } catch (NoSuchFileException e) {
-                break;
+                isResolve = true;
             }
             i++;
         }
