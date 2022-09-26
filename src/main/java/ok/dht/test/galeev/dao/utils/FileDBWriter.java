@@ -21,6 +21,7 @@ public class FileDBWriter implements Closeable {
     public static final byte VALUE_FOR_HASH_NULL = (byte) -1;
     private final Path path;
     private final ResourceScope writeScope;
+    private final boolean OffHash = true;
 
     public FileDBWriter(Path path) {
         this.writeScope = ResourceScope.newConfinedScope();
@@ -28,23 +29,31 @@ public class FileDBWriter implements Closeable {
     }
 
     // first value is number of entries, second is byte size
-    private static IteratorData getIteratorData(Iterator<Entry<MemorySegment, MemorySegment>> iterator) {
-        MessageDigest md;
-        try {
-            md = MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("System does not found SHA-256 algorithm", e);
+    private static IteratorData getIteratorData(Iterator<Entry<MemorySegment, MemorySegment>> iterator, boolean offHash) {
+        MessageDigest md = null;
+        if (!offHash) {
+            try {
+                md = MessageDigest.getInstance("SHA-256");
+            } catch (NoSuchAlgorithmException e) {
+                throw new RuntimeException("System does not found SHA-256 algorithm", e);
+            }
         }
         long numberOfElements = 0;
         long byteSize = 0;
         while (iterator.hasNext()) {
             Entry<MemorySegment, MemorySegment> entry = iterator.next();
             byteSize += getEntryLength(entry);
-            updateHash(md, entry);
+            if (!offHash) {
+                updateHash(md, entry);
+            }
             numberOfElements++;
         }
         byteSize += Long.BYTES + numberOfElements * Long.BYTES;
-        return new IteratorData(numberOfElements, byteSize, md.digest());
+        if (offHash) {
+            return new IteratorData(numberOfElements, byteSize, new byte[0]);
+        } else {
+            return new IteratorData(numberOfElements, byteSize, md.digest());
+        }
     }
 
     static void updateHash(MessageDigest md, Entry<MemorySegment, MemorySegment> entry) {
@@ -131,8 +140,8 @@ public class FileDBWriter implements Closeable {
         if (!iterator.hasNext()) {
             return false;
         }
-        IteratorData iteratorData = getIteratorData(iterator);
 
+        IteratorData iteratorData = getIteratorData(iterator, OffHash);
         iterator = iterableCollection.iterator();
         writeIteratorWithTempFile(iterator, iteratorData);
         return true;
@@ -152,8 +161,10 @@ public class FileDBWriter implements Closeable {
         writeIterable(page, iteratorData.numberOfEntries(), iterator, sha256);
 
         FileDBReader reader = new FileDBReader(page);
-        if (reader.checkIfFileCorrupted()) {
-            throw new FileSystemException("File with path: " + path + " has written incorrectly");
+        if (!OffHash) {
+            if (reader.checkIfFileCorrupted()) {
+                throw new FileSystemException("File with path: " + path + " has written incorrectly");
+            }
         }
 
         Files.move(tmpPath, path, StandardCopyOption.ATOMIC_MOVE);

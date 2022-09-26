@@ -25,7 +25,7 @@ import java.util.concurrent.CompletableFuture;
 
 public class DemoService implements Service {
 
-    public static final int FLUSH_THRESHOLD_BYTES = 8388608; // 8MB
+    public static final int FLUSH_THRESHOLD_BYTES = 16777216; // 16MB
     public static final Response BAD_RESPONSE
             = new Response(Response.BAD_REQUEST, Response.EMPTY);
     public static final Response NOT_FOUND_RESPONSE

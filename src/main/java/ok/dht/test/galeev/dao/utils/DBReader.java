@@ -33,9 +33,6 @@ public class DBReader implements AutoCloseable {
         ) {
             for (Path path : paths.toList()) {
                 FileDBReader fileDBReader = new FileDBReader(path);
-                if (fileDBReader.checkIfFileCorrupted()) {
-                    throw new FileSystemException("File with path: " + path + " is corrupted");
-                }
                 fileDBReadersSet.add(fileDBReader);
             }
         }

@@ -24,6 +24,7 @@ public class FileDBReader implements AutoCloseable {
     private final MemorySegment pageLinks;
     private final byte[] sha256;
     private final Path path;
+    private final boolean OffHash = true;
 
     public FileDBReader(Path inputPath) throws IOException {
         path = inputPath;
@@ -58,6 +59,9 @@ public class FileDBReader implements AutoCloseable {
 
     // Checks file's hash
     boolean checkIfFileCorrupted() {
+        if (OffHash) {
+            return true;
+        }
         MessageDigest md;
         try {
             md = MessageDigest.getInstance("SHA-256");
