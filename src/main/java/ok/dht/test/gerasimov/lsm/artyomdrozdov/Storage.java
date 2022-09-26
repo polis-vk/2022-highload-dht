@@ -18,7 +18,6 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.concurrent.ThreadFactory;
 
 import static ok.dht.test.gerasimov.lsm.artyomdrozdov.StorageUtils.getSize;
 import static ok.dht.test.gerasimov.lsm.artyomdrozdov.StorageUtils.mapForRead;
@@ -30,17 +29,10 @@ class Storage implements Closeable {
     private final ArrayList<MemorySegment> sstables;
     private final boolean hasTombstones;
 
-    private static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
-        @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
-                @Override
-                public synchronized void start() {
-                    setDaemon(true);
-                    super.start();
-                }
-            };
-        }
+    private static final Cleaner CLEANER = Cleaner.create(runnable -> {
+        Thread thread = new Thread(runnable, "Storage-Cleaner");
+        thread.setDaemon(true);
+        return thread;
     });
 
     private static final long VERSION = 0;
@@ -175,7 +167,6 @@ class Storage implements Closeable {
         }
         long recordsCount = MemoryAccess.getLongAtOffset(sstable, 8);
         if (key == null) {
-            // fixme
             return recordsCount;
         }
 
@@ -184,10 +175,8 @@ class Storage implements Closeable {
 
         while (left <= right) {
             long mid = (left + right) >>> 1;
-
             long keyPos = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + mid * INDEX_RECORD_SIZE);
             long keySize = MemoryAccess.getLongAtOffset(sstable, keyPos);
-
             MemorySegment keyForCheck = sstable.asSlice(keyPos + Long.BYTES, keySize);
             int comparedResult = MemorySegmentComparator.INSTANCE.compare(key, keyForCheck);
             if (comparedResult > 0) {
