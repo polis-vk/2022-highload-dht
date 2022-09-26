@@ -1,14 +1,16 @@
 package ok.dht.test.pobedonostsev;
 
-import java.nio.file.Files;
+import ok.dht.ServiceConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.file.Path;
 import java.util.Collections;
-import java.util.Scanner;
 import java.util.concurrent.TimeUnit;
 
-import ok.dht.ServiceConfig;
-
 public final class DemoServer {
+
+    private static final Logger LOG = LoggerFactory.getLogger(DemoServer.class);
 
     private DemoServer() {
         // Only main method
@@ -25,6 +27,6 @@ public final class DemoServer {
         );
         DemoService service = new DemoService(cfg);
         service.start().get(1, TimeUnit.SECONDS);
-        System.out.println("Socket is ready: " + url);
+        LOG.debug("Socket is ready: " + url);
     }
 }

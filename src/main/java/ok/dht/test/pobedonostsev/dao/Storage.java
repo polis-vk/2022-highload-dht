@@ -3,6 +3,8 @@ package ok.dht.test.pobedonostsev.dao;
 import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;
 import jdk.incubator.foreign.ResourceScope;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -15,20 +17,17 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.concurrent.ThreadFactory;
+import java.util.List;
 
 class Storage implements Closeable {
 
-    private static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
+    private static final Logger LOG = LoggerFactory.getLogger(Storage.class);
+
+    private static final Cleaner CLEANER = Cleaner.create(r -> new Thread(r, "Storage-Cleaner") {
         @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
-                @Override
-                public synchronized void start() {
-                    setDaemon(true);
-                    super.start();
-                }
-            };
+        public synchronized void start() {
+            setDaemon(true);
+            super.start();
         }
     });
 
@@ -40,6 +39,15 @@ class Storage implements Closeable {
     private static final String FILE_EXT = ".dat";
     private static final String FILE_EXT_TMP = ".tmp";
     private static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
+    private final ResourceScope scope;
+    private final List<MemorySegment> sstables;
+    private final boolean hasTombstones;
+
+    private Storage(ResourceScope scope, List<MemorySegment> sstables, boolean hasTombstones) {
+        this.scope = scope;
+        this.sstables = sstables;
+        this.hasTombstones = hasTombstones;
+    }
 
     static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
@@ -51,7 +59,6 @@ class Storage implements Closeable {
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
-        // FIXME check existing files
         for (int i = 0; ; i++) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
@@ -142,6 +149,8 @@ class Storage implements Closeable {
         return getSize(entry) + INDEX_RECORD_SIZE;
     }
 
+    // supposed to have fresh files first
+
     private static long writeRecord(MemorySegment nextSSTable, long offset, MemorySegment record) {
         if (record == null) {
             MemoryAccess.setLongAtOffset(nextSSTable, offset, -1);
@@ -177,18 +186,6 @@ class Storage implements Closeable {
         Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
     }
 
-    // supposed to have fresh files first
-
-    private final ResourceScope scope;
-    private final ArrayList<MemorySegment> sstables;
-    private final boolean hasTombstones;
-
-    private Storage(ResourceScope scope, ArrayList<MemorySegment> sstables, boolean hasTombstones) {
-        this.scope = scope;
-        this.sstables = sstables;
-        this.hasTombstones = hasTombstones;
-    }
-
     private long greaterOrEqualEntryIndex(MemorySegment sstable, MemorySegment key) {
         long index = entryIndex(sstable, key);
         if (index < 0) {
@@ -206,7 +203,6 @@ class Storage implements Closeable {
         }
         long recordsCount = MemoryAccess.getLongAtOffset(sstable, 8);
         if (key == null) {
-            // fixme
             return recordsCount;
         }
 
@@ -286,7 +282,7 @@ class Storage implements Closeable {
 
     // last is newer
     // it is ok to mutate list after
-    public ArrayList<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
+    public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
         try {
             ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
             for (MemorySegment sstable : sstables) {
@@ -312,11 +308,13 @@ class Storage implements Closeable {
             try {
                 scope.close();
                 return;
-            } catch (IllegalStateException ignored) {
+            } catch (IllegalStateException e) {
+                LOG.error("Cannot close", e);
             }
         }
     }
 
+    // suppose to close
     public void maybeClose() {
 
     }
