@@ -1,4 +1,4 @@
-package ok.dht.test.kosnitskiy.DAO;
+package ok.dht.test.kosnitskiy.dao;
 
 public record BaseEntry<Data>(Data key, Data value) implements Entry<Data> {
     @Override

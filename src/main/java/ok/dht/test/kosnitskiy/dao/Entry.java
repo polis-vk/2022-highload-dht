@@ -1,4 +1,4 @@
-package ok.dht.test.kosnitskiy.DAO;
+package ok.dht.test.kosnitskiy.dao;
 
 public interface Entry<D> {
     D key();
