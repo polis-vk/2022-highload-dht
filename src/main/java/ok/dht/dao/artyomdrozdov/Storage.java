@@ -39,6 +39,15 @@ class Storage implements Closeable {
     private static final String FILE_EXT = ".dat";
     private static final String FILE_EXT_TMP = ".tmp";
     private static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
+    private final ResourceScope scope;
+    private final ArrayList<MemorySegment> sstables;
+    private final boolean hasTombstones;
+
+    private Storage(ResourceScope scope, ArrayList<MemorySegment> sstables, boolean hasTombstones) {
+        this.scope = scope;
+        this.sstables = sstables;
+        this.hasTombstones = hasTombstones;
+    }
 
     static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
@@ -51,13 +60,15 @@ class Storage implements Closeable {
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
         // FIXME check existing files
-        for (int i = 0; ; i++) {
+        int i = 0;
+        while (true) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));
             } catch (NoSuchFileException e) {
                 break;
             }
+            i++;
         }
 
         boolean hasTombstones = !sstables.isEmpty() && MemoryAccess.getLongAtOffset(sstables.get(0), 16) == 1;
@@ -141,6 +152,8 @@ class Storage implements Closeable {
         return getSize(entry) + INDEX_RECORD_SIZE;
     }
 
+    // supposed to have fresh files first
+
     private static long writeRecord(MemorySegment nextSSTable, long offset, MemorySegment record) {
         if (record == null) {
             MemoryAccess.setLongAtOffset(nextSSTable, offset, -1);
@@ -176,18 +189,6 @@ class Storage implements Closeable {
         Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
     }
 
-    // supposed to have fresh files first
-
-    private final ResourceScope scope;
-    private final ArrayList<MemorySegment> sstables;
-    private final boolean hasTombstones;
-
-    private Storage(ResourceScope scope, ArrayList<MemorySegment> sstables, boolean hasTombstones) {
-        this.scope = scope;
-        this.sstables = sstables;
-        this.hasTombstones = hasTombstones;
-    }
-
     private long greaterOrEqualEntryIndex(MemorySegment sstable, MemorySegment key) {
         long index = entryIndex(sstable, key);
         if (index < 0) {
@@ -205,7 +206,6 @@ class Storage implements Closeable {
         }
         long recordsCount = MemoryAccess.getLongAtOffset(sstable, 8);
         if (key == null) {
-            // fixme
             return recordsCount;
         }
 
@@ -312,6 +312,7 @@ class Storage implements Closeable {
                 scope.close();
                 return;
             } catch (IllegalStateException ignored) {
+                //ignored
             }
         }
     }
@@ -333,9 +334,4 @@ class Storage implements Closeable {
         }
         return !hasTombstones;
     }
-
-    public interface Data {
-        Iterator<Entry<MemorySegment>> iterator() throws IOException;
-    }
-
 }
