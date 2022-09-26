@@ -142,6 +142,7 @@ public class State {
                     ? delegate.tailMap(from).values().iterator()
                     : delegate.subMap(from, to).values().iterator();
         }
+
         public Entry<MemorySegment> get(MemorySegment key) {
             return delegate.get(key);
         }

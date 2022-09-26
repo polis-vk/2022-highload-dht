@@ -127,7 +127,7 @@ public class ServiceImpl implements Service {
             try {
                 dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
             } catch (IOException exception) {
-                throw new IllegalArgumentException("Can't create database");
+                throw new IllegalArgumentException("Can't create database. " + exception.getMessage(), exception);
             }
             return new ServiceImpl(config, dao);
         }
