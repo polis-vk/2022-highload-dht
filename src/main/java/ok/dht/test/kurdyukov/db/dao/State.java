@@ -2,7 +2,6 @@ package ok.dht.test.kurdyukov.db.dao;
 
 import ok.dht.test.kurdyukov.db.base.Config;
 import ok.dht.test.kurdyukov.db.dao.storage.Storage;
-import ok.dht.test.kurdyukov.db.dao.storage.StorageUtils;
 
 class State {
     final Config config;

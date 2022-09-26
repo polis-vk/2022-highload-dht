@@ -12,16 +12,17 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 
 import static ok.dht.test.kurdyukov.db.dao.storage.StorageUtils.INDEX_HEADER_SIZE;
 import static ok.dht.test.kurdyukov.db.dao.storage.StorageUtils.INDEX_RECORD_SIZE;
 
 public class Storage implements Closeable {
     private final ResourceScope scope;
-    final ArrayList<MemorySegment> sstables;
+    final List<MemorySegment> sstables;
     private final boolean hasTombstones;
 
-    Storage(ResourceScope scope, ArrayList<MemorySegment> sstables, boolean hasTombstones) {
+    Storage(ResourceScope scope, List<MemorySegment> sstables, boolean hasTombstones) {
         this.scope = scope;
         this.sstables = sstables;
         this.hasTombstones = hasTombstones;
@@ -42,7 +43,6 @@ public class Storage implements Closeable {
         }
         long recordsCount = MemoryAccess.getLongAtOffset(sstable, 8);
         if (key == null) {
-            // fixme
             return recordsCount;
         }
 
@@ -120,9 +120,9 @@ public class Storage implements Closeable {
         };
     }
 
-    public ArrayList<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
+    public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
         try {
-            ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
+            List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
             for (MemorySegment sstable : sstables) {
                 iterators.add(iterate(sstable, keyFrom, keyTo));
             }
