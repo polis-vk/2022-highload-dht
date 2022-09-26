@@ -20,24 +20,9 @@ import java.util.concurrent.ThreadFactory;
 final class Storage implements Closeable {
 
     private static final Cleaner CLEANER = Cleaner.create(new ThreadFactoryClean());
-
-    private static final class ThreadFactoryClean implements ThreadFactory {
-        @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
-                @Override
-                public synchronized void start() {
-                    setDaemon(true);
-                    super.start();
-                }
-            };
-        }
-    }
-
     private static final long VERSION = 0;
     private static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
     private static final int INDEX_RECORD_SIZE = Long.BYTES;
-
     private static final String FILE_NAME = "data";
     private static final String FILE_EXT = ".dat";
     private static final String FILE_EXT_TMP = ".tmp";
@@ -198,7 +183,7 @@ final class Storage implements Closeable {
             long keySize = MemoryAccess.getLongAtOffset(sstable, keyPos);
 
             int comparedResult = MemorySegmentComparator.INSTANCE
-                                        .compare(key, sstable.asSlice(keyPos + Long.BYTES, keySize));
+                    .compare(key, sstable.asSlice(keyPos + Long.BYTES, keySize));
             if (comparedResult > 0) {
                 left = mid + 1;
             } else if (comparedResult < 0) {
@@ -295,5 +280,18 @@ final class Storage implements Closeable {
             return false;
         }
         return !hasTombstones;
+    }
+
+    private static final class ThreadFactoryClean implements ThreadFactory {
+        @Override
+        public Thread newThread(Runnable r) {
+            return new Thread(r, "Storage-Cleaner") {
+                @Override
+                public synchronized void start() {
+                    setDaemon(true);
+                    super.start();
+                }
+            };
+        }
     }
 }
