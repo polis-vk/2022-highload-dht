@@ -20,7 +20,9 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.concurrent.ThreadFactory;
 
-import static ok.dht.test.gerasimov.lsm.artyomdrozdov.StorageUtils.*;
+import static ok.dht.test.gerasimov.lsm.artyomdrozdov.StorageUtils.getSize;
+import static ok.dht.test.gerasimov.lsm.artyomdrozdov.StorageUtils.mapForRead;
+import static ok.dht.test.gerasimov.lsm.artyomdrozdov.StorageUtils.writeRecord;
 
 class Storage implements Closeable {
     // supposed to have fresh files first
@@ -44,7 +46,6 @@ class Storage implements Closeable {
     private static final long VERSION = 0;
     private static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
     private static final int INDEX_RECORD_SIZE = Long.BYTES;
-
     private static final String FILE_NAME = "data";
     private static final String FILE_EXT = ".dat";
     private static final String FILE_EXT_TMP = ".tmp";
@@ -56,11 +57,9 @@ class Storage implements Closeable {
         if (Files.exists(compactedFile)) {
             finishCompact(config, compactedFile);
         }
-
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
-        // FIXME check existing files
         for (int i = 0; ; i++) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
@@ -86,7 +85,6 @@ class Storage implements Closeable {
 
     private static void save(Data entries, Path sstablePath) throws IOException {
         Path sstableTmpPath = sstablePath.resolveSibling(sstablePath.getFileName().toString() + FILE_EXT_TMP);
-
         Files.deleteIfExists(sstableTmpPath);
         Files.createFile(sstableTmpPath);
 
@@ -94,7 +92,7 @@ class Storage implements Closeable {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (Entry<MemorySegment> entry : entries ) {
+            for (Entry<MemorySegment> entry : entries) {
                 size += getSize(entry);
                 if (entry.isTombstone()) {
                     hasTombstone = true;
@@ -114,7 +112,7 @@ class Storage implements Closeable {
 
             long index = 0;
             long offset = dataStart;
-            for (Entry<MemorySegment> entry : entries ) {
+            for (Entry<MemorySegment> entry : entries) {
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
                 offset += writeRecord(nextSSTable, offset, entry.key());
@@ -306,5 +304,4 @@ class Storage implements Closeable {
     public interface Data extends Iterable<Entry<MemorySegment>> {
         Iterator<Entry<MemorySegment>> iterator();
     }
-
 }

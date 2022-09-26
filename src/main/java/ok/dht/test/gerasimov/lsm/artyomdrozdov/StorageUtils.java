@@ -12,7 +12,7 @@ import java.nio.file.Path;
 
 public class StorageUtils {
 
-    public StorageUtils() {
+    private StorageUtils() {
     }
 
     protected static long getSize(Entry<MemorySegment> entry) {
