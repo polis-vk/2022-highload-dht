@@ -18,7 +18,7 @@ public @interface ServiceFactory {
     String[] bonuses() default {};
 
     interface Factory {
-        Service create(ServiceConfig config) throws IOException;
+        Service create(ServiceConfig config);
     }
 
 }
