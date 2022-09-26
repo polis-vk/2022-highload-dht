@@ -10,7 +10,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-public class StorageUtils {
+public final class StorageUtils {
 
     private StorageUtils() {
     }
