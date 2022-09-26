@@ -10,7 +10,7 @@ Cloning into '2022-highload-dht'...
 ...
 $ git remote add upstream git@github.com:polis-vk/2022-highload-dht.git
 $ git fetch upstream
-From github.com:polis-vk/202-highload-dht
+From github.com:polis-vk/2022-highload-dht
  * [new branch]      master     -> upstream/master
 ```
 
@@ -45,7 +45,7 @@ $ ./gradlew run
 
 Приложите полученный консольный вывод `wrk2` для обоих видов нагрузки.
 
-Отпрофилируйте приложение (CPU и alloc) под `PUT` и `GET` нагрузкой с помощью [async-profiler](https://github.com/jvm-profiling-tools/async-profiler).
+Отпрофилируйте приложение (CPU и alloc) под `PUT` и `GET` нагрузкой с помощью [async-profiler](https://github.com/Artyomcool/async-profiler).
 Приложите SVG-файлы FlameGraph `cpu`/`alloc` для `PUT`/`GET` нагрузки.
 
 **Объясните** результаты нагрузочного тестирования и профилирования и приложите **текстовый отчёт** (в Markdown).
