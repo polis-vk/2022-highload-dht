@@ -221,9 +221,9 @@ public class MemorySegmentDao {
             while (!executor.awaitTermination(10, TimeUnit.DAYS)) {
                 LOG.info("waiting termination");
             }
-        } catch (InterruptedException e) {
-            LOG.error(e.getMessage());
-            throw new UnexpectedException(e.getMessage());
+        } catch (InterruptedException ie) {
+            LOG.error("InterruptedException: ", ie);
+            Thread.currentThread().interrupt();
         }
         accState = this.state;
         accState.storage.close();
