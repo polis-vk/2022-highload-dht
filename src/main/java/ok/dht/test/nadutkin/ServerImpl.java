@@ -1,8 +1,6 @@
-package ok.dht.test.drozdov;
+package ok.dht.test.nadutkin;
 
 import ok.dht.ServiceConfig;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.util.Collections;
@@ -13,9 +11,9 @@ import java.util.concurrent.TimeUnit;
  *
  * @author incubos
  */
-public final class DemoServer {
+public final class ServerImpl {
 
-    private DemoServer() {
+    private ServerImpl() {
         // Only main method
     }
 
@@ -28,7 +26,7 @@ public final class DemoServer {
                 Collections.singletonList(url),
                 Files.createTempDirectory("server")
         );
-        new DemoService(cfg).start().get(1, TimeUnit.SECONDS);
+        new ServiceImpl(cfg).start().get(1, TimeUnit.SECONDS);
         System.out.println("Socket is ready: " + url);
     }
 }
