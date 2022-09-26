@@ -168,16 +168,16 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
 
         Future<Object> future = executor.submit(() -> {
-            State state = accessState();
+            State stateRef = accessState();
 
-            if (state.memory.isEmpty() && state.storage.isCompacted()) {
+            if (stateRef.memory.isEmpty() && stateRef.storage.isCompacted()) {
                 return null;
             }
 
             Storage.compact(
                     config,
                     () -> MergeIterator.of(
-                            state.storage.iterate(VERY_FIRST_KEY,
+                            stateRef.storage.iterate(VERY_FIRST_KEY,
                                     null
                             ),
                             EntryKeyComparator.INSTANCE
@@ -188,12 +188,12 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
             upsertLock.writeLock().lock();
             try {
-                this.state = state.afterCompact(storage);
+                this.state = stateRef.afterCompact(storage);
             } finally {
                 upsertLock.writeLock().unlock();
             }
 
-            state.storage.maybeClose();
+            stateRef.storage.maybeClose();
             return null;
         });
 

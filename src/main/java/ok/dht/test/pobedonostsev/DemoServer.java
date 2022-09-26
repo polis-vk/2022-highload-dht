@@ -4,9 +4,12 @@ import ok.dht.ServiceConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public final class DemoServer {
 
@@ -16,7 +19,8 @@ public final class DemoServer {
         // Only main method
     }
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args)
+            throws IOException, ExecutionException, InterruptedException, TimeoutException {
         int port = 19234;
         String url = "http://localhost:" + port;
         ServiceConfig cfg = new ServiceConfig(

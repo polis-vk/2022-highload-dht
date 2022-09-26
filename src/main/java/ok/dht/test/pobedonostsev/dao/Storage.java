@@ -23,12 +23,10 @@ class Storage implements Closeable {
 
     private static final Logger LOG = LoggerFactory.getLogger(Storage.class);
 
-    private static final Cleaner CLEANER = Cleaner.create(r -> new Thread(r, "Storage-Cleaner") {
-        @Override
-        public synchronized void start() {
-            setDaemon(true);
-            super.start();
-        }
+    private static final Cleaner CLEANER = Cleaner.create(r -> {
+        Thread thread = new Thread(r, "Storage-Cleaner");
+        thread.setDaemon(true);
+        return thread;
     });
 
     private static final long VERSION = 0;
@@ -73,19 +71,14 @@ class Storage implements Closeable {
     }
 
     // it is supposed that entries can not be changed externally during this method call
-    static void save(
-            Config config,
-            Storage previousState,
-            Collection<Entry<MemorySegment>> entries) throws IOException {
+    static void save(Config config, Storage previousState, Collection<Entry<MemorySegment>> entries)
+            throws IOException {
         int nextSSTableIndex = previousState.sstables.size();
         Path sstablePath = config.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
         save(entries::iterator, sstablePath);
     }
 
-    private static void save(
-            Data entries,
-            Path sstablePath
-    ) throws IOException {
+    private static void save(Data entries, Path sstablePath) throws IOException {
 
         Path sstableTmpPath = sstablePath.resolveSibling(sstablePath.getFileName().toString() + FILE_EXT_TMP);
 
@@ -107,13 +100,9 @@ class Storage implements Closeable {
 
             long dataStart = INDEX_HEADER_SIZE + INDEX_RECORD_SIZE * entriesCount;
 
-            MemorySegment nextSSTable = MemorySegment.mapFile(
-                    sstableTmpPath,
-                    0,
-                    dataStart + size,
-                    FileChannel.MapMode.READ_WRITE,
-                    writeScope
-            );
+            MemorySegment nextSSTable =
+                    MemorySegment.mapFile(sstableTmpPath, 0, dataStart + size, FileChannel.MapMode.READ_WRITE,
+                            writeScope);
 
             long index = 0;
             long offset = dataStart;
@@ -235,10 +224,8 @@ class Storage implements Closeable {
             long keySize = MemoryAccess.getLongAtOffset(sstable, offset);
             long valueOffset = offset + Long.BYTES + keySize;
             long valueSize = MemoryAccess.getLongAtOffset(sstable, valueOffset);
-            return new BaseEntry<>(
-                    sstable.asSlice(offset + Long.BYTES, keySize),
-                    valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize)
-            );
+            return new BaseEntry<>(sstable.asSlice(offset + Long.BYTES, keySize),
+                    valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize));
         } catch (IllegalStateException e) {
             throw checkForClose(e);
         }
@@ -314,9 +301,8 @@ class Storage implements Closeable {
         }
     }
 
-    // suppose to close
     public void maybeClose() {
-
+        // nothing
     }
 
     public boolean isClosed() {
