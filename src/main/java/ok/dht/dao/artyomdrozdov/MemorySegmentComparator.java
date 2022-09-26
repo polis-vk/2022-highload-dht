@@ -23,9 +23,7 @@ public class MemorySegmentComparator implements Comparator<MemorySegment> {
         if (firstMismatch == m2.byteSize()) {
             return 1;
         }
-        return Byte.compareUnsigned(
-                MemoryAccess.getByteAtOffset(m1, firstMismatch),
-                MemoryAccess.getByteAtOffset(m2, firstMismatch)
-        );
+        return Byte.compareUnsigned(MemoryAccess.getByteAtOffset(m1, firstMismatch),
+                MemoryAccess.getByteAtOffset(m2, firstMismatch));
     }
 }
