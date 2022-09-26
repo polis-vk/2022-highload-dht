@@ -53,13 +53,12 @@ class Storage implements Closeable {
         List<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
-        for (int i = 0; ; i++) {
-            Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
-            try {
-                sstables.add(mapForRead(scope, nextFile));
-            } catch (NoSuchFileException e) {
-                break;
-            }
+        int index = 0;
+        Path nextFile = basePath.resolve(FILE_NAME + index + FILE_EXT);
+        while (Files.exists(nextFile)) {
+            sstables.add(mapForRead(scope, nextFile));
+            index++;
+            nextFile = basePath.resolve(FILE_NAME + index + FILE_EXT);
         }
 
         boolean hasTombstones = !sstables.isEmpty() && MemoryAccess.getLongAtOffset(sstables.get(0), 16) == 1;
