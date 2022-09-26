@@ -212,7 +212,7 @@ public class ServiceImpl implements Service {
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
-        public Service create(ServiceConfig config) throws IOException {
+        public Service create(ServiceConfig config) {
             return new ServiceImpl(config);
         }
     }
