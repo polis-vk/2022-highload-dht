@@ -15,7 +15,12 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public final class StorageUtils {
+
+    private static final Logger LOG = LoggerFactory.getLogger(StorageUtils.class);
 
     public static final long VERSION = 0;
     public static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
@@ -31,6 +36,12 @@ public final class StorageUtils {
         public synchronized void start() {
             setDaemon(true);
             super.start();
+        }
+
+        @Override
+        public void run() {
+            LOG.info("Cleaner started");
+            super.run();
         }
     });
 
