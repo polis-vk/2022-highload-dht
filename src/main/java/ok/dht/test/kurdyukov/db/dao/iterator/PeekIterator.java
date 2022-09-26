@@ -1,4 +1,4 @@
-package ok.dht.test.kurdyukov.db.storage;
+package ok.dht.test.kurdyukov.db.dao.iterator;
 
 import java.util.Iterator;
 
