@@ -43,7 +43,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
         return getTombstoneFilteringIterator(Objects.requireNonNullElse(from, VERY_FIRST_KEY), to);
-
     }
 
     private TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment from, MemorySegment to) {
@@ -250,7 +249,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             if (current != null) {
                 return true;
             }
-
             while (iterator.hasNext()) {
                 Entry<MemorySegment> entry = iterator.next();
                 if (!entry.isTombstone()) {
@@ -258,7 +256,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                     return true;
                 }
             }
-
             return false;
         }
 

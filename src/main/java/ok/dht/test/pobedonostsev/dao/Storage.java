@@ -20,7 +20,6 @@ import java.util.Iterator;
 import java.util.List;
 
 class Storage implements Closeable {
-
     private static final Logger LOG = LoggerFactory.getLogger(Storage.class);
 
     private static final Cleaner CLEANER = Cleaner.create(r -> {
@@ -53,20 +52,20 @@ class Storage implements Closeable {
         if (Files.exists(compactedFile)) {
             finishCompact(config, compactedFile);
         }
-
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
-
         boolean fileExists = true;
         for (int i = 0; fileExists; i++) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
-                sstables.add(mapForRead(scope, nextFile));
+                long size = Files.size(nextFile);
+                MemorySegment mappedFile =
+                        MemorySegment.mapFile(nextFile, 0, size, FileChannel.MapMode.READ_ONLY, scope);
+                sstables.add(mappedFile);
             } catch (NoSuchFileException e) {
                 fileExists = false;
             }
         }
-
         boolean hasTombstones = !sstables.isEmpty() && MemoryAccess.getLongAtOffset(sstables.get(0), 16) == 1;
         return new Storage(scope, sstables, hasTombstones);
     }
@@ -80,12 +79,9 @@ class Storage implements Closeable {
     }
 
     private static void save(Data entries, Path sstablePath) throws IOException {
-
         Path sstableTmpPath = sstablePath.resolveSibling(sstablePath.getFileName().toString() + FILE_EXT_TMP);
-
         Files.deleteIfExists(sstableTmpPath);
         Files.createFile(sstableTmpPath);
-
         try (ResourceScope writeScope = ResourceScope.newConfinedScope()) {
             long size = 0;
             long entriesCount = 0;
@@ -99,16 +95,12 @@ class Storage implements Closeable {
                 }
                 entriesCount++;
             }
-
             long dataStart = INDEX_HEADER_SIZE + INDEX_RECORD_SIZE * entriesCount;
-
             MemorySegment nextSSTable =
                     MemorySegment.mapFile(sstableTmpPath, 0, dataStart + size, FileChannel.MapMode.READ_WRITE,
                             writeScope);
-
             long index = 0;
             long offset = dataStart;
-
             iterator = entries.iterator();
             while (iterator.hasNext()) {
                 Entry<MemorySegment> entry = iterator.next();
@@ -119,7 +111,6 @@ class Storage implements Closeable {
 
                 index++;
             }
-
             MemoryAccess.setLongAtOffset(nextSSTable, 0, VERSION);
             MemoryAccess.setLongAtOffset(nextSSTable, 8, entriesCount);
             MemoryAccess.setLongAtOffset(nextSSTable, 16, hasTombstone ? 1 : 0);
@@ -153,13 +144,6 @@ class Storage implements Closeable {
         MemoryAccess.setLongAtOffset(nextSSTable, offset, recordSize);
         nextSSTable.asSlice(offset + Long.BYTES, recordSize).copyFrom(record);
         return Long.BYTES + recordSize;
-    }
-
-    @SuppressWarnings("DuplicateThrows")
-    private static MemorySegment mapForRead(ResourceScope scope, Path file) throws NoSuchFileException, IOException {
-        long size = Files.size(file);
-
-        return MemorySegment.mapFile(file, 0, size, FileChannel.MapMode.READ_ONLY, scope);
     }
 
     public static void compact(Config config, Data data) throws IOException {
@@ -198,16 +182,12 @@ class Storage implements Closeable {
         if (key == null) {
             return recordsCount;
         }
-
         long left = 0;
         long right = recordsCount - 1;
-
         while (left <= right) {
             long mid = (left + right) >>> 1;
-
             long keyPos = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + mid * INDEX_RECORD_SIZE);
             long keySize = MemoryAccess.getLongAtOffset(sstable, keyPos);
-
             MemorySegment keyForCheck = sstable.asSlice(keyPos + Long.BYTES, keySize);
             int comparedResult = MemorySegmentComparator.INSTANCE.compare(key, keyForCheck);
             if (comparedResult > 0) {
@@ -218,7 +198,6 @@ class Storage implements Closeable {
                 return mid;
             }
         }
-
         return ~left;
     }
 
@@ -253,15 +232,12 @@ class Storage implements Closeable {
     private Iterator<Entry<MemorySegment>> iterate(MemorySegment sstable, MemorySegment keyFrom, MemorySegment keyTo) {
         long keyFromPos = greaterOrEqualEntryIndex(sstable, keyFrom);
         long keyToPos = greaterOrEqualEntryIndex(sstable, keyTo);
-
         return new Iterator<>() {
             long pos = keyFromPos;
-
             @Override
             public boolean hasNext() {
                 return pos < keyToPos;
             }
-
             @Override
             public Entry<MemorySegment> next() {
                 Entry<MemorySegment> entry = entryAt(sstable, pos);
@@ -305,10 +281,6 @@ class Storage implements Closeable {
         }
     }
 
-    public void maybeClose() {
-        // nothing
-    }
-
     public boolean isClosed() {
         return !scope.isAlive();
     }
@@ -326,5 +298,4 @@ class Storage implements Closeable {
     public interface Data {
         Iterator<Entry<MemorySegment>> iterator() throws IOException;
     }
-
 }
