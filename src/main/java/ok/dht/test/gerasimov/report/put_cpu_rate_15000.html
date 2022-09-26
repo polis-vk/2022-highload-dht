@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 10px; background-color: #ffffff}
+	h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {margin: 5px 0 5px 0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {overflow: hidden; white-space: nowrap}
+	#match {overflow: hidden; white-space: nowrap; display: none; float: right; text-align: right}
+	#reset {cursor: pointer}
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+<h1>CPU profile</h1>
+<header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
+<header style='text-align: right'>Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a></header>
+<canvas id='canvas' style='width: 100%; height: 432px'></canvas>
+<div id='hl'><span></span></div>
+<p id='match'>Matched: <span id='matchval'></span> <span id='reset' title='Clear'>&#x274c;</span></p>
+<p id='status'>&nbsp;</p>
+<script>
+	// Copyright 2020 Andrei Pangin
+	// Licensed under the Apache License, Version 2.0.
+	'use strict';
+	var root, rootLevel, px, pattern;
+	var reverse = false;
+	const levels = Array(27);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	const c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	const canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+	const palette = [
+		[0x50e150, 30, 30, 30],
+		[0x50bebe, 30, 30, 30],
+		[0xe17d00, 30, 30,  0],
+		[0xc8c83c, 30, 30, 10],
+		[0xe15a5a, 30, 40, 40],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(level, left, width, type, title) {
+		levels[level].push({left: left, width: width, color: getColor(palette[type]), title: title});
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+	function search(r) {
+		if (r && (r = prompt('Enter regexp to search:', '')) === null) {
+			return;
+		}
+
+		pattern = r ? RegExp(r) : undefined;
+		const matched = render(root, rootLevel);
+		document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+		document.getElementById('match').style.display = r ? 'inherit' : 'none';
+	}
+
+	function render(newRoot, newLevel) {
+		if (root) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+		const marked = [];
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+				c.fillStyle = pattern && f.title.match(pattern) && mark(f) ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+
+				if (f.width * px >= 21) {
+					const chars = Math.floor(f.width * px / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, f.width * px - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+				}
+			}
+		}
+
+		for (let h = 0; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				canvas.title = f.title + '\n(' + samples(f.width) + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f != root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.textContent = '\xa0';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = '';
+	}
+
+	document.getElementById('reverse').onclick = function() {
+		reverse = !reverse;
+		render();
+	}
+
+	document.getElementById('search').onclick = function() {
+		search(true);
+	}
+
+	document.getElementById('reset').onclick = function() {
+		search(false);
+	}
+
+	window.onkeydown = function() {
+		if (event.ctrlKey && event.keyCode === 70) {
+			event.preventDefault();
+			search(true);
+		} else if (event.keyCode === 27) {
+			search(false);
+		}
+	}
+f(0,0,2879,4,'all')
+f(1,0,1,4,'[unknown_Java]')
+f(2,0,1,3,'OptoRuntime::new_array_C(Klass*, int, JavaThread*)')
+f(3,0,1,3,'SharedRuntime::on_slowpath_allocation_exit(JavaThread*)')
+f(1,1,1701,0,'one/nio/server/SelectorThread.run')
+f(2,3,1,3,'PerfByteArray::~PerfByteArray()')
+f(2,4,3,4,'mach_absolute_time')
+f(2,7,449,0,'one/nio/net/JavaSelector.select')
+f(3,12,12,0,'one/nio/net/JavaSelector.iteratorFor')
+f(4,14,4,0,'java/util/HashMap$KeyIterator.next')
+f(5,15,3,0,'java/util/HashMap$HashIterator.nextNode')
+f(4,18,6,0,'sun/nio/ch/Util$2.iterator')
+f(5,18,6,0,'java/util/HashSet.iterator')
+f(6,18,2,0,'java/util/HashMap$KeySet.iterator')
+f(7,18,2,0,'java/util/HashMap$KeyIterator.<init>')
+f(8,18,2,0,'java/util/HashMap$HashIterator.<init>')
+f(6,20,4,0,'java/util/HashMap.keySet')
+f(3,24,2,0,'one/nio/net/JavaSelector.registerPendingSessions')
+f(3,26,421,0,'sun/nio/ch/SelectorImpl.select')
+f(4,32,415,0,'sun/nio/ch/SelectorImpl.lockAndDoSelect')
+f(5,33,414,0,'sun/nio/ch/KQueueSelectorImpl.doSelect')
+f(6,35,379,0,'sun/nio/ch/KQueue.poll')
+f(7,82,6,4,'Java_sun_nio_ch_KQueue_poll')
+f(7,88,326,4,'kevent')
+f(6,414,15,0,'sun/nio/ch/KQueueSelectorImpl.processEvents')
+f(7,421,1,0,'java/util/HashMap.get')
+f(8,421,1,0,'java/util/HashMap.getNode')
+f(7,422,7,0,'sun/nio/ch/SelectorImpl.processReadyEvents')
+f(8,422,5,0,'java/util/HashSet.add')
+f(9,422,5,0,'java/util/HashMap.put')
+f(10,422,5,0,'java/util/HashMap.putVal')
+f(8,427,2,0,'sun/nio/ch/SelectionKeyImpl.nioReadyOps')
+f(6,429,5,0,'sun/nio/ch/KQueueSelectorImpl.processUpdateQueue')
+f(7,432,2,0,'java/util/ArrayDeque.pollFirst')
+f(6,434,13,0,'sun/nio/ch/SelectorImpl.processDeregisterQueue')
+f(7,441,6,0,'java/util/ArrayDeque.pollFirst')
+f(8,444,1,0,'java/util/ArrayDeque.elementAt')
+f(8,445,2,0,'java/util/ArrayDeque.inc')
+f(3,447,9,0,'sun/nio/ch/Util$2.clear')
+f(4,448,8,0,'java/util/HashSet.clear')
+f(5,448,8,0,'java/util/HashMap.clear')
+f(6,453,3,3,'os::javaTimeNanos()')
+f(7,453,3,4,'mach_absolute_time')
+f(2,456,1243,0,'one/nio/net/Session.process')
+f(3,456,1240,0,'one/nio/http/HttpSession.processRead')
+f(4,456,804,0,'one/nio/http/HttpSession.processHttpBuffer')
+f(5,466,673,0,'one/nio/http/HttpSession.handleParsedRequest')
+f(6,466,673,0,'one/nio/http/HttpServer.handleRequest')
+f(7,467,6,0,'RequestHandler0_handleGetRequest.handleRequest')
+f(8,467,6,0,'one/nio/http/Request.getRequiredParameter')
+f(9,467,6,0,'one/nio/http/Request.getParameter')
+f(10,469,1,0,'java/lang/String.indexOf')
+f(11,469,1,0,'java/lang/StringLatin1.indexOf')
+f(10,470,1,0,'java/lang/String.startsWith')
+f(10,471,2,0,'java/lang/String.substring')
+f(11,471,2,0,'java/lang/String.substring')
+f(12,472,1,0,'java/lang/StringLatin1.newString')
+f(13,472,1,0,'java/lang/String.<init>')
+f(7,473,665,0,'RequestHandler1_handlePutRequest.handleRequest')
+f(8,473,229,0,'ok/dht/test/gerasimov/ServiceImpl.handlePutRequest')
+f(9,473,6,0,'ok/dht/test/gerasimov/ValidationService.checkId')
+f(10,473,2,0,'java/lang/String.chars')
+f(11,473,2,0,'java/lang/StringLatin1$CharsSpliterator.<init>')
+f(12,474,1,0,'java/lang/StringLatin1$CharsSpliterator.<init>')
+f(10,475,3,0,'java/lang/String.isBlank')
+f(11,475,3,0,'java/lang/String.length')
+f(10,478,1,0,'java/util/stream/IntPipeline.noneMatch')
+f(11,478,1,0,'java/util/stream/AbstractPipeline.evaluate')
+f(12,478,1,0,'java/util/stream/MatchOps$MatchOp.evaluateSequential')
+f(13,478,1,0,'java/util/stream/MatchOps$MatchOp.evaluateSequential')
+f(14,478,1,0,'java/util/stream/AbstractPipeline.wrapAndCopyInto')
+f(15,478,1,0,'java/util/stream/AbstractPipeline.copyInto')
+f(16,478,1,0,'java/util/stream/AbstractPipeline.copyIntoWithCancel')
+f(17,478,1,0,'java/util/stream/IntPipeline.forEachWithCancel')
+f(18,478,1,0,'java/lang/StringLatin1$CharsSpliterator.tryAdvance')
+f(19,478,1,0,'java/util/stream/MatchOps$2MatchSink.accept')
+f(20,478,1,0,'ok/dht/test/gerasimov/ValidationService$$Lambda$66.0x0000000800ccc650.test')
+f(21,478,1,0,'java/lang/Character.isWhitespace')
+f(22,478,1,0,'java/lang/CharacterDataLatin1.isWhitespace')
+f(23,478,1,0,'java/lang/CharacterDataLatin1.getProperties')
+f(9,479,218,0,'ok/dht/test/gerasimov/lsm/artyomdrozdov/MemorySegmentDao.upsert')
+f(10,479,218,0,'ok/dht/test/gerasimov/lsm/artyomdrozdov/Memory.put')
+f(11,485,210,0,'java/util/concurrent/ConcurrentSkipListMap.put')
+f(12,485,210,0,'java/util/concurrent/ConcurrentSkipListMap.doPut')
+f(13,605,8,0,'java/lang/invoke/VarHandleGuards.guard_LLL_Z')
+f(14,605,8,0,'java/lang/invoke/VarHandleReferences$FieldInstanceReadWrite.compareAndSet')
+f(13,613,82,0,'java/util/concurrent/ConcurrentSkipListMap.cpr')
+f(14,614,81,0,'ok/dht/test/gerasimov/lsm/artyomdrozdov/MemorySegmentComparator.compare')
+f(15,622,73,0,'ok/dht/test/gerasimov/lsm/artyomdrozdov/MemorySegmentComparator.compare')
+f(16,626,69,0,'jdk/internal/foreign/AbstractMemorySegmentImpl.mismatch')
+f(17,629,53,0,'jdk/incubator/foreign/MemoryAccess.getByteAtOffset')
+f(18,631,51,0,'java/lang/invoke/VarHandleGuards.guard_LJ_I')
+f(19,632,50,0,'java/lang/invoke/LambdaForm$MH.0x0000000800cd4000.invoke')
+f(20,633,49,0,'java/lang/invoke/LambdaForm$DMH.0x0000000800cd3400.invokeStatic')
+f(21,633,49,0,'java/lang/invoke/MemoryAccessVarHandleByteHelper.get')
+f(22,638,30,0,'java/lang/invoke/MemoryAccessVarHandleByteHelper.checkAddress')
+f(23,642,2,0,'java/util/Objects.requireNonNull')
+f(23,644,24,0,'jdk/internal/foreign/AbstractMemorySegmentImpl.checkAccess')
+f(24,649,19,0,'jdk/internal/foreign/AbstractMemorySegmentImpl.checkBounds')
+f(25,653,15,0,'jdk/internal/foreign/AbstractMemorySegmentImpl.isSmall')
+f(26,666,2,0,'jdk/internal/foreign/AbstractMemorySegmentImpl.isSet')
+f(22,668,3,0,'java/lang/invoke/MemoryAccessVarHandleByteHelper.offsetNoVMAlignCheck')
+f(23,669,2,0,'jdk/internal/foreign/AbstractMemorySegmentImpl.unsafeGetOffset')
+f(22,671,11,0,'jdk/internal/misc/ScopedMemoryAccess.getByte')
+f(23,673,9,0,'jdk/internal/misc/ScopedMemoryAccess.getByteInternal')
+f(24,676,6,0,'jdk/internal/foreign/SharedScope.checkValidState')
+f(17,682,13,0,'jdk/internal/foreign/AbstractMemorySegmentImpl.checkAccess')
+f(18,684,11,0,'jdk/internal/foreign/AbstractMemorySegmentImpl.checkBounds')
+f(19,693,2,0,'jdk/internal/foreign/AbstractMemorySegmentImpl.checkBoundsSmall')
+f(11,695,2,0,'ok/dht/test/gerasimov/lsm/artyomdrozdov/Storage.getSizeOnDisk')
+f(12,695,2,0,'ok/dht/test/gerasimov/lsm/artyomdrozdov/StorageUtils.getSize')
+f(9,697,5,0,'one/nio/http/Response.<init>')
+f(10,699,3,4,'jbyte_disjoint_arraycopy')
+f(8,702,426,0,'one/nio/http/HttpSession.sendResponse')
+f(9,703,414,0,'one/nio/http/HttpSession.writeResponse')
+f(10,703,26,0,'one/nio/http/Response.toBytes')
+f(11,712,3,4,'jbyte_disjoint_arraycopy')
+f(11,715,1,0,'one/nio/util/ByteArrayBuilder.<init>')
+f(11,716,13,0,'one/nio/util/ByteArrayBuilder.append')
+f(12,716,4,0,'one/nio/util/Utf8.length')
+f(13,718,1,0,'java/lang/String.charAt')
+f(14,718,1,0,'java/lang/StringLatin1.charAt')
+f(13,719,1,0,'java/lang/String.length')
+f(14,719,1,0,'java/lang/String.coder')
+f(12,720,9,0,'one/nio/util/Utf8.write')
+f(13,720,9,0,'one/nio/util/Utf8.write')
+f(14,725,4,0,'java/lang/String.charAt')
+f(15,725,4,0,'java/lang/StringLatin1.charAt')
+f(10,729,388,0,'one/nio/net/Session.write')
+f(11,729,388,0,'one/nio/net/Session.write')
+f(12,730,387,0,'one/nio/net/Session$ArrayQueueItem.write')
+f(13,730,387,0,'one/nio/net/JavaSocket.write')
+f(14,734,9,0,'java/nio/ByteBuffer.wrap')
+f(15,734,9,0,'java/nio/HeapByteBuffer.<init>')
+f(16,734,9,0,'java/nio/ByteBuffer.<init>')
+f(17,736,7,0,'java/nio/Buffer.<init>')
+f(18,739,2,0,'java/nio/ByteBuffer.limit')
+f(19,739,2,0,'java/nio/ByteBuffer.limit')
+f(20,739,2,0,'java/nio/Buffer.limit')
+f(18,741,2,0,'java/nio/ByteBuffer.position')
+f(19,741,2,0,'java/nio/ByteBuffer.position')
+f(20,742,1,0,'java/nio/Buffer.position')
+f(14,743,374,0,'sun/nio/ch/SocketChannelImpl.write')
+f(15,744,15,0,'java/util/concurrent/locks/ReentrantLock.lock')
+f(16,745,14,0,'java/util/concurrent/locks/ReentrantLock$Sync.lock')
+f(17,745,14,0,'java/util/concurrent/locks/ReentrantLock$NonfairSync.initialTryLock')
+f(18,745,14,0,'java/util/concurrent/locks/AbstractOwnableSynchronizer.setExclusiveOwnerThread')
+f(19,746,5,4,'clock_gettime')
+f(19,751,8,3,'os::javaTimeMillis()')
+f(20,753,6,4,'clock_gettime')
+f(21,753,1,4,'advance_directory.cold.1')
+f(21,754,5,4,'gettimeofday')
+f(22,754,5,4,'__commpage_gettimeofday_internal')
+f(23,757,2,4,'mach_absolute_time')
+f(15,759,1,3,'os::javaTimeMillis()')
+f(15,760,357,0,'sun/nio/ch/IOUtil.write')
+f(16,760,357,0,'sun/nio/ch/IOUtil.write')
+f(17,760,356,0,'sun/nio/ch/IOUtil.writeFromNativeBuffer')
+f(18,760,356,0,'sun/nio/ch/SocketDispatcher.write')
+f(19,760,356,0,'sun/nio/ch/FileDispatcherImpl.write0')
+f(20,764,3,4,'Java_sun_nio_ch_FileDispatcherImpl_write0')
+f(21,766,1,4,'fdval')
+f(20,767,2,4,'convertReturnVal')
+f(20,769,347,4,'write')
+f(17,1116,1,0,'sun/nio/ch/Util.getTemporaryDirectBuffer')
+f(18,1116,1,0,'sun/nio/ch/Util$BufferCache.get')
+f(19,1116,1,0,'java/nio/MappedByteBuffer.limit')
+f(20,1116,1,0,'java/nio/MappedByteBuffer.limit')
+f(21,1116,1,0,'java/nio/ByteBuffer.limit')
+f(22,1116,1,0,'java/nio/Buffer.limit')
+f(9,1117,9,0,'one/nio/http/Request.getHeader')
+f(10,1117,9,0,'java/lang/String.regionMatches')
+f(11,1117,1,0,'java/lang/String.length')
+f(11,1118,8,0,'java/lang/StringLatin1.regionMatchesCI')
+f(12,1122,3,0,'java/lang/Character.toLowerCase')
+f(13,1122,3,0,'java/lang/CharacterDataLatin1.toLowerCase')
+f(12,1125,1,0,'java/lang/CharacterDataLatin1.toUpperCase')
+f(9,1126,2,0,'one/nio/server/Server.incRequestsProcessed')
+f(10,1126,2,0,'java/util/concurrent/atomic/LongAdder.increment')
+f(11,1126,2,0,'java/util/concurrent/atomic/LongAdder.add')
+f(8,1128,10,0,'one/nio/http/Request.getRequiredParameter')
+f(9,1128,10,0,'one/nio/http/Request.getParameter')
+f(10,1128,2,0,'java/lang/String.indexOf')
+f(11,1128,2,0,'java/lang/String.isLatin1')
+f(10,1130,1,0,'java/lang/String.length')
+f(11,1130,1,0,'java/lang/String.coder')
+f(10,1131,7,0,'one/nio/util/URLEncoder.decode')
+f(11,1133,5,0,'java/lang/String.indexOf')
+f(12,1133,5,0,'java/lang/String.indexOf')
+f(13,1137,1,0,'java/lang/StringLatin1.indexOf')
+f(7,1138,1,0,'one/nio/http/PathMapper.find')
+f(8,1138,1,0,'java/util/HashMap.get')
+f(9,1138,1,0,'java/util/HashMap.getNode')
+f(5,1139,49,0,'one/nio/http/HttpSession.parseRequest')
+f(6,1147,16,0,'one/nio/http/Request.<init>')
+f(7,1152,11,0,'java/lang/String.indexOf')
+f(8,1152,11,0,'java/lang/String.indexOf')
+f(9,1152,11,0,'java/lang/StringLatin1.indexOf')
+f(10,1155,5,4,'jbyte_disjoint_arraycopy')
+f(10,1160,1,4,'jint_arraycopy')
+f(10,1161,1,4,'jshort_disjoint_arraycopy')
+f(10,1162,1,4,'unsafe_arraycopy')
+f(6,1163,24,0,'one/nio/util/Utf8.read')
+f(7,1163,24,0,'one/nio/util/Utf8.read')
+f(8,1165,6,0,'one/nio/util/Utf8.isAsciiString')
+f(8,1171,16,0,'one/nio/util/Utf8.toAsciiString')
+f(9,1177,4,0,'java/lang/invoke/LambdaForm$MH.0x0000000800cc8c00.invokeExact_MT')
+f(10,1180,1,0,'java/lang/invoke/Invokers.checkExactType')
+f(9,1181,6,0,'sun/misc/Unsafe.copyMemory')
+f(10,1181,6,0,'jdk/internal/misc/Unsafe.copyMemory')
+f(11,1182,5,0,'jdk/internal/misc/Unsafe.copyMemoryChecks')
+f(12,1182,5,0,'jdk/internal/misc/Unsafe.checkPrimitivePointer')
+f(13,1182,2,0,'jdk/internal/misc/Unsafe.checkPointer')
+f(13,1184,3,0,'jdk/internal/misc/Unsafe.checkPrimitiveArray')
+f(6,1187,1,0,'one/nio/util/Utf8.startsWith')
+f(5,1188,2,0,'one/nio/http/HttpSession.startParsingRequestBody')
+f(6,1188,2,3,'OptoRuntime::new_array_nozero_C(Klass*, int, JavaThread*)')
+f(7,1188,2,3,'CollectedHeap::array_allocate(Klass*, int, int, bool, JavaThread*)')
+f(8,1188,2,3,'MemAllocator::allocate() const')
+f(9,1188,2,3,'G1CollectedHeap::mem_allocate(unsigned long, bool*)')
+f(10,1188,2,3,'G1CollectedHeap::attempt_allocation_slow(unsigned long)')
+f(11,1188,1,3,'MutatorAllocRegion::retire(bool)')
+f(12,1188,1,3,'HSpaceCounters::update_used(unsigned long)')
+f(11,1189,1,3,'VMThread::execute(VM_Operation*)')
+f(12,1189,1,3,'VMThread::wait_until_executed(VM_Operation*)')
+f(13,1189,1,4,'__psynch_cvbroad')
+f(5,1190,1,0,'one/nio/http/Request.addHeader')
+f(5,1191,58,0,'one/nio/http/Request.getHeader')
+f(6,1195,8,0,'java/lang/String.regionMatches')
+f(7,1195,8,0,'java/lang/StringLatin1.regionMatchesCI')
+f(8,1202,1,0,'java/lang/Character.toLowerCase')
+f(9,1202,1,0,'java/lang/CharacterDataLatin1.toLowerCase')
+f(6,1203,35,4,'jbyte_disjoint_arraycopy')
+f(6,1238,11,0,'one/nio/http/Request.trim')
+f(7,1239,1,0,'java/lang/String.charAt')
+f(8,1239,1,0,'java/lang/StringLatin1.charAt')
+f(7,1240,9,0,'java/lang/String.substring')
+f(8,1241,1,0,'java/lang/String.length')
+f(9,1241,1,0,'java/lang/String.coder')
+f(8,1242,7,0,'java/lang/StringLatin1.newString')
+f(9,1242,1,0,'java/lang/String.<init>')
+f(9,1243,6,0,'java/util/Arrays.copyOfRange')
+f(5,1249,2,0,'one/nio/http/Request.getHeaderCount')
+f(5,1251,9,0,'one/nio/util/Utf8.read')
+f(6,1251,9,0,'one/nio/util/Utf8.read')
+f(7,1254,1,0,'one/nio/util/Utf8.isAsciiString')
+f(7,1255,5,0,'one/nio/util/Utf8.toAsciiString')
+f(8,1255,1,3,'OptoRuntime::new_array_C(Klass*, int, JavaThread*)')
+f(9,1255,1,3,'oopFactory::new_typeArray(BasicType, int, JavaThread*)')
+f(8,1256,2,0,'java/lang/invoke/LambdaForm$MH.0x0000000800cc8c00.invokeExact_MT')
+f(9,1256,2,0,'java/lang/invoke/LambdaForm$DMH.0x0000000800cd3000.newInvokeSpecial')
+f(10,1257,1,0,'java/lang/String.<init>')
+f(8,1258,2,0,'sun/misc/Unsafe.copyMemory')
+f(9,1258,2,0,'jdk/internal/misc/Unsafe.copyMemory')
+f(10,1258,2,0,'jdk/internal/misc/Unsafe.copyMemoryChecks')
+f(11,1259,1,0,'jdk/internal/misc/Unsafe.checkPrimitivePointer')
+f(12,1259,1,0,'jdk/internal/misc/Unsafe.checkPrimitiveArray')
+f(13,1259,1,0,'java/lang/Class.getComponentType')
+f(4,1260,436,0,'one/nio/net/Session.read')
+f(5,1260,436,0,'one/nio/net/JavaSocket.read')
+f(6,1260,1,0,'java/nio/ByteBuffer.wrap')
+f(7,1260,1,0,'java/nio/HeapByteBuffer.<init>')
+f(8,1260,1,0,'java/nio/ByteBuffer.<init>')
+f(9,1260,1,0,'java/nio/Buffer.<init>')
+f(10,1260,1,0,'java/nio/ByteBuffer.position')
+f(11,1260,1,0,'java/nio/ByteBuffer.position')
+f(6,1261,435,0,'sun/nio/ch/SocketChannelImpl.read')
+f(7,1261,1,0,'java/util/concurrent/locks/ReentrantLock.unlock')
+f(7,1262,1,0,'sun/nio/ch/IOStatus.normalize')
+f(7,1263,433,0,'sun/nio/ch/IOUtil.read')
+f(8,1264,432,0,'sun/nio/ch/IOUtil.read')
+f(9,1266,390,0,'sun/nio/ch/IOUtil.readIntoNativeBuffer')
+f(10,1266,5,0,'sun/nio/ch/IOUtil.acquireScope')
+f(11,1266,5,0,'java/nio/Buffer$1.acquireScope')
+f(12,1270,1,0,'java/nio/Buffer.scope')
+f(10,1271,385,0,'sun/nio/ch/SocketDispatcher.read')
+f(11,1272,384,0,'sun/nio/ch/SocketDispatcher.read0')
+f(12,1278,1,4,'JNI_OnLoad')
+f(12,1279,7,4,'Java_sun_nio_ch_SocketDispatcher_read0')
+f(13,1284,2,4,'fdval')
+f(12,1286,1,4,'fdval')
+f(12,1287,369,4,'read')
+f(9,1656,40,0,'sun/nio/ch/Util.getTemporaryDirectBuffer')
+f(10,1657,25,0,'java/lang/ThreadLocal.get')
+f(11,1660,22,0,'java/lang/ThreadLocal$ThreadLocalMap.getEntry')
+f(12,1660,22,0,'java/lang/ref/Reference.refersTo')
+f(13,1660,2,4,'jbyte_arraycopy')
+f(13,1662,19,4,'jbyte_disjoint_arraycopy')
+f(13,1681,1,4,'jint_disjoint_arraycopy')
+f(10,1682,14,0,'sun/nio/ch/Util$BufferCache.get')
+f(11,1687,1,0,'java/nio/MappedByteBuffer.limit')
+f(12,1687,1,0,'java/nio/MappedByteBuffer.limit')
+f(13,1687,1,0,'java/nio/ByteBuffer.limit')
+f(14,1687,1,0,'java/nio/Buffer.limit')
+f(11,1688,8,0,'java/nio/MappedByteBuffer.rewind')
+f(12,1688,8,0,'java/nio/MappedByteBuffer.rewind')
+f(13,1693,2,0,'java/nio/ByteBuffer.rewind')
+f(13,1695,1,4,'unsafe_arraycopy')
+f(3,1696,3,3,'os::javaTimeMillis()')
+f(4,1697,2,4,'clock_gettime')
+f(5,1697,2,4,'gettimeofday')
+f(6,1697,2,4,'__commpage_gettimeofday_internal')
+f(7,1697,2,4,'mach_absolute_time')
+f(2,1699,3,3,'os::javaTimeNanos()')
+f(1,1702,1177,4,'thread_start')
+f(2,1702,1177,4,'_pthread_start')
+f(3,1702,1177,4,'thread_native_entry(Thread*)')
+f(4,1702,1177,3,'Thread::call_run()')
+f(5,1702,2,3,'ConcurrentGCThread::run()')
+f(6,1702,1,3,'G1ConcurrentMarkThread::run_service()')
+f(7,1702,1,3,'G1ConcurrentMark::concurrent_cycle_end()')
+f(8,1702,1,3,'OldGCTracer::report_gc_end_impl(TimeInstant<CompositeCounterRepresentation, CompositeElapsedCounterSource> const&, TimePartitions*)')
+f(9,1702,1,3,'GCTracer::send_phase_events(TimePartitions*) const')
+f(10,1702,1,3,'PhaseSender::visit(GCPhase*)')
+f(6,1703,1,3,'G1ServiceThread::run_service()')
+f(7,1703,1,3,'G1ServiceThread::run_task(G1ServiceTask*)')
+f(8,1703,1,3,'G1Policy::use_adaptive_young_list_length() const')
+f(5,1704,1167,3,'GangWorker::run()')
+f(6,1704,1167,3,'GangWorker::loop()')
+f(7,1705,9,3,'G1BatchedGangTask::work(unsigned int)')
+f(8,1705,5,3,'G1PostEvacuateCollectionSetCleanupTask2::FreeCollectionSetTask::do_work(unsigned int)')
+f(9,1705,5,3,'G1CollectionSet::par_iterate(HeapRegionClosure*, HeapRegionClaimer*, unsigned int, unsigned int) const')
+f(10,1705,5,3,'G1CollectionSet::iterate_part_from(HeapRegionClosure*, HeapRegionClaimer*, unsigned long, unsigned long, unsigned int, unsigned int) const')
+f(11,1705,5,3,'FreeCSetClosure::do_heap_region(HeapRegion*)')
+f(12,1705,5,3,'G1CollectedHeap::free_region(HeapRegion*, FreeRegionList*)')
+f(13,1705,2,3,'G1CardCounts::clear_region(HeapRegion*)')
+f(14,1705,2,4,'_platform_bzero$VARIANT$Haswell')
+f(13,1707,3,3,'HeapRegion::hr_clear(bool)')
+f(14,1707,3,3,'HeapRegionRemSet::clear_locked(bool)')
+f(15,1707,3,3,'OtherRegionsTable::clear()')
+f(16,1707,3,3,'SparsePRT::clear()')
+f(17,1707,1,4,'free')
+f(18,1707,1,4,'szone_size')
+f(19,1707,1,4,'tiny_size')
+f(17,1708,2,4,'free_small')
+f(18,1709,1,4,'small_free_list_remove_ptr_no_clear')
+f(8,1710,4,3,'G1RemSetScanState::G1ClearCardTableTask::do_work(unsigned int)')
+f(9,1710,4,3,'CardTable::clear(MemRegion)')
+f(10,1710,4,4,'_platform_bzero$VARIANT$Haswell')
+f(7,1714,120,3,'G1CMConcurrentMarkingTask::work(unsigned int)')
+f(8,1714,120,3,'G1CMTask::do_marking_step(double, bool, bool)')
+f(9,1715,31,3,'G1CMBitMap::iterate(G1CMBitMapClosure*, MemRegion)')
+f(10,1724,12,3,'G1CMTask::drain_local_queue(bool)')
+f(11,1725,11,3,'void G1CMTask::process_grey_task_entry<true>(G1TaskQueueEntry)')
+f(12,1725,1,3,'ClassLoaderData::oops_do(OopClosure*, int, bool)')
+f(12,1726,10,3,'void OopOopIterateDispatch<G1CMOopClosure>::Table::oop_oop_iterate<InstanceKlass, narrowOop>(G1CMOopClosure*, oopDesc*, Klass*)')
+f(13,1727,9,3,'G1CMTask::make_reference_grey(oopDesc*)')
+f(14,1728,8,3,'G1ConcurrentMark::mark_in_next_bitmap(unsigned int, HeapRegion*, oopDesc*)')
+f(10,1736,10,3,'void G1CMTask::process_grey_task_entry<true>(G1TaskQueueEntry)')
+f(11,1738,6,3,'void OopOopIterateDispatch<G1CMOopClosure>::Table::oop_oop_iterate<InstanceKlass, narrowOop>(G1CMOopClosure*, oopDesc*, Klass*)')
+f(12,1741,3,3,'G1CMTask::make_reference_grey(oopDesc*)')
+f(13,1741,3,3,'G1ConcurrentMark::mark_in_next_bitmap(unsigned int, HeapRegion*, oopDesc*)')
+f(11,1744,2,3,'void OopOopIterateDispatch<G1CMOopClosure>::Table::oop_oop_iterate<ObjArrayKlass, narrowOop>(G1CMOopClosure*, oopDesc*, Klass*)')
+f(12,1744,2,3,'G1CMTask::make_reference_grey(oopDesc*)')
+f(13,1745,1,3,'G1ConcurrentMark::mark_in_next_bitmap(unsigned int, HeapRegion*, oopDesc*)')
+f(9,1746,85,3,'G1CMTask::drain_local_queue(bool)')
+f(10,1752,77,3,'void G1CMTask::process_grey_task_entry<true>(G1TaskQueueEntry)')
+f(11,1757,2,3,'ClassLoaderData::oops_do(OopClosure*, int, bool)')
+f(11,1759,1,3,'os::elapsedVTime()')
+f(11,1760,69,3,'void OopOopIterateDispatch<G1CMOopClosure>::Table::oop_oop_iterate<InstanceKlass, narrowOop>(G1CMOopClosure*, oopDesc*, Klass*)')
+f(12,1769,1,3,'ClassLoaderData::oops_do(OopClosure*, int, bool)')
+f(12,1770,59,3,'G1CMTask::make_reference_grey(oopDesc*)')
+f(13,1778,51,3,'G1ConcurrentMark::mark_in_next_bitmap(unsigned int, HeapRegion*, oopDesc*)')
+f(10,1829,2,3,'void OopOopIterateDispatch<G1CMOopClosure>::Table::oop_oop_iterate<InstanceKlass, narrowOop>(G1CMOopClosure*, oopDesc*, Klass*)')
+f(9,1831,1,3,'GenericTaskQueueSet<GenericTaskQueue<G1TaskQueueEntry, (MEMFLAGS)5, 131072u>, (MEMFLAGS)5>::steal_best_of_2(unsigned int, G1TaskQueueEntry&)')
+f(9,1832,1,4,'_platform_bzero$VARIANT$Haswell')
+f(9,1833,1,3,'void G1CMTask::process_grey_task_entry<true>(G1TaskQueueEntry)')
+f(7,1834,3,3,'G1CMRootRegionScanTask::work(unsigned int)')
+f(8,1834,3,3,'G1ConcurrentMark::scan_root_region(MemRegion const*, unsigned int)')
+f(9,1835,2,3,'void OopOopIterateDispatch<G1RootRegionScanClosure>::Table::oop_oop_iterate<InstanceKlass, narrowOop>(G1RootRegionScanClosure*, oopDesc*, Klass*)')
+f(7,1837,9,3,'G1ClearBitMapTask::work(unsigned int)')
+f(8,1837,9,3,'HeapRegionManager::par_iterate(HeapRegionClosure*, HeapRegionClaimer*, unsigned int) const')
+f(9,1837,9,3,'G1ClearBitMapTask::G1ClearBitmapHRClosure::do_heap_region(HeapRegion*)')
+f(10,1837,9,3,'MarkBitMap::do_clear(MemRegion, bool)')
+f(11,1837,9,3,'BitMap::clear_range(unsigned long, unsigned long)')
+f(12,1837,9,4,'_platform_bzero$VARIANT$Haswell')
+f(7,1846,892,3,'G1EvacuateRegionsBaseTask::work(unsigned int)')
+f(8,1846,14,3,'G1EvacuateRegionsBaseTask::evacuate_live_objects(G1ParScanThreadState*, unsigned int, G1GCPhaseTimes::GCParPhases, G1GCPhaseTimes::GCParPhases)')
+f(9,1846,14,3,'G1ParEvacuateFollowersClosure::do_void()')
+f(10,1846,8,3,'G1ParScanThreadState::steal_and_trim_queue(GenericTaskQueueSet<OverflowTaskQueue<ScannerTask, (MEMFLAGS)5, 131072u>, (MEMFLAGS)5>*)')
+f(11,1846,8,3,'G1ParScanThreadState::trim_queue_to_threshold(unsigned int)')
+f(12,1846,8,3,'void G1ParScanThreadState::do_oop_evac<narrowOop>(narrowOop*)')
+f(13,1846,8,3,'G1ParScanThreadState::do_copy_to_survivor_space(G1HeapRegionAttr, oopDesc*, markWord)')
+f(14,1846,8,4,'_platform_memmove$VARIANT$Haswell')
+f(10,1854,2,3,'G1ParScanThreadState::trim_queue_to_threshold(unsigned int)')
+f(11,1854,2,3,'void G1ParScanThreadState::do_oop_evac<narrowOop>(narrowOop*)')
+f(12,1854,2,3,'G1ParScanThreadState::do_copy_to_survivor_space(G1HeapRegionAttr, oopDesc*, markWord)')
+f(13,1854,2,4,'_platform_memmove$VARIANT$Haswell')
+f(10,1856,4,3,'TaskTerminator::offer_termination(TerminatorTerminator*)')
+f(11,1856,3,3,'Mutex::lock_without_safepoint_check()')
+f(12,1856,3,4,'_pthread_mutex_firstfit_lock_slow')
+f(13,1856,3,4,'__psynch_mutexwait')
+f(11,1859,1,4,'_pthread_mutex_firstfit_unlock_slow')
+f(12,1859,1,4,'__psynch_mutexdrop')
+f(8,1860,878,3,'G1EvacuateRegionsTask::scan_roots(G1ParScanThreadState*, unsigned int)')
+f(9,1860,878,3,'G1RemSet::scan_heap_roots(G1ParScanThreadState*, unsigned int, G1GCPhaseTimes::GCParPhases, G1GCPhaseTimes::GCParPhases, bool)')
+f(10,1860,878,3,'G1ScanHRForRegionClosure::do_heap_region(HeapRegion*)')
+f(11,1861,877,3,'G1ScanHRForRegionClosure::scan_heap_roots(HeapRegion*)')
+f(12,1864,872,3,'G1ScanHRForRegionClosure::scan_memregion(unsigned int, MemRegion)')
+f(13,1864,795,3,'G1ParScanThreadState::trim_queue_to_threshold(unsigned int)')
+f(14,1882,1,3,'G1ParScanThreadState::do_copy_to_survivor_space(G1HeapRegionAttr, oopDesc*, markWord)')
+f(14,1883,776,3,'void G1ParScanThreadState::do_oop_evac<narrowOop>(narrowOop*)')
+f(15,1972,683,3,'G1ParScanThreadState::do_copy_to_survivor_space(G1HeapRegionAttr, oopDesc*, markWord)')
+f(16,2000,4,3,'G1ParScanThreadState::allocate_copy_slow(G1HeapRegionAttr*, oopDesc*, unsigned long, unsigned int, unsigned int)')
+f(17,2000,4,3,'G1PLABAllocator::allocate_direct_or_new_plab(G1HeapRegionAttr, unsigned long, bool*, unsigned int)')
+f(18,2000,3,3,'G1Allocator::old_attempt_allocation(unsigned long, unsigned long, unsigned long*)')
+f(19,2000,2,3,'G1AllocRegion::attempt_allocation_locked(unsigned long, unsigned long, unsigned long*)')
+f(20,2000,1,3,'G1CollectedHeap::retire_gc_alloc_region(HeapRegion*, unsigned long, G1HeapRegionAttr)')
+f(20,2001,1,3,'G1GCAllocRegion::retire(bool)')
+f(19,2002,1,3,'G1BlockOffsetTablePart::alloc_block_work(HeapWordImpl***, unsigned long*, HeapWordImpl**, HeapWordImpl**)')
+f(20,2002,1,3,'G1BlockOffsetTablePart::set_remainder_to_point_to_start_incl(unsigned long, unsigned long)')
+f(18,2003,1,3,'PLAB::retire()')
+f(19,2003,1,3,'CollectedHeap::fill_with_object(HeapWordImpl**, unsigned long, bool)')
+f(20,2003,1,3,'HandleMark::initialize(Thread*)')
+f(16,2004,626,4,'_platform_memmove$VARIANT$Haswell')
+f(16,2630,1,3,'void G1ScanEvacuatedObjClosure::do_oop_work<narrowOop>(narrowOop*)')
+f(16,2631,24,3,'void OopOopIterateBackwardsDispatch<G1ScanEvacuatedObjClosure>::Table::oop_oop_iterate_backwards<InstanceKlass, narrowOop>(G1ScanEvacuatedObjClosure*, oopDesc*, Klass*)')
+f(17,2639,16,3,'void G1ScanEvacuatedObjClosure::do_oop_work<narrowOop>(narrowOop*)')
+f(15,2655,3,4,'_platform_memmove$VARIANT$Haswell')
+f(15,2658,1,3,'void OopOopIterateBackwardsDispatch<G1ScanEvacuatedObjClosure>::Table::oop_oop_iterate_backwards<InstanceKlass, narrowOop>(G1ScanEvacuatedObjClosure*, oopDesc*, Klass*)')
+f(13,2659,75,3,'HeapWordImpl** HeapRegion::oops_on_memregion_seq_iterate_careful<true, G1ScanCardClosure>(MemRegion, G1ScanCardClosure*)')
+f(14,2662,36,3,'G1BlockOffsetTablePart::forward_to_block_containing_addr_slow(HeapWordImpl**, HeapWordImpl**, void const*)')
+f(15,2694,4,3,'HeapRegion::block_size(HeapWordImpl* const*) const')
+f(14,2698,1,3,'HeapRegion::block_size(HeapWordImpl* const*) const')
+f(14,2699,17,3,'HeapRegion::is_obj_dead_with_size(oopDesc*, G1CMBitMap const*, unsigned long*) const')
+f(14,2716,18,3,'void OopOopIterateDispatch<G1ScanCardClosure>::Table::oop_oop_iterate<InstanceKlass, narrowOop>(G1ScanCardClosure*, oopDesc*, Klass*)')
+f(15,2720,14,3,'void G1ScanCardClosure::do_oop_work<narrowOop>(narrowOop*)')
+f(13,2734,1,3,'void G1ParScanThreadState::do_oop_evac<narrowOop>(narrowOop*)')
+f(13,2735,1,3,'void OopOopIterateDispatch<G1ScanCardClosure>::Table::oop_oop_iterate<TypeArrayKlass, narrowOop>(G1ScanCardClosure*, oopDesc*, Klass*)')
+f(12,2736,1,4,'_platform_memset$VARIANT$Haswell')
+f(12,2737,1,4,'tlv_get_addr')
+f(7,2738,130,3,'G1RebuildRemSetTask::work(unsigned int)')
+f(8,2738,130,3,'HeapRegionManager::par_iterate(HeapRegionClosure*, HeapRegionClaimer*, unsigned int) const')
+f(9,2738,130,3,'G1RebuildRemSetTask::G1RebuildRemSetHeapRegionClosure::do_heap_region(HeapRegion*)')
+f(10,2738,129,3,'G1RebuildRemSetTask::G1RebuildRemSetHeapRegionClosure::rebuild_rem_set_in_region(G1CMBitMap const*, HeapWordImpl**, HeapWordImpl**, HeapRegion*, MemRegion)')
+f(11,2749,29,3,'G1BlockOffsetTablePart::forward_to_block_containing_addr_slow(HeapWordImpl**, HeapWordImpl**, void const*)')
+f(12,2765,1,3,'G1BlockOffsetTablePart::set_remainder_to_point_to_start_incl(unsigned long, unsigned long)')
+f(12,2766,11,3,'HeapRegion::block_size(HeapWordImpl* const*) const')
+f(12,2777,1,4,'_platform_memset$VARIANT$Haswell')
+f(11,2778,1,3,'G1BlockOffsetTablePart::set_remainder_to_point_to_start_incl(unsigned long, unsigned long)')
+f(11,2779,2,3,'G1RebuildRemSetTask::G1RebuildRemSetHeapRegionClosure::LiveObjIterator::LiveObjIterator(G1CMBitMap const*, HeapWordImpl* const*, MemRegion, HeapWordImpl**)')
+f(11,2781,1,3,'G1RebuildRemSetTask::G1RebuildRemSetHeapRegionClosure::LiveObjIterator::move_if_below_tams()')
+f(11,2782,83,3,'G1RebuildRemSetTask::G1RebuildRemSetHeapRegionClosure::scan_for_references(oopDesc*, MemRegion)')
+f(12,2808,57,3,'void OopOopIterateDispatch<G1RebuildRemSetClosure>::Table::oop_oop_iterate<InstanceKlass, narrowOop>(G1RebuildRemSetClosure*, oopDesc*, Klass*)')
+f(13,2843,22,3,'OtherRegionsTable::add_reference(void*, unsigned int)')
+f(14,2858,2,3,'Mutex::lock_without_safepoint_check()')
+f(15,2858,2,4,'_pthread_mutex_firstfit_lock_slow')
+f(16,2858,2,4,'__psynch_mutexwait')
+f(14,2860,1,3,'Mutex::unlock()')
+f(14,2861,4,3,'SparsePRT::add_card(int, int)')
+f(15,2861,3,3,'RSHashTable::entry_for_region_ind_create(int)')
+f(15,2864,1,3,'SparsePRT::expand()')
+f(16,2864,1,4,'_platform_memmove$VARIANT$Haswell')
+f(11,2865,2,3,'HeapRegion::block_size(HeapWordImpl* const*) const')
+f(10,2867,1,3,'G1RebuildRemSetTask::G1RebuildRemSetHeapRegionClosure::scan_for_references(oopDesc*, MemRegion)')
+f(7,2868,3,4,'semaphore_wait_trap')
+f(5,2871,3,3,'JavaThread::thread_main_inner()')
+f(6,2871,2,3,'CompileBroker::compiler_thread_loop()')
+f(7,2871,2,3,'CompileQueue::get()')
+f(8,2871,2,3,'Monitor::wait(long long)')
+f(9,2871,2,3,'os::PlatformMonitor::wait(long)')
+f(10,2871,2,4,'__psynch_cvwait')
+f(6,2873,1,4,'attach_listener_thread_entry(JavaThread*, JavaThread*)')
+f(7,2873,1,4,'close')
+f(5,2874,1,3,'VMThread::run()')
+f(6,2874,1,3,'VMThread::inner_execute(VM_Operation*)')
+f(7,2874,1,3,'VMThread::evaluate_operation(VM_Operation*)')
+f(8,2874,1,3,'VM_Operation::evaluate()')
+f(9,2874,1,3,'VM_G1CollectForAllocation::doit()')
+f(10,2874,1,3,'G1CollectedHeap::do_collection_pause_at_safepoint(double)')
+f(11,2874,1,3,'G1CollectedHeap::do_collection_pause_at_safepoint_helper(double)')
+f(12,2874,1,3,'G1CollectionSet::finalize_old_part(double)')
+f(13,2874,1,3,'G1Policy::calculate_old_collection_set_regions(G1CollectionSetCandidates*, double, unsigned int&, unsigned int&)')
+f(14,2874,1,3,'G1Policy::predict_bytes_to_copy(HeapRegion*) const')
+f(5,2875,4,3,'WatcherThread::run()')
+f(6,2875,4,3,'WatcherThread::sleep() const')
+f(7,2875,4,3,'Monitor::wait_without_safepoint_check(long long)')
+f(8,2875,4,3,'os::PlatformMonitor::wait(long)')
+f(9,2875,4,4,'__psynch_cvwait')
+render();
+</script></body></html>
