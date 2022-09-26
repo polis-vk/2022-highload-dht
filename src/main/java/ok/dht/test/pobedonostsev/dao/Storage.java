@@ -161,7 +161,7 @@ class Storage implements Closeable {
     }
 
     private long greaterOrEqualEntryIndex(MemorySegment sstable, MemorySegment key) {
-        long index = Utils.entryIndex(sstable, key);
+        long index = Utility.entryIndex(sstable, key);
         if (index < 0) {
             return ~index;
         }
@@ -187,7 +187,7 @@ class Storage implements Closeable {
         try {
             for (int i = sstables.size() - 1; i >= 0; i--) {
                 MemorySegment sstable = sstables.get(i);
-                long keyFromPos = Utils.entryIndex(sstable, key);
+                long keyFromPos = Utility.entryIndex(sstable, key);
                 if (keyFromPos >= 0) {
                     return entryAt(sstable, keyFromPos);
                 }

@@ -3,7 +3,11 @@ package ok.dht.test.pobedonostsev.dao;
 import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;
 
-public class Utils {
+public final class Utility {
+
+    private Utility() {
+    }
+
     public static long entryIndex(MemorySegment sstable, MemorySegment key) {
         long fileVersion = MemoryAccess.getLongAtOffset(sstable, 0);
         if (fileVersion != 0) {
@@ -17,7 +21,8 @@ public class Utils {
         long right = recordsCount - 1;
         while (left <= right) {
             long mid = (left + right) >>> 1;
-            long keyPos = MemoryAccess.getLongAtOffset(sstable, Storage.INDEX_HEADER_SIZE + mid * Storage.INDEX_RECORD_SIZE);
+            long keyPos =
+                    MemoryAccess.getLongAtOffset(sstable, Storage.INDEX_HEADER_SIZE + mid * Storage.INDEX_RECORD_SIZE);
             long keySize = MemoryAccess.getLongAtOffset(sstable, keyPos);
             MemorySegment keyForCheck = sstable.asSlice(keyPos + Long.BYTES, keySize);
             int comparedResult = MemorySegmentComparator.INSTANCE.compare(key, keyForCheck);
