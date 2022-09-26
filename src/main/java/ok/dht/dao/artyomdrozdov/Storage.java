@@ -14,6 +14,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.ThreadFactory;
 
 class Storage implements Closeable {
@@ -40,7 +41,7 @@ class Storage implements Closeable {
     private static final String FILE_EXT_TMP = ".tmp";
     private static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
     private final ResourceScope scope;
-    private final ArrayList<MemorySegment> sstables;
+    private final List<MemorySegment> sstables;
     private final boolean hasTombstones;
 
     private Storage(ResourceScope scope, ArrayList<MemorySegment> sstables, boolean hasTombstones) {
@@ -93,7 +94,8 @@ class Storage implements Closeable {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
+            Iterator<Entry<MemorySegment>> iterator = entries.iterator();
+            while (iterator.hasNext()) {
                 Entry<MemorySegment> entry = iterator.next();
                 size += getSize(entry);
                 if (entry.isTombstone()) {
@@ -110,7 +112,8 @@ class Storage implements Closeable {
 
             long index = 0;
             long offset = dataStart;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
+            iterator = entries.iterator();
+            while (iterator.hasNext()) {
                 Entry<MemorySegment> entry = iterator.next();
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
@@ -286,10 +289,6 @@ class Storage implements Closeable {
                 //ignored
             }
         }
-    }
-
-    public void maybeClose() {
-
     }
 
     public boolean isClosed() {
