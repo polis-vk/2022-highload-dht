@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutionException;
@@ -29,12 +30,10 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     private final ReadWriteLock upsertLock = new ReentrantReadWriteLock();
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(
-            r -> new Thread(r, "MemorySegmentDaoBG"));
-
-    private volatile State state;
-
+    private final ExecutorService executor =
+            Executors.newSingleThreadExecutor(r -> new Thread(r, "MemorySegmentDaoBG"));
     private final Config config;
+    private volatile State state;
 
     public MemorySegmentDao(Config config) throws IOException {
         this.config = config;
@@ -43,11 +42,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-        if (from == null) {
-            from = VERY_FIRST_KEY;
-        }
+        return getTombstoneFilteringIterator(Objects.requireNonNullElse(from, VERY_FIRST_KEY), to);
 
-        return getTombstoneFilteringIterator(from, to);
     }
 
     private TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment from, MemorySegment to) {
@@ -174,15 +170,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 return null;
             }
 
-            Storage.compact(
-                    config,
-                    () -> MergeIterator.of(
-                            stateRef.storage.iterate(VERY_FIRST_KEY,
-                                    null
-                            ),
-                            EntryKeyComparator.INSTANCE
-                    )
-            );
+            Storage.compact(config, () -> MergeIterator.of(stateRef.storage.iterate(VERY_FIRST_KEY, null),
+                    EntryKeyComparator.INSTANCE));
 
             Storage storage = Storage.load(config);
 
@@ -227,8 +216,10 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
         executor.shutdown();
         try {
-            //noinspection StatementWithEmptyBody
-            while (!executor.awaitTermination(10, TimeUnit.DAYS)) ;
+            boolean result = executor.awaitTermination(10, TimeUnit.DAYS);
+            while (!result) {
+                result = executor.awaitTermination(10, TimeUnit.DAYS);
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
@@ -306,12 +297,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
 
         static State newState(Config config, Storage storage) {
-            return new State(
-                    config,
-                    new Memory(config.flushThresholdBytes()),
-                    Memory.EMPTY,
-                    storage
-            );
+            return new State(config, new Memory(config.flushThresholdBytes()), Memory.EMPTY, storage);
         }
 
         public State prepareForFlush() {
@@ -319,12 +305,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             if (isFlushing()) {
                 throw new IllegalStateException("Already flushing");
             }
-            return new State(
-                    config,
-                    new Memory(config.flushThresholdBytes()),
-                    memory,
-                    storage
-            );
+            return new State(config, new Memory(config.flushThresholdBytes()), memory, storage);
         }
 
         public State afterFlush(Storage storage) {
@@ -332,22 +313,12 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             if (!isFlushing()) {
                 throw new IllegalStateException("Wasn't flushing");
             }
-            return new State(
-                    config,
-                    memory,
-                    Memory.EMPTY,
-                    storage
-            );
+            return new State(config, memory, Memory.EMPTY, storage);
         }
 
         public State afterCompact(Storage storage) {
             checkNotClosed();
-            return new State(
-                    config,
-                    memory,
-                    flushing,
-                    storage
-            );
+            return new State(config, memory, flushing, storage);
         }
 
         public State afterClosed() {
@@ -413,15 +384,12 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
 
         public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-            return to == null
-                    ? delegate.tailMap(from).values().iterator()
-                    : delegate.subMap(from, to).values().iterator();
+            return to == null ? delegate.tailMap(from).values().iterator() :
+                    delegate.subMap(from, to).values().iterator();
         }
 
         public Entry<MemorySegment> get(MemorySegment key) {
             return delegate.get(key);
         }
     }
-
-
 }

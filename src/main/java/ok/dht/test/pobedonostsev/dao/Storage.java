@@ -57,12 +57,13 @@ class Storage implements Closeable {
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
-        for (int i = 0; ; i++) {
+        boolean fileExists = true;
+        for (int i = 0; fileExists; i++) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));
             } catch (NoSuchFileException e) {
-                break;
+                fileExists = false;
             }
         }
 
@@ -89,7 +90,8 @@ class Storage implements Closeable {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
+            Iterator<Entry<MemorySegment>> iterator = entries.iterator();
+            while (iterator.hasNext()) {
                 Entry<MemorySegment> entry = iterator.next();
                 size += getSize(entry);
                 if (entry.isTombstone()) {
@@ -106,7 +108,9 @@ class Storage implements Closeable {
 
             long index = 0;
             long offset = dataStart;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
+
+            iterator = entries.iterator();
+            while (iterator.hasNext()) {
                 Entry<MemorySegment> entry = iterator.next();
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
