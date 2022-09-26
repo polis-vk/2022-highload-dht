@@ -1,4 +1,4 @@
-package ok.dht.test.kurdyukov.db.storage;
+package ok.dht.test.kurdyukov.db.dao.iterator;
 
 import java.util.Collections;
 import java.util.Comparator;
@@ -6,7 +6,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.PriorityQueue;
 
-public class MergeIterator<E> implements Iterator<E> {
+public final class MergeIterator<E> implements Iterator<E> {
 
     private final PriorityQueue<IteratorWrapper<E>> iterators;
     private final Comparator<E> comparator;
@@ -86,5 +86,4 @@ public class MergeIterator<E> implements Iterator<E> {
         }
 
     }
-
 }
