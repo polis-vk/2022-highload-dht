@@ -5,7 +5,7 @@ import ok.dht.test.gerasimov.lsm.Entry;
 
 import java.util.Comparator;
 
-public class EntryKeyComparator implements Comparator<Entry<MemorySegment>> {
+public final class EntryKeyComparator implements Comparator<Entry<MemorySegment>> {
 
     public static final Comparator<Entry<MemorySegment>> INSTANCE = new EntryKeyComparator();
 
