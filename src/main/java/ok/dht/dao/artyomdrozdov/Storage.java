@@ -1,5 +1,8 @@
 package ok.dht.dao.artyomdrozdov;
 
+import jdk.incubator.foreign.MemoryAccess;
+import jdk.incubator.foreign.MemorySegment;
+import jdk.incubator.foreign.ResourceScope;
 import java.io.Closeable;
 import java.io.IOException;
 import java.lang.ref.Cleaner;
@@ -12,9 +15,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.concurrent.ThreadFactory;
-import jdk.incubator.foreign.MemoryAccess;
-import jdk.incubator.foreign.MemorySegment;
-import jdk.incubator.foreign.ResourceScope;
 
 class Storage implements Closeable {
 

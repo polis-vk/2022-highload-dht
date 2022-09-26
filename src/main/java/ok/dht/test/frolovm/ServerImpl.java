@@ -1,11 +1,12 @@
 package ok.dht.test.frolovm;
 
+import ok.dht.Service;
+import ok.dht.ServiceConfig;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
-import ok.dht.Service;
-import ok.dht.ServiceConfig;
 
 public class ServerImpl {
 

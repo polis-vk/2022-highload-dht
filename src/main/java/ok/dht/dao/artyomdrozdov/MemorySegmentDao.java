@@ -1,5 +1,8 @@
 package ok.dht.dao.artyomdrozdov;
 
+import jdk.incubator.foreign.MemorySegment;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -12,9 +15,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import jdk.incubator.foreign.MemorySegment;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>> {
 
@@ -246,10 +246,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             this.iterator = iterator;
         }
 
-        public Entry<MemorySegment> peek() {
-            return hasNext() ? current : null;
-        }
-
         @Override
         public boolean hasNext() {
             if (current != null) {
@@ -277,6 +273,4 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             return next;
         }
     }
-
-
 }
