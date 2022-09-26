@@ -25,7 +25,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     private static final Logger LOG = LoggerFactory.getLogger(MemorySegmentDao.class);
 
-    private static final MemorySegment VERY_FIRST_KEY = MemorySegment.ofArray(new byte[]{});
+    private static final MemorySegment VERY_FIRST_KEY = MemorySegment.ofArray(new byte[] {});
 
     private final ReadWriteLock upsertLock = new ReentrantReadWriteLock();
 

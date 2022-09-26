@@ -101,11 +101,11 @@ class Storage implements Closeable {
             long dataStart = INDEX_HEADER_SIZE + INDEX_RECORD_SIZE * entriesCount;
 
             MemorySegment nextSSTable = MemorySegment.mapFile(
-                            sstableTmpPath,
-                            0,
-                            dataStart + size,
-                            FileChannel.MapMode.READ_WRITE,
-                            writeScope
+                    sstableTmpPath,
+                    0,
+                    dataStart + size,
+                    FileChannel.MapMode.READ_WRITE,
+                    writeScope
             );
 
             long index = 0;

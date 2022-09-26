@@ -24,7 +24,7 @@ import java.util.concurrent.CompletableFuture;
 
 public class DemoService implements Service {
 
-    private static final long flushThresholdBytes = 1 << 20;
+    private static final long FLUSH_THRESHOLD_BYTES = 1 << 20;
     private final ServiceConfig config;
     private HttpServer server;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
@@ -44,7 +44,7 @@ public class DemoService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        dao = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
+        dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         server = new CustomHttpServer(createConfigFromPort(config.selfPort()));
         server.addRequestHandlers(this);
         server.start();
