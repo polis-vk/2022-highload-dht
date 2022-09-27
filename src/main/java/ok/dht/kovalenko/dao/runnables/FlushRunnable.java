@@ -1,11 +1,10 @@
 package ok.dht.kovalenko.dao.runnables;
 
 import ok.dht.ServiceConfig;
+import ok.dht.kovalenko.dao.LSMDao;
 import ok.dht.kovalenko.dao.Serializer;
 import ok.dht.kovalenko.dao.aliases.MemorySSTable;
-import ok.dht.kovalenko.dao.aliases.MemorySSTableStorage;
 import ok.dht.kovalenko.dao.dto.PairedFiles;
-import ok.dht.kovalenko.dao.utils.DaoUtils;
 import ok.dht.kovalenko.dao.utils.FileUtils;
 
 import java.io.IOException;
@@ -16,47 +15,34 @@ public class FlushRunnable implements Runnable {
 
     private final ServiceConfig config;
     private final Serializer serializer;
-    private final MemorySSTableStorage sstablesForWrite;
-    private final MemorySSTableStorage sstablesForFlush;
+    private final LSMDao.MemoryStorage memoryStorage;
 
     public FlushRunnable(ServiceConfig config, Serializer serializer,
-                         MemorySSTableStorage sstablesForWrite, MemorySSTableStorage sstablesForFlush) {
+                         LSMDao.MemoryStorage memoryStorage) {
         this.config = config;
         this.serializer = serializer;
-        this.sstablesForWrite = sstablesForWrite;
-        this.sstablesForFlush = sstablesForFlush;
+        this.memoryStorage = memoryStorage;
     }
 
     @Override
     public void run() {
         try {
-            if (DaoUtils.isEmpty(this.sstablesForWrite)) {
+            if (this.memoryStorage.writeSSTables().isEmpty()) {
                 return;
             }
 
+            MemorySSTable memorySSTable = this.memoryStorage.writeSSTables().poll();
+            if (memorySSTable == null || !memorySSTable.values().iterator().hasNext()) {
+                return;
+            }
+
+            this.memoryStorage.flushSSTables().add(memorySSTable);
             PairedFiles pairedFiles = FileUtils.createPairedFiles(this.config);
-            MemorySSTable memorySSTable = this.sstablesForWrite.poll();
-
-            if (memorySSTable == null) {
-                deleteFiles(pairedFiles);
-                return;
-            }
-
-            this.sstablesForFlush.add(memorySSTable);
             this.serializer.write(memorySSTable.values().iterator(), pairedFiles);
-            this.sstablesForFlush.remove(memorySSTable); // It is impossible that any other thread will capture memorySSTable
-            this.sstablesForWrite.add(new MemorySSTable());
+            this.memoryStorage.flushSSTables().remove(memorySSTable); // It is impossible that any other thread will capture memorySSTable
+            this.memoryStorage.writeSSTables().add(new MemorySSTable());
         } catch (IOException e) {
             throw new RuntimeException(e);
-        }
-    }
-
-    private void deleteFiles(PairedFiles pf) {
-        try {
-            Files.delete(pf.indexesFile());
-            Files.delete(pf.dataFile());
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
         }
     }
 }

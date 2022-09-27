@@ -3,6 +3,7 @@ package ok.dht.kovalenko.dao.aliases;
 
 import ok.dht.ServiceConfig;
 import ok.dht.kovalenko.dao.Serializer;
+import ok.dht.kovalenko.dao.dto.ByteBufferRange;
 import ok.dht.kovalenko.dao.dto.FileMeta;
 import ok.dht.kovalenko.dao.dto.MappedPairedFiles;
 import ok.dht.kovalenko.dao.utils.FileUtils;
@@ -13,11 +14,11 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
-import java.nio.channels.ClosedByInterruptException;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.stream.Stream;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 
 public class MappedFileDiskSSTableStorage
         extends DiskSSTableStorage<MappedFileDiskSSTable>
@@ -39,56 +40,31 @@ public class MappedFileDiskSSTableStorage
         }
     }
 
-    private final Thread mapThread;
-    private final ServiceConfig config;
     private final Serializer serializer;
+    private final ServiceConfig config;
 
     public MappedFileDiskSSTableStorage(ServiceConfig config, Serializer serializer) {
         this.config = config;
         this.serializer = serializer;
-        this.mapThread = new Thread(() -> {
-            try {
-                while (!Thread.currentThread().isInterrupted()) {
-                    try (Stream<Path> paths = Files.list(config.workingDir())) {
-                        long pathsCount = paths.count();
-                        serializer.get(pathsCount/2);
-                    } catch (NullPointerException ignored) {
-                    }
-                }
-            } catch (ClosedByInterruptException ignored) {
-            } catch (IOException | ReflectiveOperationException e) {
-                throw new RuntimeException(e);
-            }
-        });
-        this.mapThread.setDaemon(true);
-        this.mapThread.start();
     }
 
     @Override
     public void close() throws IOException {
         try {
-            this.mapThread.interrupt();
-            if (!this.mapThread.isInterrupted()) {
-                throw new IllegalStateException("Can't end a work");
-            }
-            unmapMappedFiles();
+            unmapFiles();
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException(e);
         }
     }
 
-    public boolean isCompacted() {
-        return size() == 1 && !serializer.tombstoned(this.firstEntry().getValue().getValue());
-    }
-
-    private void unmapMappedFiles() throws ReflectiveOperationException {
+    private void unmapFiles() throws ReflectiveOperationException {
         for (MappedFileDiskSSTable mappedFileDiskSSTable : this.values()) {
             unmap(mappedFileDiskSSTable.getValue());
         }
     }
 
-    public void mapForRead(long nTablesToMap) throws IOException, ReflectiveOperationException {
-        unmapMappedFiles();
+    private void mapForRead(long nTablesToMap, Serializer serializer) throws IOException, ReflectiveOperationException {
+        unmapFiles();
 
         for (long priority = 1; priority <= nTablesToMap; ++priority) {
             Path dataFile = FileUtils.getFilePath(FileUtils.getDataFilename(priority), this.config);
@@ -100,13 +76,43 @@ public class MappedFileDiskSSTableStorage
                         dataChannel.map(FileChannel.MapMode.READ_ONLY, 0, dataChannel.size());
                 MappedByteBuffer mappedIndexesFile =
                         indexesChannel.map(FileChannel.MapMode.READ_ONLY, 0, indexesChannel.size());
-                mappedDataFile.position(FileMeta.size());
+                FileMeta meta = serializer.meta(mappedDataFile);
+                mappedDataFile.position(meta.size());
                 this.put(
                         priority,
-                        new MappedFileDiskSSTable(priority, new MappedPairedFiles(mappedDataFile, mappedIndexesFile))
+                        new MappedFileDiskSSTable(priority, new MappedPairedFiles(mappedDataFile, mappedIndexesFile), serializer)
                 );
             }
         }
+    }
+
+    public TypedEntry get(ByteBuffer key) throws IOException {
+        try {
+            updateTables();
+            TypedEntry res = null;
+            for (MappedFileDiskSSTable diskSSTable : this.descendingMap().values()) {
+                if ((res = diskSSTable.get(key)) != null) {
+                    return res;
+                }
+            }
+            return res;
+        } catch (ReflectiveOperationException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public List<Iterator<TypedEntry>> get(ByteBufferRange range) throws ReflectiveOperationException, IOException {
+        updateTables();
+        List<Iterator<TypedEntry>> res = new LinkedList<>();
+        for (MappedFileDiskSSTable diskSSTable: this.descendingMap().values()) {
+            Iterator<TypedEntry> rangeIt = diskSSTable.get(range);
+            if (rangeIt == null) {
+                continue;
+            }
+            res.add(rangeIt);
+        }
+        //this.descendingMap().values().forEach(sstable -> res.add(sstable.get(range)));
+        return res;
     }
 
     private void unmap(MappedPairedFiles mappedPairedFiles) throws ReflectiveOperationException {
@@ -116,5 +122,12 @@ public class MappedFileDiskSSTableStorage
 
     private void unmap(MappedByteBuffer buffer) throws ReflectiveOperationException {
         unmap.invoke(unsafe, buffer);
+    }
+
+    private void updateTables() throws ReflectiveOperationException, IOException {
+        long diskSSTablesSize = FileUtils.nFiles(config)/2;
+        if (this.get(diskSSTablesSize) == null) {
+            mapForRead(diskSSTablesSize, serializer);
+        }
     }
 }

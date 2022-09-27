@@ -1,7 +1,6 @@
 package ok.dht.test.kovalenko;
 
 import ok.dht.ServiceConfig;
-import ok.dht.test.drozdov.DemoService;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -10,6 +9,7 @@ import one.nio.http.Response;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
@@ -32,7 +32,7 @@ public final class MyServer extends HttpServer {
                 port,
                 url,
                 Collections.singletonList(url),
-                Files.createTempDirectory("server")
+                Paths.get("/home/pavel/IntelliJIdeaProjects/tables/data_verybigtables/")
         );
         new MyService(cfg).start().get(1, TimeUnit.SECONDS);
         System.out.println("Socket is ready: " + url);

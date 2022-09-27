@@ -2,17 +2,16 @@ package ok.dht.kovalenko.dao;
 
 
 import ok.dht.ServiceConfig;
-import ok.dht.kovalenko.dao.aliases.MappedFileDiskSSTableStorage;
 import ok.dht.kovalenko.dao.aliases.MemorySSTable;
 import ok.dht.kovalenko.dao.aliases.TypedBaseEntry;
 import ok.dht.kovalenko.dao.aliases.TypedEntry;
+import ok.dht.kovalenko.dao.dto.ByteBufferRange;
 import ok.dht.kovalenko.dao.dto.FileMeta;
 import ok.dht.kovalenko.dao.dto.MappedPairedFiles;
 import ok.dht.kovalenko.dao.dto.PairedFiles;
 import ok.dht.kovalenko.dao.utils.FileUtils;
 import ok.dht.kovalenko.dao.utils.MergeIteratorUtils;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
@@ -20,21 +19,17 @@ import java.nio.MappedByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-public final class Serializer implements Closeable {
+public final class Serializer {
 
     private final ServiceConfig config;
-    private final MappedFileDiskSSTableStorage mappedSSTables;
+    private final AtomicBoolean wasCompacted;
 
-    public Serializer(ServiceConfig config)
+    public Serializer(ServiceConfig config, AtomicBoolean wasCompacted)
             throws ReflectiveOperationException {
         this.config = config;
-        this.mappedSSTables = new MappedFileDiskSSTableStorage(config, this);
-    }
-
-    @Override
-    public void close() throws IOException {
-        mappedSSTables.close();
+        this.wasCompacted = wasCompacted;
     }
 
     public TypedEntry readEntry(MappedPairedFiles mappedFilePair, int indexesPos) {
@@ -49,6 +44,11 @@ public final class Serializer implements Closeable {
         return new TypedBaseEntry(key, value);
     }
 
+    public ByteBuffer readKey(MappedPairedFiles mappedFilePair, int indexesPos) {
+        int dataPos = readDataFileOffset(mappedFilePair.indexesFile(), indexesPos);
+        return readByteBuffer(mappedFilePair.dataFile(), dataPos + 1); // skip tombstone flag
+    }
+
     public void write(Iterator<TypedEntry> data, PairedFiles pairedFiles)
             throws IOException {
         if (!data.hasNext()) {
@@ -61,20 +61,30 @@ public final class Serializer implements Closeable {
         try (RandomAccessFile dataFile = new RandomAccessFile(dataFilePath.toString(), "rw");
              RandomAccessFile indexesFile = new RandomAccessFile(indexesFilePath.toString(), "rw")) {
             byte hasTombstones = FileMeta.HAS_NOT_TOMBSTONES;
-            writeMeta(new FileMeta(FileMeta.INCOMPLETELY_WRITTEN, hasTombstones), dataFile);
+            writeMeta(FileMeta.DEFAULT_META, dataFile);
 
             int curOffset = (int) dataFile.getFilePointer();
             int bbSize = 0;
             ByteBuffer offset = ByteBuffer.allocate(FileUtils.INDEX_SIZE);
+            ByteBuffer fromRange = null;
+            TypedEntry curEntry = null;
             while (data.hasNext()) {
                 curOffset += bbSize;
                 writeOffset(curOffset, offset, indexesFile);
-                TypedEntry curEntry = data.next();
+                curEntry = data.next();
+                if (fromRange == null) {
+                    fromRange = curEntry.key();
+                }
                 hasTombstones = curEntry.isTombstone() ? FileMeta.HAS_TOMBSTONES : FileMeta.HAS_NOT_TOMBSTONES;
                 bbSize = writeEntry(curEntry, dataFile);
             }
+            ByteBuffer toRange = curEntry.key(); // non null!
 
-            writeMeta(new FileMeta(FileMeta.COMPLETELY_WRITTEN, hasTombstones), dataFile);
+            writeMeta(new FileMeta(FileMeta.COMPLETELY_WRITTEN, hasTombstones,
+                    new ByteBufferRange(fromRange, toRange)), dataFile);
+            if (hasTombstones == FileMeta.HAS_TOMBSTONES) {
+                this.wasCompacted.set(true);
+            }
         } catch (Exception ex) {
             Files.delete(dataFilePath);
             Files.delete(indexesFilePath);
@@ -82,40 +92,46 @@ public final class Serializer implements Closeable {
         }
     }
 
-    public MappedPairedFiles get(long priority)
-            throws IOException, ReflectiveOperationException {
-        if (mappedSSTables.get(priority) == null) {
-            mappedSSTables.mapForRead(priority);
-        }
-        return mappedSSTables.get(priority).getValue();
+    public FileMeta meta(MappedByteBuffer file) {
+        int pos = file.position();
+        file.position(0);
+        byte completelyWritten = file.get();
+        byte hasTombstones = file.get();
+        ByteBuffer from = readByteBuffer(file, 2);
+        ByteBuffer to = readByteBuffer(file, 2 + Integer.BYTES + from.rewind().remaining());
+        file.position(pos);
+        return new FileMeta(completelyWritten, hasTombstones, new ByteBufferRange(from, to));
     }
 
-    public FileMeta meta(MappedByteBuffer file) {
-        return new FileMeta(file.get(0), file.get(1));
+    public ByteBufferRange range(MappedByteBuffer file) {
+        return meta(file).range();
     }
 
     public FileMeta meta(Path pathToFile) throws IOException {
         try (RandomAccessFile file = new RandomAccessFile(pathToFile.toString(), "r")) {
-            return switch ((int) file.length()) {
-                case 0 -> new FileMeta(FileMeta.INCOMPLETELY_WRITTEN, FileMeta.HAS_NOT_TOMBSTONES);
-                case 1 -> new FileMeta(file.readByte(), FileMeta.HAS_NOT_TOMBSTONES);
-                default -> new FileMeta(file.readByte(), file.readByte());
-            };
+            // fixme
+            byte completelyWritten = file.readByte();
+            byte hasTombstones = file.readByte();
+            int fromSize = file.readInt();
+            byte[] fromArr = new byte[fromSize];
+            file.readFully(fromArr);
+            ByteBuffer from = ByteBuffer.wrap(fromArr);
+            int toSize = file.readInt();
+            byte[] toArr = new byte[toSize];
+            file.readFully(toArr);
+            ByteBuffer to = ByteBuffer.wrap(toArr);
+            return new FileMeta(completelyWritten, hasTombstones, new ByteBufferRange(from, to));
         }
-    }
-
-    public boolean isCompacted() {
-        return mappedSSTables.isCompacted();
-    }
-
-    public boolean tombstoned(MappedPairedFiles mappedPairedFiles) {
-        return meta(mappedPairedFiles.dataFile()).tombstoned();
     }
 
     private void writeMeta(FileMeta meta, RandomAccessFile file) throws IOException {
         file.seek(0);
         file.write(meta.completelyWritten());
         file.write(meta.hasTombstones());
+        file.writeInt(meta.fromSize());
+        file.write(meta.from());
+        file.writeInt(meta.toSize());
+        file.write(meta.to());
     }
 
     private int readDataFileOffset(MappedByteBuffer indexesFile, int indexesPos) {

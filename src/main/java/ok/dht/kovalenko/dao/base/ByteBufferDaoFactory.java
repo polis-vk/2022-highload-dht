@@ -1,12 +1,9 @@
-package ok.dht.test.kovalenko;
+package ok.dht.kovalenko.dao.base;
 
-import ok.dht.Dao;
-import ok.dht.Entry;
 import ok.dht.ServiceConfig;
 import ok.dht.kovalenko.dao.LSMDao;
 import ok.dht.kovalenko.dao.aliases.TypedBaseEntry;
 import ok.dht.kovalenko.dao.aliases.TypedEntry;
-import ok.dht.test.DaoFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;

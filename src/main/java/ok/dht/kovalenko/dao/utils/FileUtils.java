@@ -1,6 +1,7 @@
 package ok.dht.kovalenko.dao.utils;
 
 import ok.dht.ServiceConfig;
+import ok.dht.kovalenko.dao.Serializer;
 import ok.dht.kovalenko.dao.dto.PairedFiles;
 
 import java.io.IOException;
@@ -118,6 +119,21 @@ public final class FileUtils {
     public static long nFiles(ServiceConfig config) throws IOException {
         try (Stream<Path> paths = Files.list(config.workingDir())) {
             return paths.count();
+        }
+    }
+
+    public static long nWrittenSSTables(ServiceConfig config, Serializer serializer) {
+        try {
+            long nFiles = nFiles(config);
+            long nWrittenFiles = 0;
+            for (long i = 1; i <= nFiles / 2; ++i) {
+                if (serializer.meta(getFilePath(getDataFilename(i), config)).written()) {
+                    ++nWrittenFiles;
+                }
+            }
+            return nWrittenFiles;
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
         }
     }
 

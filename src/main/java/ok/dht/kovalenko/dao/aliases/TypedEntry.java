@@ -1,6 +1,6 @@
 package ok.dht.kovalenko.dao.aliases;
 
-import ok.dht.Entry;
+import ok.dht.kovalenko.dao.base.Entry;
 
 import java.nio.ByteBuffer;
 

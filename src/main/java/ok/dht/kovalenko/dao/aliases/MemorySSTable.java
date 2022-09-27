@@ -1,6 +1,7 @@
 package ok.dht.kovalenko.dao.aliases;
 
 import java.nio.ByteBuffer;
+import java.util.Iterator;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 public class MemorySSTable
@@ -13,5 +14,15 @@ public class MemorySSTable
             size += Integer.BYTES + entry.value().rewind().remaining();
         }
         return size;
+    }
+
+    public Iterator<TypedEntry> get(ByteBuffer from, ByteBuffer to) {
+        Iterator<TypedEntry> rangeIt;
+        if (to == null) {
+            rangeIt = this.tailMap(from).values().iterator();
+        } else {
+            rangeIt = this.subMap(from, to).values().iterator();
+        }
+        return rangeIt.hasNext() ? rangeIt : null;
     }
 }

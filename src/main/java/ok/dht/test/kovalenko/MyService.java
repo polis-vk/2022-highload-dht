@@ -1,35 +1,33 @@
 package ok.dht.test.kovalenko;
 
-import ok.dht.Dao;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
+import ok.dht.kovalenko.dao.DaoFiller;
 import ok.dht.kovalenko.dao.LSMDao;
 import ok.dht.kovalenko.dao.aliases.TypedBaseEntry;
 import ok.dht.kovalenko.dao.aliases.TypedEntry;
-import ok.dht.test.ServiceFactory;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
-import one.nio.util.Utf8;
+import ok.dht.kovalenko.dao.base.ByteBufferDaoFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Objects;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
-import javax.annotation.CheckForNull;
 
 public class MyService implements Service {
 
+    private static final int N_ENTRIES = 100_000_000; // About 3 GB
+    private static final ByteBufferDaoFactory daoFactory = new ByteBufferDaoFactory();
     private final ServiceConfig config;
     private LSMDao dao;
     private HttpServer server;
-    private static final ByteBufferDaoFactory daoFactory = new ByteBufferDaoFactory();
 
     public MyService(ServiceConfig config) throws IOException {
         this.config = config;
@@ -37,16 +35,22 @@ public class MyService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        this.dao = new LSMDao(this.config);
-        this.server = new MyServer(createConfigFromPort(this.config.selfPort()));
-        this.server.start();
-        this.server.addRequestHandlers(this);
-        return CompletableFuture.completedFuture(null);
+        try {
+            this.dao = new LSMDao(this.config);
+            //DaoFiller.fillDao(this.dao, MyService.daoFactory, N_ENTRIES);
+            this.server = new MyServer(createConfigFromPort(this.config.selfPort()));
+            this.server.start();
+            this.server.addRequestHandlers(this);
+            return CompletableFuture.completedFuture(null);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
         this.dao.close();
+        this.server.registerShutdownHook();
         return CompletableFuture.completedFuture(null);
     }
 
@@ -55,23 +59,17 @@ public class MyService implements Service {
     public Response handleGet(@Param(value = "id", required = true) String id) {
         try {
             if (id.isEmpty()) {
-                Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-                response.addHeader("Connection: close");
-                return response;
+                return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
 
             ByteBuffer key = daoFactory.fromString(id);
             TypedEntry res = this.dao.get(key);
 
             if (res == null) {
-                Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
-                response.addHeader("Connection: close");
-                return response;
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
             }
 
-            Response response = Response.ok(res.value().array());
-            response.addHeader("Connection: close");
-            return response;
+            return Response.ok(daoFactory.toString(res.value()).getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
         }
@@ -88,9 +86,7 @@ public class MyService implements Service {
             ByteBuffer key = daoFactory.fromString(id);
             ByteBuffer value = ByteBuffer.wrap(request.getBody());
             this.dao.upsert(new TypedBaseEntry(key, value));
-            Response response = new Response(Response.CREATED, Response.EMPTY);
-            response.addHeader("Connection: close");
-            return response;
+            return new Response(Response.CREATED, Response.EMPTY);
         } catch (RuntimeException e) {
             return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
         }
@@ -105,9 +101,7 @@ public class MyService implements Service {
             }
             ByteBuffer key = daoFactory.fromString(id);
             this.dao.upsert(new TypedBaseEntry(key, null));
-            Response response = new Response(Response.ACCEPTED, Response.EMPTY);
-            response.addHeader("Connection: close");
-            return response;
+            return new Response(Response.ACCEPTED, Response.EMPTY);
         } catch (RuntimeException e) {
             return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
         }

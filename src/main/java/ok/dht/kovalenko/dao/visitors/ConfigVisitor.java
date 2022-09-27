@@ -59,7 +59,7 @@ public class ConfigVisitor
         }
 
         deleteEmptyOrIncompletelyWrittenFiles(this.dataFiles.iterator(), this.indexesFiles.iterator());
-        checkIfDataAndIndexesFilesSizeMismatch();
+        checkIfDataAndIndexesFilesSizeMatch();
 
         Iterator<Path> dataIterator = this.dataFiles.iterator();
         Iterator<Path> indexesIterator = this.indexesFiles.iterator();
@@ -86,8 +86,8 @@ public class ConfigVisitor
         {
             FileMeta meta = this.serializer.meta(this.compactedDataPath);
             if (meta.notWritten()) {
-                Files.deleteIfExists(this.compactedDataPath);
-                Files.deleteIfExists(this.compactedIndexesPath);
+                Files.delete(this.compactedDataPath);
+                Files.delete(this.compactedIndexesPath);
                 return false;
             }
         }
@@ -108,7 +108,7 @@ public class ConfigVisitor
 
         for (Path dataFile : this.dataFiles) {
             if (isTargetFile(dataFile)) {
-                Files.deleteIfExists(dataFile);
+                Files.delete(dataFile);
             }
         }
 
@@ -131,7 +131,7 @@ public class ConfigVisitor
         }
     }
 
-    private void checkIfDataAndIndexesFilesSizeMismatch() {
+    private void checkIfDataAndIndexesFilesSizeMatch() {
         if (this.dataFiles.size() != this.indexesFiles.size()) {
             throw new IllegalStateException("Mismatch in the number of data-files and indexes-files;" +
                     " expected: equal, got: " + this.dataFiles.size() + ":" + this.indexesFiles.size());
@@ -152,7 +152,7 @@ public class ConfigVisitor
 
     private void deleteFiles(NavigableSet<Path> files) throws IOException {
         for (Path file : files) {
-            Files.deleteIfExists(file);
+            Files.delete(file);
         }
     }
 
