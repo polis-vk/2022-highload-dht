@@ -4,34 +4,19 @@ import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.nadutkin.database.Config;
 import ok.dht.test.nadutkin.database.Entry;
 
-import java.io.IOException;
-import java.lang.ref.Cleaner;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static ok.dht.test.nadutkin.database.impl.StorageMethods.getSizeOnDisk;
 
-public class UtilsClass {
-    public static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
-        @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
-                @Override
-                public synchronized void start() {
-                    setDaemon(true);
-                    super.start();
-                }
-            };
-        }
-    });
+public abstract class UtilsClass {
 
-    public interface Data {
-        Iterator<Entry<MemorySegment>> iterator() throws IOException;
+    public interface Data extends Iterable<Entry<MemorySegment>> {
+        Iterator<Entry<MemorySegment>> iterator();
     }
 
     public static class TombstoneFilteringIterator implements Iterator<Entry<MemorySegment>> {

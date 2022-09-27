@@ -10,6 +10,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 
 import static ok.dht.test.nadutkin.database.impl.Constants.INDEX_HEADER_SIZE;
 import static ok.dht.test.nadutkin.database.impl.Constants.INDEX_RECORD_SIZE;
@@ -18,10 +19,10 @@ class Storage implements Closeable {
     // supposed to have fresh files first
 
     private final ResourceScope scope;
-    final ArrayList<MemorySegment> sstables;
+    final List<MemorySegment> sstables;
     private final boolean hasTombstones;
 
-    Storage(ResourceScope scope, ArrayList<MemorySegment> sstables, boolean hasTombstones) {
+    Storage(ResourceScope scope, List<MemorySegment> sstables, boolean hasTombstones) {
         this.scope = scope;
         this.sstables = sstables;
         this.hasTombstones = hasTombstones;
@@ -44,7 +45,6 @@ class Storage implements Closeable {
         }
         long recordsCount = MemoryAccess.getLongAtOffset(sstable, 8);
         if (key == null) {
-            // fixme
             return recordsCount;
         }
 
@@ -124,7 +124,7 @@ class Storage implements Closeable {
 
     // last is newer
     // it is ok to mutate list after
-    public ArrayList<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
+    public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
         try {
             ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
             for (MemorySegment sstable : sstables) {
@@ -150,7 +150,8 @@ class Storage implements Closeable {
             try {
                 scope.close();
                 return;
-            } catch (IllegalStateException ignored) {
+            } catch (IllegalStateException e) {
+                System.out.printf("Unable to close, exception %1$s%n", e.getMessage());
             }
         }
     }

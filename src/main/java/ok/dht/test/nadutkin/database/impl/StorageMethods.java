@@ -14,7 +14,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Iterator;
 
 import static ok.dht.test.nadutkin.database.impl.Constants.COMPACTED_FILE;
 import static ok.dht.test.nadutkin.database.impl.Constants.FILE_EXT;
@@ -24,7 +23,7 @@ import static ok.dht.test.nadutkin.database.impl.Constants.INDEX_HEADER_SIZE;
 import static ok.dht.test.nadutkin.database.impl.Constants.INDEX_RECORD_SIZE;
 import static ok.dht.test.nadutkin.database.impl.Constants.VERSION;
 
-public class StorageMethods {
+public abstract class StorageMethods {
     public static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
         Path compactedFile = config.basePath().resolve(COMPACTED_FILE);
@@ -33,15 +32,17 @@ public class StorageMethods {
         }
 
         ArrayList<MemorySegment> sstables = new ArrayList<>();
-        ResourceScope scope = ResourceScope.newSharedScope(UtilsClass.CLEANER);
+        ResourceScope scope = ResourceScope.newSharedScope(Constants.CLEANER);
 
-        // FIXME check existing files
-        for (int i = 0; ; i++) {
-            Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
+        boolean haveFile = true;
+        int index = 0;
+        while (haveFile){
+            Path nextFile = basePath.resolve(FILE_NAME + index + FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));
+                index++;
             } catch (NoSuchFileException e) {
-                break;
+                haveFile = false;
             }
         }
 
@@ -73,8 +74,7 @@ public class StorageMethods {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
-                Entry<MemorySegment> entry = iterator.next();
+            for (var entry : entries) {
                 size += getSize(entry);
                 if (entry.isTombstone()) {
                     hasTombstone = true;
@@ -94,8 +94,7 @@ public class StorageMethods {
 
             long index = 0;
             long offset = dataStart;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
-                Entry<MemorySegment> entry = iterator.next();
+            for (var entry : entries) {
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
                 offset += writeRecord(nextSSTable, offset, entry.key());
@@ -148,6 +147,7 @@ public class StorageMethods {
 
         Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
     }
+
     public static long getSize(Entry<MemorySegment> entry) {
         if (entry.value() == null) {
             return Long.BYTES + entry.key().byteSize() + Long.BYTES;

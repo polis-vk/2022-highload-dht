@@ -38,13 +38,14 @@ public class ServiceImpl implements Service {
     private byte[] getBytes(String message) {
         return message.getBytes(StandardCharsets.UTF_8);
     }
+
     @Override
     public CompletableFuture<?> start() throws IOException {
-        long FLUSH_THRESHOLD_BYTES = 1_000_000;
+        long flushThresholdBytes = 1_000_000;
         if (!Files.exists(config.workingDir())) {
             Files.createTempDirectory(config.workingDir().getFileName().toString());
         }
-        dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+        dao = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
@@ -102,6 +103,7 @@ public class ServiceImpl implements Service {
             return new Response(goodResponse, Response.EMPTY);
         }
     }
+
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response put(@Param(value = "id", required = true) String id,
@@ -114,6 +116,7 @@ public class ServiceImpl implements Service {
     public Response delete(@Param(value = "id", required = true) String id) {
         return upsert(id, null, Response.ACCEPTED);
     }
+
     private static HttpServerConfig createConfigFromPort(int port) {
         HttpServerConfig httpConfig = new HttpServerConfig();
         AcceptorConfig acceptor = new AcceptorConfig();

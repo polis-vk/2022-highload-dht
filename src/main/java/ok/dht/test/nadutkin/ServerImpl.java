@@ -2,6 +2,7 @@ package ok.dht.test.nadutkin;
 
 import ok.dht.ServiceConfig;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
@@ -17,7 +18,7 @@ public final class ServerImpl {
         // Only main method
     }
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws IOException {
         int port = 19234;
         String url = "http://localhost:" + port;
         ServiceConfig cfg = new ServiceConfig(
@@ -26,7 +27,13 @@ public final class ServerImpl {
                 Collections.singletonList(url),
                 Files.createTempDirectory("server")
         );
-        new ServiceImpl(cfg).start().get(1, TimeUnit.SECONDS);
-        System.out.println("Socket is ready: " + url);
+        ServiceImpl service = new ServiceImpl(cfg);
+        try {
+            service.start().get(1, TimeUnit.SECONDS);
+            System.out.println("Socket is ready: " + url);
+        } catch (Exception e) {
+            service.stop();
+            System.out.printf("Service stopped. Exception: %1$s%n", e.getMessage());
+        }
     }
 }
