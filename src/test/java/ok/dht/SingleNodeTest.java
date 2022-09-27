@@ -155,7 +155,7 @@ class SingleNodeTest extends TestBase {
         assertArrayEquals(value2, response.body());
     }
 
-    @ServiceTest(stage = 1)
+    @ServiceTest(stage = 1, bonusForWeek = 1)
     void respectFileFolder(ServiceInfo service) throws Exception {
         String key = randomId();
         byte[] value = randomValue();
