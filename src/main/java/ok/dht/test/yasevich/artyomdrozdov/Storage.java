@@ -10,11 +10,9 @@ import ok.dht.test.yasevich.dao.Entry;
 import java.io.Closeable;
 import java.io.IOException;
 import java.lang.ref.Cleaner;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
@@ -36,12 +34,10 @@ class Storage implements Closeable {
         }
     });
 
-    private static final long VERSION = 0;
     private static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
     private static final int INDEX_RECORD_SIZE = Long.BYTES;
     private static final String FILE_NAME = "data";
     private static final String FILE_EXT = ".dat";
-    private static final String FILE_EXT_TMP = ".tmp";
     private static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
 
     private final ResourceScope scope;
@@ -78,64 +74,7 @@ class Storage implements Closeable {
             Collection<Entry<MemorySegment>> entries) throws IOException {
         int nextSSTableIndex = previousState.sstables.size();
         Path sstablePath = config.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
-        save(entries::iterator, sstablePath);
-    }
-
-    private static void save(
-            Data entries,
-            Path sstablePath
-    ) throws IOException {
-
-        Path sstableTmpPath = sstablePath.resolveSibling(sstablePath.getFileName().toString() + FILE_EXT_TMP);
-
-        Files.deleteIfExists(sstableTmpPath);
-        Files.createFile(sstableTmpPath);
-
-        try (ResourceScope writeScope = ResourceScope.newConfinedScope()) {
-            long size = 0;
-            long entriesCount = 0;
-            boolean hasTombstone = false;
-            Iterator<Entry<MemorySegment>> entryIterator = entries.iterator();
-            while (entryIterator.hasNext()) {
-                Entry<MemorySegment> entry = entryIterator.next();
-                size += StorageUtils.getSize(entry);
-                if (entry.isTombstone()) {
-                    hasTombstone = true;
-                }
-                entriesCount++;
-            }
-
-            long dataStart = INDEX_HEADER_SIZE + INDEX_RECORD_SIZE * entriesCount;
-
-            MemorySegment nextSSTable = MemorySegment.mapFile(
-                    sstableTmpPath,
-                    0,
-                    dataStart + size,
-                    FileChannel.MapMode.READ_WRITE,
-                    writeScope
-            );
-
-            long index = 0;
-            long offset = dataStart;
-            Iterator<Entry<MemorySegment>> iterator = entries.iterator();
-            while (iterator.hasNext()) {
-                Entry<MemorySegment> entry = iterator.next();
-                MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
-
-                offset += StorageUtils.writeRecord(nextSSTable, offset, entry.key());
-                offset += StorageUtils.writeRecord(nextSSTable, offset, entry.value());
-
-                index++;
-            }
-
-            MemoryAccess.setLongAtOffset(nextSSTable, 0, VERSION);
-            MemoryAccess.setLongAtOffset(nextSSTable, 8, entriesCount);
-            MemoryAccess.setLongAtOffset(nextSSTable, 16, hasTombstone ? 1 : 0);
-
-            nextSSTable.force();
-        }
-
-        Files.move(sstableTmpPath, sstablePath, StandardCopyOption.ATOMIC_MOVE);
+        StorageUtils.save(entries::iterator, sstablePath);
     }
 
     public static long getSizeOnDisk(Entry<MemorySegment> entry) {
@@ -144,10 +83,9 @@ class Storage implements Closeable {
 
     public static void compact(Config config, Data data) throws IOException {
         Path compactedFile = config.basePath().resolve(COMPACTED_FILE);
-        save(data, compactedFile);
+        StorageUtils.save(data, compactedFile);
         StorageUtils.finishCompact(config, compactedFile);
     }
-
 
     // supposed to have fresh files first
     private Storage(ResourceScope scope, List<MemorySegment> sstables, boolean hasTombstones) {

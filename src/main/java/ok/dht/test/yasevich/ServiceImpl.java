@@ -4,10 +4,10 @@ import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.yasevich.artyomdrozdov.MemorySegmentDao;
 import ok.dht.test.yasevich.dao.BaseEntry;
 import ok.dht.test.yasevich.dao.Config;
 import ok.dht.test.yasevich.dao.Dao;
-import ok.dht.test.yasevich.artyomdrozdov.MemorySegmentDao;
 import ok.dht.test.yasevich.dao.Entry;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -60,6 +60,7 @@ public class ServiceImpl implements Service {
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
         return httpConfig;
     }
+
     @Path("/v0/entity")
     public Response handleRequest(@Param(value = "id", required = true) String id, Request request) throws IOException {
         if (id.isEmpty()) {

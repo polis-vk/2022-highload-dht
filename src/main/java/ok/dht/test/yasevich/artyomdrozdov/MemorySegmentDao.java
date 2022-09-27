@@ -234,8 +234,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             boolean terminated;
             do {
                 terminated = executor.awaitTermination(10, TimeUnit.DAYS);
-            }
-            while (terminated);
+            } while (terminated);
         } catch (InterruptedException e) {
             throw new IllegalStateException(e);
         }

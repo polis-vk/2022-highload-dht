@@ -20,7 +20,8 @@ public final class Server {
         // Only main method
     }
 
-    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException, TimeoutException {
+    public static void main(String[] args) throws IOException,
+            ExecutionException, InterruptedException, TimeoutException {
         int port = 19234;
         String url = "http://localhost:" + port;
         ServiceConfig config = new ServiceConfig(
