@@ -37,7 +37,7 @@ public class CustomHttpServer extends HttpServer {
                 try {
                     session.write(responseBytes, 0, responseBytes.length);
                 } catch (IOException e) {
-                    LOG.error("Error while sending client info about closing socket");
+                    LOG.error("Error while sending client info about closing socket", e);
                 }
                 session.socket().close();
             }

@@ -39,7 +39,7 @@ public class ServiceImpl implements Service {
         try {
             levelDB = Iq80DBFactory.factory.open(config.workingDir().toFile(), new Options());
         } catch (IOException e) {
-            LOG.error("Error while starting database: " + e.getMessage());
+            LOG.error("Error while starting database: ", e);
             throw e;
         }
         server = new CustomHttpServer(createHttpConfig(config));
@@ -54,7 +54,7 @@ public class ServiceImpl implements Service {
         try {
             levelDB.close();
         } catch (IOException e) {
-            LOG.error("Error while closing: " + e.getMessage());
+            LOG.error("Error while closing: ", e);
         }
         return CompletableFuture.completedFuture(null);
     }
