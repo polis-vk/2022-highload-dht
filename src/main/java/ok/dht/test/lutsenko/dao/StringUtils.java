@@ -2,20 +2,9 @@ package ok.dht.test.lutsenko.dao;
 
 import one.nio.util.Utf8;
 
-import java.io.IOException;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.util.EnumSet;
+public final class StringUtils {
 
-public final class DaoUtils2 {
-
-    private DaoUtils2() {
+    private StringUtils() {
     }
 
     public static String preprocess(String str) {
@@ -75,29 +64,5 @@ public final class DaoUtils2 {
             }
         }
         return stringBuilder.toString();
-    }
-
-    public static MappedByteBuffer mapFile(Path path) throws IOException {
-        MappedByteBuffer mappedByteBuffer;
-        try (
-                FileChannel fileChannel = (FileChannel) Files.newByteChannel(path,
-                        EnumSet.of(StandardOpenOption.READ))
-        ) {
-            mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, Files.size(path));
-        }
-        return mappedByteBuffer;
-    }
-
-    public static void unmap(MappedByteBuffer buffer) {
-        try {
-            Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
-            Field theUnsafeField = unsafeClass.getDeclaredField("theUnsafe");
-            Method invokeCleaner = unsafeClass.getMethod("invokeCleaner", ByteBuffer.class);
-            theUnsafeField.setAccessible(true);
-            Object theUnsafe = theUnsafeField.get(null);
-            invokeCleaner.invoke(theUnsafe, buffer);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
     }
 }

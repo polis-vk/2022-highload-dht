@@ -23,8 +23,8 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Stream;
 
-import static ok.dht.test.lutsenko.dao.DaoUtils2.mapFile;
-import static ok.dht.test.lutsenko.dao.DaoUtils2.unmap;
+import static ok.dht.test.lutsenko.dao.DaoUtils.mapFile;
+import static ok.dht.test.lutsenko.dao.DaoUtils.unmap;
 
 /**
  * ----------------------------------------------------------------------------------------------*
@@ -69,7 +69,7 @@ public class PersistenceRangeDao implements Dao<String, BaseEntry<String>> {
 
     public PersistenceRangeDao(DaoConfig daoConfig) throws IOException {
         this.daoConfig = daoConfig;
-        this.memStorage = new MemStorage(daoConfig.flushThresholdBytes());
+        memStorage = new MemStorage(daoConfig.flushThresholdBytes());
         try (Stream<Path> stream = Files.find(daoConfig.basePath(), 1,
                 (p, a) -> a.isRegularFile() && p.getFileName().toString().endsWith(DATA_FILE_EXTENSION))) {
             List<Path> paths = stream.toList();

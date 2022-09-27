@@ -16,18 +16,16 @@ import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Base64;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class DemoService implements Service {
 
     private final ServiceConfig config;
-    private final Set<HttpSession> sessions = new HashSet<>();
     private PersistenceRangeDao dao;
     private HttpServer server;
 
@@ -43,31 +41,33 @@ public class DemoService implements Service {
         );
         dao = new PersistenceRangeDao(daoConfig);
         if (Files.notExists(config.workingDir())) {
-            Files.createTempDirectory("service");
+            Files.createDirectory(config.workingDir());
         }
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
+
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
                 Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
                 session.sendResponse(response);
-                sessions.add(session);
             }
 
             @Override
-            public void handleRequest(Request request, HttpSession session) throws IOException {
-                super.handleRequest(request, session);
-                sessions.add(session);
+            public synchronized void stop() {
+                for (SelectorThread thread : selectors) {
+                    for (Session session : thread.selector) {
+                        session.close();
+                    }
+                }
+                super.stop();
             }
         };
-        server.start();
         server.addRequestHandlers(this);
+        server.start();
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        sessions.forEach(Session::close);
-        sessions.clear();
         server.stop();
         dao.close();
         return CompletableFuture.completedFuture(null);
