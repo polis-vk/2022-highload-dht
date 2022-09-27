@@ -2,9 +2,12 @@ package ok.dht.test.yasevich;
 
 import ok.dht.ServiceConfig;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Collections;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Basic server stub.
@@ -13,11 +16,11 @@ import java.util.concurrent.TimeUnit;
  */
 public final class Server {
 
-    private Server(ServiceConfig config) {
+    private Server() {
         // Only main method
     }
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException, TimeoutException {
         int port = 19234;
         String url = "http://localhost:" + port;
         ServiceConfig config = new ServiceConfig(
@@ -27,6 +30,5 @@ public final class Server {
                 Files.createTempDirectory("server")
         );
         new ServiceImpl(config).start().get(1, TimeUnit.SECONDS);
-        System.out.println("Socket is ready: " + url);
     }
 }

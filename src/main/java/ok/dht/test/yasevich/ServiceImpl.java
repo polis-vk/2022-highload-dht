@@ -7,9 +7,15 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.yasevich.dao.BaseEntry;
 import ok.dht.test.yasevich.dao.Config;
 import ok.dht.test.yasevich.dao.Dao;
-import ok.dht.test.yasevich.dao.Entry;
 import ok.dht.test.yasevich.artyomdrozdov.MemorySegmentDao;
-import one.nio.http.*;
+import ok.dht.test.yasevich.dao.Entry;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
@@ -54,8 +60,6 @@ public class ServiceImpl implements Service {
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
         return httpConfig;
     }
-
-
     @Path("/v0/entity")
     public Response handleRequest(@Param(value = "id", required = true) String id, Request request) throws IOException {
         if (id.isEmpty()) {
@@ -77,12 +81,10 @@ public class ServiceImpl implements Service {
         return new Response(Response.OK, entry.value().toByteArray());
     }
 
-
     private Response handleDelete(String id) {
         dao.upsert(new BaseEntry<>(fromString(id), null));
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
-
 
     private Response handlePost(String id, Request request) {
         dao.upsert(new BaseEntry<>(fromString(id), MemorySegment.ofArray(request.getBody())));
