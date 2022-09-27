@@ -125,7 +125,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 } finally {
                     upsertLock.writeLock().unlock();
                 }
-                storage.maybeClose();
                 return null;
             } catch (Exception e) {
                 LOG.error("Can't flush", e);
@@ -191,8 +190,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             } finally {
                 upsertLock.writeLock().unlock();
             }
-
-            currentState.storage.maybeClose();
             return null;
         });
 
@@ -216,17 +213,17 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     }
 
     private State accessState() {
-        State state = this.state;
-        if (state.closed) {
+        State accessed = this.state;
+        if (accessed.closed) {
             throw new IllegalStateException("Dao is already closed");
         }
-        return state;
+        return accessed;
     }
 
     @Override
     public synchronized void close() throws IOException {
-        State state = this.state;
-        if (state.closed) {
+        State currentState = this.state;
+        if (currentState.closed) {
             return;
         }
         executor.shutdown();
@@ -238,13 +235,13 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         } catch (InterruptedException e) {
             throw new IllegalStateException(e);
         }
-        state = this.state;
-        state.storage.close();
-        this.state = state.afterClosed();
-        if (state.memory.isEmpty()) {
+        currentState = this.state;
+        currentState.storage.close();
+        this.state = currentState.afterClosed();
+        if (currentState.memory.isEmpty()) {
             return;
         }
-        Storage.save(config, state.storage, state.memory.values());
+        Storage.save(config, currentState.storage, currentState.memory.values());
     }
 
     private static class TombstoneFilteringIterator implements Iterator<Entry<MemorySegment>> {

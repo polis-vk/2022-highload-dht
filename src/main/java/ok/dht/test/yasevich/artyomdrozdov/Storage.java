@@ -17,22 +17,18 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.ThreadFactory;
 
 class Storage implements Closeable {
 
-    private static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
-        @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
+    private static final Cleaner CLEANER = Cleaner.create(
+            (Runnable r) -> new Thread(r, "Storage-Cleaner") {
                 @Override
                 public synchronized void start() {
                     setDaemon(true);
                     super.start();
                 }
-            };
-        }
-    });
+            }
+    );
 
     private static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
     private static final int INDEX_RECORD_SIZE = Long.BYTES;
@@ -111,7 +107,6 @@ class Storage implements Closeable {
         }
         long recordsCount = MemoryAccess.getLongAtOffset(sstable, 8);
         if (key == null) {
-            // fixme
             return recordsCount;
         }
 
@@ -220,10 +215,6 @@ class Storage implements Closeable {
             } catch (IllegalStateException ignored) {
             }
         }
-    }
-
-    //Body is intentionally empty
-    public void maybeClose() {
     }
 
     public boolean isClosed() {
