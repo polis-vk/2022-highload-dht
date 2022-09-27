@@ -719,3 +719,8 @@ Comparator compare в entryIndex. В данном случае трудно бу
 Среднее latency 5.73s . \
 Requests/sec:   6093.28
 
+Графики [`Latency от Percentile`](http://hdrhistogram.github.io/HdrHistogram/plotFiles.html) находятся в папке [`hdrhistogram`](../hdrhistogram). 
+Подробнее о построении можно прочитать на странице Acknowledgements [wrk2](https://github.com/giltene/wrk2). \
+Заметим, что при стабильной работе сервера, изменение Latency практически не заметно. Графики(get3000, put-10000). \
+При увеличении нагрузки на сервер видим, что рост Latency(для get5000 начиная с 95%, а для put 15000 с 77%). \
+Когда сервер захлебывается резкий рост Latency проиcходит сразу со старта. Графики (put20000, get8000). 
