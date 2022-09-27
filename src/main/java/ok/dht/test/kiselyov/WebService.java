@@ -1,5 +1,15 @@
 package ok.dht.test.kiselyov;
 
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Response;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.server.AcceptorConfig;
+
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
@@ -11,16 +21,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.concurrent.CompletableFuture;
-
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Response;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.server.AcceptorConfig;
 
 public class WebService implements Service {
 
