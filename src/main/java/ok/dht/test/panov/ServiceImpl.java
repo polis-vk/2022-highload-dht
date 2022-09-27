@@ -8,11 +8,15 @@ import ok.dht.test.panov.dao.BaseEntry;
 import ok.dht.test.panov.dao.Config;
 import ok.dht.test.panov.dao.Entry;
 import ok.dht.test.panov.dao.lsm.MemorySegmentDao;
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
-import one.nio.server.SelectorThread;
-import one.nio.util.Utf8;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -23,7 +27,7 @@ import java.util.stream.StreamSupport;
 
 public class ServiceImpl implements Service {
 
-    private static long FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
+    private static final long FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
 
     private final ServiceConfig config;
     private HttpServer server;

@@ -9,7 +9,6 @@ import ok.dht.test.panov.dao.Entry;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.lang.ref.Cleaner;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
@@ -18,47 +17,28 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.concurrent.ThreadFactory;
+import java.util.List;
 
-class Storage implements Closeable {
+final class Storage implements Closeable {
 
-    private static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
-        @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
-                @Override
-                public synchronized void start() {
-                    setDaemon(true);
-                    super.start();
-                }
-            };
-        }
-    });
-
-    private static final long VERSION = 0;
-    private static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
-    private static final int INDEX_RECORD_SIZE = Long.BYTES;
-
-    private static final String FILE_NAME = "data";
-    private static final String FILE_EXT = ".dat";
-    private static final String FILE_EXT_TMP = ".tmp";
-    private static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
+    private final ResourceScope scope;
+    private final List<MemorySegment> sstables;
+    private final boolean hasTombstones;
 
     static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
-        Path compactedFile = config.basePath().resolve(COMPACTED_FILE);
+        Path compactedFile = config.basePath().resolve(StorageCompanionObject.COMPACTED_FILE);
         if (Files.exists(compactedFile)) {
             finishCompact(config, compactedFile);
         }
 
         ArrayList<MemorySegment> sstables = new ArrayList<>();
-        ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
+        ResourceScope scope = ResourceScope.newSharedScope(StorageCompanionObject.CLEANER);
 
-        // FIXME check existing files
-        for (int i = 0; ; i++) {
-            Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
+        for (int i = 0; true; i++) {
+            Path nextFile = basePath.resolve(StorageCompanionObject.FILE_NAME + i + StorageCompanionObject.FILE_EXT);
             try {
-                sstables.add(mapForRead(scope, nextFile));
+                sstables.add(StorageCompanionObject.mapForRead(scope, nextFile));
             } catch (NoSuchFileException e) {
                 break;
             }
@@ -74,16 +54,19 @@ class Storage implements Closeable {
             Storage previousState,
             Collection<Entry<MemorySegment>> entries) throws IOException {
         int nextSSTableIndex = previousState.sstables.size();
-        Path sstablePath = config.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
+        Path sstablePath = config
+                        .basePath()
+                        .resolve(StorageCompanionObject.FILE_NAME + nextSSTableIndex + StorageCompanionObject.FILE_EXT);
         save(entries::iterator, sstablePath);
     }
 
     private static void save(
-            Data entries,
+            StorageCompanionObject.Data entries,
             Path sstablePath
     ) throws IOException {
 
-        Path sstableTmpPath = sstablePath.resolveSibling(sstablePath.getFileName().toString() + FILE_EXT_TMP);
+        Path sstableTmpPath = sstablePath
+                .resolveSibling(sstablePath.getFileName().toString() + StorageCompanionObject.FILE_EXT_TMP);
 
         Files.deleteIfExists(sstableTmpPath);
         Files.createFile(sstableTmpPath);
@@ -92,16 +75,16 @@ class Storage implements Closeable {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
-                Entry<MemorySegment> entry = iterator.next();
-                size += getSize(entry);
+            for (Entry<MemorySegment> entry : entries) {
+                size += StorageCompanionObject.getSize(entry);
                 if (entry.isTombstone()) {
                     hasTombstone = true;
                 }
                 entriesCount++;
             }
 
-            long dataStart = INDEX_HEADER_SIZE + INDEX_RECORD_SIZE * entriesCount;
+            long dataStart = StorageCompanionObject.INDEX_HEADER_SIZE
+                    + StorageCompanionObject.INDEX_RECORD_SIZE * entriesCount;
 
             MemorySegment nextSSTable = MemorySegment.mapFile(
                     sstableTmpPath,
@@ -113,17 +96,19 @@ class Storage implements Closeable {
 
             long index = 0;
             long offset = dataStart;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
-                Entry<MemorySegment> entry = iterator.next();
-                MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
+            for (Entry<MemorySegment> entry: entries) {
+                MemoryAccess.setLongAtOffset(
+                        nextSSTable,
+                        StorageCompanionObject.INDEX_HEADER_SIZE + index * StorageCompanionObject.INDEX_RECORD_SIZE,
+                        offset);
 
-                offset += writeRecord(nextSSTable, offset, entry.key());
-                offset += writeRecord(nextSSTable, offset, entry.value());
+                offset += StorageCompanionObject.writeRecord(nextSSTable, offset, entry.key());
+                offset += StorageCompanionObject.writeRecord(nextSSTable, offset, entry.value());
 
                 index++;
             }
 
-            MemoryAccess.setLongAtOffset(nextSSTable, 0, VERSION);
+            MemoryAccess.setLongAtOffset(nextSSTable, 0, StorageCompanionObject.VERSION);
             MemoryAccess.setLongAtOffset(nextSSTable, 8, entriesCount);
             MemoryAccess.setLongAtOffset(nextSSTable, 16, hasTombstone ? 1 : 0);
 
@@ -133,60 +118,32 @@ class Storage implements Closeable {
         Files.move(sstableTmpPath, sstablePath, StandardCopyOption.ATOMIC_MOVE);
     }
 
-    private static long getSize(Entry<MemorySegment> entry) {
-        if (entry.value() == null) {
-            return Long.BYTES + entry.key().byteSize() + Long.BYTES;
-        } else {
-            return Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
-        }
-    }
-
-    public static long getSizeOnDisk(Entry<MemorySegment> entry) {
-        return getSize(entry) + INDEX_RECORD_SIZE;
-    }
-
-    private static long writeRecord(MemorySegment nextSSTable, long offset, MemorySegment record) {
-        if (record == null) {
-            MemoryAccess.setLongAtOffset(nextSSTable, offset, -1);
-            return Long.BYTES;
-        }
-        long recordSize = record.byteSize();
-        MemoryAccess.setLongAtOffset(nextSSTable, offset, recordSize);
-        nextSSTable.asSlice(offset + Long.BYTES, recordSize).copyFrom(record);
-        return Long.BYTES + recordSize;
-    }
-
-    @SuppressWarnings("DuplicateThrows")
-    private static MemorySegment mapForRead(ResourceScope scope, Path file) throws NoSuchFileException, IOException {
-        long size = Files.size(file);
-
-        return MemorySegment.mapFile(file, 0, size, FileChannel.MapMode.READ_ONLY, scope);
-    }
-
-    public static void compact(Config config, Data data) throws IOException {
-        Path compactedFile = config.basePath().resolve(COMPACTED_FILE);
+    public static void compact(Config config, StorageCompanionObject.Data data) throws IOException {
+        Path compactedFile = config.basePath().resolve(StorageCompanionObject.COMPACTED_FILE);
         save(data, compactedFile);
         finishCompact(config, compactedFile);
     }
 
     private static void finishCompact(Config config, Path compactedFile) throws IOException {
         for (int i = 0; ; i++) {
-            Path nextFile = config.basePath().resolve(FILE_NAME + i + FILE_EXT);
+            Path nextFile = config
+                    .basePath()
+                    .resolve(StorageCompanionObject.FILE_NAME + i + StorageCompanionObject.FILE_EXT);
             if (!Files.deleteIfExists(nextFile)) {
                 break;
             }
         }
 
-        Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
+        Files.move(
+                compactedFile,
+                config.basePath().resolve(StorageCompanionObject.FILE_NAME + 0 + StorageCompanionObject.FILE_EXT),
+                StandardCopyOption.ATOMIC_MOVE
+        );
     }
 
     // supposed to have fresh files first
 
-    private final ResourceScope scope;
-    private final ArrayList<MemorySegment> sstables;
-    private final boolean hasTombstones;
-
-    private Storage(ResourceScope scope, ArrayList<MemorySegment> sstables, boolean hasTombstones) {
+    private Storage(ResourceScope scope, List<MemorySegment> sstables, boolean hasTombstones) {
         this.scope = scope;
         this.sstables = sstables;
         this.hasTombstones = hasTombstones;
@@ -209,7 +166,6 @@ class Storage implements Closeable {
         }
         long recordsCount = MemoryAccess.getLongAtOffset(sstable, 8);
         if (key == null) {
-            // fixme
             return recordsCount;
         }
 
@@ -219,7 +175,10 @@ class Storage implements Closeable {
         while (left <= right) {
             long mid = (left + right) >>> 1;
 
-            long keyPos = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + mid * INDEX_RECORD_SIZE);
+            long keyPos = MemoryAccess.getLongAtOffset(
+                    sstable,
+                    StorageCompanionObject.INDEX_HEADER_SIZE + mid * StorageCompanionObject.INDEX_RECORD_SIZE
+            );
             long keySize = MemoryAccess.getLongAtOffset(sstable, keyPos);
 
             MemorySegment keyForCheck = sstable.asSlice(keyPos + Long.BYTES, keySize);
@@ -238,7 +197,10 @@ class Storage implements Closeable {
 
     private Entry<MemorySegment> entryAt(MemorySegment sstable, long keyIndex) {
         try {
-            long offset = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + keyIndex * INDEX_RECORD_SIZE);
+            long offset = MemoryAccess.getLongAtOffset(
+                    sstable,
+                    StorageCompanionObject.INDEX_HEADER_SIZE + keyIndex * StorageCompanionObject.INDEX_RECORD_SIZE
+            );
             long keySize = MemoryAccess.getLongAtOffset(sstable, offset);
             long valueOffset = offset + Long.BYTES + keySize;
             long valueSize = MemoryAccess.getLongAtOffset(sstable, valueOffset);
@@ -289,7 +251,7 @@ class Storage implements Closeable {
 
     // last is newer
     // it is ok to mutate list after
-    public ArrayList<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
+    public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
         try {
             ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
             for (MemorySegment sstable : sstables) {
@@ -316,12 +278,9 @@ class Storage implements Closeable {
                 scope.close();
                 return;
             } catch (IllegalStateException ignored) {
+                // ignored
             }
         }
-    }
-
-    public void maybeClose() {
-
     }
 
     public boolean isClosed() {
@@ -336,10 +295,6 @@ class Storage implements Closeable {
             return false;
         }
         return !hasTombstones;
-    }
-
-    public interface Data {
-        Iterator<Entry<MemorySegment>> iterator() throws IOException;
     }
 
 }
