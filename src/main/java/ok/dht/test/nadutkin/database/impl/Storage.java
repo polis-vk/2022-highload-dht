@@ -151,7 +151,7 @@ class Storage implements Closeable {
                 scope.close();
                 return;
             } catch (IllegalStateException e) {
-                System.out.printf("Unable to close, exception %1$s%n", e.getMessage());
+                Constants.LOG.error("Unable to close, exception {}", e.getMessage());
             }
         }
     }

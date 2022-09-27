@@ -1,6 +1,7 @@
 package ok.dht.test.nadutkin;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.nadutkin.database.impl.Constants;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -33,7 +34,7 @@ public final class ServerImpl {
             System.out.println("Socket is ready: " + url);
         } catch (Exception e) {
             service.stop();
-            System.out.printf("Service stopped. Exception: %1$s%n", e.getMessage());
+            Constants.LOG.error("Service stopped. Exception: {}", e.getMessage());
         }
     }
 }

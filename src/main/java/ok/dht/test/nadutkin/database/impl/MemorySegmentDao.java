@@ -4,8 +4,6 @@ import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.nadutkin.database.Config;
 import ok.dht.test.nadutkin.database.Dao;
 import ok.dht.test.nadutkin.database.Entry;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Iterator;
@@ -20,8 +18,6 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>> {
-
-    private static final Logger LOG = LoggerFactory.getLogger(MemorySegmentDao.class);
 
     private static final MemorySegment VERY_FIRST_KEY = MemorySegment.ofArray(new byte[]{});
 
@@ -42,13 +38,14 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment start, MemorySegment finish) {
         if (start == null) {
-            start = VERY_FIRST_KEY;
+            getTombstoneFilteringIterator(VERY_FIRST_KEY, finish);
         }
 
         return getTombstoneFilteringIterator(start, finish);
     }
 
-    private UtilsClass.TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment start, MemorySegment finish) {
+    private UtilsClass.TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment start,
+                                                                                MemorySegment finish) {
         UtilsClass.State accessState = accessState();
 
         List<Iterator<Entry<MemorySegment>>> iterators = accessState.storage.iterate(start, finish);
@@ -125,11 +122,11 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 }
                 return null;
             } catch (Exception e) {
-                LOG.error("Can't flush", e);
+                Constants.LOG.error("Can't flush", e);
                 try {
                     this.state.storage.close();
                 } catch (IOException ex) {
-                    LOG.error("Can't stop storage", ex);
+                    Constants.LOG.error("Can't stop storage", ex);
                     ex.addSuppressed(e);
                     throw ex;
                 }
@@ -220,7 +217,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         executor.shutdown();
         try {
             while (!executor.awaitTermination(10, TimeUnit.DAYS)) {
-                LOG.info("Waiting for termination to close");
+                Constants.LOG.info("Waiting for termination to close");
             }
         } catch (InterruptedException e) {
             throw new RuntimeException(e);

@@ -1,8 +1,6 @@
 package ok.dht.test.nadutkin.database.impl;
 
-import jdk.incubator.foreign.MemoryAccess;
-import jdk.incubator.foreign.MemorySegment;
-import jdk.incubator.foreign.ResourceScope;
+import jdk.incubator.foreign.*;
 import ok.dht.test.nadutkin.database.Config;
 import ok.dht.test.nadutkin.database.Entry;
 
@@ -15,15 +13,9 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 
-import static ok.dht.test.nadutkin.database.impl.Constants.COMPACTED_FILE;
-import static ok.dht.test.nadutkin.database.impl.Constants.FILE_EXT;
-import static ok.dht.test.nadutkin.database.impl.Constants.FILE_EXT_TMP;
-import static ok.dht.test.nadutkin.database.impl.Constants.FILE_NAME;
-import static ok.dht.test.nadutkin.database.impl.Constants.INDEX_HEADER_SIZE;
-import static ok.dht.test.nadutkin.database.impl.Constants.INDEX_RECORD_SIZE;
-import static ok.dht.test.nadutkin.database.impl.Constants.VERSION;
+import static ok.dht.test.nadutkin.database.impl.Constants.*;
 
-public abstract class StorageMethods {
+public final class StorageMethods {
     public static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
         Path compactedFile = config.basePath().resolve(COMPACTED_FILE);
@@ -36,7 +28,7 @@ public abstract class StorageMethods {
 
         boolean haveFile = true;
         int index = 0;
-        while (haveFile){
+        while (haveFile) {
             Path nextFile = basePath.resolve(FILE_NAME + index + FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));

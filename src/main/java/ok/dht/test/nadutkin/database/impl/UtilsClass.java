@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static ok.dht.test.nadutkin.database.impl.StorageMethods.getSizeOnDisk;
 
-public abstract class UtilsClass {
+public final class UtilsClass {
 
     public interface Data extends Iterable<Entry<MemorySegment>> {
         Iterator<Entry<MemorySegment>> iterator();

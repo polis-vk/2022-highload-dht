@@ -1,9 +1,12 @@
 package ok.dht.test.nadutkin.database.impl;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.lang.ref.Cleaner;
 import java.util.concurrent.ThreadFactory;
 
-public abstract class Constants {
+public final class Constants {
     public static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
         @Override
         public Thread newThread(Runnable r) {
@@ -16,6 +19,7 @@ public abstract class Constants {
             };
         }
     });
+    public static final Logger LOG = LoggerFactory.getLogger(MemorySegmentDao.class);
     public static final long VERSION = 0;
     public static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
     public static final int INDEX_RECORD_SIZE = Long.BYTES;
