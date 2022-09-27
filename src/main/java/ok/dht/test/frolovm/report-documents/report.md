@@ -1,7 +1,7 @@
 # 2022-highload-dht
 Курсовой проект 2022 года [курса "Проектирование высоконагруженных систем"](https://polis.vk.company/curriculum/program/discipline/1444/) [VK Образования](https://polis.vk.company/).
 
-В своём Java package `ok.dht.test.<username>` реализуйте интерфейсы [`Service`](../src/main/java/ok/dht/Service.java) и [`ServiceFactory.Factory`](../src/main/java/ok/dht/test/ServiceFactory.java) и поддержите следующий HTTP REST API протокол:
+В своём Java package `ok.dht.test.<username>` реализуйте интерфейсы [`Service`](../../../Service.java) и [`ServiceFactory.Factory`](../../ServiceFactory.java) и поддержите следующий HTTP REST API протокол:
 * HTTP `GET /v0/entity?id=<ID>` -- получить данные по ключу `<ID>`. Возвращает `200 OK` и данные или `404 Not Found`.
 * HTTP `PUT /v0/entity?id=<ID>` -- создать/перезаписать (upsert) данные по ключу `<ID>`. Возвращает `201 Created`.
 * HTTP `DELETE /v0/entity?id=<ID>` -- удалить данные по ключу `<ID>`. Возвращает `202 Accepted`.
@@ -159,7 +159,7 @@ Requests/sec:   9999.76
 Transfer/sec:    654.28KB
 ```
 
-При rate=15000 сервер уже плохо справляется и среднее Latency 403.26ms. \
+При rate=15000 сервер уже плохо справляется и среднее Latency 403.26ms. 
 ```
 wrk2 -t 1 -c 1 -d 60s -R 15000 -s requests-wrk/put-requests.lua --latency http://localhost:42342
 Running 1m test @ http://localhost:42342
@@ -354,7 +354,7 @@ Alloc:
 Основная часть аллокации памяти приходится на сеть ~65%.
 Service аллоцирует ~25%.
 Flush in bd на 10k занимает 2.79%, а при 15k ~25%, а при 20k ~10%. Что связано с увеличением кол-ва данных и тем, успевает
-ли сервер и база данных их обработать.
+ли сервер и база данных обработать запросы.
 
 ### Тестирование GET запросами:
 
@@ -690,18 +690,20 @@ Transfer/sec:    402.82KB
 
 ### Результаты профилирования async-profiler:
 
-В allocation 99% Storage.entryIndex MapMemorySegment.asSlice, что логично так как мы пытаемся найти по индексу сущность.
+В allocation 99% Storage.entryIndex MapMemorySegment.asSlice, что логично так как у нас заполненная база данных,
+и основная работа это поиск по индексу сущности.
 
-Для rate=3000 
+Для CPU:\
+Rate=3000: \
 Сервер стабильно справляется с нагрузкой. Среднее Latency 1.10ms, а максимальное 3.93ms.
 Большую часть CPU 93% работа с базой данных(MemorySegmentDao). Обработка request занимает 2%. Selectors - 2%.
 
 Основное время тратится на offset из jdk.incubator.foreign.MemoryAccess и 
-Comparator compare в entryIndex. В данном случае трудно будет оптимизировать данный код.
+Comparator compare в entryIndex. В данном случае трудно будет оптимизировать данный код, так как это основная функция для чтения данных для нашей реализации Storage.
 
 Для rate=5000+ тратится около 99% CPU для работы с базой данных(MemorySegmentDao).
 
-Основное время тратится на asSlice в MemorySegment, что также является стандартной реализацией для get и трудно оптимизировать.
+Основное время тратится на asSlice в MemorySegment, что также является стандартной реализацией для get и это трудно оптимизировать.
 
 При rate=5000 сервер после Percentile=0.9 отвечает ~ 1 секунду:
 среднее Latency    32.17ms

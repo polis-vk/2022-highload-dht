@@ -1,4 +1,4 @@
-package ok.dht.dao.artyomdrozdov;
+package ok.dht.test.frolovm.artyomdrozdov;
 
 import jdk.incubator.foreign.MemorySegment;
 import org.slf4j.Logger;

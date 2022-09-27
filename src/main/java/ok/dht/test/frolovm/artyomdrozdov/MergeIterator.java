@@ -1,4 +1,4 @@
-package ok.dht.dao.artyomdrozdov;
+package ok.dht.test.frolovm.artyomdrozdov;
 
 import java.util.Collections;
 import java.util.Comparator;

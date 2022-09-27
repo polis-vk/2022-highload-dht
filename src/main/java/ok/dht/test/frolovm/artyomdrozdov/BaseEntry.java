@@ -1,4 +1,4 @@
-package ok.dht.dao.artyomdrozdov;
+package ok.dht.test.frolovm.artyomdrozdov;
 
 public record BaseEntry<Data>(Data key, Data value) implements Entry<Data> {
     @Override
