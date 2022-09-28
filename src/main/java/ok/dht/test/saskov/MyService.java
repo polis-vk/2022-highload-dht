@@ -78,8 +78,9 @@ public class MyService implements Service {
             return new Response(Response.INTERNAL_ERROR, Utf8.toBytes(e.toString()));
         }
 
-        return entry == null || entry.isTombstone() ?
-                new Response(Response.NOT_FOUND, Response.EMPTY) : new Response(Response.OK, entry.value().toByteArray());
+        return entry == null || entry.isTombstone()
+                ? new Response(Response.NOT_FOUND, Response.EMPTY) :
+                new Response(Response.OK, entry.value().toByteArray());
     }
 
     @Path("/v0/entity")

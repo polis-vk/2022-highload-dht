@@ -18,7 +18,8 @@ public final class MyServer {
     }
 
     // With new folder
-    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException, TimeoutException {
+    public static void main(String[] args)
+            throws IOException, ExecutionException, InterruptedException, TimeoutException {
         int port = 12345;
         String url = "http://localhost:" + port;
         Path dir = Paths.get("/Users", "lev.saskov", "MyProgramms", "Polis", "database");

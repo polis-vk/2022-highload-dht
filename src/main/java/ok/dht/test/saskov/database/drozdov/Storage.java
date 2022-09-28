@@ -70,7 +70,8 @@ class Storage implements Closeable {
     }
 
     // it is supposed that entries can not be changed externally during this method call
-    static void save(Config config, Storage previousState, Collection<Entry<MemorySegment>> entries) throws IOException {
+    static void save(Config config, Storage previousState, Collection<Entry<MemorySegment>> entries)
+            throws IOException {
         int nextSSTableIndex = previousState.sstables.size();
         Path sstablePath = config.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
         StorageUtil.save(entries::iterator, sstablePath);
@@ -137,7 +138,10 @@ class Storage implements Closeable {
             long keySize = MemoryAccess.getLongAtOffset(sstable, offset);
             long valueOffset = offset + Long.BYTES + keySize;
             long valueSize = MemoryAccess.getLongAtOffset(sstable, valueOffset);
-            return new BaseEntry<>(sstable.asSlice(offset + Long.BYTES, keySize), valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize));
+            return new BaseEntry<>(
+                    sstable.asSlice(offset + Long.BYTES, keySize),
+                    valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize)
+            );
         } catch (IllegalStateException e) {
             throw checkForClose(e);
         }
@@ -181,9 +185,9 @@ class Storage implements Closeable {
 
     // last is newer
     // it is ok to mutate list after
-    public ArrayList<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
+    public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
         try {
-            ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
+            List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
             for (MemorySegment sstable : sstables) {
                 iterators.add(iterate(sstable, keyFrom, keyTo));
             }

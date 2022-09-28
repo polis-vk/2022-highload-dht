@@ -14,7 +14,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Iterator;
 
-public class StorageUtil {
+public final class StorageUtil {
     static final String FILE_NAME = "data";
     static final String FILE_EXT = ".dat";
     static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
@@ -22,7 +22,6 @@ public class StorageUtil {
     static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
     private static final long VERSION = 0;
     private static final String FILE_EXT_TMP = ".tmp";
-
 
     static void save(Storage.Data entries, Path sstablePath) throws IOException {
 
