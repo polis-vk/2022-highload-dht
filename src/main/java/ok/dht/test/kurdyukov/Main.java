@@ -5,6 +5,7 @@ import ok.dht.ServiceConfig;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
@@ -20,7 +21,7 @@ public final class Main {
                         4242,
                         "http://localhost",
                         List.of("http://localhost"),
-                        Files.createTempDirectory("service")
+                        Path.of("/Users/kurdyukov-kir/data")
                 )
         );
 

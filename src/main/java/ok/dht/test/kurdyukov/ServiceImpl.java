@@ -1,14 +1,8 @@
 package ok.dht.test.kurdyukov;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.kurdyukov.db.base.BaseEntry;
-import ok.dht.test.kurdyukov.db.base.Config;
-import ok.dht.test.kurdyukov.db.base.Dao;
-import ok.dht.test.kurdyukov.db.base.Entry;
-import ok.dht.test.kurdyukov.db.dao.MemorySegmentDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -20,12 +14,18 @@ import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
 import one.nio.server.ServerConfig;
-import one.nio.util.Utf8;
+import org.iq80.leveldb.DB;
+import org.iq80.leveldb.DBException;
+import org.iq80.leveldb.Options;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+
+import static org.iq80.leveldb.impl.Iq80DBFactory.bytes;
+import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
 public class ServiceImpl implements Service {
     private static final Logger logger = LoggerFactory.getLogger(ServiceImpl.class);
@@ -33,7 +33,7 @@ public class ServiceImpl implements Service {
     private final ServiceConfig serviceConfig;
 
     private HttpServer httpServer;
-    private Dao<MemorySegment, Entry<MemorySegment>> memorySegmentDao;
+    private DB levelDB;
 
     public ServiceImpl(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
@@ -45,11 +45,10 @@ public class ServiceImpl implements Service {
                 serviceConfig.selfPort(),
                 serviceConfig.selfUrl()
         );
-
         httpServer.start();
         httpServer.addRequestHandlers(this);
 
-        memorySegmentDao = createDao(serviceConfig.workingDir());
+        levelDB = createDao(serviceConfig.workingDir());
 
         return CompletableFuture.completedFuture(null);
     }
@@ -57,7 +56,7 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         httpServer.stop();
-        memorySegmentDao.close();
+        levelDB.close();
 
         return CompletableFuture.completedFuture(null);
     }
@@ -71,23 +70,20 @@ public class ServiceImpl implements Service {
             return responseEmpty(Response.BAD_REQUEST);
         }
 
-        Entry<MemorySegment> entry;
+        byte[] value;
 
         try {
-            entry = memorySegmentDao.get(MemorySegment.ofArray(Utf8.toBytes(id)));
-        } catch (IOException e) {
+            value = levelDB.get(bytes(id));
+        } catch (DBException e) {
             logger.error("Fail on get method with id: " + id, e);
 
             return responseEmpty(Response.INTERNAL_ERROR);
         }
 
-        if (entry == null || entry.isTombstone()) {
+        if (value == null) {
             return responseEmpty(Response.NOT_FOUND);
         } else {
-            return new Response(
-                    Response.OK,
-                    entry.value().toByteArray()
-            );
+            return new Response(Response.OK, value);
         }
     }
 
@@ -101,12 +97,13 @@ public class ServiceImpl implements Service {
             return responseEmpty(Response.BAD_REQUEST);
         }
 
-        BaseEntry<MemorySegment> entry = new BaseEntry<>(
-                MemorySegment.ofArray(Utf8.toBytes(id)),
-                MemorySegment.ofArray(request.getBody())
-        );
-
-        return upsertWithHttpResponse(entry, Response.CREATED, id);
+        try {
+            levelDB.put(bytes(id), request.getBody());
+            return responseEmpty(Response.CREATED);
+        } catch (DBException e) {
+            logger.error("Fail on put method with id: " + id, e);
+            return responseEmpty(Response.INTERNAL_ERROR);
+        }
     }
 
     @Path("/v0/entity")
@@ -118,24 +115,11 @@ public class ServiceImpl implements Service {
             return responseEmpty(Response.BAD_REQUEST);
         }
 
-        BaseEntry<MemorySegment> entry = new BaseEntry<>(
-                MemorySegment.ofArray(Utf8.toBytes(id)),
-                null
-        );
-
-        return upsertWithHttpResponse(entry, Response.ACCEPTED, id);
-    }
-
-    private Response upsertWithHttpResponse(
-            BaseEntry<MemorySegment> entry,
-            String status,
-            String id
-    ) {
         try {
-            memorySegmentDao.upsert(entry);
-            return responseEmpty(status);
-        } catch (RuntimeException e) {
-            logger.error("Error insert entry with key: " + id, e);
+            levelDB.delete(bytes(id));
+            return responseEmpty(Response.ACCEPTED);
+        } catch (DBException e) {
+            logger.error("Fail on delete method with id: " + id, e);
             return responseEmpty(Response.INTERNAL_ERROR);
         }
     }
@@ -144,18 +128,15 @@ public class ServiceImpl implements Service {
         return new Response(status, Response.EMPTY);
     }
 
-    private static Dao<MemorySegment, Entry<MemorySegment>> createDao(
+    private static DB createDao(
             java.nio.file.Path workingDir
     ) throws IOException {
-        Config configDao = new Config(
-                workingDir,
-                4 * 1024 // how RocksDB
-        );
+        Options options = new Options();
 
         try {
-            return new MemorySegmentDao(configDao);
+            return factory.open(new File(workingDir.toString()), options);
         } catch (IOException e) {
-            logger.error("Error create database.");
+            logger.error("Error create database.", e);
 
             throw e;
         }
