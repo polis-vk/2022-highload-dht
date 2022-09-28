@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
@@ -24,9 +25,11 @@ public final class ServerImpl {
                     port,
                     url,
                     Collections.singletonList(url),
-                    Files.createTempDirectory("server")
+                    Path.of("/home/sanerin/GitHub/data_files")
             );
-            new ServiceImpl(cfg).start().get(1, TimeUnit.SECONDS);
+            ServiceImpl service = new ServiceImpl(cfg);
+            service.start().get(1, TimeUnit.SECONDS);
+//            service.fillTheDao();
             LOG.info("Socket is ready: " + url);
         } catch (Exception e) {
             throw new RuntimeException(e);

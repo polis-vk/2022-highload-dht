@@ -18,6 +18,7 @@ import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
+import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
@@ -32,7 +33,7 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        memorySegmentDao = new MemorySegmentDao(new Config(config.workingDir(), 1048576));
+        memorySegmentDao = new MemorySegmentDao(new Config(config.workingDir(), 8388608));
         server = new HttpServerImpl(createConfigFromPort(config.selfPort()));
         server.start();
         server.addRequestHandlers(this);
@@ -88,6 +89,22 @@ public class ServiceImpl implements Service {
         }
         memorySegmentDao.upsert(new BaseEntry<>(fromString(id), null));
         return new Response(Response.ACCEPTED, Response.EMPTY);
+    }
+
+    public void fillTheDao() {
+        Random random = new Random(1);
+        for (int i = 0; i < 31500; i++) {
+            byte[] value = new byte[102400];
+            byte[] key = new byte[102400];
+            random.nextBytes(value);
+            random.nextBytes(key);
+            memorySegmentDao.upsert(new BaseEntry<>(fromBytes(key), fromBytes(value)));
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
