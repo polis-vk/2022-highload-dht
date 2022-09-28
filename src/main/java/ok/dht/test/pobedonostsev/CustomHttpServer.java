@@ -20,7 +20,7 @@ public class CustomHttpServer extends HttpServer {
         } catch (IOException e) {
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
-        session.close();
+        session.scheduleClose();
     }
 
     @Override
