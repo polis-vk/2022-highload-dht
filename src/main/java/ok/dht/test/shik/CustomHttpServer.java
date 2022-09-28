@@ -15,7 +15,7 @@ import java.io.IOException;
 public class CustomHttpServer extends HttpServer {
 
     private static final String CLOSE_CONNECTION_HEADER = "Connection: close";
-    private static final Log LOG = LogFactory.getLog(ServiceImpl.class);
+    private static final Log LOG = LogFactory.getLog(CustomHttpServer.class);
 
     public CustomHttpServer(HttpServerConfig config, Object... routers) throws IOException {
         super(config, routers);

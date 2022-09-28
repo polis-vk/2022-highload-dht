@@ -19,7 +19,7 @@ public final class Server {
 
     private static final Log LOG = LogFactory.getLog(Server.class);
     private static final Path DEFAULT_DATABASE_DIR =
-        Paths.get("/var/folders/85/g8ft9y9d1kb9z88s8kgjh21m0000gp/T/small1_server");
+        Paths.get("/var/folders/85/g8ft9y9d1kb9z88s8kgjh21m0000gp/T/server");
     private static final int DEFAULT_PORT = 19234;
     private static final String DEFAULT_URL = "http://localhost:" + DEFAULT_PORT;
     private static final ServiceConfig DEFAULT_CONFIG = new ServiceConfig(
