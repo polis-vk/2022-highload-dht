@@ -12,8 +12,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
-
 public class RocksDBEntityRepositoryImpl implements EntityRepository {
+
     private final RocksDB rocksDB;
     private final Logger logger;
 
