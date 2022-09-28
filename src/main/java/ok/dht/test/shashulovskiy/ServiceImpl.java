@@ -26,14 +26,14 @@ import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
 
-    private static final long THRESHOLD_BYTES = 1 << 29;
+    private static final long THRESHOLD_BYTES = 1 << 27;
 
     private final ServiceConfig config;
     private HttpServer server;
 
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    public ServiceImpl(ServiceConfig config) throws IOException {
+    public ServiceImpl(ServiceConfig config) {
         this.config = config;
     }
 
@@ -76,7 +76,7 @@ public class ServiceImpl implements Service {
                     Response.BAD_REQUEST,
                     Utf8.toBytes("No id provided")
             );
-        } else if (id.equals("")) {
+        } else if (id.isEmpty()) {
             return new Response(
                     Response.BAD_REQUEST,
                     Utf8.toBytes("Empty id")
@@ -136,11 +136,7 @@ public class ServiceImpl implements Service {
 
         @Override
         public Service create(ServiceConfig config) {
-            try {
-                return new ServiceImpl(config);
-            } catch (IOException e) {
-                return null;
-            }
+            return new ServiceImpl(config);
         }
     }
 }
