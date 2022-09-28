@@ -6,7 +6,7 @@ public class Entity {
 
     public Entity(String id, byte[] value) {
         this.id = id;
-        this.value = value;
+        this.value = value.clone();
     }
 
     public String id() {
@@ -18,10 +18,10 @@ public class Entity {
     }
 
     public byte[] value() {
-        return value;
+        return value.clone();
     }
 
     public void setValue(byte[] value) {
-        this.value = value;
+        this.value = value.clone();
     }
 }

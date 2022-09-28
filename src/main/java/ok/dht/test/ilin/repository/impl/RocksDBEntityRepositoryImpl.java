@@ -8,7 +8,6 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
@@ -32,7 +31,6 @@ public class RocksDBEntityRepositoryImpl implements EntityRepository {
 
     @Override
     public void upsert(Entity value) {
-        //logger.debug("Save entity id: {}", value.id());
         try {
             rocksDB.put(value.id().getBytes(StandardCharsets.UTF_8), value.value());
         } catch (RocksDBException e) {
@@ -42,22 +40,20 @@ public class RocksDBEntityRepositoryImpl implements EntityRepository {
 
     @Override
     public Entity get(String id) {
-       //logger.debug("Get entity with id: {}", id);
-       try {
-           byte[] result = rocksDB.get(id.getBytes(StandardCharsets.UTF_8));
-           if (result == null) {
-               return null;
-           }
-           return new Entity(id, result);
-       } catch (RocksDBException e) {
-           logger.error("Error get entry in RocksDB");
-       }
-       return null;
+        try {
+            byte[] result = rocksDB.get(id.getBytes(StandardCharsets.UTF_8));
+            if (result == null) {
+                return null;
+            }
+            return new Entity(id, result);
+        } catch (RocksDBException e) {
+            logger.error("Error get entry in RocksDB");
+        }
+        return null;
     }
 
     @Override
     public void delete(String id) {
-        //logger.debug("Delete entity with id: {}", id);
         try {
             rocksDB.delete(id.getBytes(StandardCharsets.UTF_8));
         } catch (RocksDBException e) {
