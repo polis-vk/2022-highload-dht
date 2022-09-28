@@ -43,11 +43,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-        if (from == null) {
-            from = VERY_FIRST_KEY;
-        }
-        
-        return getTombstoneFilteringIterator(from, to);
+        return getTombstoneFilteringIterator(from == null ? VERY_FIRST_KEY : from, to);
     }
     
     private TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment from, MemorySegment to) {
@@ -203,14 +199,11 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         try {
             future.get();
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new RuntimeException(e);
         } catch (ExecutionException e) {
-            try {
-                throw e.getCause();
-            } catch (RuntimeException | IOException | Error r) {
-                throw r;
-            } catch (Throwable t) {
-                throw new RuntimeException(t);
+            if (e.getCause() instanceof IOException) {
+                throw (IOException) e.getCause();
             }
         }
     }
@@ -231,9 +224,11 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
         executor.shutdown();
         try {
-            //noinspection StatementWithEmptyBody
-            while (!executor.awaitTermination(10, TimeUnit.DAYS)) ;
+            while (!executor.awaitTermination(10, TimeUnit.DAYS)) {
+                executor.shutdown();
+            }
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
         }
         state = this.stateOfClass;

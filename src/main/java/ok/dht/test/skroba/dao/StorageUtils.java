@@ -52,7 +52,7 @@ public final class StorageUtils {
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
         
-        for (int i = 0; ; i++) {
+        for (int i = 0; true; i++) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));
