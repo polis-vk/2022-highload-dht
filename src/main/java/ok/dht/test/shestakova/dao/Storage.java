@@ -3,8 +3,8 @@ package ok.dht.test.shestakova.dao;
 import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;
 import jdk.incubator.foreign.ResourceScope;
-import ok.dht.test.shestakova.dao.baseElements.BaseEntry;
-import ok.dht.test.shestakova.dao.baseElements.Config;
+import ok.dht.test.shestakova.dao.base.BaseEntry;
+import ok.dht.test.shestakova.dao.base.Config;
 
 import java.io.Closeable;
 import java.io.IOException;

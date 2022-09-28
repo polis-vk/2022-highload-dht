@@ -1,9 +1,9 @@
 package ok.dht.test.shestakova.dao;
 
 import jdk.incubator.foreign.MemorySegment;
-import ok.dht.test.shestakova.dao.baseElements.BaseEntry;
-import ok.dht.test.shestakova.dao.baseElements.Config;
-import ok.dht.test.shestakova.dao.baseElements.Dao;
+import ok.dht.test.shestakova.dao.base.BaseEntry;
+import ok.dht.test.shestakova.dao.base.Config;
+import ok.dht.test.shestakova.dao.base.Dao;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Iterator;

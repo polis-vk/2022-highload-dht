@@ -1,7 +1,7 @@
 package ok.dht.test.shestakova.dao;
 
 import jdk.incubator.foreign.MemorySegment;
-import ok.dht.test.shestakova.dao.baseElements.BaseEntry;
+import ok.dht.test.shestakova.dao.base.BaseEntry;
 
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.atomic.AtomicLong;
