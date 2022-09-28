@@ -25,10 +25,6 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 
-import static ok.dht.test.skroba.MyServiceUtils.createConfigFromPort;
-import static ok.dht.test.skroba.MyServiceUtils.getEmptyResponse;
-import static ok.dht.test.skroba.MyServiceUtils.getResponse;
-import static ok.dht.test.skroba.MyServiceUtils.getResponseOnBadId;
 import static ok.dht.test.skroba.MyServiceUtils.isBadId;
 
 public class MyServiceImpl implements Service {
@@ -65,13 +61,13 @@ public class MyServiceImpl implements Service {
     
     @Override
     public CompletableFuture<?> start() throws IOException {
-        server = new HttpServer(createConfigFromPort(config.selfPort())) {
+        server = new HttpServer(MyServiceUtils.createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(
                     Request request,
                     HttpSession session
             ) throws IOException {
-                session.sendResponse(getEmptyResponse(Response.BAD_REQUEST));
+                session.sendResponse(MyServiceUtils.getEmptyResponse(Response.BAD_REQUEST));
             }
             
             @Override
@@ -101,7 +97,7 @@ public class MyServiceImpl implements Service {
             @Param(value = "id", required = true) String id
     ) {
         if (isBadId(id)) {
-            return getResponseOnBadId();
+            return MyServiceUtils.getResponseOnBadId();
         }
         
         Entry<MemorySegment> entry = dao.get(
@@ -109,7 +105,7 @@ public class MyServiceImpl implements Service {
         );
         
         if (entry == null) {
-            return getResponse(
+            return MyServiceUtils.getResponse(
                     Response.NOT_FOUND,
                     "There's no entity with id: " + id
             );
@@ -133,10 +129,10 @@ public class MyServiceImpl implements Service {
             dao.upsert(entry);
         } catch (RuntimeException err) {
             LOG.error("Error while upsert operation:\n " + err);
-            return getEmptyResponse(Response.INTERNAL_ERROR);
+            return MyServiceUtils.getEmptyResponse(Response.INTERNAL_ERROR);
         }
         
-        return getEmptyResponse(onSuccessStatus);
+        return MyServiceUtils.getEmptyResponse(onSuccessStatus);
     }
     
     @one.nio.http.Path("/v0/entity")
@@ -146,7 +142,7 @@ public class MyServiceImpl implements Service {
             Request request
     ) {
         
-        return isBadId(id) ? getResponseOnBadId() : upsert(
+        return isBadId(id) ? MyServiceUtils.getResponseOnBadId() : upsert(
                 id,
                 MemorySegment.ofArray(request.getBody()),
                 Response.CREATED
@@ -158,7 +154,7 @@ public class MyServiceImpl implements Service {
     public Response handleDelete(
             @Param(value = "id", required = true) String id
     ) {
-        return isBadId(id) ? getResponseOnBadId() : upsert(
+        return isBadId(id) ? MyServiceUtils.getResponseOnBadId() : upsert(
                 id,
                 null,
                 Response.ACCEPTED
