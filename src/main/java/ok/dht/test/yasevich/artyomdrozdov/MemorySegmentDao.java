@@ -8,19 +8,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -231,7 +226,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             boolean terminated;
             do {
                 terminated = executor.awaitTermination(10, TimeUnit.DAYS);
-            } while (terminated);
+            } while (!terminated);
         } catch (InterruptedException e) {
             throw new IllegalStateException(e);
         }
@@ -242,46 +237,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             return;
         }
         Storage.save(config, currentState.storage, currentState.memory.values());
-    }
-
-    private static class TombstoneFilteringIterator implements Iterator<Entry<MemorySegment>> {
-        private final Iterator<Entry<MemorySegment>> iterator;
-        private Entry<MemorySegment> current;
-
-        public TombstoneFilteringIterator(Iterator<Entry<MemorySegment>> iterator) {
-            this.iterator = iterator;
-        }
-
-        public Entry<MemorySegment> peek() {
-            return hasNext() ? current : null;
-        }
-
-        @Override
-        public boolean hasNext() {
-            if (current != null) {
-                return true;
-            }
-
-            while (iterator.hasNext()) {
-                Entry<MemorySegment> entry = iterator.next();
-                if (!entry.isTombstone()) {
-                    this.current = entry;
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        @Override
-        public Entry<MemorySegment> next() {
-            if (!hasNext()) {
-                throw new NoSuchElementException("...");
-            }
-            Entry<MemorySegment> next = current;
-            current = null;
-            return next;
-        }
     }
 
     private static class State {
@@ -368,60 +323,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
         public boolean isFlushing() {
             return this.flushing != Memory.EMPTY;
-        }
-    }
-
-    private static class Memory {
-
-        static final Memory EMPTY = new Memory(-1);
-        private final AtomicLong size = new AtomicLong();
-        private final AtomicBoolean oversized = new AtomicBoolean();
-
-        private final ConcurrentSkipListMap<MemorySegment, Entry<MemorySegment>> delegate =
-                new ConcurrentSkipListMap<>(MemorySegmentComparator.INSTANCE);
-
-        private final long sizeThreshold;
-
-        Memory(long sizeThreshold) {
-            this.sizeThreshold = sizeThreshold;
-        }
-
-        public boolean isEmpty() {
-            return delegate.isEmpty();
-        }
-
-        public Collection<Entry<MemorySegment>> values() {
-            return delegate.values();
-        }
-
-        public boolean put(MemorySegment key, Entry<MemorySegment> entry) {
-            if (sizeThreshold == -1) {
-                throw new UnsupportedOperationException("Read-only map");
-            }
-            Entry<MemorySegment> segmentEntry = delegate.put(key, entry);
-            long sizeDelta = Storage.getSizeOnDisk(entry);
-            if (segmentEntry != null) {
-                sizeDelta -= Storage.getSizeOnDisk(segmentEntry);
-            }
-            long newSize = size.addAndGet(sizeDelta);
-            if (newSize > sizeThreshold) {
-                return !oversized.getAndSet(true);
-            }
-            return false;
-        }
-
-        public boolean overflow() {
-            return !oversized.getAndSet(true);
-        }
-
-        public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-            return to == null
-                    ? delegate.tailMap(from).values().iterator()
-                    : delegate.subMap(from, to).values().iterator();
-        }
-
-        public Entry<MemorySegment> get(MemorySegment key) {
-            return delegate.get(key);
         }
     }
 
