@@ -1,9 +1,9 @@
 package ok.dht.test.shestakova.dao;
 
-import java.util.Comparator;
-
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.shestakova.dao.baseElements.BaseEntry;
+
+import java.util.Comparator;
 
 public final class EntryKeyComparator implements Comparator<BaseEntry<MemorySegment>> {
 

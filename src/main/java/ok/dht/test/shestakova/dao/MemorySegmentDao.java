@@ -1,5 +1,9 @@
 package ok.dht.test.shestakova.dao;
 
+import jdk.incubator.foreign.MemorySegment;
+import ok.dht.test.shestakova.dao.baseElements.BaseEntry;
+import ok.dht.test.shestakova.dao.baseElements.Config;
+import ok.dht.test.shestakova.dao.baseElements.Dao;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Iterator;
@@ -13,11 +17,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-
-import jdk.incubator.foreign.MemorySegment;
-import ok.dht.test.shestakova.dao.baseElements.BaseEntry;
-import ok.dht.test.shestakova.dao.baseElements.Config;
-import ok.dht.test.shestakova.dao.baseElements.Dao;
 
 public class MemorySegmentDao implements Dao<MemorySegment, BaseEntry<MemorySegment>> {
 

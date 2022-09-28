@@ -6,6 +6,7 @@ import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.shestakova.dao.MemorySegmentDao;
 import ok.dht.test.shestakova.dao.baseElements.Config;
+import ok.dht.test.shestakova.dao.baseElements.BaseEntry;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -20,14 +21,12 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 
-import ok.dht.test.shestakova.dao.baseElements.BaseEntry;
-
 public class DemoService implements Service {
 
     private final ServiceConfig config;
     private HttpServer server;
     private MemorySegmentDao dao;
-    private long flushThreshold = 1 << 20; // 1 MB
+    private final long flushThreshold = 1 << 20; // 1 MB
 
     public DemoService(ServiceConfig config) {
         this.config = config;
