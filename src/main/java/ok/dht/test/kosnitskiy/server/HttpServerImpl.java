@@ -23,7 +23,7 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        for(SelectorThread selectorThread : selectors) {
+        for (SelectorThread selectorThread : selectors) {
             for (Session session : selectorThread.selector) {
                 session.scheduleClose();
             }

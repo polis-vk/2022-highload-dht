@@ -90,7 +90,8 @@ public class ServiceImpl implements Service {
             );
         }
         try {
-            memorySegmentDao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.toCharArray()), MemorySegment.ofArray(request.getBody())));
+            memorySegmentDao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.toCharArray()),
+                    MemorySegment.ofArray(request.getBody())));
         } catch (Exception e) {
             LOG.error("Error occurred while inserting " + id + ' ' + e.getMessage());
             return new Response(
