@@ -9,30 +9,32 @@ function request()
   return wrk.format("PUT", path, wrk.headers, body)
 end
 ```
-3500 RPS - это максимальный RPS на моем железе, при котором сервис справляется с нагрузкой  с приемлимым latency.
+750 RPS - это максимальный RPS на моем железе, при котором сервис справляется с нагрузкой  с приемлимым latency.
 ``` 
-wrk -d 10 -t 1 -c 1 -R 3500 -s put.lua http://localhost:19234
-Running 10s test @ http://localhost:19234
+wrk -d 30 -t 1 -c 1 -R 750 -s ../put.lua http://localhost:19234
+Running 30s test @ http://localhost:19234
   1 threads and 1 connections
+  Thread calibration: mean lat.: 1.579ms, rate sampling interval: 10ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.15ms    1.47ms  16.78ms   96.84%
-    Req/Sec       -nan      -nan   0.00      0.00%
-  34997 requests in 10.00s, 2.24MB read
-Requests/sec:   3500.03
-Transfer/sec:    229.01KB
+    Latency     1.53ms    1.86ms  37.34ms   98.10%
+    Req/Sec   793.56    106.94     2.00k    93.54%
+  22500 requests in 30.00s, 1.44MB read
+Requests/sec:    749.98
+Transfer/sec:     49.07KB
 ```
 При увеличении RPS сервис начинал захлебываться и latency сильно увеличивалась.
 
 ```
- wrk -d 10 -t 1 -c 1 -R 4000 -s put.lua http://localhost:19234
-Running 10s test @ http://localhost:19234
+wrk -d 30 -t 1 -c 1 -R 1000 -s ../put.lua http://localhost:19234
+Running 30s test @ http://localhost:19234
   1 threads and 1 connections
+  Thread calibration: mean lat.: 321.973ms, rate sampling interval: 1607ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   193.19ms  105.12ms 386.30ms   59.59%
-    Req/Sec       -nan      -nan   0.00      0.00%
-  38454 requests in 10.00s, 2.46MB read
-Requests/sec:   3845.78
-Transfer/sec:    251.63KB
+    Latency   663.14ms  615.02ms   1.70s    41.44%
+    Req/Sec     1.05k   143.29     1.21k    58.33%
+  29999 requests in 30.00s, 1.92MB read
+Requests/sec:    999.99
+Transfer/sec:     65.43KB
 ```
 
 ## GET
@@ -49,30 +51,32 @@ end
 2250 RPS - это максимальный RPS на моем железе, при котором сервис справляется с нагрузкой с приемлимым latency. (Non-2xx or 3xx responses - это ненайденные ключи)
 
 ```
-wrk -d 10 -t 1 -c 1 -R 2250 -s get.lua http://localhost:19234
-Running 10s test @ http://localhost:19234
+wrk -d 30 -t 1 -c 1 -R 500 -s ../get.lua http://localhost:19234
+Running 30s test @ http://localhost:19234
   1 threads and 1 connections
+  Thread calibration: mean lat.: 1.561ms, rate sampling interval: 10ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.50ms    1.45ms  17.15ms   96.36%
-    Req/Sec       -nan      -nan   0.00      0.00%
-  22498 requests in 10.00s, 1.49MB read
-  Non-2xx or 3xx responses: 11119
-Requests/sec:   2250.14
-Transfer/sec:    152.61KB
+    Latency     1.59ms    2.05ms  36.58ms   98.54%
+    Req/Sec   528.87     76.15     1.44k    84.14%
+  15001 requests in 30.00s, 0.99MB read
+  Non-2xx or 3xx responses: 7417
+Requests/sec:    500.02
+Transfer/sec:     33.91KB
 ```
 
 При увеличении RPS сервис начинал захлебываться и latency сильно увеличивалась.
 ```
-wrk -d 10 -t 1 -c 1 -R 2750 -s get.lua http://localhost:19234
-Running 10s test @ http://localhost:19234
+wrk -d 30 -t 1 -c 1 -R 750 -s ../get.lua http://localhost:19234
+Running 30s test @ http://localhost:19234
   1 threads and 1 connections
+  Thread calibration: mean lat.: 28.114ms, rate sampling interval: 251ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   426.50ms  227.70ms 804.35ms   60.71%
-    Req/Sec       -nan      -nan   0.00      0.00%
-  25288 requests in 10.00s, 1.67MB read
-  Non-2xx or 3xx responses: 12495
-Requests/sec:   2529.01
-Transfer/sec:    171.52KB
+    Latency     3.35s     1.26s    4.51s    80.18%
+    Req/Sec   593.62    160.95     0.90k    64.56%
+  19118 requests in 30.00s, 1.27MB read
+  Non-2xx or 3xx responses: 9452
+Requests/sec:    637.27
+Transfer/sec:     43.22KB
 ```
 
 Ожидаемо PUT запрос справился с большим RPS, чем GET: LSM дерево, которое лежит в основе моего DAO, оптимизировано под вставки в ущерб скорости чтения. 
@@ -80,37 +84,41 @@ Transfer/sec:    171.52KB
 ### Профилирование
 
 ## CPU
-Запустил async-profiler с интервалом сэмплирования 500us и дал нагрузку с помощью wrk, сначала PUT, затем GET (два отдельных прямоугольника получилось)
+Запустил async-profiler с интервалом сэмплирования 1ms и дал нагрузку, с которой справляется сервис, с помощью wrk, сначала PUT, затем GET (два отдельных прямоугольника получилось)
 
 Получил следующие результаты:
 # PUT
-- ~75% сэмплов - селектор ждет на селекте
-- ~21% сэмплов - пишем response в сеть
-- ~1% cэмплов - вставляем entry в memtable
+- ~45% сэмплов - селектор ждет на селекте
+- ~40% сэмплов - пишем response в сеть
+- ~7% сэмплов - логгирование
+- ~4% cэмплов - вставляем entry в memtable
 
 # GET
-- ~40% сэмплов - селектор ждет на селекте
-- ~30% сэмплов - ищем entry в sstables
+- ~38% сэмплов - ищем entry в sstables
 - ~26% сэмплов - пишем response в сеть
+- ~15% сэмплов - селектор ждет на селекте
+- ~10% сэмплов - логгирование
+- ~2% сэмплов - ищем entry в memtable
 
 
 Результаты связаны опять же с тем, что PUT гораздо более дешевая операция, нам нужно всего лишь добавить в memtable, которая помещается в кэш, а не искать бинпоиском по всем sstables, хранящимся на диске, как в случае с GET
 
 ## ALLOC
-Опять запустил async-profiler в режиме профилирования аллокаций и дал нагрузку с помощью wrk
+Опять запустил async-profiler в режиме профилирования аллокаций и дал нагрузку с помощью wrk на минуту
 
 # PUT
-- ~50% сэмплов - во время парсинга запроса
-- ~30% сэмплов - во время работы handler метода (вставка в memtable + создание Response)
-- ~10% сэмплов - передача параметров запроса в нужный handler метод
-- ~10% сэмплов - отправка Response по сети
+- ~73% сэмплов - логгирование
+- ~15% сэмплов - обработка распаршенного запроса
+- ~10% сэмплов - парсинг запроса
+
 
 # GET
-~92% сэмплов - аллокация, когда мы бинпоиском ищем по sstable ключ и берем view на mid элемент,
+~81% сэмплов - аллокации, когда мы бинпоиском ищем по sstable ключ и берем view на mid элемент,
 мы делаем аллокацию буквально на каждую итерацию бинпоиска.
-остальные аллокации незначительны
+~15 сэмплов - логгирование
 
-Также отмечу, что у GET аллокаций в 6 раз больше, чем у PUT, при меньшем количестве запросов
+Также отмечу, что у GET аллокаций более чем в 2 раза больше, чем у PUT, при меньшем количестве запросов
 Получается, что PUT выгоднее не только в палне CPU, но также он делает гораздо меньше аллокаций.
 
 Заоптимизировать GET запрос можно, добавив in-memory фильтр Блума и sparse index, но мы пожертвуем памятью и простотой решения. Также можно избавиться от этой аллокации в GET и не использовать view, но мы пожертвуем читабельностью и простотой.
+Еще PUT и GET можно заоптимизировать убрав логи или уменьшив их количество, правда без логов будет грустно, можно попробовать поискать более производительный и менее аллоцирующий фреймворк для логгирования.
