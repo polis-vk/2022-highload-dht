@@ -14,17 +14,19 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 
+import static ok.dht.test.dergunov.database.Storage.FILE_EXT;
+import static ok.dht.test.dergunov.database.Storage.FILE_NAME;
 import static ok.dht.test.dergunov.database.Storage.INDEX_HEADER_SIZE;
 import static ok.dht.test.dergunov.database.Storage.INDEX_RECORD_SIZE;
 
-public abstract class StorageUtils {
-    // it is supposed that entries can not be changed externally during this method call
+final class StorageUtils {
+
     static void save(
             Config config,
             Storage previousState,
             Collection<Entry<MemorySegment>> entries) throws IOException {
         int nextSSTableIndex = previousState.sstables.size();
-        Path sstablePath = config.basePath().resolve(Storage.FILE_NAME + nextSSTableIndex + Storage.FILE_EXT);
+        Path sstablePath = config.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
         save(entries::iterator, sstablePath);
     }
 
@@ -53,12 +55,12 @@ public abstract class StorageUtils {
 
     private static void finishCompact(Config config, Path compactedFile) throws IOException {
         for (int i = 0; ; i++) {
-            Path nextFile = config.basePath().resolve(Storage.FILE_NAME + i + Storage.FILE_EXT);
+            Path nextFile = config.basePath().resolve(FILE_NAME + i + FILE_EXT);
             if (!Files.deleteIfExists(nextFile)) {
                 break;
             }
         }
-        Files.move(compactedFile, config.basePath().resolve(Storage.FILE_NAME + 0 + Storage.FILE_EXT),
+        Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT),
                 StandardCopyOption.ATOMIC_MOVE);
     }
 
@@ -70,13 +72,17 @@ public abstract class StorageUtils {
         }
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(Storage.CLEANER);
-        for (int i = 0; ; i++) {
-            Path nextFile = basePath.resolve(Storage.FILE_NAME + i + Storage.FILE_EXT);
+
+        boolean hasExistingFile = true;
+        int i = 0;
+        while (hasExistingFile) {
+            Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
-                sstables.add(mapForRead(scope, nextFile));
+                sstables.add(StorageUtils.mapForRead(scope, nextFile));
             } catch (NoSuchFileException e) {
-                break;
+                hasExistingFile = false;
             }
+            i++;
         }
 
         boolean hasTombstones = !sstables.isEmpty() && MemoryAccess.getLongAtOffset(sstables.get(0), 16) == 1;

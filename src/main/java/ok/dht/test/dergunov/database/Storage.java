@@ -10,22 +10,18 @@ import java.lang.ref.Cleaner;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.ThreadFactory;
 
 final class Storage implements Closeable {
 
-    static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
-        @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
+    static final Cleaner CLEANER = Cleaner.create(
+            (Runnable r) -> new Thread(r, "Storage-Cleaner") {
                 @Override
                 public synchronized void start() {
                     setDaemon(true);
                     super.start();
                 }
-            };
-        }
-    });
+            }
+    );
 
     static final long VERSION = 0;
     static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
