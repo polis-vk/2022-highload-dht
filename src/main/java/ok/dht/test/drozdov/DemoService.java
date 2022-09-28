@@ -3,13 +3,7 @@ package ok.dht.test.drozdov;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.drozdov.dao.MemorySegmentDao;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
+import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
 
@@ -20,7 +14,6 @@ public class DemoService implements Service {
 
     private final ServiceConfig config;
     private HttpServer server;
-    private MemorySegmentDao dao;
 
     public DemoService(ServiceConfig config) {
         this.config = config;
