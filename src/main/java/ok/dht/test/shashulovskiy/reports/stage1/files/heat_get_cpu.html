@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 4px 8px 24px; background-color: #ffffff; overflow-y: scroll}
+    h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {margin: 5px 0 5px 0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {overflow: hidden; white-space: nowrap}
+	#match {overflow: hidden; white-space: nowrap; display: none; float: right; text-align: right}
+	#reset {cursor: pointer}
+	#canvas {width: 100%; height: 300px}
+
+    .selectionPart {position: absolute; display: none; pointer-events: none; box-sizing: border-box;}
+    .sel {background-color: #dada0040}
+    .act {background-color: #00da0040}
+    .dif {background-color: #00dada40}
+    .top {border-top: .1px solid #000}
+    .left {border-left: .1px solid #000}
+    .bottom {border-bottom: .1px solid #000}
+    .right {border-right: .1px solid #000}
+
+    #info-tooltip {display: none; position: absolute; top: 100px; right: 32px; width: 204px; border: 1px solid #666666; background: #ffffe0; border-radius: 8px; padding: 4px}
+    #heatmap-height-line, #heatmap-info { text-decoration: #0366d6 dashed underline; cursor: pointer; font-family: monospace}
+    #heatmap-info {cursor: help}
+    #heatmap-info:hover + #info-tooltip {display: block}
+
+    .colortip {width: 100px; box-sizing: border-box; padding: 4px; background: linear-gradient(var(--c1), var(--c2))}
+
+
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+
+
+<div style="display: flex">
+    <div style="width: 20px; margin-right: 2px; float: left; writing-mode: vertical-rl; transform: scale(-1); text-align: center; user-select: none"><pre id="heatmap-height-line"> 1 sec : 20 ms </pre></div>
+
+    <div id='heatmap-canvas-container' style="width: 100%; position: relative" autofocus>
+        <div id='heatmap-canvas-wrapper' style='overflow: hidden; width: 100%'>
+            <canvas id='heatmap-canvas' style='height: 314px'></canvas>
+        </div>
+
+        <div id='middleActive' class='selectionPart top bottom act'><span></span></div>
+        <div id='leftActive' class='selectionPart top left bottom act'><span></span></div>
+        <div id='rightActive' class='selectionPart top right bottom act'><span></span></div>
+        <div id='leftMiddleActive' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleActive' class='selectionPart left'><span></span></div>
+
+        <div id='middleSelection' class='selectionPart top bottom sel'><span></span></div>
+        <div id='leftSelection' class='selectionPart top left bottom sel'><span></span></div>
+        <div id='rightSelection' class='selectionPart top right bottom sel'><span></span></div>
+        <div id='leftMiddleSelection' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleSelection' class='selectionPart left'><span></span></div>
+
+        <div id='middleDiff' class='selectionPart top bottom dif'><span></span></div>
+        <div id='leftDiff' class='selectionPart top left bottom dif'><span></span></div>
+        <div id='rightDiff' class='selectionPart top right bottom dif'><span></span></div>
+        <div id='leftMiddleDiff' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleDiff' class='selectionPart left'><span></span></div>
+    </div>
+
+    <div id="heatmap-info" style="width: 20px; margin-right: 2px; writing-mode: vertical-rl; text-align: center; user-select: none">
+        <pre> Info </pre>
+    </div>
+    <div id="info-tooltip">
+        <div style="float:left">
+            <div style="padding: 4px;">Frame types:</div>
+            <div class="colortip" style="--c1:#b2e1b2;--c2:#c6f5c6">Interpreted</div>
+            <div class="colortip" style="--c1:#50e150;--c2:#6eff6e">JIT-Compiled</div>
+            <div class="colortip" style="--c1:#50cccc;--c2:#6eeaea">Inlined</div>
+            <div class="colortip" style="--c1:#e15a5a;--c2:#ff8282">Native</div>
+            <div class="colortip" style="--c1:#c8c83c;--c2:#e6e646">C++</div>
+            <div class="colortip" style="--c1:#e17d00;--c2:#ff9b00">Kernel</div>
+            <div class="colortip" style="--c1:#cce880;--c2:#e0fc94">C1-Compiled</div>
+        </div>
+        <div style="float:left; margin-left: 4px">
+            <div style="padding: 4px;">Special colors:</div>
+            <div class="colortip" style="--c1:#ee00ee;--c2:#ee00ee">Matches regexp</div>
+            <div class="colortip" style="--c1:#baa551;--c2:#baa551">New frames</div>
+            <div class="colortip" style="--c1:#f0f0c0;--c2:#f0f0c0">Same frames</div>
+            <div class="colortip" style="--c1:#99aaff;--c2:#99aaff">Less frames</div>
+            <div class="colortip" style="--c1:#ffaa99;--c2:#ffaa99">More frames</div>
+        </div>
+        <div style="float:left; margin-top: 4px; width: 100%; border: 1px solid #666666; border-radius: 2px; padding: 2px; box-sizing: border-box;">
+            Shift + Click - Select range<br>
+            Ctrl + Click - Compare<br>
+            Ctrl + F - Search<br>
+        </div>
+    </div>
+</div>
+<div id="executionsHeatmap" style="display:none">BIyLAYc@i@z@uDqGqIiJxr@O???????????????????????@??????????IYBY`JGAKI@IGPAGAPAPGH@H@PP@AIH?QHOHIHG@HI@HHCI@PGI?GHHPHG?GH@GG@GH@@?HH@?II@H??@?GGA@@G?HOI@HHHHA??HHGHHGH?G@@GA@IH@@?HPH@@P@?PGGP?H??PG?H?A@@GH?@PIH@@@G?HGQHGH??@HA@HGGPH?@G@AHQGHOA??HG?H@GQA@HGGHH?P??GH@P?@OGQ@GI?@A@?HH@GOHA@O@H?I?@GGH?@A@@H@HHAOOAGHGHHG@?PHH?@H@GO?H?AHI?@HAOQG?GI@H?G?HH@IPH?GHGGG@@H@HO@@GHIOP@@G@AH@?@@H@@G?@?GG?OGHH?P?HHIG?GOH@G?P?P@AOGA@G@H?HIIPHH@?IHPGOOG?GHAIH@@H@GHGHGGHA?O@PO@?HHP?HH@HG?HIG??@GGH@GH?GGGP?H@A?QH??GGH@H@HH?GGGGHG@?GIH@@GOHG@@H?HGHQHH@H??@?QOH?HIH@H@PG@?HGH@O@OA@??@@@H?OGGA??@H@GGGO?GHP?H@HHH?HGOG??PH?POGHIHH?HG?GPI??PIAH?@?GP??@GHIH?HPH@@H@?@?AHG@HI@GHGIGI@HIA?IIPGPGAHG?GPH?H?HPGG??GGIH?PGH@@AHGQHG???QHOGHGGA?@GHPOHGIP@@?HOA?HIPHHIGGP??GHGHIHHH@?H?GI?@@?@?AGQGGAAOHHGGHO?HP??@HA?H@G?GO@HGG@OHGIHPHQHH?@????????????@????????????G?????????????G????@}V}V_a@ic@mb@sd@jf@hf@ee@pa@kf@oZd^ea@_c@gf@mf@e_@c`@jc@qd@ce@ng@rY~Z}]f_@y_@|`@na@qf@yg@nm@`XgXw\~\}^b_@f`@o`@t`@la@ab@bb@hc@kd@fe@ne@af@kh@hWmXqXzX`YgYqYfZjZnZtZe[n[_\l\y\_]n]w]k^s^w^o_@y`@fa@ta@gb@lb@wb@xb@|b@gc@lc@oc@~c@ld@nd@~d@|e@`f@df@zf@|f@bg@ig@og@qg@wg@{g@nh@uh@ci@cj@~VjWkWiXjXkXlXnXpXyX}X~X_YaYbYcYdYeYiYjYkYlYmYnYoYpY|Y~Y_Z`ZbZcZeZlZmZqZrZsZuZvZwZxZyZzZ{Z|Z}Z_[b[c[d[f[g[h[i[j[k[m[o[s[x[z[a\b\e\f\g\n\p\s\t\u\z\{\|\}\b]d]p]z]|]_^`^a^b^c^f^g^h^i^j^m^o^u^v^z^|^~^__@`_@a_@c_@d_@h_@j_@k_@m_@n_@q_@s_@t_@v_@w_@x_@z_@|_@~_@_`@``@a`@b`@d`@e`@g`@i`@l`@n`@q`@r`@u`@v`@w`@x`@z`@{`@`a@ba@ca@ga@ja@ra@va@wa@ya@{a@|a@}a@~a@_b@`b@cb@db@eb@fb@hb@jb@nb@ob@pb@ub@zb@~b@cc@ec@fc@nc@pc@rc@sc@tc@uc@vc@wc@yc@{c@ad@fd@gd@id@md@od@rd@td@vd@xd@yd@zd@{d@`e@ae@be@he@ke@me@oe@ze@~e@_f@cf@ef@ff@if@of@rf@sf@uf@wf@xf@_g@cg@eg@kg@mg@sg@|g@~g@mh@oh@ph@`i@ai@bi@ii@ki@oi@pi@qi@ui@wi@xi@zi@_j@ej@gj@nj@oj@sj@tj@wj@xj@}j@_k@`k@gk@jk@lk@ok@rk@tk@{k@~k@bl@ol@ql@sl@~l@fm@hm@jm@lm@mm@tm@vm@_W`WaWbWcWdWeWfWgWiWlWmWnWoWpWqWrWsWtWuWvWwWxWyWzW{W|W}W~W_XaXbXcXdXeXfXhXoXrXsXtXuXvXwXxX{X|XfYhYsYtYuYvYwYxYyYzY{Y}YaZdZgZhZiZkZpZ`[a[l[p[q[r[t[u[v[w[y[{[|[}[~[`\c\d\h\i\j\k\m\o\q\r\v\x\`]a]c]e]f]g]h]i]j]k]l]m]o]q]r]s]t]u]v]x]y]{]~]e^l^n^p^q^r^t^x^y^{^g_@i_@l_@p_@r_@u_@{_@}_@h`@j`@k`@m`@p`@s`@}`@~`@aa@da@ha@ia@ka@ma@oa@qa@sa@ua@xa@za@ib@kb@qb@rb@sb@tb@vb@yb@{b@}b@`c@ac@bc@dc@kc@mc@qc@xc@zc@|c@}c@_d@`d@bd@cd@dd@ed@hd@jd@pd@ud@wd@|d@}d@_e@de@ge@ie@je@le@pe@qe@re@se@te@ue@ve@we@xe@ye@{e@}e@bf@lf@nf@pf@tf@vf@yf@{f@}f@~f@`g@ag@dg@fg@gg@hg@jg@lg@pg@rg@tg@ug@vg@xg@zg@}g@_h@`h@ah@bh@ch@dh@eh@fh@gh@hh@ih@jh@lh@qh@rh@sh@th@vh@wh@xh@yh@zh@{h@|h@}h@~h@_i@di@ei@fi@gi@hi@ji@li@mi@ni@ri@si@ti@vi@yi@{i@|i@}i@~i@`j@aj@bj@dj@fj@hj@ij@jj@kj@lj@mj@pj@qj@rj@uj@vj@yj@zj@{j@|j@~j@ak@bk@ck@dk@ek@fk@hk@ik@kk@mk@nk@pk@qk@sk@uk@vk@wk@xk@yk@zk@|k@}k@_l@`l@al@cl@dl@el@fl@gl@hl@il@jl@kl@ll@ml@nl@pl@rl@tl@ul@vl@wl@xl@yl@zl@{l@|l@}l@_m@`m@am@bm@cm@dm@em@gm@im@km@om@pm@qm@rm@sm@um@wm@xm@ym@zm@{m@|m@}m@~m@_n@`n@an@bn@cn@dn@en@fn@gn@hn@in@jn@kn@ln@mn@nn@on@pn@qn@rn@sn@tn@un@vn@wn@xn@yn@zn@bb@?????oB?????????w@???????????r@V????????b@z@?nEVz@??bEr@?V??????@fA????P?b@@?nF?@?w@fA@?@???@BBkA?B?b@?i@BV?@B@?@AA?A_@BBB@@_@??sG@AAA@B@@BB??Ok@AB@?BAO@_F@@??A@K?kAB?CCoAClA?BBB??A?BBA?A?BAAuAAAAA@@@i@t@BB@@??@?CBB@@?@@AA@@B@??@@?B@@?@??@@BA@BBB?@@A@CA@BABAAR@@@ACBBC@A@A?A@C@ABA@FC@AAO@@@@A?A@A?E@ACD?D?AB?@@@B?AAAA@MH?A@FADBABA@@A@HBA@BBB@rHBCBBAEAE@BABB?B@@?BB@B@A@@??K@?@BdCK?@@@?@BABA@B@@AA@@e@@RB??D@AAT@ABDqFFBB@KDBBM@ABAxAB?@?BFBC@B?EAA@?@@CH@BR@@ABAA?AD@BC@AC@BADzHBB@DZ@A@A@AAAEAC?B@uAAAA@B?@??@AANAB@p@@BABCA@@A?B@@B@@A@@GAT@@B@??@BB@D@AAAAK@BE?@A?E?K@MD@C@A?FBAFA@BAwFA@_@T@?A@BB@A@H@?@BBAA@@@B@BCBA?A@A@A@BB@D?@BB@@@@B@?A@?@@k@AAHB@@A?e@@A?BADTBBDAA@?A\?B?@B|AA@QAAAAAB@A@?D@BBBAeFBi@E@B?@n@SNB@@B@ABB@BBCBBCBPA?A@@@@BB?pA@BD@BaBBA@B@@?A@B@A@aB?@GAvH@Ak@CA?BB?BBBbB@AABdHN@@BB@AxFB@eBAA@ADAEAn@ABBAB@CBAAsIAA]@@@AAAA?@AD@B@@@C@A@CAB@BB@AA@@ABAA@C@F@@B@@AAOB?B@@ABA?A?F@AMAB@C?@sA@A?A?@@ACECE@?A?B@ACDDBB@B?@AB@@@BCGA@NAA?@ChAAB@E?ADAlA@@@@@A@BA@BBAB?A@?C?BA@AAB@@C@A??@AAA??A@?BAA]@?]@R?B\_IA@CNA@?A@AB?BAA@ABbBBB@?B@@D?n@@B^BAAD@BAAB@@AD@@@qH?AB@@B@?A?D\A?A?AABD?BA@@B@iJ@lJB@A?@A@AAF@TA?AyA@ARDA@ABxAC@C@@B@@@BAtI@@B@lF@@A_J@A@ABA@@ABBAABCDC?@AlI@@kJMABC?A@@@@B|A?BAKA@C@@C?@^^sA^?A?B?C?D?E?F?G?H?I?JfBB?K?L?M?N?O?P?Q?R?S?T?U?V?W?X?Y?Z?[?\?]?^?_@?`@?a@?b@?c@?d@?e@?f@?g@?h@?i@?j@?k@?l@?m@?n@?o@q@KgBM?p@?q@?r@?s@?t@?u@?v@?w@?x@?y@?z@?{@?|@?}@?~@?_A?`A?aA?bA?cA?dA?eA?fAt@{@?gA?hA?iA?jA?kA?lA?mA?nA?oA?pAmBLhBp@s@qA?rA?sA?tA?uA?vA?wA?xAv@gAxBiAzBkA|BmA~BoA?yA?zAUMnBq@?{A?|A?}A?~A?_B`ChAyBjA{BlA}BnA_CpAv@|@pB~@rB`B?aB?bB?cB?dB?eB?fB?gB?hB?iB?jB?kB?lB?mBeCp@s@{Ax@nB?oB?pB?qB?rB?sB?nBvCpBxCrByCnB{CqB|@sBzCoBwCqB|@nB~CrB}CoB}@rB_DpB|CsBaDqB`DoB}@tBuCq@fC|A?uB?vB?wB?xB?yBy@iAaClAhCoAbD{Ax@uB?zB?{B?|B?}B?~B?_C?`C?aCeD|AcDzBfD|BhDbCI}@qB_Au@aAtBcAvBeA?cC?dCjD~@iCaBkCcBlCeBnCgBpCiBrCkBtCmB_A}A?eC?fCa@gC?hCaA~A?iCsDjC?kCaAlC?mC?nC?oC?pC?qC_AuBiD}B?rCtDrC?sC?tC?uC?vC?wCa@_Au@xC?yC`@j@iBl@kBn@cA`BjCbB{@dBmCfBoChBqCjBsClBcA`AsBbAuBdAwBcC?zC?{C?|C?}C?~CuDk@jBm@lBo@bA{BgD}B?_DWaB`AdBxDgBpDjB{DmBbA`D?aDJaAkDdA}DzC_EbD?cD?dDdAeD?fD?gD?hD?iD?jDaEl@vDo@~@jAgCmAcCpAeAbBwDeBoDhBzDkBmEkAbCnAgAlAdDpArEmAoEcBnDfByDiBqDlBsEnAIkDeEbA|DeAmDzCc@cDhE}C?eDjEgD?lD?mD?nD?oDXm@`Fn@xEcAlDcC~D{C`E}C?pDtEdBcEhBqElBYqD?rD?sDaFdAfE{C?bDgEdDiEfDd@lD~EnD?tD?uD?vDfFeAyE{Cg@wDe@o@cFeBpEiBvEmBmFfBuEjBZxDZcCbFbDgF}C?yD?zDX{DiAzCc@wDh@{Cg@|D[bD?wDoFgBdEkBrFhBdFmBjAiBJ}D?~D?_E?`E?aE?bE?cEGcDzEeD|EhDlEjDwEoAsFjByFdDhFgD}EmDPoD~@dE?eE?fE?gE?hEj@pAIiE?jE?kE?lE?mE?nE?oE?pE?qE}F}C{EfDiFmD[|CdArEYsEcGkE|FkBeAtE?uE?vE?wEZfApFcDzFfDd@hDgGlB[xEpAmBfG}CnAyEUzE?{E?|E?}EU~E?_F?`F?aF?bF?cFkG}ElG_FmGaFoGcF?dFrG`FnGbFpG|ErAb@tGaFtF~DuF`EvFeF?fF?gFiAdCmAeD{FiDGhFvGfDjGiDxGgD_GnDGiFPjFl@lDjFkFkFvDzGmDGwDJlF?mF?nF?oF?pF?qF?rFQeD?sF?tFoAjEdGuF?vF?wF?xF{GnDhAyFSoDaHfD?zF`GeEaGgE?{FhGzCc@iFl@hDm@yEX|F?}F?~FL_G?`Gf@aGJbG?cG?dG?eG?fGG|DPtDJgG?hG?iG?jG?kGyGnD?jFf@lGkHkGl@mG?nGmHnGo@jFgHiDoHjDiHnDQyDMoG?pG?qG`ArGvAkEHtD?sGo@tDWtG?uG?vGpHbB{@wG?rG?xG`@yG?zG?{G?|G?}G?~G{A_HLuE?`H?aH?bH?cHj@yA`@dH?eH?fH?gH?hHNpG|GmF}GoF~GqF`HgFuHcB?wGzAiHmAyDwAhGjHjG[jHJkHQrEfH{Cg@cDiGgDtAoDXlH?mH?nH?oH?pH?qH}AeHyHgHbGjE?rH?sH|HbD?iFqA{EqGb@MtH~H|ErAuHvArH]vHh@wHsHuGtHxHgAyH?zHq@C?{H?|H?}HI~HJ_IuGaE`I}EI`I?aI?bI?cI?dI?eIbIaIdBfIa@gI?hI?iI?jI?kI?lI?mI?nI?oIDpI?qI?rIp@cD}HmGnHoGWsIcIbI?tI~AuI?vI?wI?xIeHfE?yI?zIY{Im@zF?|IL}I?~I?_JfInI?`JhIaJ?bJ?cJ?dJf@rDiIdD~FhDWeJ?fJp@|DpIsDStDeB|ISgJ{AzG?hJ?iJ?jJLkJUlJ?mJ?nJ\uFbHwFLoJuIhJ?pJ?qJ?rJqI}CnAgDkEiDcBbI?sJ}AtJ?uJ?vJkIaIdBtIQwJvImJwI|EIxJ?yJ?zJ?{J?|J~I}J?~JcB_K?`KqAaKyIeDwGjDLbKrInD~AnF?cKOdKaJoF_BrFxIvFcHxFm@gDtAeK?fKmIgE?gKj@hKy@iK?jK?kK?lK?mK?nKhHoK?pK?qKrDrK?sK?tK?uK?vK?wKbJjKcJlKdJnK?xKHkFSyKzIzK?{KjA|K?}K?~K_BnE?_LeG`L?aL}InJaIb@LbL?cL?dLwAeL?fLnI~IoImIgIoI{IuJ?gLwH`HxHhL?iL?jLo@kLHeK?lL?mLfJ}KgJpF_HnEhJpE?`LdIhIeInL?oL?pLYqL?rLIsL`BiGlHjG{HwGzAtLeJkK?uL|IbI`BvLyAwL`JfDd@mGjIpGh@xLjJ|E?yL</div>
+<div id="globalStacks" style="display:none"></div>
+<div id="methods" style="display:none">@??A??B?????A??B??B?????A??C??B?????A??D??C?????A??E??B?????A??F??C?????A??G??C?????A??H??C?????A??I??C?????A??J??C?????A??K??C?????A??L??C?????A??M??C?????A??N??C?????A??O??C?????A??P??C?????A??Q??C?????A??R??B?????A??S??C?????A??T??C?????A??U??C?????A??V??C?????A??W??C?????A??X??C?????A??Y??C?????Z??[??oA?gA?\??[??oA?Cs?]??[??OJ?oG?^??_??oM?kH?`??a????????A??b??B?????A??c??C?????A??d??C?????A??e??C?????A??f??B?????g??[???W??F?h??i??O??gH?j??k??O??s@?j??k???A?OB?l??k??_o?[X?l??m??_??_]?n??[???M?KC?o??p???A?cE?q??p??O@?GH?q??r??_I?CG?s??t??oW?gF?u??v????????A??w??B?????A??x??C?????A??y??C?????A??z??C?????A??{??C?????A??|??C?????A??}??C?????A??~??C?????A???@?C?????A??@@?C?????A??A@?C?????n??[??oS?WC?B@?C@??U?wL?D@?E@?OJ?sC?D@?F@??A@sK?D@?G@?OD??H?H@?I@?OG?GC?J@?I@?_@????K@?L@??W?_D?M@?N@?O@?W@?M@?N@?_A??C?O@?N@?O@?wB?P@?N@?_???Q@P@?Q@?on?cb?D@?E@??F?WC?B@?R@??A??G?S@?R@?_D?CF?T@?R@??Z?CY?U@?R@??A?KO?U@?R@??U?_Q?U@?V@??`?gS?W@?R@??@?{A?W@?X@???????A??R@?B?????A??Y@?C?????A??Z@?C?????A??[@?C?????A??\@?C?????A??]@?C?????A??^@?C?????A??_@?C?????A??`@?C?????A??a@?B?????A??b@?C?????A??c@?C?????A??d@?C?????A??e@?C?????A??f@?C?????A??g@?B?????J@?I@?OA????D@?h@??W?GN?D@?i@?oA?gO?B@?j@??B?WH?B@?j@?OG?OI?k@?j@?oE?WQ?S@?j@?_D?[D?T@?j@?oH?O`?U@?j@??A?SB?U@?j@??a?CE?U@?l@??`?OG?W@?j@??@?wB?m@?n@???????A??j@?B?????A??o@?C?????A??p@?C?????A??q@?C?????A??r@?C?????A??s@?C?????A??t@?C?????A??u@?C?????A??v@?C?????A??w@?C?????A??x@?C?????A??y@?C?????A??z@?C?????A??{@?C?????A??|@?C?????A??}@?C?????A??~@?C?????A???A?C?????A??@A?C?????A??AA?C?????A??BA?C?????A??CA?C?????P@?Q@?OW?[a?P@?DA?O??cW?A??EA?C?????A??FA?C?????H@?I@?_D?wB?GA?HA?_D?[B?A??IA?C?????A??JA?C?????A??KA?C?????A??LA?C?????A??MA?C?????A??NA?C?????A??OA?C?????A??PA?C?????A??QA?C?????A??RA?C?????A??SA?C?????A??TA?C?????A??UA?C?????A??VA?C?????A??WA?C?????K@?L@?_g?KE?XA?YA?oA?K??P@?DA?o@?cW?ZA?[A?OA?_??ZA?[A?_J?o@?\A?]A?_A?cE?^A?_A???????A??`A?C?????A??aA?C?????A??bA?C?????ZA?[A?_??C@?cA?dA?OP?GJ?\A?eA?_??kd?^A?_A??S?g}?fA?gA?OH????hA?iA?_B????jA?N@?OF?KF?cA?kA?O??kU?lA?mA?O??GD?D@?F@?Of?cJ?jA?N@?_B?CF?jA?nA?oB??D?cA?oA?_E?cT?cA?pA??H??W?^A?_A?o@?W}?D@?qA??T?wL?rA?YA??O?[D?sA?tA????kC?cA?pA??J?KW?A??uA?B?????A??vA?B?????cA?dA?O??SI?P@?Q@??^?{a?^A?_A?oM?c}?wA?xA??A?OF?s??t??_e?OG?cA?dA??I?gI?K@?L@??e?GE?K@?yA?o@?gF?zA?{A?O??kd?lA?|A??F?SE?lA?YA?o@?SD?}A?YA?_C?cB?A??~A?B?????T@?R@?OA?CX??B?@B??@?GS?AB?@B?O??_H?BB?CB?oB?GM?A??DB?B?????D@?F@??o?oJ?EB?R@??A?SG?EB?R@?_C?gG?EB?FB?OC?wJ?GB?HB?oA?sb?IB?HB?OA??q?IB?JB?OC?Cs?IB?KB?oB?Kc?IB?LB?_@?{a?^A?_A?oP?g}?D@?qA?_L?sL?D@?i@?_??cO?MB?NB?_V?OJ?OB?PB?_??oE?EB?QB??M?wA?ZA?[A?_E?S@?hA?iA?O?????A??RB?C?????A??SB?C?????A??TB?C?????A??UB?C?????A??VB?C?????A??WB?C?????A??XB?C?????A??YB?C?????A??ZB?C?????A??[B?C?????A??\B?B?????}A?YA??A?[B?cA?YA????cC?A??]B?B?????cA?dA??@?SI?cA?dA??G?cI?cA?pA?oE??W?cA?pA??@??W?K@?L@?_`?oD?cA?^B?_B?WQ?cA?_B?_H?kS?cA?`B?oL?OH?aB?HB??B?SH?aB?bB??G?[I?IB?HB?OF?Wq?fA?gA?OC????cB?iA?O?????EB?FB?_E??K?dB?eB??D????fB?gB?_E????hB?YA?oA?kZCcA?iB?oB?KX?hA?iA???????A??jB?B?????s??t??oM?KF?s??kB??G?WH?lB?mB??B?kV?MB?NB?oS?KJ?A??nB?B?????rA?YA?oO?[D?K@?L@?Oh??E?M@?oB?_B?wC?pB?@B?O@?Gm?qB?rB?_??G?@sB?tB?OG?k\?K@?L@?o??cC?rA?uB?OP?KG?sA?tA?_A?oC?hB?vB?o??gSAhB?vB?OB?SVArA?YA?_K?SD?jA?N@??K?GF?aB?eA??@?W\?aB?wB?O@??]?xB?yB??@?wC?D@?h@??W?GN?A??zB?B?????cA?iB??C?KX?D@?h@?oI?wM?hB?{B?OG?wy@hB?|B??\?SJAA??}B?C?????A??~B?B?????o??p??O??_E?o???C??@?wF?@C?v???K?[W?@C?AC?_D?SQ?^A?BC?_I?SB?CC?DC?OF?cF?o???C??B?wF?OB?PB?_D?sE?EB?j@?OB?kC?EB?j@??N?sD?GB?EC?o@?sM?o??p???N?KF?o??FC?oB?{G?GC?HC??@?CU?IC?HC??@?wI?JC?KC??D?kw?A??LC?B?????ZA?[A??D?S@?K@?L@??G?{C?s??t??or?kG?s??MC?_d?OM?q??NC?OY?KR?IC?OC??A?sL?JC?PC?OA?Ge?JC?QC??D?Kf?EB?R@?OA?cG?EB?RC?_@?GI?aB?wB?O??{\?A??SC?B?????cA?TC?O??kN?ZA?[A?_??_??UC?VC????kK@U@?R@?oP?SQ?WC?XC?oB?[M?A??YC?C?????A??ZC?C?????A??[C?C?????D@?F@??g?cJ?K@?L@?of?KE?D@?F@?or??K?rA?\C?_E?cN?hB?|B?_W?WJA]C?^C?OL?{W?_C?`C??@?_H?_C?aC?o@?gC?]C?^C?_@?cW?H@?I@?oB?wB?rA?bC??C?SF?hB?cC?OI?_hA]C?dC??C?Co?eC?fC?OI?wmBA??gC?C?????A??hC?C?????A??iC?C?????A??jC?B?????lA?mA?o@?{D?n??[??ON?KC?o??p?????_E?D@?h@?OF?oM?]C?^C?OD?gW?cA?_B?_??_S?UC?kC?O??Gf@UC?lC?oB?wGBmC?N@?O???F?BB?CB?o@?CM?qB?nC?OA?oa?D@?qA?_H?oL?cA?dA????SI?MB?NB?_N?CJ?OB?YA?_@?GA?A??oC?C?????A??pC?C?????A??qC?C?????A??rC?C?????A??sC?C?????A??tC?B?????D@?h@?_R??N?MB?uC?OK?GG?cA?pA??D??W?@C?v??_O?kW?n??[??OX?KC?B@?C@????GL?MB?NB?_E?kI?A??vC?C?????A??wC?C?????A??xC?C?????MB?NB?_T?OJ?@C?AC?oA?OQ?^A?yC?_K?OC?zC?{C??J?OJ?]C?^C?OA?cW?o??FC?oF?{G?|C?}C?O??Od@~C??D?_W?Kc@^A?_A?oQ?g}?D@?F@?Ox?GK?D@?@D?O??kF?AD?BD?o??Gp?AD?BD?_Z?_g?hB?CD?o@?k]@D@?@D?oD??G?M@?N@????wB?hB?|B?_R?OJAMB?NB????cI?A??DD?C?????MB?NB??U?OJ?cA?`B?oH?SH?lA?mA??@?{D?cA?pA?O???W?cA?ED???????A??FD?B?????A??GD?B?????S@?R@?oC?CF?HD?ID??A?_X?JD?YA??B?wC?HD?YA??A??Q?KD?YA?oH?SN?HD?LD?_??kO?s??kB?_O?gH?JC?MD?OA?_F@JC?QC?o|?wg?GA?HA?_??CB?JC?N@?_??oa?JC?ND?oD?_b?JC?OD?OA?GT?hB?PD?oE?WQA]C?PD??C?OK?D@?F@????kH?cA?pA?oG??W?]C?^C?oN??X?_C?`C?OD?kH?U@?j@?oY?oD?HD?PC??X?C~?HD?QD?_[?wC@IB?JB?OA??s?IB?LB?O??wa?IB?RD????c^?MB?NB?_P?GJ?OB?PB?O@?gD?OB?PB??C?{D?rA?uB??F??G?hB?SD?oP?kLA~C??D?oV?Cc@EB?j@?OF?kD?hB?CD??B?k]@]C?CD?OD?GB?cA?pA?oI?KW?cA?ED?_??CT?cA?TD?_@?CV?]C?dC?o@?Co?A??UD?C?????A??VD?C?????D@?qA?OQ?wL?rA?\C????[N?D@?F@?_p?oJ?A??WD?B?????HD?YA?OH?CQ?sA?tA?o??kC?]C?vB??G?SL?ZA?[A?_@?_??</div>
+<span style="position:fixed; bottom: 0; right:0; padding: 2px 4px; background-color: #ffffe0; border-top: 1px solid #ffc000; border-left: 1px solid #ffc000; border-top-left-radius: 4px;"><span id="produced">Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a>&nbsp;</span><span id='match' style="display: none">Matched: <span id='matchval'></span>&nbsp;<span id='reset' title='Clear'>&#x274c;</span></span></span>
+
+<h1 id="title">Heatmap, CPU</h1>
+
+<canvas id='canvas'></canvas>
+<div id='hl'><span></span></div>
+
+<span id='status' style="position:fixed; bottom: 0; left:0; padding: 2px 4px; background-color: #ffffe0; border-top: 1px solid #ffc000; border-right: 1px solid #ffc000; border-top-right-radius: 4px; display: none">&nbsp;</span>
+<script>
+	// Copyright 2020 Andrei Pangin
+	// Licensed under the Apache License, Version 2.0.
+	'use strict';
+	let root, rootLevel, px, pattern;
+	let reverse = true;
+	const levels = Array(0);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	let c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	let canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+    const search = typeof searchIterative === 'function' ? searchIterative : searchSimple;
+    const init = typeof renderHeatmap === 'function' ? renderHeatmap : render;
+
+	const palette = [
+		[0xb2e1b2, 20, 20, 20],
+		[0x50e150, 30, 30, 30],
+		[0x50cccc, 30, 30, 30],
+		[0xe15a5a, 30, 40, 40],
+		[0xc8c83c, 30, 30, 10],
+		[0xe17d00, 30, 30,  0],
+		[0xcce880, 20, 20, 20],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(level, left, width, type, title, inln, c1, int) {
+		levels[level].push({left: left, width: width, color: getColor(palette[type]), title: title,
+			details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
+		});
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+    const marked = [];
+
+    function render(newRoot, newLevel, minLevel) {
+        minLevel = minLevel || 0;
+        if (root && minLevel === 0) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+
+		if (minLevel === 0) {
+		    marked.length = 0;
+        }
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+                let match = pattern && pattern.test(f.title) && mark(f);
+                const fw = f.width * px;
+                if (fw < 0.1) {
+                    return;
+                }
+                c.fillStyle = match ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, fw, 15);
+
+				if (fw >= 21) {
+					const chars = Math.floor(fw / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, fw - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, fw, 15);
+				}
+			}
+		}
+
+		for (let h = minLevel; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				let details = f.details || '';
+				canvas.title = f.title + '\n(' + samples(f.width) + details + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f !== root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+                status.style.display = 'inline';
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.textContent = '\xa0';
+        status.style.display = 'none';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = '';
+	}
+
+    window.onkeydown = function() {
+        if (event.ctrlKey && event.keyCode === 70) {
+            event.preventDefault();
+            search(true);
+        } else if (event.keyCode === 27) {
+            search(false);
+        }
+    }
+
+    document.getElementById('reset').onclick = function() {
+        search(false);
+    }
+
+
+
+    class DataBuffer {
+        data;
+        pos = 0;
+        constructor(encodedData) {
+            this.data = encodedData;
+        }
+
+        nextVarInt() {
+            let res = 0;
+            let shift = 0;
+            let b;
+            do {
+                b = this.byteAt(this.pos++);
+                res |= (b & 0x1F) << shift
+                shift += 5;
+            } while (b >= 0x20)
+            return res;
+        }
+
+        byteAt(pos) {
+            return this.data.charCodeAt(pos) - 63;
+        }
+
+        int30(pos) {
+            return (this.byteAt(pos++) << 0)
+                | (this.byteAt(pos++) << 6)
+                | (this.byteAt(pos++) << 12)
+                | (this.byteAt(pos++) << 18)
+                | (this.byteAt(pos) << 24);
+        }
+
+        int36(pos) {
+            return (this.byteAt(pos++) << 0)
+                | (this.byteAt(pos++) << 6)
+                | (this.byteAt(pos++) << 12)
+                | (this.byteAt(pos++) << 18)
+                | (this.byteAt(pos++) << 24)
+                | (this.byteAt(pos++) << 30);
+        }
+
+        varInt(pos) {
+            let res = 0;
+            let shift = 0;
+            let b;
+            do {
+                b = this.byteAt(pos++);
+                res |= (b & 0x1F) << shift
+                shift += 5;
+            } while (b >= 0x20)
+            return res;
+        }
+
+    }
+
+    class HeatmapCollection extends DataBuffer {
+
+        maxZoom;
+        blocks;
+        zoomToCounts;
+        zoomToMaxes;
+        zoom;
+
+        constructor(encodedData) {
+            super(encodedData);
+
+            this.maxZoom = this.nextVarInt();   // fixme
+            this.maxZoom = 3;
+
+            const startMethodsCount = this.nextVarInt();
+            const starts = new Set();
+            for (let i = 0; i < startMethodsCount; i++) {
+                starts.add(this.nextVarInt());
+            }
+
+            const lz = new Lz78Data(this, starts);
+
+            let max = 1;
+
+            let prevByte = -1;
+            const blocksCount = this.nextVarInt();
+            let counts = new Uint32Array(blocksCount);
+            for (let i = 0; i < blocksCount; i++) {
+                let v = 0;
+                let p = 0;
+                let hasMore = false;
+                do {
+                    if (prevByte === -1) {
+                        prevByte = this.byteAt(this.pos++);
+                        hasMore = (prevByte >>> 5) === 1;
+                        v |= ((prevByte >>> 3) & 3) << p;
+                        prevByte &= 7;
+                    } else {
+                        hasMore = (prevByte >>> 2) === 1;
+                        v |= (prevByte & 3) << p;
+                        prevByte = -1;
+                    }
+                    p += 2;
+                } while (hasMore);
+                counts[i] = v;
+                max = Math.max(max, v);
+            }
+
+            this.blocks = lz.decode(counts);
+
+            this.zoomToCounts = new Array(this.maxZoom);
+            this.zoomToMaxes = new Array(this.maxZoom);
+
+            this.zoomToCounts[0] = counts;
+            this.zoomToMaxes[0] = max;
+
+            for (let z = 1; z < zoomToGroupSize.length; z++) {
+                const size = zoomToGroupSize[z] / zoomToGroupSize[z - 1];
+                const nextCounts = new Uint32Array(Math.ceil(counts.length / size));
+                for (let i = 0; i < counts.length; i++) {
+                    const index = (i / size) | 0;
+                    nextCounts[index] += counts[i];
+                    max = Math.max(max, nextCounts[index]);
+                }
+                this.zoomToCounts[z] = counts = nextCounts;
+                this.zoomToMaxes[z] = max;
+            }
+
+            this.data = null;
+        }
+
+        setZoom(zoom) {
+            this.zoom = zoom;
+        }
+
+        heatmap() {
+            return this.zoomToCounts[this.zoom];
+        }
+
+        max() {
+            return this.zoomToMaxes[this.zoom];
+        }
+
+        currentTimeBlock() {
+            // FIXME 20 is hardcoded
+            return 20 * zoomToGroupSize[this.zoom];
+        }
+
+        startBlock() {
+            const blockMs = this.currentTimeBlock();
+            const timeBlockMs = blockMs * heatHeight * 20;
+            return Math.floor(startMs % timeBlockMs / blockMs);
+        }
+
+        count() {
+            return Math.ceil((this.heatmap().length + this.startBlock()) / 20 / heatHeight) * 20 * heatHeight;
+        }
+
+    }
+
+    class LzChunk extends Uint32Array {
+        constructor(size) {
+            super(size);
+        }
+
+        copyWithNext(element) {
+            let result = new LzChunk(this.length + 1);
+            result.set(this);
+            result[this.length] = element;
+            return result;
+        }
+    }
+
+    class Lz78Data {
+        data;
+        starts;
+        lz78;
+
+        tmp = [];
+        prevSubTreeId = -1;
+
+        constructor(data, starts) {
+            this.data = data;
+            this.starts = starts;
+
+            this.lz78 = [new LzChunk(0)];
+        }
+
+        decode(counts) {
+            const synonymsCount = this.data.nextVarInt();
+            const synonyms = new Uint32Array(synonymsCount);
+            for (let i = 0; i < synonymsCount; i++) {
+                synonyms[i] = this.data.nextVarInt();
+            }
+
+            const tailsCount = this.data.nextVarInt();
+            const tails = new Uint32Array(tailsCount);
+            for (let i = 0; i < tailsCount; i++) {
+                const tail = this.data.nextVarInt();
+                tails[i] = (tail < synonyms.length ? synonyms[tail] : tail) - synonymsCount;
+            }
+
+            const result = new Array(counts.length);
+            for (let i = 0; i < counts.length; i++) {
+                result[i] = new Array(counts[i]);
+            }
+
+            let thisChunk = null;
+            let currentTail = 0;
+            const tmp = [];
+            let t = -1;
+            for (let block of result) {
+                for (let i = 0; i < block.length; i++, currentTail++) {
+                    t++;
+                    const tailId = tails[currentTail];
+                    if (tailId < this.lz78.length) {
+                        const tail = this.lz78[tailId];
+                        if (tail.length !== 0 && this.starts.has(tail[0])) {
+                            console.log(t, 'only', tailId);
+                            block[i] = tail;
+                            continue;
+                        }
+                    }
+
+                    if (thisChunk === null) {
+                        const chunkId = this.data.nextVarInt();
+                        const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
+                        const addMethodId = this.data.nextVarInt();
+                        console.log(t, 'chunk', chunkId, addMethodId);
+                        thisChunk = prevChunk.copyWithNext(addMethodId);
+                        this.lz78.push(thisChunk);
+                    }
+
+                    tmp.length = 0;
+                    tmp.push(...thisChunk); // FIXME it is ok to push as is, or even as lz78 index
+
+                    while (true) {
+                        const chunkId = this.data.nextVarInt();
+                        const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
+                        const addMethodId = this.data.nextVarInt();
+                        thisChunk = prevChunk.copyWithNext(addMethodId);
+                        this.lz78.push(thisChunk);
+                        console.log(t, 'chunk', chunkId, addMethodId);
+
+                        if (this.starts.has(thisChunk[0])) {
+                            console.log(t, 'starts', thisChunk[0]);
+                            console.log(t, 'ends', tailId);
+                            const tail = this.lz78[tailId];
+                            tmp.push(...tail);
+                            block[i] = new Uint32Array(tmp);
+                            break;
+                        } else {
+                            tmp.push(...thisChunk);
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+    }
+
+    class Queue {
+        data = new Array(1024);
+        first = 0;
+        afterLast = 0;
+
+        push(e) {
+            let a = this.afterLast;
+            let d = this.data;
+            d[a++] = e;
+            if (a >= this.data.length) {
+                a = 0;
+            }
+            if (a === this.first) {
+                let d2 = new Array(d.length * 2);
+                let i = 0;
+                for (let p = a; p < d.length; p++) {
+                    d2[i++] = d[p];
+                }
+                for (let p = 0; p < a; p++) {
+                    d2[i++] = d[p];
+                }
+                this.data = d2;
+                this.first = 0;
+                this.afterLast = i;
+            } else {
+                this.afterLast = a;
+            }
+        }
+
+        shift() {
+            let i = this.first;
+            let r = this.data[i++];
+            if (i >= this.data.length) {
+                this.first = 0;
+            } else {
+                this.first = i;
+            }
+            return r;
+        }
+
+        size() {
+            let r = this.afterLast - this.first;
+            if (r < 0) {
+                return r + this.data.length;
+            }
+            return r;
+        }
+
+        reset() {
+            this.first = this.afterLast = 0;
+        }
+    }
+
+    function claimHtml(id) {
+        let e = document.getElementById(id);
+        let r = e.innerHTML;
+        e.remove();
+        return r;
+    }
+
+    let sq = 5;
+    let sqPx = sq;
+    let sqScale = 1;
+    const canvasScrollPadding = 200;
+    let canvasTimeHeight = 12;
+    let canvasTimeHeightPx = 12;
+    let ticksPerSecond = 1000000000;
+    let startMs = 1664370532207;
+
+    const zoomToGroupSize = [
+        1,              // 20 ms
+        50,             // 1 s
+        50 * 5,         // 5 s
+        50 * 60         // 1 m
+    ];
+    const zoomToHeight = [50, 60, 60, 60]
+
+    let methods = new DataBuffer(claimHtml("methods"));
+    let executionsHeatmap = new HeatmapCollection(claimHtml("executionsHeatmap"));
+    let cpool = ["all","","thread_start","_pthread_start","Recording::threadEntry","jni_AttachCurrentThreadAsDaemon","attach_current_thread","Threads::add","ThreadsSMRSupport::add_thread","ThreadsSMRSupport::free_list","Threads::non_java_threads_do","ScanHazardPtrGatherThreadsListClosure::do_thread","thread_native_entry","Thread::call_run","JavaThread::thread_main_inner","attach_listener_thread_entry","load_agent","JvmtiExport::load_agent_library","Agent_OnAttach","Profiler::runInternal","Profiler::start","jvmti_SetEventNotificationMode","JvmtiEnv::SetEventNotificationMode","JvmtiEventController::set_user_enabled","JvmtiEventControllerPrivate::recompute_enabled","JvmtiEventControllerPrivate::recompute_thread_enabled","ok.dht.test.shashulovskiy.dao.drozdov.StorageCompanion$1","run","java.lang.Thread","jdk.internal.ref.CleanerImpl","java.lang.ref.ReferenceQueue","remove","java.lang.Object","wait","JVM_MonitorWait","ObjectSynchronizer::wait","ObjectMonitor::wait","os::PlatformEvent::park","__psynch_cvwait","one.nio.server.AcceptorThread","one.nio.net.Socket","acceptNonBlocking","one.nio.net.JavaServerSocket","accept","sun.nio.ch.ServerSocketChannelImpl","finishAccept","one.nio.server.SelectorThread","one.nio.net.JavaSelector","select","sun.nio.ch.SelectorImpl","lockAndDoSelect","sun.nio.ch.KQueueSelectorImpl","doSelect","sun.nio.ch.KQueue","poll","kevent","CompileBroker::compiler_thread_loop","CompileBroker::invoke_compiler_on_method","Compiler::compile_method","Compilation::Compilation","Compilation::compile_method","Compilation::compile_java_method","Compilation::emit_lir","LinearScan::do_linear_scan","LinearScan::allocate_registers","IntervalWalker::walk_to","one.nio.net.Session","process","one.nio.http.HttpSession","processRead","processHttpBuffer","handleParsedRequest","one.nio.http.HttpServer","handleRequest","RequestHandler0_handle","ok.dht.test.shashulovskiy.ServiceImpl","handle","ok.dht.test.shashulovskiy.dao.drozdov.MemorySegmentDao","get","ok.dht.test.shashulovskiy.dao.drozdov.Memory","java.util.concurrent.ConcurrentSkipListMap","doGet","read","one.nio.net.JavaSocket","sun.nio.ch.SocketChannelImpl","sun.nio.ch.IOUtil","readIntoNativeBuffer","sun.nio.ch.SocketDispatcher","read0","ciEnv::ciEnv","ciObjectFactory::get","ciObjectFactory::get_metadata","ciObjectFactory::create_new_metadata","ciInstanceKlass::ciInstanceKlass","ciKlass::ciKlass","ciObjectFactory::get_symbol","vmSymbols::find_sid","Java_sun_nio_ch_SocketDispatcher_read0","int const static_fast_get_field_wrapper<10, int const>","C2Compiler::compile_method","Compile::Compile","Compile::Code_Gen","PhaseChaitin::Register_Allocate","_platform_memset","sendResponse","writeResponse","write","one.nio.net.Session$ArrayQueueItem","writeFromNativeBuffer","sun.nio.ch.FileDispatcherImpl","write0","ParseGenerator::generate","Parse::Parse","Parse::do_all_blocks","Parse::do_one_block","Parse::do_call","PredictedCallGenerator::generate","Parse::do_one_bytecode","Compile::Optimize","PhaseRenumberLive::PhaseRenumberLive","PhaseRemoveUseless::PhaseRemoveUseless","Compile::remove_useless_nodes","RShiftLNode::Opcode","Compile::optimize_loops","PhaseIdealLoop::optimize","PhaseIdealLoop::PhaseIdealLoop","PhaseIdealLoop::build_and_optimize","PhaseIdealLoop::build_loop_late","PhaseIdealLoop::build_loop_late_post_work","PhaseIdealLoop::compute_lca_of_uses","PhaseIdealLoop::dom_lca_for_get_late_ctrl_internal","PhaseIdealLoop::Dominators","cpr","PhaseCFG::do_global_code_motion","PhaseCFG::build_dominator_tree","one.nio.http.PathMapper","find","PhaseChaitin::Split","PhaseChaitin::build_ifg_physical","PhaseChaitin::add_input_to_liveout","PhaseOutput::Output","PhaseOutput::fill_buffer","NonSafepointEmitter::observe_instruction","NonSafepointEmitter::emit_non_safepoint","DebugInformationRecorder::describe_scope","DIR_Chunk* GrowableArrayWithAllocator<DIR_Chunk*, GrowableArray<DIR_Chunk*> >::insert_sorted<&","IdealLoopTree::iteration_split","IdealLoopTree::iteration_split_impl","PhaseIdealLoop::insert_pre_post_loops","PhaseIdealLoop::insert_post_loop","PhaseIdealLoop::clone_loop","PhaseIdealLoop::clone_loop_handle_data_uses","ok.dht.test.shashulovskiy.dao.BaseEntry","<init>","ok.dht.test.shashulovskiy.dao.drozdov.MemorySegmentComparator","compare","jdk.incubator.foreign.MemoryAccess","getByteAtOffset","java.lang.invoke.VarHandleGuards","guard_LJ_I","RegionNode::pinned","PhaseCCP::PhaseCCP","BarrierSetC2::has_load_barrier_nodes","jdk.internal.foreign.AbstractMemorySegmentImpl","mismatch","getByte","java.lang.invoke.LambdaForm$MH.0x0000000800cd1000","invoke","java.lang.invoke.LambdaForm$DMH.0x0000000800cd0400","invokeStatic","java.lang.invoke.MemoryAccessVarHandleByteHelper","unsafeGetBase","jdk.internal.foreign.HeapMemorySegmentImpl$OfByte","base","checkAddress","checkAccess","checkBounds","parseRequest","one.nio.http.Request","one.nio.util.URLEncoder","decode","unknown_Java","mach_absolute_time","java.lang.invoke.IndirectVarHandle","getMethodHandle","stringToMemorySegment","jdk.incubator.foreign.MemorySegment","ofArray","fromArray","jdk.internal.foreign.HeapMemorySegmentImpl","jbyte_disjoint_arraycopy","java.util.concurrent.locks.ReentrantLock","lock","java.util.concurrent.locks.ReentrantLock$Sync","java.util.concurrent.locks.ReentrantLock$NonfairSync","initialTryLock","unsafe_arraycopy","one.nio.util.Utf8","toAsciiString","sun.misc.Unsafe","copyMemory","jdk.internal.misc.Unsafe","copyMemoryChecks","checkPrimitivePointer","checkPrimitiveArray","one.nio.http.Response","toBytes","one.nio.util.ByteArrayBuilder","append","length","WatcherThread::run","WatcherThread::sleep","Monitor::wait_without_safepoint_check","os::PlatformMonitor::wait","GangWorker::initialize","GangWorker::loop","G1EvacuateRegionsBaseTask::work","G1EvacuateRegionsBaseTask::evacuate_live_objects","G1ParEvacuateFollowersClosure::do_void","TaskTerminator::offer_termination","__psynch_cvbroad","arrayof_jlong_disjoint_arraycopy","toByteArray","toArray","copyFrom","jdk.internal.misc.ScopedMemoryAccess","copyMemoryInternal","java.lang.invoke.DirectMethodHandle$Holder","java.lang.invoke.LambdaForm$MH.0x0000000800cccc00","invokeExact_MT","java.lang.invoke.LambdaForm$DMH.0x0000000800cd1400","newInvokeSpecial","java.lang.String","checkBoundsSmall","jint_disjoint_arraycopy","processUpdateQueue","java.util.ArrayDeque","pollFirst","arrayof_jbyte_disjoint_arraycopy","upsert","java.util.concurrent.locks.ReentrantReadWriteLock$ReadLock","java.util.concurrent.locks.AbstractQueuedSynchronizer","acquireShared","java.util.concurrent.locks.ReentrantReadWriteLock$Sync","tryAcquireShared","getParameter","indexOf","getByteInternal","jdk.internal.foreign.SharedScope","checkValidState","clock_gettime","equalsIgnoreCase","regionMatches","os::javaTimeMillis","_utmpxname.cold.2","registerPendingSessions","java.util.concurrent.ConcurrentLinkedQueue","updateHead","guard_LL_V","java.lang.invoke.VarForm","getMemberName","putByte","iteratorFor","sun.nio.ch.Util$2","iterator","java.util.HashSet","java.util.HashMap","keySet","__commpage_gettimeofday_internal","processEvents","processReadyEvents","add","put","putVal","isAsciiString","__gettimeofday","byteSize","java.lang.Class","getComponentType","sun.nio.ch.Util","getTemporaryDirectBuffer","Recording::timerLoop","Profiler::flushJfr","MacThreadList::next","getHeader","java.lang.StringLatin1","regionMatchesCI","java.lang.CharacterDataLatin1","toUpperCase","getProperties","getPath","substring","newString","java.util.Arrays","copyOfRange","OptoRuntime::new_array_nozero_C","CollectedHeap::array_allocate","MemAllocator::allocate","_sigtramp","getSimpleName","reflectionData","java.lang.ref.SoftReference","compareAndSetState","OptoRuntime::new_array_C","MemAllocator::Allocation::notify_allocation","AllocTracer::trapHandler","Profiler::recordSample","OS::threadId","_kernelrpc_mach_port_deallocate_trap","addHeader","ConcurrentGCThread::run","G1ServiceThread::run_service","G1ServiceThread::sleep_before_next_cycle","guard_LLL_Z","java.lang.invoke.VarHandleReferences$FieldInstanceReadWrite","compareAndSet","java.util.HashMap$KeyIterator","next","java.util.HashMap$HashIterator","nextNode","startParsingRequestBody","java.lang.Integer","parseInt","charAt","StatSamplerTask::task","isSmall","jint_arraycopy","JNI_OnLoad","java.nio.ByteBuffer","wrap","java.nio.HeapByteBuffer","java.nio.Buffer","limit","putIfAbsent","getNode","hash","hashCode","putBuffer","checkOffset","startsWith","isSet","OptoRuntime::new_instance_C","InstanceKlass::allocate_instance","gettimeofday",];
+
+    let currentHeatmap = executionsHeatmap;
+    let currentHeatmapType = 'executions';
+
+    let heatHeight = 60;
+
+    let heatLastSample = -1;
+    let heatActiveSample1 = -1;
+    let heatActiveSample2 = -1;
+    let heatDiffStart = -1;
+    let heatDiffEnd = -1;
+    let highlightStart = -1;
+    let highlightEnd = -1;
+
+    const titleText = document.getElementById("title").textContent;
+    document.getElementById("title").style.display = 'none';
+    document.title = titleText;
+
+    const heatCanvas = document.getElementById('heatmap-canvas');
+    const heatStatus = document.getElementById('status');
+    const heatCanvasWrapper = document.getElementById('heatmap-canvas-wrapper');
+    const heatCanvasContainer = document.getElementById('heatmap-canvas-container');
+
+    let heatC;
+    let prevDx = -1000000000;
+
+    let searchExecutedCount = 0;
+    let searchMax = 0;
+
+    const timeOptions = {
+        year: '2-digit',
+        month: '2-digit',
+        day: '2-digit',
+        timeZoneName: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 2
+    };
+
+    const timeOptionsShort = {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 2
+    };
+
+    const timeOptionsTiny = {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23',
+        //hour12: false
+    };
+
+    function methodInfo(methodIndex, out) {
+        if (methodIndex === -1) {
+            out.className = '';
+            out.methodName = 'all';
+            out.location = 0;
+            out.type = 3;
+            return;
+        }
+
+        methodIndex--;
+
+        let methodAndClass = methods.int36(methodIndex * 12);
+        let locationAndType = methods.int36(methodIndex * 12 + 6)
+        let className = (methodAndClass & 0x3FFFF) - 1;
+        let methodName = (methodAndClass >>> 18) - 1;
+
+        out.className = cpool[className];
+        out.methodName = cpool[methodName];
+        out.location = locationAndType >>> 4;
+        out.type = locationAndType & 15;
+    }
+
+    function title(methodIndex, out) {
+        methodInfo(methodIndex, out);
+        const codeLine = (out.location & 0xffff);
+        let locationSuffix = codeLine === 0 ? "" : (":" + codeLine);
+
+        if (out.methodName === '') {
+            return out.className + locationSuffix;
+        }
+        if (out.className === '') {
+            return out.methodName + locationSuffix;
+        }
+        if (out.type >= 3 && out.type <= 5) {
+            return out.methodName + locationSuffix;
+        }
+
+        return out.className + "." + out.methodName + locationSuffix;
+    }
+
+    let bgInterval = null;
+    let bgTasks = [];
+    let cooldownTime = 0;
+    let nextTask = 0;
+
+    function addTask(id, iteration, afterFrame) {
+        for (let t of bgTasks) {
+            if (t.id === id) {
+                t.f = iteration;
+                t.a = afterFrame;
+                return;
+            }
+        }
+
+        bgTasks.push({id: id, f: iteration, a: afterFrame});
+        if (bgTasks.length === 1) {
+            bgInterval = setInterval(function() {
+                let start = performance.now();
+                if (start <= cooldownTime) {
+                    return;
+                }
+                let overflow = false;
+                do {
+                    let task = bgTasks[nextTask];
+                    if (task.f()) {
+                        nextTask++;
+                    } else {
+                        bgTasks.splice(nextTask, 1);
+                        if (bgTasks.length === 0) {
+                            clearInterval(bgInterval);
+                            nextTask = 0;
+                            return;
+                        }
+                    }
+
+                    if (nextTask >= bgTasks.length) {
+                        nextTask = 0;
+                        overflow = true;
+                    }
+                } while(performance.now() - start < 8);
+
+                for (let q = 0; q < overflow ? bgTasks.length : nextTask; q++) {
+                    bgTasks[q].a();
+                }
+            })
+        }
+    }
+
+    function prepareFrames(from, to) {
+        let mul = zoomToGroupSize[currentHeatmap.zoom];
+        from *= mul;
+        to = (to + 1) * mul - 1;
+        if (to >= currentHeatmap.blocks.length) {
+            to = currentHeatmap.blocks.length - 1;
+        }
+
+        const frames = new Queue();
+        const root = new Map();
+        root.c = 0;
+        root.m = -1;
+        root.x = 0;
+        const roots = [root];
+        let levelsCount = 1;
+
+        for (let pos = from; pos <= to; pos++) {
+            const block = currentHeatmap.blocks[pos];
+
+            root.c += block.length;
+
+            for (let stack of block) {
+                levelsCount = Math.max(stack.length + 1, levelsCount);
+
+                frames.push(root);
+                frames.push(stack);
+            }
+        }
+
+        return [frames, roots, levelsCount]
+    }
+
+    function nextFrames(frames, level) {
+        frames.push(null);  // end stacks marker
+
+        let nowFrame = null;
+
+        while (true) {
+            const frame = frames.shift();
+            if (frame === null) {   // end stack marker
+                break;
+            }
+
+            const stack = frames.shift();
+            if (level >= stack.length) {
+                continue;
+            }
+
+            const methodId = stack[level];
+            nowFrame = frame.get(methodId);
+            if (nowFrame === undefined) {
+                nowFrame = new Map();
+                nowFrame.m = methodId;
+                nowFrame.c = 0;
+                frame.set(methodId, nowFrame);
+            }
+            nowFrame.c++;
+
+            frames.push(nowFrame);
+            frames.push(stack);
+        }
+    }
+
+    function renderTraces(from, to) {
+        let [frames, roots, levelsCount] = prepareFrames(from, to);
+        levels.length = 0;
+        for (let i = 0; i < levelsCount; i++) {
+            levels.push([]);
+        }
+
+        let currentLevel = 0;
+        let levelToRedraw = 0;
+        let methodInfoOut = {};
+
+        addTask('flame', function () {
+                nextFrames(frames, currentLevel);
+
+                let level = levels[currentLevel];
+                let nextRoots = [];
+                for (let root of roots) {
+                    let x = root.x;
+                    const t = title(root.m, methodInfoOut);
+                    let color = getColor(palette[methodInfoOut.type]);
+                    level.push({left: x, width: root.c, color: color, title: t});
+
+                    let nextFrames = [...root.values()];
+
+                    nextFrames.sort((k1, k2) => k2.c - k1.c);
+                    for (let frame of nextFrames) {
+                        frame.x = x;
+                        x += frame.c;
+                        nextRoots.push(frame);
+                    }
+                }
+                level.sort((k1, k2) => k1.left - k2.left);
+
+                roots = nextRoots;
+                currentLevel++;
+                if (currentLevel < levelsCount) {
+                    return true;
+                }
+                renderWithMatch(levelsCount * 16, levels[0][0], 0);
+                return false;
+            },
+            function () {
+                renderWithMatch(4096, levels[0][0], 0, levelToRedraw);
+                levelToRedraw = currentLevel;
+            });
+    }
+
+    function renderWithMatch(newCanvasHeight, root, level, minLevel) {
+        newCanvasHeight = Math.min(32767, newCanvasHeight);
+        if (canvasHeight !== newCanvasHeight) {
+            canvasHeight = newCanvasHeight;
+            canvas.style.height = canvasHeight + 'px';
+            canvas.height = canvasHeight * (devicePixelRatio || 1);
+            c = canvas.getContext('2d');
+            if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+            c.font = document.body.style.font;
+        }
+        const matched = render(root, level, minLevel);
+        if (pattern === undefined) {
+            document.getElementById('match').style.display = 'none';
+            document.getElementById('produced').style.display = 'inherit';
+        } else {
+            document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+            document.getElementById('match').style.display = 'inline-block';
+            document.getElementById('produced').style.display = 'none';
+        }
+    }
+
+    function renderDiff(from, to, baseFrom, baseTo) {
+        let [frames, roots, levelsCount] = prepareFrames(from, to);
+        let [baseFrames, baseRoots, ] = prepareFrames(baseFrom, baseTo);
+        roots[0].b = baseRoots[0];
+
+        levels.length = 0;
+        for (let i = 0; i < levelsCount; i++) {
+            levels.push([]);
+        }
+        let currentLevel = 0;
+        let levelToRedraw = 0;
+        let methodInfoOut = {};
+
+        let minDiff = 0;
+        let maxDiff = 0;
+
+        addTask('flame', function () {
+                nextFrames(frames, currentLevel);
+                nextFrames(baseFrames, currentLevel);
+                let level = levels[currentLevel];
+
+                for (let root of roots) {
+                    let wasCount = root.b === undefined ? 0 : root.b.c;
+                    if (wasCount !== 0) {
+                        maxDiff = Math.max(maxDiff, root.c - wasCount);
+                        minDiff = Math.min(minDiff, root.c - wasCount)
+                    }
+                }
+
+                let nextRoots = [];
+                for (let root of roots) {
+                    let x = root.x;
+
+                    let wasCount = root.b === undefined ? 0 : root.b.c;
+                    const t = title(root.m, methodInfoOut) + " (" + root.c + "/" + wasCount +")";
+                    let color;
+                    if (wasCount === 0) {
+                        color = "#dac571";
+                    } else if (wasCount >= root.c) {
+                        const ratio = (root.c - wasCount) / minDiff;
+                        color = 'rgb(' + (245 - 90 * ratio) + ',' + (250 - 90 * ratio) + ',' + 255 +')';
+                    } else {
+                        const ratio = (root.c - wasCount) / maxDiff;
+                        color = 'rgb(' + 255 + ',' + (245 - 180 * ratio) + ',' + (240 - 200 * ratio) +')';
+                    }
+                    level.push({left: x, width: root.c, color: color, title: t});
+
+                    let nextFrames = [];
+                    for (let [methodId, frame] of root) {
+                        frame.b = root.b && root.b.get(methodId);
+                        nextFrames.push(frame);
+                    }
+                    nextFrames.sort((k1, k2) => k2.c - k1.c);
+                    for (let frame of nextFrames) {
+                        frame.x = x;
+                        x += frame.c;
+                        nextRoots.push(frame);
+                    }
+                }
+                level.sort((k1, k2) => k1.left - k2.left);
+
+                roots = nextRoots;
+                currentLevel++;
+                if (currentLevel < levelsCount) {
+                    return true;
+                }
+                renderWithMatch(levelsCount * 16, levels[0][0], 0);
+                return false;
+            },
+            function () {
+                renderWithMatch(4096, levels[0][0], 0, levelToRedraw);
+                levelToRedraw = currentLevel;
+            });
+    }
+
+    function redrawHeatSamplesImpl(from, to, dx) {
+        const patternDraw = !!pattern;
+        const startBlock = currentHeatmap.startBlock();
+
+        const max = currentHeatmap.max();
+        const heatmap = currentHeatmap.heatmap();
+
+        for (let index = from; index <= to; index++) {
+            let color;
+            let i = index - startBlock;
+            if (i < 0 || i >= heatmap.length) {
+                color = '#ddd';
+            } else {
+                let count = heatmap[i];
+
+                let useFound = patternDraw && searchExecutedCount > i;
+                let maxValue = useFound ? searchMax : max;
+                let value = useFound ? found[i] : count;
+                let ratio = value / (maxValue || 1);
+
+                if (useFound) {
+                    if (ratio < 0.8) {
+                        let value = Math.round(255 - ratio * 255 / 0.8);
+                        color = 'rgb(' + value + ',' + value + ',255)';
+                    } else {
+                        let value = Math.round(255 - (ratio - 0.8) * 100 / 0.2);
+                        color = 'rgb(0,0,' + value + ')';
+                    }
+                } else {
+                    if (ratio < 0.8) {
+                        let value = Math.round(255 - ratio * 255 / 0.8);
+                        color = 'rgb(255,' + value + ',' + value + ')';
+                    } else {
+                        let value = Math.round(255 - (ratio - 0.8) * 100 / 0.2);
+                        color = 'rgb('+ value + ',0,0)';
+                    }
+                }
+
+            }
+            heatC.fillStyle = color;
+
+            let x = Math.floor(index / heatHeight);
+            let y = index % heatHeight;
+            heatC.fillRect(x * sq - dx, y * sq + canvasTimeHeight, sq, sq);
+        }
+
+        let blocksBetweenMarks = 20;
+
+        let fromBlock = Math.floor(from / blocksBetweenMarks / heatHeight) - 1;
+        let toBlock = Math.ceil(to / blocksBetweenMarks / heatHeight);
+
+        let markPixels = blocksBetweenMarks * sq;
+
+        heatC.fillStyle = '#fff';
+        heatC.fillRect(
+            fromBlock * markPixels - dx,
+            0,
+            (toBlock - fromBlock + 1) * markPixels,
+            canvasTimeHeight
+        );
+
+        heatC.beginPath();
+        heatC.moveTo(fromBlock * markPixels - dx + 0.5, canvasTimeHeight + 0.5);
+        heatC.lineTo(toBlock * markPixels - dx + 0.5, canvasTimeHeight + 0.5);
+        heatC.stroke();
+
+        heatC.fillStyle = '#000';
+
+        let groupSize = heatHeight;
+        let oneBlockMs = currentHeatmap.currentTimeBlock();
+        let oneGroupMs = oneBlockMs * groupSize;
+        let oneMarkMs = oneGroupMs * blocksBetweenMarks;
+        for (let markIndex = fromBlock; markIndex <= toBlock; markIndex++) {
+            let origin = Math.floor(startMs / oneMarkMs) * oneMarkMs;
+            let ms = origin + markIndex * oneMarkMs;
+            let markOffset = markIndex * markPixels - dx;
+
+            let title = new Date(ms).toLocaleTimeString(undefined, timeOptionsTiny);
+
+            let w = heatC.measureText(title).width;
+            let x = markOffset + (markPixels - w) / 2;
+            heatC.fillText(title, x, canvasTimeHeight - 1, markPixels);
+
+            heatC.beginPath();
+            heatC.moveTo(markOffset + 0.5, canvasTimeHeight - 2 * sqScale + 0.5);
+            heatC.lineTo(markOffset + 0.5, canvasTimeHeight + 2 * sqScale + 0.5);
+            heatC.stroke();
+        }
+    }
+
+    function redrawHeatSamples(from, to) {
+        let dx = Math.floor((heatCanvasContainer.scrollLeft - canvasScrollPadding) * sqScale);
+
+        from = Math.max(from, heatHeight * Math.floor(dx / sq));
+        to = Math.min(to, heatHeight * Math.ceil((dx + heatCanvas.width) / sq));
+        redrawHeatSamplesImpl(from, to, dx);
+    }
+
+    function redrawHeatMap() {
+        redrawHeatSamples(0, (1 + currentHeatmap.count() / heatHeight | 0) * heatHeight);
+    }
+
+    function fillCanvasWithEvents(zoom) {
+        searchExecutedCount = 0;
+        searchMax = 0;
+
+        addTask('search', function () {
+            return false;
+        }, function (){});
+
+        currentHeatmap.setZoom(zoom);
+        heatHeight = zoomToHeight[zoom];
+
+        const m = devicePixelRatio || 1;
+        sqScale = m;
+        sqPx = 5;
+        sq = Math.floor(sqPx * m);
+        sqPx = sq / m;
+        canvasTimeHeight = sq * 2 + 2;
+        canvasTimeHeightPx = canvasTimeHeight / m;
+
+        const widthPx = canvasScrollPadding + heatCanvasContainer.offsetWidth + canvasScrollPadding;
+        const heightPx = sqPx * heatHeight + canvasTimeHeightPx;
+
+        const heatWidthPx = Math.max(20, Math.ceil(currentHeatmap.count() / heatHeight)) * sqPx;
+        heatCanvasWrapper.style.width = heatWidthPx + 'px';
+        if (heatCanvasContainer.offsetWidth > heatWidthPx) {
+            heatCanvasContainer.style.overflowX = 'hidden';
+        } else {
+            heatCanvasContainer.style.overflowX = 'scroll';
+        }
+
+        heatCanvas.width = Math.ceil(widthPx * m);
+        heatCanvas.height = Math.ceil(heightPx * m);
+        heatCanvas.style.width = widthPx + 'px';
+        heatCanvas.style.height = heightPx + 'px';
+
+        heatC = heatCanvas.getContext('2d');
+        heatC.font = sq * 2 + 'px Verdana, sans-serif';
+        heatC.lineWidth = 1;
+        heatC.strokeStyle = '#000';
+
+        document.getElementById('heatmap-height-line').textContent = [' 1 sec : 20 ms ',' 1 min : 1 sec ',' 5 min : 5 sec ',' 1 hr  : 1 min '][currentHeatmap.zoom];
+        redrawHeatMap();
+    }
+
+    let found = new Uint32Array(0);
+
+    function searchIterative(r) {
+        if (r && (r = prompt('Enter regexp to search:', '')) === null) {
+            return;
+        }
+        searchExecutedCount = 0;
+        searchMax = 0;
+        if (!r) {
+            pattern = undefined;
+            redrawHeatMap();
+            addTask('search', function () {
+                return false;
+            }, function (){});
+            return;
+        }
+        let renderFrom = 0;
+        let heatmap = currentHeatmap.heatmap();
+        let count = heatmap.length;
+        found = new Uint32Array(count);
+        let start = currentHeatmap.startBlock();
+        function renderFunc() {
+            redrawHeatSamples(start + renderFrom, start + searchExecutedCount - 1);
+            renderFrom = searchExecutedCount;
+        }
+        pattern = r ? RegExp(r) : undefined;
+        const matchedMethods = new Set();
+        const methodOut = {};
+        for (let index = methods.data.length / 12; index >= 0; index--) {
+            if (pattern.test(title(index, methodOut))) {
+                matchedMethods.add(index);
+            }
+        }
+
+        let mul = zoomToGroupSize[currentHeatmap.zoom];
+
+        addTask('search', function () {
+            let amount = 0;
+            const from = searchExecutedCount * mul;
+            const to = (searchExecutedCount + 1) * mul;
+            for (let i = from; i < to; i++) {
+                const stacks = currentHeatmap.blocks[i];
+                if (stacks === undefined) {
+                    continue;
+                }
+
+                for (let stack of stacks) {
+                    for (let methodIndex of stack) {
+                        if (matchedMethods.has(methodIndex)) {
+                            amount++;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (searchMax < amount) {
+                renderFrom = 0;
+                searchMax = amount;
+            }
+
+            found[searchExecutedCount] = amount;
+            searchExecutedCount++;
+            if (searchExecutedCount >= count) {
+                renderFunc();
+
+                const matched = render(root, rootLevel);
+                document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+                document.getElementById('match').style.display = r ? 'inherit' : 'none';
+                document.getElementById('produced').style.display = r ? 'none' : 'inherit';
+
+                return false;
+            }
+            return true;
+        }, renderFunc);
+
+    }
+
+    function renderHeatmap() {
+        let dx = heatCanvasContainer.scrollLeft - canvasScrollPadding;
+        heatCanvas.style.transform = 'translate(' + dx + 'px, 0px)';
+
+        const width = Math.floor(heatCanvasContainer.offsetWidth / sq / (devicePixelRatio || 1));
+
+        let z = 0;
+        for (; z < zoomToGroupSize.length; z++) {
+            if (currentHeatmap.blocks.length / (zoomToGroupSize[z] * zoomToHeight[z]) < width) {
+                break;
+            }
+        }
+
+        fillCanvasWithEvents(Math.min(z, currentHeatmap.maxZoom - 1));
+
+        renderTraces(0, currentHeatmap.heatmap().length - 1);
+    }
+
+    heatCanvasContainer.addEventListener('scroll', function() {
+        let dx = Math.floor((heatCanvasContainer.scrollLeft - canvasScrollPadding) * sqScale);
+        let dxPx = dx / sqScale;
+        heatCanvas.style.transform = 'translate(' + dxPx + 'px, 0px)';
+        let delta = Math.abs(dx - prevDx);
+        if (delta >= heatCanvas.width || searchExecutedCount !== 0) {
+            redrawHeatMap();
+        } else {
+            heatC.drawImage(heatCanvas, prevDx - dx, 0);
+            if (prevDx < dx) {
+                let from = heatHeight * Math.floor((prevDx + heatCanvas.width) / sq);
+                let to = heatHeight * Math.ceil((dx + heatCanvas.width) / sq);
+                redrawHeatSamplesImpl(from, to, dx);
+            } else {
+                let from = heatHeight * Math.floor(dx / sq);
+                let to = heatHeight * Math.ceil(prevDx / sq);
+                redrawHeatSamplesImpl(from, to, dx);
+            }
+        }
+        prevDx = dx;
+        cooldownTime = performance.now() + 500;
+    });
+
+    document.getElementById('heatmap-height-line').onclick = function() {
+        fillCanvasWithEvents((currentHeatmap.maxZoom + currentHeatmap.zoom - 1) % (currentHeatmap.maxZoom));
+        highlightStart = highlightEnd = heatDiffStart = heatDiffEnd = heatActiveSample1 = heatActiveSample2 = -1;
+        for (let suffix of ['Selection', 'Diff', 'Active']) {
+            for (let prefix of ['left', 'leftMiddle', 'middle', 'rightMiddle', 'right']) {
+                document.getElementById(prefix + suffix).style.display = 'none';
+            }
+        }
+    }
+
+    function callHighlightRedraw(start, end, suffix) {
+        let left = document.getElementById('left' + suffix);
+        let leftMiddle = document.getElementById('leftMiddle' + suffix);
+        let middle = document.getElementById('middle' + suffix);
+        let rightMiddle = document.getElementById('rightMiddle' + suffix);
+        let right = document.getElementById('right' + suffix);
+
+        let x1 = Math.floor(start / heatHeight);
+        let y1 = start % heatHeight;
+        let x2 = Math.floor(end / heatHeight);
+        let y2 = end % heatHeight;
+
+        let veryStartX = x1 * sqPx;
+        let veryStartY = y1 * sqPx;
+        let veryEndX = x2 * sqPx;
+        let px = 1 / sqScale;
+        let singleElementWidth = sqPx + px;
+
+        let topPadding = canvasTimeHeightPx;
+
+        if (x1 === x2) {
+            left.style.display = 'none';
+            right.style.display = 'none';
+
+            for (let b of [middle, leftMiddle, rightMiddle]) {
+                b.style.left = veryStartX + 'px';
+                b.style.top = topPadding + veryStartY + 'px';
+                b.style.width = singleElementWidth + 'px';
+                b.style.height = (y2 - y1 + 1) * sqPx + px + 'px';
+                b.style.display = 'block';
+            }
+        } else {
+            left.style.left = veryStartX + 'px';
+            left.style.top = topPadding + veryStartY + 'px';
+            left.style.width = singleElementWidth + 'px';
+            left.style.height = (heatHeight - y1) * sqPx + px + 'px';
+            left.style.display = 'block';
+
+            leftMiddle.style.left = veryStartX + 'px';
+            leftMiddle.style.top = topPadding + 'px';
+            leftMiddle.style.width = singleElementWidth + 'px';
+            leftMiddle.style.height = y1 * sqPx + px + 'px';
+            leftMiddle.style.display = 'block';
+
+            rightMiddle.style.left = veryEndX + 'px';
+            rightMiddle.style.top = topPadding + (y2 + 1) * sqPx + 'px';
+            rightMiddle.style.width = sqPx + px + 'px';
+            rightMiddle.style.height = (heatHeight - y2 - 1) * sqPx + px + 'px';
+            rightMiddle.style.display = 'block';
+
+            right.style.left = veryEndX + 'px';
+            right.style.top = topPadding + 'px';
+            right.style.width = sqPx + px + 'px';
+            right.style.height = (y2 + 1) * sqPx + px + 'px';
+            right.style.display = 'block';
+
+            if (x2 - x1 === 1) {
+                middle.style.display = 'none';
+            } else {
+                middle.style.left = veryStartX + sqPx + px + 'px';
+                middle.style.top = topPadding + 'px';
+                middle.style.width = (x2 - x1 - 1) * sqPx - px + 'px';
+                middle.style.height = heatHeight * sqPx + px + 'px';
+                middle.style.display = 'block';
+            }
+        }
+    }
+
+    function callSelectionRedraw(sample, shiftPressed, ctrlPressed) {
+        if (ctrlPressed) {
+            highlightStart = sample;
+            highlightEnd = sample + Math.abs(heatActiveSample1 - heatActiveSample2);
+        } else if (shiftPressed && heatActiveSample1 !== -1) {
+            highlightStart = Math.min(heatActiveSample1, sample);
+            highlightEnd = Math.max(heatActiveSample1, sample);
+        } else {
+            highlightStart = highlightEnd = sample;
+        }
+
+        callHighlightRedraw(highlightStart, highlightEnd, 'Selection');
+
+        const index = sample - currentHeatmap.startBlock();
+        const heatmap = currentHeatmap.heatmap();
+        if (index >= 0 && index < heatmap.length) {
+            const ms = startMs + currentHeatmap.currentTimeBlock() * index;
+            const total =  heatmap[index];
+            const max = currentHeatmap.max();
+            heatCanvas.title = new Date(ms).toLocaleTimeString(undefined, timeOptionsShort) + " " + index;  // FIXME
+            const totalText = "total: " + total + " (" + Math.floor(total / max * 100) + "%)";
+            const searchText = searchExecutedCount > index
+                ? "; match: " + found[index] + " (" + Math.floor(found[index] / Math.max(total, 1) * 100) + "%)"
+                : "";
+            status.textContent = totalText + searchText;
+            status.style.display = 'inline';
+        } else {
+            status.style.display = 'none';
+        }
+    }
+
+    function callActiveRedraw(sample, shiftPressed, ctrlPressed) {
+        if (ctrlPressed) {
+            let minSelected = Math.min(heatActiveSample1, heatActiveSample2);
+            let maxSelected = Math.max(heatActiveSample1, heatActiveSample2);
+
+            heatDiffStart = highlightStart;
+            heatDiffEnd = highlightEnd;
+
+            callHighlightRedraw(highlightStart, highlightEnd, 'Diff');
+            renderDiff(
+                minSelected - currentHeatmap.startBlock(),
+                maxSelected - currentHeatmap.startBlock(),
+                heatDiffStart - currentHeatmap.startBlock(),
+                heatDiffEnd - currentHeatmap.startBlock()
+            );
+        } else {
+            heatDiffStart = -1;
+            heatDiffEnd = -1;
+            if (shiftPressed && heatActiveSample1 !== -1) {
+                heatActiveSample2 = sample;
+            } else {
+                heatActiveSample1 = heatActiveSample2 = sample;
+            }
+
+            let minSelected = Math.min(heatActiveSample1, heatActiveSample2);
+            let maxSelected = Math.max(heatActiveSample1, heatActiveSample2);
+
+            callHighlightRedraw(highlightStart, highlightEnd, 'Diff');
+            callHighlightRedraw(minSelected, maxSelected, 'Active');
+            renderTraces(
+                Math.max(0, minSelected - currentHeatmap.startBlock()),
+                Math.min(currentHeatmap.heatmap().length - 1, maxSelected - currentHeatmap.startBlock())
+            );
+        }
+    }
+
+    window.addEventListener('keydown', function (e) {
+        if (e.key === 'Shift') {
+            callSelectionRedraw(heatLastSample, true, e.ctrlKey);
+        } else if (e.key === 'Control') {
+            callSelectionRedraw(heatLastSample, e.shiftKey, true);
+        }
+    });
+
+    window.addEventListener('keyup', function (e) {
+        if (e.key === 'Shift') {
+            callSelectionRedraw(heatLastSample, false, e.ctrlKey);
+        } else if (e.key === 'Control') {
+            callSelectionRedraw(heatLastSample, e.shiftKey, false);
+        }
+    });
+
+    heatCanvas.onmousemove = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        if (y >= heatHeight) {
+            y = heatHeight - 1;
+        }
+        heatLastSample = x * heatHeight + y;
+        if ((event.buttons & 1) === 1) {
+            callSelectionRedraw(heatLastSample, true, event.ctrlKey);
+        } else {
+            callSelectionRedraw(heatLastSample, event.shiftKey, event.ctrlKey);
+        }
+    }
+
+    heatCanvas.onmouseout = function () {
+        status.style.display = 'none';
+    };
+
+    heatCanvas.onmousedown = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        let sample = x * heatHeight + y;
+
+        callActiveRedraw(sample, event.shiftKey, event.ctrlKey);
+    };
+
+    heatCanvas.onmouseup = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        let sample = x * heatHeight + y;
+
+        callActiveRedraw(sample, true, event.ctrlKey);
+    };
+
+
+
+init();
+// FIXME search(/*highlight:*/);
+</script></body></html>
