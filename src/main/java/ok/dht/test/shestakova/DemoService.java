@@ -27,6 +27,7 @@ public class DemoService implements Service {
     private final ServiceConfig config;
     private HttpServer server;
     private MemorySegmentDao dao;
+    private long flushThreshold = 1 << 20; // 1 MB
 
     public DemoService(ServiceConfig config) {
         this.config = config;
@@ -34,7 +35,7 @@ public class DemoService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        dao = new MemorySegmentDao(new Config(config.workingDir(), 1024));
+        dao = new MemorySegmentDao(new Config(config.workingDir(), flushThreshold));
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
