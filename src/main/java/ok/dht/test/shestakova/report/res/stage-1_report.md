@@ -453,6 +453,10 @@ Running 30s test @ http://localhost:19234
 **CPU**
 ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/put_cpu.jpg)
 
+- большая часть процессорного времени идёт на работу ядра (работа с сетевым протоколом, syscalls), запросами (one.nio);
+- ~3% затрачивается на работу с MemorySegment;
+- ~1% времени идёт на работу БД.
+
 **alloc**
 ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/put_alloc.jpg)
 
@@ -465,6 +469,10 @@ Running 30s test @ http://localhost:19234
 ##### GET-запросы
 **CPU**
 ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/get_cpu.jpg)
+
+- ~22% затрачивается на работу с MemorySegment, ScopedMemoryAccess;
+- ~30% времени идёт на работу БД (работа с итераторами MergeIterator, IndexedPeekIterator; методы upsert, compare), а на MemoryAccess;
+- остальная часть процессорного времени идёт на работу ядра (работа с сетевым протоколом, syscalls), запросами (one.nio);
 
 **alloc**
 ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/get_alloc.jpg)
