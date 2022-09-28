@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -230,6 +231,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             }
         } catch (InterruptedException e) {
             LOG.error(e.getMessage());
+            throw new InterruptedIOException();
         }
         currentState = state;
         currentState.storage.close();
