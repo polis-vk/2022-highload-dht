@@ -5,9 +5,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Collection;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -121,7 +121,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 } finally {
                     upsertLock.writeLock().unlock();
                 }
-                storage.maybeClose();
+                // Empty
                 return null;
             } catch (Exception e) {
                 LOG.error("Can't flush", e);
@@ -188,7 +188,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 upsertLock.writeLock().unlock();
             }
 
-            st.storage.maybeClose();
+            // Empty
             return null;
         });
 

@@ -23,12 +23,10 @@ class Storage implements Closeable {
     private final ResourceScope scope;
     private final List<MemorySegment> sstables;
     private final boolean hasTombstones;
-    private static final Cleaner CLEANER = Cleaner.create(r -> new Thread(r, "Storage-Cleaner") {
-        @Override
-        public synchronized void start() {
-            setDaemon(true);
-            super.start();
-        }
+    private static final Cleaner CLEANER = Cleaner.create(r -> {
+        final Thread th = new Thread(r, "Storage-Cleaner");
+        th.setDaemon(true);
+        return th;
     });
 
     private static final long VERSION = 0;
@@ -54,7 +52,9 @@ class Storage implements Closeable {
         while (0 < 1) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
-                sstables.add(mapForRead(scope, nextFile));
+                long size = Files.size(nextFile);
+
+                sstables.add(MemorySegment.mapFile(nextFile, 0, size, FileChannel.MapMode.READ_ONLY, scope));
             } catch (NoSuchFileException e) {
                 break;
             }
@@ -90,7 +90,13 @@ class Storage implements Closeable {
             long entriesCount = 0;
             boolean hasTombstone = false;
             for (Entry<MemorySegment> entry : entries) {
-                size += getSize(entry);
+                long result;
+                if (entry.value() == null) {
+                    result = Long.BYTES + entry.key().byteSize() + Long.BYTES;
+                } else {
+                    result = Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
+                }
+                size += result;
                 if (entry.isTombstone()) {
                     hasTombstone = true;
                 }
@@ -128,16 +134,14 @@ class Storage implements Closeable {
         Files.move(sstableTmpPath, sstablePath, StandardCopyOption.ATOMIC_MOVE);
     }
 
-    private static long getSize(Entry<MemorySegment> entry) {
-        if (entry.value() == null) {
-            return Long.BYTES + entry.key().byteSize() + Long.BYTES;
-        } else {
-            return Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
-        }
-    }
-
     public static long getSizeOnDisk(Entry<MemorySegment> entry) {
-        return getSize(entry) + INDEX_RECORD_SIZE;
+        long result;
+        if (entry.value() == null) {
+            result = Long.BYTES + entry.key().byteSize() + Long.BYTES;
+        } else {
+            result = Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
+        }
+        return result + INDEX_RECORD_SIZE;
     }
 
     private static long writeRecord(MemorySegment nextSSTable, long offset, MemorySegment record) {
@@ -149,13 +153,6 @@ class Storage implements Closeable {
         MemoryAccess.setLongAtOffset(nextSSTable, offset, recordSize);
         nextSSTable.asSlice(offset + Long.BYTES, recordSize).copyFrom(record);
         return Long.BYTES + recordSize;
-    }
-
-    @SuppressWarnings("DuplicateThrows")
-    private static MemorySegment mapForRead(ResourceScope scope, Path file) throws NoSuchFileException, IOException {
-        long size = Files.size(file);
-
-        return MemorySegment.mapFile(file, 0, size, FileChannel.MapMode.READ_ONLY, scope);
     }
 
     public static void compact(Config config, Data data) throws IOException {
@@ -307,10 +304,6 @@ class Storage implements Closeable {
                 continue;
             }
         }
-    }
-
-    public void maybeClose() {
-        // Empty
     }
 
     public boolean isClosed() {
