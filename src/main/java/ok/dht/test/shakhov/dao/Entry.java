@@ -1,4 +1,4 @@
-package ok.dht.test.shakhov.storage;
+package ok.dht.test.shakhov.dao;
 
 public interface Entry<D> {
     D key();

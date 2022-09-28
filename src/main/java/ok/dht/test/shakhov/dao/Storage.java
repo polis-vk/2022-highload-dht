@@ -1,4 +1,4 @@
-package ok.dht.test.shakhov.storage;
+package ok.dht.test.shakhov.dao;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -40,17 +40,16 @@ class Storage implements Closeable {
     private static final String FILE_EXT_TMP = ".tmp";
     private static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
 
-    static Storage load(Config config) throws IOException {
-        Path basePath = config.basePath();
-        Path compactedFile = config.basePath().resolve(COMPACTED_FILE);
+    static Storage load(DaoConfig daoConfig) throws IOException {
+        Path basePath = daoConfig.basePath();
+        Path compactedFile = daoConfig.basePath().resolve(COMPACTED_FILE);
         if (Files.exists(compactedFile)) {
-            finishCompact(config, compactedFile);
+            finishCompact(daoConfig, compactedFile);
         }
 
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
-        // FIXME check existing files
         for (int i = 0; ; i++) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
@@ -66,11 +65,11 @@ class Storage implements Closeable {
 
     // it is supposed that entries can not be changed externally during this method call
     static void save(
-            Config config,
+            DaoConfig daoConfig,
             Storage previousState,
             Collection<Entry<MemorySegment>> entries) throws IOException {
         int nextSSTableIndex = previousState.sstables.size();
-        Path sstablePath = config.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
+        Path sstablePath = daoConfig.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
         save(entries::iterator, sstablePath);
     }
 
@@ -159,21 +158,21 @@ class Storage implements Closeable {
         return MemorySegment.mapFile(file, 0, size, FileChannel.MapMode.READ_ONLY, scope);
     }
 
-    public static void compact(Config config, Data data) throws IOException {
-        Path compactedFile = config.basePath().resolve(COMPACTED_FILE);
+    public static void compact(DaoConfig daoConfig, Data data) throws IOException {
+        Path compactedFile = daoConfig.basePath().resolve(COMPACTED_FILE);
         save(data, compactedFile);
-        finishCompact(config, compactedFile);
+        finishCompact(daoConfig, compactedFile);
     }
 
-    private static void finishCompact(Config config, Path compactedFile) throws IOException {
+    private static void finishCompact(DaoConfig daoConfig, Path compactedFile) throws IOException {
         for (int i = 0; ; i++) {
-            Path nextFile = config.basePath().resolve(FILE_NAME + i + FILE_EXT);
+            Path nextFile = daoConfig.basePath().resolve(FILE_NAME + i + FILE_EXT);
             if (!Files.deleteIfExists(nextFile)) {
                 break;
             }
         }
 
-        Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
+        Files.move(compactedFile, daoConfig.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
     }
 
     // supposed to have fresh files first
@@ -205,7 +204,6 @@ class Storage implements Closeable {
         }
         long recordsCount = MemoryAccess.getLongAtOffset(sstable, 8);
         if (key == null) {
-            // fixme
             return recordsCount;
         }
 

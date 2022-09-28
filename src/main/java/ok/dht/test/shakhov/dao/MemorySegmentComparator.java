@@ -1,10 +1,11 @@
-package ok.dht.test.shakhov.storage;
+package ok.dht.test.shakhov.dao;
 
-import java.util.Comparator;
 import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;
 
-public class MemorySegmentComparator implements Comparator<MemorySegment> {
+import java.util.Comparator;
+
+public final class MemorySegmentComparator implements Comparator<MemorySegment> {
 
     public static final Comparator<MemorySegment> INSTANCE = new MemorySegmentComparator();
 

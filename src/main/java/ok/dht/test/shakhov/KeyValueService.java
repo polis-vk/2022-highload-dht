@@ -1,17 +1,14 @@
 package ok.dht.test.shakhov;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.concurrent.CompletableFuture;
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.shakhov.storage.BaseEntry;
-import ok.dht.test.shakhov.storage.Config;
-import ok.dht.test.shakhov.storage.Dao;
-import ok.dht.test.shakhov.storage.Entry;
-import ok.dht.test.shakhov.storage.MemorySegmentDao;
+import ok.dht.test.shakhov.dao.BaseEntry;
+import ok.dht.test.shakhov.dao.Dao;
+import ok.dht.test.shakhov.dao.DaoConfig;
+import ok.dht.test.shakhov.dao.Entry;
+import ok.dht.test.shakhov.dao.MemorySegmentDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -23,20 +20,26 @@ import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
 
-public class StorageService implements Service {
+import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 
-    private final ServiceConfig config;
+public class KeyValueService implements Service {
+    private static final int DEFAULT_FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
+
+    private final ServiceConfig serviceConfig;
     private HttpServer server;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
 
-    public StorageService(ServiceConfig config) {
-        this.config = config;
+    public KeyValueService(ServiceConfig serviceConfig) {
+        this.serviceConfig = serviceConfig;
     }
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        dao = new MemorySegmentDao(new Config(java.nio.file.Path.of("/home/ishakhov/"), 4096));
-        server = new HttpServer(createHttpServerConfigFromPort(config.selfPort())) {
+        DaoConfig daoConfig = new DaoConfig(serviceConfig.workingDir(), DEFAULT_FLUSH_THRESHOLD_BYTES);
+        dao = new MemorySegmentDao(daoConfig);
+        HttpServerConfig httpServerConfig = createHttpServerConfigFromPort(serviceConfig.selfPort());
+        server = new HttpServer(httpServerConfig) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
                 session.sendResponse(badRequest());
@@ -50,7 +53,6 @@ public class StorageService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
-        dao.flush();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
@@ -61,7 +63,7 @@ public class StorageService implements Service {
         if (id.isEmpty()) {
             return badRequest();
         }
-        MemorySegment key = MemorySegment.ofByteBuffer(ByteBuffer.wrap(Utf8.toBytes(id)));
+        MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
         Entry<MemorySegment> entry = dao.get(key);
         if (entry == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
@@ -71,12 +73,12 @@ public class StorageService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(@Param(value = "id", required = true) String id, Request request) {
+    public Response handlePut(@Param(value = "id", required = true) String id, Request request) throws IOException {
         if (id.isEmpty()) {
             return badRequest();
         }
-        MemorySegment key = MemorySegment.ofByteBuffer(ByteBuffer.wrap(Utf8.toBytes(id)));
-        MemorySegment value = MemorySegment.ofByteBuffer(ByteBuffer.wrap(request.getBody()));
+        MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
+        MemorySegment value = MemorySegment.ofArray(request.getBody());
         Entry<MemorySegment> entry = new BaseEntry<>(key, value);
         dao.upsert(entry);
         return new Response(Response.CREATED, Response.EMPTY);
@@ -84,11 +86,11 @@ public class StorageService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) String id) {
+    public Response handleDelete(@Param(value = "id", required = true) String id) throws IOException {
         if (id.isEmpty()) {
             return badRequest();
         }
-        MemorySegment key = MemorySegment.ofByteBuffer(ByteBuffer.wrap(Utf8.toBytes(id)));
+        MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
         Entry<MemorySegment> entry = new BaseEntry<>(key, null);
         dao.upsert(entry);
         return new Response(Response.ACCEPTED, Response.EMPTY);
@@ -99,7 +101,7 @@ public class StorageService implements Service {
         AcceptorConfig acceptor = new AcceptorConfig();
         acceptor.port = port;
         acceptor.reusePort = true;
-        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+        httpConfig.acceptors = new AcceptorConfig[] { acceptor };
         return httpConfig;
     }
 
@@ -112,7 +114,7 @@ public class StorageService implements Service {
 
         @Override
         public Service create(ServiceConfig config) {
-            return new StorageService(config);
+            return new KeyValueService(config);
         }
     }
 }

@@ -1,8 +1,8 @@
-package ok.dht.test.shakhov.storage;
+package ok.dht.test.shakhov.dao;
 
 import java.nio.file.Path;
 
-public record Config(
+public record DaoConfig(
         Path basePath,
         long flushThresholdBytes) {
 }

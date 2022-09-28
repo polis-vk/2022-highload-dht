@@ -1,4 +1,4 @@
-package ok.dht.test.shakhov.storage;
+package ok.dht.test.shakhov.dao;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -61,7 +61,7 @@ public interface Dao<D, E extends Entry<D>> extends Closeable {
      * Inserts of replaces entry.
      * @param entry element to upsert
      */
-    void upsert(E entry);
+    void upsert(E entry) throws IOException;
 
     /**
      * Persists data (no-op by default).
