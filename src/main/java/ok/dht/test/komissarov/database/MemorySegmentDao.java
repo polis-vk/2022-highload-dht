@@ -231,8 +231,9 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             }
         } catch (InterruptedException e) {
             LOG.error(e.getMessage());
-            throw new InterruptedIOException();
+            Thread.currentThread().interrupt();
         }
+
         currentState = state;
         currentState.storage.close();
         state = currentState.afterClosed();
