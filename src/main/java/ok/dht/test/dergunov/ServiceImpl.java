@@ -22,12 +22,21 @@ import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 public final class ServiceImpl implements Service {
+
+    private static final long DEFAULT_FLUSH_THRESHOLD_BYTES = 4194304; // 4 MB
     private HttpServer server;
     private final ServiceConfig config;
     private MemorySegmentDao database;
 
-    ServiceImpl(ServiceConfig config) {
+    private final long flushThresholdBytes;
+
+    ServiceImpl(ServiceConfig config, long flushThresholdBytes) {
         this.config = config;
+        this.flushThresholdBytes = flushThresholdBytes;
+    }
+
+    ServiceImpl(ServiceConfig config) {
+        this(config, DEFAULT_FLUSH_THRESHOLD_BYTES);
     }
 
     private static byte[] toBytes(MemorySegment data) {
@@ -44,7 +53,7 @@ public final class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        database = new MemorySegmentDao(new Config(config.workingDir(), 10240000));
+        database = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {

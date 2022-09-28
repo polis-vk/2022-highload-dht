@@ -1,7 +1,6 @@
 package ok.dht.test.dergunov;
 
 import ok.dht.ServiceConfig;
-import ok.dht.test.drozdov.DemoService;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -12,16 +11,20 @@ import java.util.concurrent.TimeoutException;
 
 public final class ServerTest {
 
+    private ServerTest() {
+    }
+
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException, TimeoutException {
-        int port = 8081;
+        int port = 8084;
         String url = "http://localhost:" + port;
-        ServiceConfig cfg = new ServiceConfig(
+        ServiceConfig config = new ServiceConfig(
                 port,
                 url,
                 Collections.singletonList(url),
-                Files.createTempDirectory("server")
+                Files.createTempDirectory("server3")
         );
-        new DemoService(cfg).start().get(1, TimeUnit.SECONDS);
+        new ServiceImpl(config).start().get(1, TimeUnit.SECONDS);
+
         System.out.println("Socket is ready: " + url);
     }
 }
