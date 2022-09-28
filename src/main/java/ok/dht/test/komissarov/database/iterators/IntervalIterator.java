@@ -14,11 +14,11 @@ public class IntervalIterator implements Iterator<Entry<MemorySegment>> {
     private final ResourceScope scope;
     private long pos;
 
-    public IntervalIterator(MemorySegment sstable, long keyFromPos, long KeyToPos, ResourceScope scope) {
+    public IntervalIterator(MemorySegment sstable, long keyFromPos, long keyToPos, ResourceScope scope) {
         this.sstable = sstable;
         this.scope = scope;
         pos = keyFromPos;
-        last = KeyToPos;
+        last = keyToPos;
     }
 
     @Override

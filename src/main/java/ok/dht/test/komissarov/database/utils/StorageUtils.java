@@ -14,18 +14,7 @@ public final class StorageUtils {
 
     private static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
     private static final int INDEX_RECORD_SIZE = Long.BYTES;
-    private static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
-        @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
-                @Override
-                public synchronized void start() {
-                    setDaemon(true);
-                    super.start();
-                }
-            };
-        }
-    });
+    private static final Cleaner CLEANER = Cleaner.create(new CustomThreadFactory());
 
     private StorageUtils() {
 
@@ -59,10 +48,22 @@ public final class StorageUtils {
     }
 
     public static RuntimeException checkForClose(IllegalStateException e, ResourceScope scope) {
-        if (!scope.isAlive()) {
-            throw new StorageClosedException(e);
-        } else {
+        if (scope.isAlive()) {
             throw e;
+        }
+        throw new StorageClosedException(e);
+    }
+
+    private static class CustomThreadFactory implements ThreadFactory {
+        @Override
+        public Thread newThread(Runnable r) {
+            return new Thread(r, "Storage-Cleaner") {
+                @Override
+                public synchronized void start() {
+                    setDaemon(true);
+                    super.start();
+                }
+            };
         }
     }
 
