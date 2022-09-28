@@ -14,7 +14,10 @@ import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 import org.iq80.leveldb.DB;
+import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.Options;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
@@ -22,6 +25,8 @@ import java.util.concurrent.CompletableFuture;
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
 public class ServiceImpl implements Service {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ServiceImpl.class);
 
     private final ServiceConfig config;
     private HttpServer server;
@@ -81,28 +86,36 @@ public class ServiceImpl implements Service {
             );
         }
 
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> {
-                byte[] result = dao.get(Utf8.toBytes(id));
-                if (result == null) {
-                    return new Response(Response.NOT_FOUND, Response.EMPTY);
-                } else {
-                    return new Response(Response.OK, result);
+        try {
+            switch (request.getMethod()) {
+                case Request.METHOD_GET -> {
+                    byte[] result = dao.get(Utf8.toBytes(id));
+                    if (result == null) {
+                        return new Response(Response.NOT_FOUND, Response.EMPTY);
+                    } else {
+                        return new Response(Response.OK, result);
+                    }
+                }
+                case Request.METHOD_PUT -> {
+                    dao.put(Utf8.toBytes(id), request.getBody());
+
+                    return new Response(Response.CREATED, Response.EMPTY);
+                }
+                case Request.METHOD_DELETE -> {
+                    dao.delete(Utf8.toBytes(id));
+
+                    return new Response(Response.ACCEPTED, Response.EMPTY);
+                }
+                default -> {
+                    return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
                 }
             }
-            case Request.METHOD_PUT -> {
-                dao.put(Utf8.toBytes(id), request.getBody());
-
-                return new Response(Response.CREATED, Response.EMPTY);
-            }
-            case Request.METHOD_DELETE -> {
-                dao.delete(Utf8.toBytes(id));
-
-                return new Response(Response.ACCEPTED, Response.EMPTY);
-            }
-            default -> {
-                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            }
+        } catch (DBException exception) {
+            LOG.error("Internal dao exception occurred on" + request.getPath(), exception);
+            return new Response(
+                    Response.INTERNAL_ERROR,
+                    Utf8.toBytes("An error occurred when accessing database.")
+            );
         }
     }
 
