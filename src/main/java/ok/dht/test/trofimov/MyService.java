@@ -57,16 +57,16 @@ public class MyService implements Service {
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(@Param(value = "id", required = true) String id) throws IOException {
         if (id.isEmpty()) {
-            return getCloseReponse(Response.BAD_REQUEST, Response.EMPTY);
+            return createResponse(Response.BAD_REQUEST, Response.EMPTY);
         }
         Entry<String> entry = dao.get(id);
         if (entry == null) {
-            return getCloseReponse(Response.NOT_FOUND, Response.EMPTY);
+            return createResponse(Response.NOT_FOUND, Response.EMPTY);
         }
         String value = entry.value();
         char[] chars = value.toCharArray();
 
-        return getCloseReponse(Response.OK, Base64.decodeFromChars(chars));
+        return createResponse(Response.OK, Base64.decodeFromChars(chars));
 
     }
 
@@ -74,28 +74,26 @@ public class MyService implements Service {
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(Request request, @Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
-            return getCloseReponse(Response.BAD_REQUEST, Response.EMPTY);
+            return createResponse(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         byte[] value = request.getBody();
         dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
-        return getCloseReponse(Response.CREATED, Response.EMPTY);
+        return createResponse(Response.CREATED, Response.EMPTY);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(@Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
-            return getCloseReponse(Response.BAD_REQUEST, Response.EMPTY);
+            return createResponse(Response.BAD_REQUEST, Response.EMPTY);
         }
         dao.upsert(new BaseEntry<>(id, null));
-        return getCloseReponse(Response.ACCEPTED, Response.EMPTY);
+        return createResponse(Response.ACCEPTED, Response.EMPTY);
     }
 
-    private Response getCloseReponse(String status, byte[] body) {
-        Response response = new Response(status, body);
-        response.addHeader(CONNECTION_CLOSE);
-        return response;
+    private Response createResponse(String status, byte[] body) {
+        return new Response(status, body);
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {

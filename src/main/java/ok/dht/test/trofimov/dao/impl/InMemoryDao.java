@@ -33,7 +33,7 @@ public class InMemoryDao implements Dao<String, Entry<String>> {
     protected static final String DATA_EXT = ".dat";
     protected static final String INDEX_EXT = ".ind";
     protected static final String ALL_FILES = "files.fl";
-    public static final int CAPACITY = 2;
+    public static final int CAPACITY = 10;
 
     private ConcurrentNavigableMap<String, Entry<String>> data = new ConcurrentSkipListMap<>();
     private volatile boolean commit = true;
