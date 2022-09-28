@@ -7,13 +7,10 @@ import jdk.incubator.foreign.ResourceScope;
 import java.io.Closeable;
 import java.io.IOException;
 import java.lang.ref.Cleaner;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 
