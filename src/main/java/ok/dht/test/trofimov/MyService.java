@@ -23,7 +23,6 @@ import java.util.concurrent.CompletableFuture;
 
 public class MyService implements Service {
 
-    private static final String CONNECTION_CLOSE = "Connection: close";
     private final ServiceConfig config;
     private HttpServer server;
     private InMemoryDao dao;
