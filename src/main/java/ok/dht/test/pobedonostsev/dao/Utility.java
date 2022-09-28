@@ -36,4 +36,27 @@ public final class Utility {
         }
         return ~left;
     }
+
+    public static boolean checkRange(MemorySegment sstable, MemorySegment key) {
+        long fileVersion = MemoryAccess.getLongAtOffset(sstable, 0);
+        if (fileVersion != 0) {
+            throw new IllegalStateException("Unknown file version: " + fileVersion);
+        }
+        long recordsCount = MemoryAccess.getLongAtOffset(sstable, 8);
+        // Smallest key
+        long keyPos = MemoryAccess.getLongAtOffset(sstable, Storage.INDEX_HEADER_SIZE);
+        long keySize = MemoryAccess.getLongAtOffset(sstable, keyPos);
+        MemorySegment keyForCheck = sstable.asSlice(keyPos + Long.BYTES, keySize);
+        int comparedResult = MemorySegmentComparator.INSTANCE.compare(key, keyForCheck);
+        if (comparedResult < 0) {
+            return false;
+        }
+        // Biggest key
+        keyPos = MemoryAccess.getLongAtOffset(sstable,
+                Storage.INDEX_HEADER_SIZE + (recordsCount - 1) * Storage.INDEX_RECORD_SIZE);
+        keySize = MemoryAccess.getLongAtOffset(sstable, keyPos);
+        keyForCheck = sstable.asSlice(keyPos + Long.BYTES, keySize);
+        comparedResult = MemorySegmentComparator.INSTANCE.compare(key, keyForCheck);
+        return comparedResult <= 0;
+    }
 }

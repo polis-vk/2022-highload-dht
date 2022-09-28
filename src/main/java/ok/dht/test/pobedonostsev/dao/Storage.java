@@ -187,9 +187,12 @@ class Storage implements Closeable {
         try {
             for (int i = sstables.size() - 1; i >= 0; i--) {
                 MemorySegment sstable = sstables.get(i);
-                long keyFromPos = Utility.entryIndex(sstable, key);
-                if (keyFromPos >= 0) {
-                    return entryAt(sstable, keyFromPos);
+                boolean maybeInThis = Utility.checkRange(sstable, key);
+                if (maybeInThis) {
+                    long keyFromPos = Utility.entryIndex(sstable, key);
+                    if (keyFromPos >= 0) {
+                        return entryAt(sstable, keyFromPos);
+                    }
                 }
             }
             return null;
