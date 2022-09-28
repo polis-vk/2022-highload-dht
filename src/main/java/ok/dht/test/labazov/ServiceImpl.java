@@ -20,7 +20,6 @@ public class ServiceImpl implements Service {
     public CompletableFuture<?> start() throws IOException {
         server = new HttpApi(config);
         server.start();
-        server.addRequestHandlers(this);
         return CompletableFuture.completedFuture(null);
     }
 

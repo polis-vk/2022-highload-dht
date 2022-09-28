@@ -21,7 +21,7 @@ public class HttpApi extends HttpServer {
     @Override
     public synchronized void start() {
         try {
-            dao = new MemorySegmentDao(new Config(config.workingDir(), 1024 * 1024));
+            dao = new MemorySegmentDao(new Config(config.workingDir(), 8 * 1024 * 1024));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
