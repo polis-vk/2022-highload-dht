@@ -2,7 +2,6 @@ package ok.dht.test.kovalenko;
 
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
-import ok.dht.kovalenko.dao.DaoFiller;
 import ok.dht.kovalenko.dao.LSMDao;
 import ok.dht.kovalenko.dao.aliases.TypedBaseEntry;
 import ok.dht.kovalenko.dao.aliases.TypedEntry;
@@ -14,7 +13,7 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
-import ru.mail.polis.test.kovalenko.ByteBufferDaoFactory;
+import ok.dht.kovalenko.dao.base.ByteBufferDaoFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
