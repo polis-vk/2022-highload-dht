@@ -25,7 +25,5 @@ public final class ServerTest {
                 Files.createTempDirectory("server3")
         );
         new ServiceImpl(config).start().get(1, TimeUnit.SECONDS);
-
-        System.err.println("Socket is ready: " + url);
     }
 }

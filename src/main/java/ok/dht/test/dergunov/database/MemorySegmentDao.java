@@ -223,6 +223,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 isTerminated = executor.awaitTermination(10, TimeUnit.DAYS);
             } while (!isTerminated);
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
         }
         state = this.stateDao;

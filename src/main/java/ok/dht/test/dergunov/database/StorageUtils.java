@@ -21,6 +21,9 @@ import static ok.dht.test.dergunov.database.Storage.INDEX_RECORD_SIZE;
 
 final class StorageUtils {
 
+    private StorageUtils() {
+    }
+
     static void save(
             Config config,
             Storage previousState,
