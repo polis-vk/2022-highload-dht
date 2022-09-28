@@ -5,8 +5,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -39,17 +39,18 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-        if (from == null) {
-            from = VERY_FIRST_KEY;
+        MemorySegment copyFrom = from;
+        if (copyFrom == null) {
+            copyFrom = VERY_FIRST_KEY;
         }
 
-        return getTombstoneFilteringIterator(from, to);
+        return getTombstoneFilteringIterator(copyFrom, to);
     }
 
     private TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment from, MemorySegment to) {
         State state = accessState();
 
-        ArrayList<Iterator<Entry<MemorySegment>>> iterators = state.storage.iterate(from, to);
+        List<Iterator<Entry<MemorySegment>>> iterators = state.storage.iterate(from, to);
 
         iterators.add(state.flushing.get(from, to));
         iterators.add(state.memory.get(from, to));
@@ -217,8 +218,10 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
         executor.shutdown();
         try {
-            //noinspection StatementWithEmptyBody
-            while (!executor.awaitTermination(10, TimeUnit.DAYS)) ;
+            boolean isTerminated;
+            do {
+                isTerminated = executor.awaitTermination(10, TimeUnit.DAYS);
+            } while (!isTerminated);
         } catch (InterruptedException e) {
             throw new IllegalStateException(e);
         }

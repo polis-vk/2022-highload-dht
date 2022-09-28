@@ -137,9 +137,10 @@ final class Storage implements Closeable {
             }
         };
     }
-    public ArrayList<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
+
+    public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
         try {
-            ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
+            List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
             for (MemorySegment sstable : sstables) {
                 iterators.add(iterate(sstable, keyFrom, keyTo));
             }

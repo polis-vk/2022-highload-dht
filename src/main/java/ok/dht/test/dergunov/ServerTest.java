@@ -26,6 +26,6 @@ public final class ServerTest {
         );
         new ServiceImpl(config).start().get(1, TimeUnit.SECONDS);
 
-        System.out.println("Socket is ready: " + url);
+        System.err.println("Socket is ready: " + url);
     }
 }

@@ -14,7 +14,10 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 
-public class StorageUtils {
+import static ok.dht.test.dergunov.database.Storage.INDEX_HEADER_SIZE;
+import static ok.dht.test.dergunov.database.Storage.INDEX_RECORD_SIZE;
+
+public abstract class StorageUtils {
     // it is supposed that entries can not be changed externally during this method call
     static void save(
             Config config,
@@ -91,15 +94,17 @@ public class StorageUtils {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
-                Entry<MemorySegment> entry = iterator.next();
-                size += getSize(entry);
+            Iterator<Entry<MemorySegment>> entryIterator = entries.iterator();
+            while (entryIterator.hasNext()) {
+                Entry<MemorySegment> entry = entryIterator.next();
+                size += StorageUtils.getSize(entry);
                 if (entry.isTombstone()) {
                     hasTombstone = true;
                 }
                 entriesCount++;
             }
-            long dataStart = Storage.INDEX_HEADER_SIZE + Storage.INDEX_RECORD_SIZE * entriesCount;
+
+            long dataStart = INDEX_HEADER_SIZE + INDEX_RECORD_SIZE * entriesCount;
             MemorySegment nextSSTable = MemorySegment.mapFile(
                     sstableTmpPath,
                     0,
@@ -109,12 +114,14 @@ public class StorageUtils {
             );
             long index = 0;
             long offset = dataStart;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
+            Iterator<Entry<MemorySegment>> iterator = entries.iterator();
+            while (iterator.hasNext()) {
                 Entry<MemorySegment> entry = iterator.next();
-                MemoryAccess.setLongAtOffset(nextSSTable, Storage.INDEX_HEADER_SIZE + index
-                        * Storage.INDEX_RECORD_SIZE, offset);
-                offset += writeRecord(nextSSTable, offset, entry.key());
-                offset += writeRecord(nextSSTable, offset, entry.value());
+                MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
+
+                offset += StorageUtils.writeRecord(nextSSTable, offset, entry.key());
+                offset += StorageUtils.writeRecord(nextSSTable, offset, entry.value());
+
                 index++;
             }
             MemoryAccess.setLongAtOffset(nextSSTable, 0, Storage.VERSION);
@@ -134,6 +141,6 @@ public class StorageUtils {
     }
 
     public static long getSizeOnDisk(Entry<MemorySegment> entry) {
-        return getSize(entry) + Storage.INDEX_RECORD_SIZE;
+        return getSize(entry) + INDEX_RECORD_SIZE;
     }
 }
