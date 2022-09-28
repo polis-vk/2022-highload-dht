@@ -5,12 +5,10 @@ import jdk.incubator.foreign.MemorySegment;
 
 import java.util.Comparator;
 
-public class MemorySegmentComparator implements Comparator<MemorySegment> {
-
+public final class MemorySegmentComparator implements Comparator<MemorySegment> {
     public static final Comparator<MemorySegment> INSTANCE = new MemorySegmentComparator();
 
-    private MemorySegmentComparator() {
-    }
+    private MemorySegmentComparator() {}
 
     @Override
     public int compare(MemorySegment m1, MemorySegment m2) {

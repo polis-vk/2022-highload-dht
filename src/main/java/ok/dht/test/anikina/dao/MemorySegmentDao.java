@@ -3,10 +3,15 @@ package ok.dht.test.anikina.dao;
 import jdk.incubator.foreign.MemorySegment;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.NoSuchElementException;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -30,18 +35,18 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
         if (from == null) {
-            from = VERY_FIRST_KEY;
+            return getTombstoneFilteringIterator(VERY_FIRST_KEY, to);
         }
         return getTombstoneFilteringIterator(from, to);
     }
 
     private TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment from, MemorySegment to) {
-        DaoState state = accessState();
+        DaoState daoState = accessState();
 
-        ArrayList<Iterator<Entry<MemorySegment>>> iterators = state.storage.iterate(from, to);
+        List<Iterator<Entry<MemorySegment>>> iterators = daoState.storage.iterate(from, to);
 
-        iterators.add(state.flushing.get(from, to));
-        iterators.add(state.memory.get(from, to));
+        iterators.add(daoState.flushing.get(from, to));
+        iterators.add(daoState.memory.get(from, to));
 
         Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
 
@@ -50,11 +55,11 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public Entry<MemorySegment> get(MemorySegment key) {
-        DaoState state = accessState();
+        DaoState daoState = accessState();
 
-        Entry<MemorySegment> result = state.memory.get(key);
+        Entry<MemorySegment> result = daoState.memory.get(key);
         if (result == null) {
-            result = state.storage.get(key);
+            result = daoState.storage.get(key);
         }
 
         return (result == null || result.isTombstone()) ? null : result;
@@ -62,13 +67,12 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public void upsert(Entry<MemorySegment> entry) {
-        DaoState state = accessState();
-
+        DaoState daoState = accessState();
         boolean runFlush;
         // it is intentionally the read lock!!!
         upsertLock.readLock().lock();
         try {
-            runFlush = state.memory.put(entry.key(), entry);
+            runFlush = daoState.memory.put(entry.key(), entry);
         } finally {
             upsertLock.readLock().unlock();
         }
@@ -82,8 +86,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         while (true) {
             upsertLock.writeLock().lock();
             try {
-                DaoState state = accessState();
-                if (state.isFlushing()) {
+                DaoState daoState = accessState();
+                if (daoState.isFlushing()) {
                     if (tolerateFlushInProgress) {
                         // or any other completed future
                         return CompletableFuture.completedFuture(null);
@@ -91,8 +95,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                     continue;
                 }
 
-                state = state.prepareForFlush();
-                this.state = state;
+                daoState = daoState.prepareForFlush();
+                this.state = daoState;
             } finally {
                 upsertLock.writeLock().unlock();
             }
@@ -100,7 +104,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     }
 
     @Override
-    public void flush() throws IOException {
+    public void flush() {
         boolean runFlush;
         // it is intentionally the read lock!!!
         upsertLock.writeLock().lock();
@@ -117,7 +121,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     }
 
     @Override
-    public void compact() throws IOException {
+    public void compact() {
         DaoState preCompactState = accessState();
 
         if (preCompactState.memory.isEmpty() && preCompactState.storage.isCompacted()) {
@@ -125,16 +129,16 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
 
         Future<Object> future = executor.submit(() -> {
-            DaoState state = accessState();
+            DaoState daoState = accessState();
 
-            if (state.memory.isEmpty() && state.storage.isCompacted()) {
+            if (daoState.memory.isEmpty() && daoState.storage.isCompacted()) {
                 return null;
             }
 
             Storage.compact(
                     config,
                     () -> MergeIterator.of(
-                            state.storage.iterate(VERY_FIRST_KEY,
+                            daoState.storage.iterate(VERY_FIRST_KEY,
                                     null
                             ),
                             EntryKeyComparator.INSTANCE
@@ -145,7 +149,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
             upsertLock.writeLock().lock();
             try {
-                this.state = state.afterCompact(storage);
+                this.state = daoState.afterCompact(storage);
             } finally {
                 upsertLock.writeLock().unlock();
             }
@@ -156,28 +160,22 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         awaitAndUnwrap(future);
     }
 
-    private void awaitAndUnwrap(Future<?> future) throws IOException {
+    private void awaitAndUnwrap(Future<?> future) {
         try {
             future.get();
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         } catch (ExecutionException e) {
-            try {
-                throw e.getCause();
-            } catch (RuntimeException | IOException | Error r) {
-                throw r;
-            } catch (Throwable t) {
-                throw new RuntimeException(t);
-            }
+            throw new RuntimeException(e.getCause());
         }
     }
 
     private DaoState accessState() {
-        DaoState state = this.state;
-        if (state.closed) {
+        DaoState daoState = this.state;
+        if (daoState.closed) {
             throw new IllegalStateException("Dao is already closed");
         }
-        return state;
+        return daoState;
     }
 
     @Override
@@ -189,7 +187,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         executor.shutdown();
         try {
             //noinspection StatementWithEmptyBody
-            while (!executor.awaitTermination(10, TimeUnit.DAYS)) ;
+            while (!executor.awaitTermination(10, TimeUnit.DAYS)) {}
         } catch (InterruptedException e) {
             throw new IllegalStateException(e);
         }
