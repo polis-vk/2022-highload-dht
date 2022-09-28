@@ -1,8 +1,6 @@
 package ok.dht.test.drozdov;
 
 import ok.dht.ServiceConfig;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.util.Collections;
