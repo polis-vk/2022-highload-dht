@@ -22,19 +22,31 @@ public final class ServerImpl {
     public static void main(String[] args) throws IOException {
         int port = 19234;
         String url = "http://localhost:" + port;
+        var temporary = Files.createTempDirectory("server");
         ServiceConfig cfg = new ServiceConfig(
                 port,
                 url,
                 Collections.singletonList(url),
-                Files.createTempDirectory("server")
-        );
+                temporary);
         ServiceImpl service = new ServiceImpl(cfg);
         try {
             service.start().get(1, TimeUnit.SECONDS);
-            System.out.println("Socket is ready: " + url);
+            Constants.LOG.info("Socket is ready: {}", url);
         } catch (Exception e) {
-            service.stop();
-            Constants.LOG.error("Service stopped. Exception: {}", e.getMessage());
+            Constants.LOG.error("Service needs to be stopped. Exception: {}", e.getMessage());
+            try {
+                service.stop().get(1, TimeUnit.SECONDS);
+            } catch (Exception stopException) {
+                Constants.LOG.error("Service threw an exception, while stopping {}", stopException.getMessage());
+            }
+            try {
+                // Java doesn't delete temporary directory
+                if (Files.exists(temporary)) {
+                    Files.delete(temporary);
+                }
+            } catch (IOException deletingException) {
+                Constants.LOG.error("Unable to delete temporary dirrectory {}", deletingException.getMessage());
+            }
         }
     }
 }

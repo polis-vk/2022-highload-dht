@@ -14,6 +14,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import static ok.dht.test.nadutkin.database.impl.StorageMethods.getSizeOnDisk;
 
 public final class UtilsClass {
+    private UtilsClass() {
+    }
 
     public interface Data extends Iterable<Entry<MemorySegment>> {
         Iterator<Entry<MemorySegment>> iterator();

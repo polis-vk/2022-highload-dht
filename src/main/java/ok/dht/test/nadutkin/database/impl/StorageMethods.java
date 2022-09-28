@@ -1,6 +1,8 @@
 package ok.dht.test.nadutkin.database.impl;
 
-import jdk.incubator.foreign.*;
+import jdk.incubator.foreign.MemoryAccess;
+import jdk.incubator.foreign.MemorySegment;
+import jdk.incubator.foreign.ResourceScope;
 import ok.dht.test.nadutkin.database.Config;
 import ok.dht.test.nadutkin.database.Entry;
 
@@ -13,9 +15,19 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 
-import static ok.dht.test.nadutkin.database.impl.Constants.*;
+import static ok.dht.test.nadutkin.database.impl.Constants.CLEANER;
+import static ok.dht.test.nadutkin.database.impl.Constants.COMPACTED_FILE;
+import static ok.dht.test.nadutkin.database.impl.Constants.FILE_EXT;
+import static ok.dht.test.nadutkin.database.impl.Constants.FILE_EXT_TMP;
+import static ok.dht.test.nadutkin.database.impl.Constants.FILE_NAME;
+import static ok.dht.test.nadutkin.database.impl.Constants.INDEX_HEADER_SIZE;
+import static ok.dht.test.nadutkin.database.impl.Constants.INDEX_RECORD_SIZE;
+import static ok.dht.test.nadutkin.database.impl.Constants.VERSION;
 
 public final class StorageMethods {
+    private StorageMethods() {
+    }
+
     public static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
         Path compactedFile = config.basePath().resolve(COMPACTED_FILE);
@@ -24,7 +36,7 @@ public final class StorageMethods {
         }
 
         ArrayList<MemorySegment> sstables = new ArrayList<>();
-        ResourceScope scope = ResourceScope.newSharedScope(Constants.CLEANER);
+        ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
         boolean haveFile = true;
         int index = 0;

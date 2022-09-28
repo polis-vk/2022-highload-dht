@@ -22,7 +22,6 @@ import one.nio.server.SelectorThread;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
@@ -30,7 +29,6 @@ public class ServiceImpl implements Service {
     private final ServiceConfig config;
     private HttpServer server;
     private MemorySegmentDao dao;
-
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
     }
@@ -38,13 +36,9 @@ public class ServiceImpl implements Service {
     private byte[] getBytes(String message) {
         return message.getBytes(StandardCharsets.UTF_8);
     }
-
     @Override
     public CompletableFuture<?> start() throws IOException {
         long flushThresholdBytes = 1_000_000;
-        if (!Files.exists(config.workingDir())) {
-            Files.createTempDirectory(config.workingDir().getFileName().toString());
-        }
         dao = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override

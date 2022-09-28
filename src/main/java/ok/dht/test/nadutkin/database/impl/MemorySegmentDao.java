@@ -201,17 +201,17 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     }
 
     private UtilsClass.State accessState() {
-        UtilsClass.State state = this.state;
-        if (state.closed) {
+        UtilsClass.State accessState = this.state;
+        if (accessState.closed) {
             throw new IllegalStateException("Dao is already closed");
         }
-        return state;
+        return accessState;
     }
 
     @Override
     public synchronized void close() throws IOException {
-        UtilsClass.State state = this.state;
-        if (state.closed) {
+        UtilsClass.State closeState = this.state;
+        if (closeState.closed) {
             return;
         }
         executor.shutdown();
@@ -220,14 +220,15 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 Constants.LOG.info("Waiting for termination to close");
             }
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new RuntimeException(e);
         }
-        state = this.state;
-        state.storage.close();
-        this.state = state.afterClosed();
-        if (state.memory.isEmpty()) {
+        closeState = this.state;
+        closeState.storage.close();
+        this.state = closeState.afterClosed();
+        if (closeState.memory.isEmpty()) {
             return;
         }
-        StorageMethods.save(config, state.storage, state.memory.values());
+        StorageMethods.save(config, closeState.storage, closeState.memory.values());
     }
 }

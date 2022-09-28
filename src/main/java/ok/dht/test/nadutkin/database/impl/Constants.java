@@ -4,19 +4,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.ref.Cleaner;
-import java.util.concurrent.ThreadFactory;
 
 public final class Constants {
-    public static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
+    private Constants() {
+    }
+
+    public static final Cleaner CLEANER = Cleaner.create(r -> new Thread(r, "Storage-Cleaner") {
         @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
-                @Override
-                public synchronized void start() {
-                    setDaemon(true);
-                    super.start();
-                }
-            };
+        public synchronized void start() {
+            setDaemon(true);
+            super.start();
         }
     });
     public static final Logger LOG = LoggerFactory.getLogger(MemorySegmentDao.class);
