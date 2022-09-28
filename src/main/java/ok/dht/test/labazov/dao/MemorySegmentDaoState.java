@@ -7,7 +7,8 @@ public class MemorySegmentDaoState {
     final Storage storage;
     final boolean closed;
 
-    MemorySegmentDaoState(Config config, MemorySegmentDaoMemory memory, MemorySegmentDaoMemory flushing, Storage storage) {
+    MemorySegmentDaoState(Config config, MemorySegmentDaoMemory memory,
+                          MemorySegmentDaoMemory flushing, Storage storage) {
         this.config = config;
         this.memory = memory;
         this.flushing = flushing;

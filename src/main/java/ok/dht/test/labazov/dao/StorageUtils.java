@@ -13,13 +13,16 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 
-import static ok.dht.test.labazov.dao.Storage.*;
 
 public class StorageUtils {
     private static final String FILE_NAME = "data";
     private static final String FILE_EXT = ".dat";
     private static final String FILE_EXT_TMP = ".tmp";
     private static final long VERSION = 0;
+
+    private StorageUtils() {
+    }
+
     static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
         Path compactedFile = config.basePath().resolve(Storage.COMPACTED_FILE);
@@ -85,7 +88,7 @@ public class StorageUtils {
                 entriesCount++;
             }
 
-            long dataStart = INDEX_HEADER_SIZE + INDEX_RECORD_SIZE * entriesCount;
+            long dataStart = Storage.INDEX_HEADER_SIZE + Storage.INDEX_RECORD_SIZE * entriesCount;
 
             MemorySegment nextSSTable = MemorySegment.mapFile(
                     sstableTmpPath,
@@ -98,10 +101,10 @@ public class StorageUtils {
             long index = 0;
             long offset = dataStart;
             for (Entry<MemorySegment> entry : entries) {
-                MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
+                MemoryAccess.setLongAtOffset(nextSSTable, Storage.INDEX_HEADER_SIZE + index * Storage.INDEX_RECORD_SIZE, offset);
 
-                offset += writeRecord(nextSSTable, offset, entry.key());
-                offset += writeRecord(nextSSTable, offset, entry.value());
+                offset += Storage.writeRecord(nextSSTable, offset, entry.key());
+                offset += Storage.writeRecord(nextSSTable, offset, entry.value());
 
                 index++;
             }
