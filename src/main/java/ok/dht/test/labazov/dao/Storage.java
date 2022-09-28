@@ -15,20 +15,20 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.ThreadFactory;
 
 class Storage implements Closeable {
+    // supposed to have fresh files first
 
-    private static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
+    private final ResourceScope scope;
+    private final List<MemorySegment> sstables;
+    private final boolean hasTombstones;
+    private static final Cleaner CLEANER = Cleaner.create(r -> new Thread(r, "Storage-Cleaner") {
         @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
-                @Override
-                public synchronized void start() {
-                    setDaemon(true);
-                    super.start();
-                }
-            };
+        public synchronized void start() {
+            setDaemon(true);
+            super.start();
         }
     });
 
@@ -51,14 +51,15 @@ class Storage implements Closeable {
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
-        // FIXME check existing files
-        for (int i = 0; ; i++) {
+        int i = 0;
+        while (true) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));
             } catch (NoSuchFileException e) {
                 break;
             }
+            i++;
         }
 
         boolean hasTombstones = !sstables.isEmpty() && MemoryAccess.getLongAtOffset(sstables.get(0), 16) == 1;
@@ -89,8 +90,7 @@ class Storage implements Closeable {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
-                Entry<MemorySegment> entry = iterator.next();
+            for (Entry<MemorySegment> entry : entries) {
                 size += getSize(entry);
                 if (entry.isTombstone()) {
                     hasTombstone = true;
@@ -110,8 +110,7 @@ class Storage implements Closeable {
 
             long index = 0;
             long offset = dataStart;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
-                Entry<MemorySegment> entry = iterator.next();
+            for (Entry<MemorySegment> entry : entries) {
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
                 offset += writeRecord(nextSSTable, offset, entry.key());
@@ -177,13 +176,7 @@ class Storage implements Closeable {
         Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
     }
 
-    // supposed to have fresh files first
-
-    private final ResourceScope scope;
-    private final ArrayList<MemorySegment> sstables;
-    private final boolean hasTombstones;
-
-    private Storage(ResourceScope scope, ArrayList<MemorySegment> sstables, boolean hasTombstones) {
+    private Storage(ResourceScope scope, List<MemorySegment> sstables, boolean hasTombstones) {
         this.scope = scope;
         this.sstables = sstables;
         this.hasTombstones = hasTombstones;
@@ -206,7 +199,6 @@ class Storage implements Closeable {
         }
         long recordsCount = MemoryAccess.getLongAtOffset(sstable, 8);
         if (key == null) {
-            // fixme
             return recordsCount;
         }
 
@@ -286,7 +278,7 @@ class Storage implements Closeable {
 
     // last is newer
     // it is ok to mutate list after
-    public ArrayList<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
+    public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
         try {
             ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
             for (MemorySegment sstable : sstables) {
@@ -313,12 +305,13 @@ class Storage implements Closeable {
                 scope.close();
                 return;
             } catch (IllegalStateException ignored) {
+                continue;
             }
         }
     }
 
     public void maybeClose() {
-
+        // Empty
     }
 
     public boolean isClosed() {
@@ -335,8 +328,7 @@ class Storage implements Closeable {
         return !hasTombstones;
     }
 
-    public interface Data {
-        Iterator<Entry<MemorySegment>> iterator() throws IOException;
+    public interface Data extends Iterable<Entry<MemorySegment>> {
     }
 
 }

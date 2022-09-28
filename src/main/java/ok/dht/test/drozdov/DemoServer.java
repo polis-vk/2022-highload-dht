@@ -29,6 +29,6 @@ public final class DemoServer {
                 Files.createTempDirectory("server")
         );
         new DemoService(cfg).start().get(1, TimeUnit.SECONDS);
-        System.out.println("Socket is ready: " + url);
+//        System.out.println("Socket is ready: " + url);
     }
 }

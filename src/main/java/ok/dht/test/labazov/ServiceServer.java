@@ -27,6 +27,6 @@ public final class ServiceServer {
                 Files.createTempDirectory("highload-server")
         );
         new ServiceImpl(cfg).start().get(1, TimeUnit.SECONDS);
-        System.out.println("Socket is ready: " + url);
+//        System.out.println("Socket is ready: " + url);
     }
 }
