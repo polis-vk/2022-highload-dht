@@ -1,20 +1,20 @@
-package ok.dht.test.anikina;
+package ok.dht.test.anikina.utils;
 
 import jdk.incubator.foreign.MemorySegment;
 
-final class MemorySegmentUtils {
+public final class MemorySegmentUtils {
     private MemorySegmentUtils() {
     }
 
-    static byte[] toBytes(MemorySegment s) {
+    public static byte[] toBytes(MemorySegment s) {
         return s == null ? null : s.toByteArray();
     }
 
-    static MemorySegment fromBytes(byte[] bytes) {
+    public static MemorySegment fromBytes(byte[] bytes) {
         return bytes == null ? null : MemorySegment.ofArray(bytes);
     }
 
-    static MemorySegment fromString(String data) {
+    public static MemorySegment fromString(String data) {
         return data == null ? null : MemorySegment.ofArray(data.toCharArray());
     }
 }
