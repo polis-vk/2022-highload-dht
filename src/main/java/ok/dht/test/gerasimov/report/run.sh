@@ -43,7 +43,7 @@ function async_profiler_stop() {
   cd "$path" || exit
 }
 
-echo "      ___                       ___           ___                   "
+echo "      ___                       ___           ___                  "
 echo "     /  /\          ___        /  /\         /  /\          ___    "
 echo "    /  /:/_        /  /\      /  /::\       /  /::\        /  /\   "
 echo "   /  /:/ /\      /  /:/     /  /:/\:\     /  /:/\:\      /  /:/   "

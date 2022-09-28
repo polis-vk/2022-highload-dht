@@ -22,125 +22,225 @@ request = function()
 end
 ```
 
-Команда wrk2 для put запросов:
+Скрипт для запуска профайлинга и wrk2:
 ```shell
-wrk2 -d 60 -t 1 -c 1 -R $rate -s put.lua http://localhost:25565
+#!/bin/bash
+#paths to scripts
+lua_put_path="put.lua"
+lua_get_path="get.lua"
+path_to_async_profiler="/Users/michael/Desktop/async-profiler/async-profiler"
+
+#server configuration
+server_host="localhost"
+server_port=25565
+server_name="Server"
+
+#wrk2 configuration
+wrk2_duration=60
+wrk2_threads=1
+wrk2_connections=1
+
+function wrk2_start() {
+  local rate=$1
+  local type=$2
+  local type_request=$3
+  local file_name="wrk2_${type_request}_rate_${rate}.txt"
+  local file_path="$PWD/$file_name"
+  wrk2 -d $wrk2_duration -t $wrk2_threads -c $wrk2_connections -R "$rate" -s "$type" -L "http://${server_host}:${server_port}" > "$file_path"
+}
+
+function async_profiler_start() {
+  local file_name=$1
+  local file_path="$PWD/$file_name"
+  local path=$PWD
+  cd $path_to_async_profiler || exit
+  source "./profiler.sh" -e cpu,alloc --alloc 512 -f "$file_path" start Server
+  echo "async-profiler started"
+  cd "$path" || exit
+}
+
+function async_profiler_stop() {
+  local file_name=$1
+  local file_path="$PWD/$file_name"
+  local path=$PWD
+  cd $path_to_async_profiler || exit
+  source "./profiler.sh" -f "$file_path" stop "$server_name"
+  echo "async-profiler stopped"
+  cd "$path" || exit
+}
+
+echo "      ___                       ___           ___                  "
+echo "     /  /\          ___        /  /\         /  /\          ___    "
+echo "    /  /:/_        /  /\      /  /::\       /  /::\        /  /\   "
+echo "   /  /:/ /\      /  /:/     /  /:/\:\     /  /:/\:\      /  /:/   "
+echo "  /  /:/ /::\    /  /:/     /  /:/~/::\   /  /:/~/:/     /  /:/    "
+echo " /__/:/ /:/\:\  /  /::\    /__/:/ /:/\:\ /__/:/ /:/___  /  /::\    "
+echo " \  \:\/:/~/:/ /__/:/\:\   \  \:\/:/__\/ \  \:\/:::::/ /__/:/\:\   "
+echo "  \  \::/ /:/  \__\/  \:\   \  \::/       \  \::/~~~~  \__\/  \:\  "
+echo "   \__\/ /:/        \  \:\   \  \:\        \  \:\           \  \:\ "
+echo "     /__/:/          \__\/    \  \:\        \  \:\           \__\/ "
+echo "     \__\/                     \__\/         \__\/                 "
+echo "                                                                   "
+
+rates=(1000 3000 5000 8000 12000 15000 20000)
+
+for rate in "${rates[@]}"; do
+  type_request="put"
+  file_name="async-profiler_${type_request}_rate_${rate}.jfr"
+  async_profiler_start "$file_name"
+  wrk2_start "$rate" $lua_put_path $type_request
+  async_profiler_stop "$file_name"
+done
+
+for rate in "${rates[@]}"; do
+  type_request="get"
+  file_name="async-profiler_${type_request}_rate_${rate}.jfr"
+  async_profiler_start "$file_name"
+  wrk2_start "$rate" $lua_get_path $type_request
+  async_profiler_stop "$file_name"
+done
 ```
 
-Команда wrk2 для get запросов:
+Скрипт для конвертации jfr в HTML:
 ```shell
-wrk2 -d 60 -t 1 -c 1 -R $rate -s get.lua http://localhost:25565
+#!/bin/bash
+path_to_async_profiler="/Users/michael/Desktop/async-profiler/async-profiler"
+
+function run_jfr2flame_alloc() {
+  local src_name=$1
+  local dst_name=$2
+  local src_path="$PWD/$src_name"
+  local dst_path="$PWD/$dst_name"
+  local path=$PWD
+  cd $path_to_async_profiler || exit
+  java -cp "$path_to_async_profiler/build/converter.jar" jfr2heat --alloc "$src_path" "$dst_path"
+  cd "$path" || exit
+}
+
+function run_jfr2flame_cpu() {
+  local src_name=$1
+  local dst_name=$2
+  local src_path="$PWD/$src_name"
+  local dst_path="$PWD/$dst_name"
+  local path=$PWD
+  cd $path_to_async_profiler || exit
+  java -cp "$path_to_async_profiler/build/converter.jar" jfr2heat "$src_path" "$dst_path"
+  cd "$path" || exit
+}
+
+rates=(1000 3000 5000 8000 12000 15000 20000)
+
+for rate in "${rates[@]}"; do
+  type_request="put"
+  file_name="async-profiler_${type_request}_rate_${rate}.jfr"
+  run_jfr2flame_alloc "$file_name" "async-profiler_${type_request}_alloc_rate_${rate}.html"
+  run_jfr2flame_cpu "$file_name" "async-profiler_${type_request}_cpu_rate_${rate}.html"
+done
+
+for rate in "${rates[@]}"; do
+  type_request="get"
+  file_name="async-profiler_${type_request}_rate_${rate}.jfr"
+  run_jfr2flame_alloc "$file_name" "async-profiler_${type_request}_alloc_rate_${rate}.html"
+  run_jfr2flame_cpu "$file_name" "async-profiler_${type_request}_cpu_rate_${rate}.html"
+done
 ```
 
 Перед профилированием заполнил хранилище 6GB данных.
+Все результаты работы wrk лежат в файлах с расширением txt и имеют префикс "wrk2".
+* Имя файла := "wrk2\_\<Запрос\>\_rate\_\<Number\>"
+* Запрос    := put | get
+* Number    := number
 
-Запускаем скрипты с rate = 1000:
-```text
-michael@MacBook-Pro-3 report % ./wrk2_start.sh 1000 put.lua                                                                                           
-Running 1m test @ http://localhost:25565
-  1 threads and 1 connections
-  Thread calibration: mean lat.: 1.095ms, rate sampling interval: 10ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.23ms    2.28ms  74.18ms   99.63%
-    Req/Sec     1.05k   164.25     8.00k    94.30%
-  60000 requests in 1.00m, 3.83MB read
-Requests/sec:    999.99
-Transfer/sec:     65.43KB
-```
-
-```text
-michael@MacBook-Pro-3 report % ./wrk2_start.sh 1000 get.lua
-Running 1m test @ http://localhost:25565
-  1 threads and 1 connections
-  Thread calibration: mean lat.: 1.095ms, rate sampling interval: 10ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.07ms  412.66us  10.62ms   64.15%
-    Req/Sec     1.06k    72.83     1.22k    89.20%
-  60000 requests in 1.00m, 501.19MB read
-Requests/sec:   1000.00
-Transfer/sec:      8.35MB
-```
+Все результаты работы профайлера лежат в файлах с расширением html и имеют префикс "async-profiler".
+* Имя файла := "async-profiler\_\<Запрос\>\_rate\_\<Number\>"
+* Запрос    := put | get
+* Number    := number
 ---
-Запускаем скрипты с rate = 5000:
-```text
-michael@MacBook-Pro-3 report % ./wrk2_start.sh 5000 put.lua
-Running 1m test @ http://localhost:25565
-1 threads and 1 connections
-Thread calibration: mean lat.: 1.795ms, rate sampling interval: 10ms
-Thread Stats   Avg      Stdev     Max   +/- Stdev
-Latency     1.78ms    5.47ms  79.42ms   98.21%
-Req/Sec     5.28k     1.02k   19.00k    93.43%
-299997 requests in 1.00m, 19.17MB read
-Requests/sec:   4999.97
-Transfer/sec:    327.15KB
-```
+Выводы: по выводам wrk2 можно понять, что до rate=8000 сервер чувствовал себя хорошо.
+При rate=12000 заметно сильно увеличился Latency как у get, так и у put запросов.
+В 99 процентиле у put Latency меньше чем у get, что логично, так как используем LSM.
 
-```text
-michael@MacBook-Pro-3 report % ./wrk2_start.sh 5000 get.lua
-Running 1m test @ http://localhost:25565
-  1 threads and 1 connections
-  Thread calibration: mean lat.: 1.263ms, rate sampling interval: 10ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.17ms  633.63us  10.14ms   61.62%
-    Req/Sec     5.27k   505.71    10.00k    66.69%
-  299998 requests in 1.00m, 2.45GB read
-Requests/sec:   4999.88
-Transfer/sec:     41.77MB
-```
+Было замечено, что при пустой базе аллокаций происходит больше. Это связано с аллокациями MemorySegment'ов.
+В отчете я отразил замеры только с наполненным хранилищем, так как это было оговорено на лекции.
 ---
-Запускаем скрипты с rate = 7000:
-```text
-michael@MacBook-Pro-3 report % ./wrk2_start.sh 7000 put.lua
-Running 1m test @ http://localhost:25565
-  1 threads and 1 connections
-  Thread calibration: mean lat.: 0.922ms, rate sampling interval: 10ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     3.64ms   19.31ms 268.54ms   97.35%
-    Req/Sec     7.41k     1.42k   20.78k    95.37%
-  419995 requests in 1.00m, 26.84MB read
-Requests/sec:   6999.81
-Transfer/sec:    458.00KB
-```
+Рассмотрим rate=1000:
+# get alloc 1000 rate
+![async-profiler get alloc 1000 rate](./png/async-profiler_get_alloc_rate_1000.png)
+# get cpu 1000 rate
+![async-profiler get cpu 1000 rate](./png/async-profiler_get_cpu_rate_1000.png)
+# put alloc 1000 rate
+![async-profiler put alloc 1000 rate](./png/async-profiler_put_alloc_rate_1000.png)
+# put cpu 1000 rate
+![async-profiler put cpu 1000 rate](./png/async-profiler_put_cpu_rate_1000.png)
 
-```text
-michael@MacBook-Pro-3 report % ./wrk2_start.sh 7000 get.lua 
-Running 1m test @ http://localhost:25565
-  1 threads and 1 connections
-  Thread calibration: mean lat.: 1.258ms, rate sampling interval: 10ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.08ms  624.55us  13.88ms   65.00%
-    Req/Sec     7.38k   748.80    13.00k    67.61%
-  419991 requests in 1.00m, 3.43GB read
-Requests/sec:   6999.83
-Transfer/sec:     58.47MB
-```
 ---
-Запускаем скрипты с rate = 15000:
-```text
-michael@MacBook-Pro-3 report % ./wrk2_start.sh 15000 put.lua
-Running 1m test @ http://localhost:25565
-  1 threads and 1 connections
-  Thread calibration: mean lat.: 60.043ms, rate sampling interval: 607ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   245.28ms  264.34ms 891.39ms   76.04%
-    Req/Sec    15.17k     1.96k   19.14k    67.07%
-  899956 requests in 1.00m, 57.50MB read
-Requests/sec:  14999.32
-Transfer/sec:      0.96MB
+Рассмотрим rate=3000:
+# get alloc 3000 rate
+![async-profiler get alloc 3000 rate](./png/async-profiler_get_alloc_rate_3000.png)
+# get cpu 3000 rate
+![async-profiler get cpu 3000 rate](./png/async-profiler_get_cpu_rate_3000.png)
+# put alloc 3000 rate
+![async-profiler put alloc 3000 rate](./png/async-profiler_put_alloc_rate_3000.png)
+# put cpu 3000 rate
+![async-profiler put cpu 3000 rate](./png/async-profiler_put_cpu_rate_3000.png)
 
-```
-
-```text
-michael@MacBook-Pro-3 report % ./wrk2_start.sh 15000 get.lua
-Running 1m test @ http://localhost:25565
-  1 threads and 1 connections
-  Thread calibration: mean lat.: 1.808ms, rate sampling interval: 10ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    70.58ms  143.21ms 587.78ms   86.00%
-    Req/Sec    15.86k     2.90k   29.22k    78.59%
-  899987 requests in 1.00m, 7.22GB read
-Requests/sec:  14999.84
-Transfer/sec:    123.30MB
-```
 ---
-Сервер начинает заметно тормозить с rate = 15000.
+Рассмотрим rate=5000:
+# get alloc 5000 rate
+![async-profiler get alloc 5000 rate](./png/async-profiler_get_alloc_rate_5000.png)
+# get cpu 5000 rate
+![async-profiler get cpu 5000 rate](./png/async-profiler_get_cpu_rate_5000.png)
+# put alloc 5000 rate
+![async-profiler put alloc 5000 rate](./png/async-profiler_put_alloc_rate_5000.png)
+# put cpu 5000 rate
+![async-profiler put cpu 5000 rate](./png/async-profiler_put_cpu_rate_5000.png)
+
+---
+Рассмотрим rate=8000:
+# get alloc 8000 rate
+![async-profiler get alloc 8000 rate](./png/async-profiler_get_alloc_rate_8000.png)
+# get cpu 8000 rate
+![async-profiler get cpu 8000 rate](./png/async-profiler_get_cpu_rate_8000.png)
+# put alloc 8000 rate
+![async-profiler put alloc 8000 rate](./png/async-profiler_put_alloc_rate_8000.png)
+# put cpu 8000 rate
+![async-profiler put cpu 8000 rate](./png/async-profiler_put_cpu_rate_8000.png)
+
+---
+Рассмотрим rate=12000:
+# get alloc 12000 rate
+![async-profiler get alloc 12000 rate](./png/async-profiler_get_alloc_rate_12000.png)
+# get cpu 12000 rate
+![async-profiler get cpu 12000 rate](./png/async-profiler_get_cpu_rate_12000.png)
+# put alloc 12000 rate
+![async-profiler put alloc 12000 rate](./png/async-profiler_put_alloc_rate_12000.png)
+# put cpu 12000 rate
+![async-profiler put cpu 12000 rate](./png/async-profiler_put_cpu_rate_12000.png)
+
+---
+Рассмотрим rate=15000:
+# get alloc 15000 rate
+![async-profiler get alloc 15000 rate](./png/async-profiler_get_alloc_rate_15000.png)
+# get cpu 15000 rate
+![async-profiler get cpu 15000 rate](./png/async-profiler_get_cpu_rate_15000.png)
+# put alloc 15000 rate
+![async-profiler put alloc 15000 rate](./png/async-profiler_put_alloc_rate_15000.png)
+# put cpu 15000 rate
+![async-profiler put cpu 15000 rate](./png/async-profiler_put_cpu_rate_15000.png)
+
+---
+Рассмотрим rate=20000:
+# get alloc 20000 rate
+![async-profiler get alloc 20000 rate](./png/async-profiler_get_alloc_rate_20000.png)
+# get cpu 20000 rate
+![async-profiler get cpu 20000 rate](./png/async-profiler_get_cpu_rate_20000.png)
+# put alloc 20000 rate
+![async-profiler put alloc 20000 rate](./png/async-profiler_put_alloc_rate_20000.png)
+# put cpu 20000 rate
+![async-profiler put cpu 20000 rate](./png/async-profiler_put_cpu_rate_20000.png)
+
+---
+
+Большая часть памяти аллоцируется для сети. Так же в бд есть места, где можно сократить аллокацию памяти, но к сожалению
+на png не видно сколько бд аллоцирует памяти. Для более детального изучения можно открыть html. 
+
