@@ -16,7 +16,13 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -126,7 +132,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 } finally {
                     upsertLock.writeLock().unlock();
                 }
-                storage.maybeClose();
                 return null;
             } catch (Exception e) {
                 LOG.error("Can't flush", e);
@@ -192,8 +197,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             } finally {
                 upsertLock.writeLock().unlock();
             }
-
-            state.storage.maybeClose();
             return null;
         });
 
@@ -252,10 +255,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
         public TombstoneFilteringIterator(Iterator<Entry<MemorySegment>> iterator) {
             this.iterator = iterator;
-        }
-
-        public Entry<MemorySegment> peek() {
-            return hasNext() ? current : null;
         }
 
         @Override

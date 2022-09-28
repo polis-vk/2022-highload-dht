@@ -5,7 +5,7 @@ import ok.dht.test.komissarov.database.models.Entry;
 
 import java.util.Comparator;
 
-public class EntryKeyComparator implements Comparator<Entry<MemorySegment>> {
+public final class EntryKeyComparator implements Comparator<Entry<MemorySegment>> {
 
     public static final Comparator<Entry<MemorySegment>> INSTANCE = new EntryKeyComparator();
 
