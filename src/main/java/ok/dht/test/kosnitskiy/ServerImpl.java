@@ -16,21 +16,17 @@ public final class ServerImpl {
         // Only main method
     }
 
-    public static void main(String[] args) {
-        try {
-            int port = 19234;
-            String url = "http://localhost:" + port;
-            ServiceConfig cfg = new ServiceConfig(
-                    port,
-                    url,
-                    Collections.singletonList(url),
-                    Path.of("/home/sanerin/GitHub/data_files")
-            );
-            ServiceImpl service = new ServiceImpl(cfg);
-            service.start().get(1, TimeUnit.SECONDS);
-            LOG.info("Socket is ready: " + url);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+    public static void main(String[] args) throws Exception {
+        int port = 19234;
+        String url = "http://localhost:" + port;
+        ServiceConfig cfg = new ServiceConfig(
+                port,
+                url,
+                Collections.singletonList(url),
+                Path.of("/home/sanerin/GitHub/data_files")
+        );
+        ServiceImpl service = new ServiceImpl(cfg);
+        service.start().get(1, TimeUnit.SECONDS);
+        LOG.info("Socket is ready: " + url);
     }
 }

@@ -16,12 +16,17 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Random;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
+
+    private static final int IN_MEMORY_SIZE = 8388608;
+    private static final Logger LOG = LoggerFactory.getLogger(ServiceImpl.class);
 
     private final ServiceConfig config;
     private HttpServerImpl server;
@@ -33,15 +38,16 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        memorySegmentDao = new MemorySegmentDao(new Config(config.workingDir(), 8388608));
+        memorySegmentDao = new MemorySegmentDao(new Config(config.workingDir(), IN_MEMORY_SIZE));
         server = new HttpServerImpl(createConfigFromPort(config.selfPort()));
-        server.start();
         server.addRequestHandlers(this);
+        server.start();
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
+        server.stop();
         memorySegmentDao.close();
         return CompletableFuture.completedFuture(null);
     }
@@ -55,11 +61,20 @@ public class ServiceImpl implements Service {
                     Response.EMPTY
             );
         }
-        Entry<MemorySegment> entry = memorySegmentDao.get(fromString(id));
+        Entry<MemorySegment> entry;
+        try {
+            entry = memorySegmentDao.get(MemorySegment.ofArray(id.toCharArray()));
+        } catch (Exception e) {
+            LOG.error("Error occurred while getting " + id + ' ' + e.getMessage());
+            return new Response(
+                    Response.INTERNAL_ERROR,
+                    e.getMessage().getBytes(StandardCharsets.UTF_8)
+            );
+        }
         if (entry != null) {
             return new Response(
                     Response.OK,
-                    toBytes(entry.value())
+                    entry.value().toByteArray()
             );
         }
         return new Response(Response.NOT_FOUND, Response.EMPTY);
@@ -68,13 +83,21 @@ public class ServiceImpl implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(@Param(value = "id", required = true) String id, Request request) {
-        if (id.isEmpty()) {
+        if (id.isEmpty() || request.getBody() == null) {
             return new Response(
                     Response.BAD_REQUEST,
                     Response.EMPTY
             );
         }
-        memorySegmentDao.upsert(new BaseEntry<>(fromString(id), fromBytes(request.getBody())));
+        try {
+            memorySegmentDao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.toCharArray()), MemorySegment.ofArray(request.getBody())));
+        } catch (Exception e) {
+            LOG.error("Error occurred while inserting " + id + ' ' + e.getMessage());
+            return new Response(
+                    Response.INTERNAL_ERROR,
+                    e.getMessage().getBytes(StandardCharsets.UTF_8)
+            );
+        }
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
@@ -87,25 +110,16 @@ public class ServiceImpl implements Service {
                     Response.EMPTY
             );
         }
-        memorySegmentDao.upsert(new BaseEntry<>(fromString(id), null));
-        return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    public void fillTheDao() {
-        Random random = new Random(1);
-        for (int i = 0; i < 31500; i++) {
-            byte[] value = new byte[102400];
-            byte[] key = new byte[102400];
-            random.nextBytes(value);
-            random.nextBytes(key);
-            memorySegmentDao.upsert(new BaseEntry<>(fromBytes(key), fromBytes(value)));
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-                Thread.currentThread().interrupt();
-            }
+        try {
+            memorySegmentDao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.toCharArray()), null));
+        } catch (Exception e) {
+            LOG.error("Error occurred while deleting " + id + ' ' + e.getMessage());
+            return new Response(
+                    Response.INTERNAL_ERROR,
+                    e.getMessage().getBytes(StandardCharsets.UTF_8)
+            );
         }
+        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -115,18 +129,6 @@ public class ServiceImpl implements Service {
         acceptor.reusePort = true;
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
         return httpConfig;
-    }
-
-    private byte[] toBytes(MemorySegment s) {
-        return s == null ? null : s.toByteArray();
-    }
-
-    private MemorySegment fromString(String data) {
-        return data == null ? null : MemorySegment.ofArray(data.toCharArray());
-    }
-
-    private MemorySegment fromBytes(byte[] bytes) {
-        return bytes == null ? null : MemorySegment.ofArray(bytes);
     }
 
     @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
