@@ -2,8 +2,19 @@ package ok.dht.test.labazov;
 
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
-import ok.dht.test.labazov.dao.*;
-import one.nio.http.*;
+import ok.dht.test.labazov.dao.BaseEntry;
+import ok.dht.test.labazov.dao.Dao;
+import ok.dht.test.labazov.dao.Entry;
+import ok.dht.test.labazov.dao.Config;
+import ok.dht.test.labazov.dao.MemorySegmentDao;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
+import one.nio.http.Param;
+import one.nio.http.Path;
 import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
@@ -50,10 +61,10 @@ public class HttpApi extends HttpServer {
             return HTTP_BAD_REQUEST;
         }
         Entry<MemorySegment> result = dao.get(fromString(key));
-        if (result != null) {
-            return Response.ok(result.value().toByteArray());
-        } else {
+        if (result == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
+        } else {
+            return Response.ok(result.value().toByteArray());
         }
     }
 

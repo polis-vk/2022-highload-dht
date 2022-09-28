@@ -5,7 +5,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Collection;
+import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutionException;
@@ -40,11 +43,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-        if (from == null) {
-            from = VERY_FIRST_KEY;
-        }
-
-        return getTombstoneFilteringIterator(from, to);
+        return getTombstoneFilteringIterator(from == null ? VERY_FIRST_KEY : from, to);
     }
 
     private TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment from, MemorySegment to) {
@@ -164,16 +163,16 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
 
         Future<Object> future = executor.submit(() -> {
-            State state = accessState();
+            State st = accessState();
 
-            if (state.memory.isEmpty() && state.storage.isCompacted()) {
+            if (st.memory.isEmpty() && st.storage.isCompacted()) {
                 return null;
             }
 
             Storage.compact(
                     config,
                     () -> MergeIterator.of(
-                            state.storage.iterate(VERY_FIRST_KEY,
+                            st.storage.iterate(VERY_FIRST_KEY,
                                     null
                             ),
                             EntryKeyComparator.INSTANCE
@@ -184,12 +183,12 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
             upsertLock.writeLock().lock();
             try {
-                this.state = state.afterCompact(storage);
+                this.state = st.afterCompact(storage);
             } finally {
                 upsertLock.writeLock().unlock();
             }
 
-            state.storage.maybeClose();
+            st.storage.maybeClose();
             return null;
         });
 
@@ -223,8 +222,11 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         }
         executor.shutdown();
         try {
-            //noinspection StatementWithEmptyBody
-            while (!executor.awaitTermination(10, TimeUnit.DAYS)) ;
+            while (0 < 1) {
+                if (executor.awaitTermination(10, TimeUnit.DAYS)) {
+                    break;
+                }
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
@@ -418,6 +420,5 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             return delegate.get(key);
         }
     }
-
 
 }

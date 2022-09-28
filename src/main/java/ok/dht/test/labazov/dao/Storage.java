@@ -16,7 +16,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.ThreadFactory;
 
 class Storage implements Closeable {
     // supposed to have fresh files first
@@ -52,7 +51,7 @@ class Storage implements Closeable {
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
         int i = 0;
-        while (true) {
+        while (0 < 1) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));
