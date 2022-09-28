@@ -25,7 +25,7 @@ public class ServiceImpl implements Service {
     private static final Response BAD_REQUEST_RESPONSE =
             new Response(Response.BAD_REQUEST, Response.EMPTY);
     private final ServiceConfig config;
-    private DatabaseHttpServer server = null;
+    private DatabaseHttpServer server;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;

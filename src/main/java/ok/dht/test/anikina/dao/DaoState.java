@@ -55,6 +55,19 @@ public class DaoState {
         );
     }
 
+    public DaoState afterFlush(Storage storage) {
+        checkNotClosed();
+        if (!isFlushing()) {
+            throw new IllegalStateException("Wasn't flushing");
+        }
+        return new DaoState(
+                config,
+                memory,
+                DaoMemory.EMPTY,
+                storage
+        );
+    }
+
     public DaoState afterClosed() {
         checkNotClosed();
         if (!storage.isClosed()) {

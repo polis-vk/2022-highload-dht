@@ -3,7 +3,8 @@ package ok.dht.test.anikina;
 import jdk.incubator.foreign.MemorySegment;
 
 final class MemorySegmentUtils {
-    private MemorySegmentUtils() {}
+    private MemorySegmentUtils() {
+    }
 
     static byte[] toBytes(MemorySegment s) {
         return s == null ? null : s.toByteArray();

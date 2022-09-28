@@ -8,7 +8,6 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.lang.ref.Cleaner;
 import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -23,14 +22,7 @@ import static ok.dht.test.anikina.dao.StorageUtils.INDEX_RECORD_SIZE;
 
 class Storage implements Closeable {
     private static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
-    private static final Cleaner CLEANER = Cleaner.create(
-        r -> new Thread(r, "Storage-Cleaner") {
-            @Override
-            public synchronized void start() {
-                setDaemon(true);
-                super.start();
-            }
-    });
+    private static final Cleaner CLEANER = Cleaner.create(new CleanerThreadFactory());
 
     private final ResourceScope scope;
     private final List<MemorySegment> ssTables;
@@ -48,18 +40,14 @@ class Storage implements Closeable {
         if (Files.exists(compactedFile)) {
             StorageUtils.finishCompact(config, compactedFile);
         }
+
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
-        int i = 0;
-        while (true) {
-            Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
-            try {
-                sstables.add(StorageUtils.mapForRead(scope, nextFile));
-                i++;
-            } catch (NoSuchFileException e) {
-                break;
-            }
+        Path nextFile = basePath.resolve(FILE_NAME + 0 + FILE_EXT);
+        for (int i = 1; Files.exists(nextFile); i++) {
+            sstables.add(StorageUtils.mapForRead(scope, nextFile));
+            nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
         }
 
         boolean hasTombstones = !sstables.isEmpty() && MemoryAccess.getLongAtOffset(sstables.get(0), 16) == 1;
@@ -194,13 +182,13 @@ class Storage implements Closeable {
     }
 
     @Override
-    public void close() {
+    public void close() throws IOException {
         while (scope.isAlive()) {
             try {
                 scope.close();
                 return;
             } catch (IllegalStateException e) {
-                continue;
+                // ignored
             }
         }
     }
@@ -213,7 +201,15 @@ class Storage implements Closeable {
         return ssTables.isEmpty() || ssTables.size() == 1 && !hasTombstones;
     }
 
-    public interface Data {
-        Iterator<Entry<MemorySegment>> iterator() throws IOException;
+    public interface Data extends Iterable<Entry<MemorySegment>> {
+    }
+
+    private static class CleanerThreadFactory implements ThreadFactory {
+        @Override
+        public Thread newThread(final Runnable r) {
+            final Thread thread = new Thread(r, "Storage-Cleaner");
+            thread.setDaemon(true);
+            return thread;
+        }
     }
 }

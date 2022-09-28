@@ -7,12 +7,13 @@ import jdk.incubator.foreign.ResourceScope;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.Iterator;
 
 public class StorageUtils {
+    private StorageUtils() {
+    }
+
     static final long VERSION = 0;
     static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
     static final int INDEX_RECORD_SIZE = Long.BYTES;
@@ -29,8 +30,7 @@ public class StorageUtils {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
-                Entry<MemorySegment> entry = iterator.next();
+            for (Entry<MemorySegment> entry : entries) {
                 size += getSize(entry);
                 if (entry.isTombstone()) {
                     hasTombstone = true;
@@ -49,8 +49,7 @@ public class StorageUtils {
 
             long index = 0;
             long offset = dataStart;
-            for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
-                Entry<MemorySegment> entry = iterator.next();
+            for (Entry<MemorySegment> entry : entries) {
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
                 offset += writeRecord(nextSSTable, offset, entry.key());
                 offset += writeRecord(nextSSTable, offset, entry.value());
@@ -91,8 +90,7 @@ public class StorageUtils {
         Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
     }
 
-    @SuppressWarnings("DuplicateThrows")
-    static MemorySegment mapForRead(ResourceScope scope, Path file) throws NoSuchFileException, IOException {
+    static MemorySegment mapForRead(ResourceScope scope, Path file) throws IOException {
         return MemorySegment.mapFile(file, 0, Files.size(file), FileChannel.MapMode.READ_ONLY, scope);
     }
 }
