@@ -1,11 +1,6 @@
 package ok.dht.test.gerasimov;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
-import ok.dht.test.gerasimov.lsm.Config;
-import ok.dht.test.gerasimov.lsm.Dao;
-import ok.dht.test.gerasimov.lsm.Entry;
-import ok.dht.test.gerasimov.lsm.artyomdrozdov.MemorySegmentDao;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -21,28 +16,22 @@ public final class Server {
     private Server() {
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         ServiceConfig serviceConfig = null;
+        serviceConfig = new ServiceConfig(
+                PORT,
+                URL,
+                Collections.singletonList(URL),
+                Files.createTempDirectory("server")
+        );
+
+        ServiceImpl service = new ServiceImpl(serviceConfig);
         try {
-            serviceConfig = new ServiceConfig(
-                    PORT,
-                    URL,
-                    Collections.singletonList(URL),
-                    Files.createTempDirectory("server")
-            );
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-
-        try (Dao<MemorySegment, Entry<MemorySegment>> dao =
-                    new MemorySegmentDao(new Config(serviceConfig.workingDir(), 2048))
-        ) {
-            ValidationService validationService = new ValidationService();
-
-            ServiceImpl service = new ServiceImpl(serviceConfig, validationService);
             service.start().get(1, TimeUnit.SECONDS);
-        } catch (IOException | ExecutionException | InterruptedException | TimeoutException e) {
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
             throw new RuntimeException(e);
+        } finally {
+            service.stop();
         }
     }
 }
