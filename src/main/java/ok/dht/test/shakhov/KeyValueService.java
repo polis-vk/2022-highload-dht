@@ -27,6 +27,7 @@ import java.util.concurrent.CompletableFuture;
 public class KeyValueService implements Service {
     private static final Logger log = LoggerFactory.getLogger(KeyValueService.class);
 
+    private static final String UNEXPECTED_ERROR = "Unexpected error";
     private static final int FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024; // 4 mb
 
     private final ServiceConfig serviceConfig;
@@ -69,7 +70,7 @@ public class KeyValueService implements Service {
             }
             return new Response(Response.OK, entry.value().toByteArray());
         } catch (Exception e) {
-            log.error("Unexpected error", e);
+            log.error(UNEXPECTED_ERROR, e);
             return internalError();
         }
     }
@@ -87,7 +88,7 @@ public class KeyValueService implements Service {
             dao.upsert(entry);
             return new Response(Response.CREATED, Response.EMPTY);
         } catch (Exception e) {
-            log.error("Unexpected error", e);
+            log.error(UNEXPECTED_ERROR, e);
             return internalError();
         }
     }
@@ -104,7 +105,7 @@ public class KeyValueService implements Service {
             dao.upsert(entry);
             return new Response(Response.ACCEPTED, Response.EMPTY);
         } catch (Exception e) {
-            log.error("Unexpected error", e);
+            log.error(UNEXPECTED_ERROR, e);
             return internalError();
         }
     }
