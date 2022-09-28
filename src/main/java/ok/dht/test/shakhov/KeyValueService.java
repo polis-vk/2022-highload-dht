@@ -24,7 +24,7 @@ import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 public class KeyValueService implements Service {
-    private static final int DEFAULT_FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
+    private static final int FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024; // 4 mb
 
     private final ServiceConfig serviceConfig;
     private HttpServer server;
@@ -36,7 +36,7 @@ public class KeyValueService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        DaoConfig daoConfig = new DaoConfig(serviceConfig.workingDir(), DEFAULT_FLUSH_THRESHOLD_BYTES);
+        DaoConfig daoConfig = new DaoConfig(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES);
         dao = new MemorySegmentDao(daoConfig);
         HttpServerConfig httpServerConfig = createHttpServerConfigFromPort(serviceConfig.selfPort());
         server = new HttpServer(httpServerConfig) {
