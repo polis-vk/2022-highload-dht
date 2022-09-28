@@ -10,16 +10,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
-public class StorageUtils {
-    private StorageUtils() {
-    }
-
+public final class StorageUtils {
     static final long VERSION = 0;
     static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
     static final int INDEX_RECORD_SIZE = Long.BYTES;
     static final String FILE_NAME = "data";
     static final String FILE_EXT = ".dat";
     static final String FILE_EXT_TMP = ".tmp";
+
+    private StorageUtils() {
+    }
 
     static void save(Storage.Data entries, Path sstablePath) throws IOException {
         Path sstableTmpPath = sstablePath.resolveSibling(sstablePath.getFileName().toString() + FILE_EXT_TMP);

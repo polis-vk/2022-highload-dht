@@ -187,7 +187,7 @@ class Storage implements Closeable {
             try {
                 scope.close();
                 return;
-            } catch (IllegalStateException e) {
+            } catch (IllegalStateException ignored) {
                 // ignored
             }
         }

@@ -229,6 +229,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 }
             }
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
         }
         daoState = this.state;
