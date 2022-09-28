@@ -221,7 +221,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             try {
                 if (executor.awaitTermination(10, TimeUnit.DAYS)) break;
             } catch (InterruptedException e) {
-                throw new RuntimeException(e);
+                LOG.error("Interrupted exception, illegal state: ", e);
+                Thread.currentThread().interrupt();
             }
         }
 
