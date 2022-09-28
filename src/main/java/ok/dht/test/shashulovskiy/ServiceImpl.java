@@ -1,6 +1,5 @@
 package ok.dht.test.shashulovskiy;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
@@ -18,14 +17,11 @@ import org.iq80.leveldb.DB;
 import org.iq80.leveldb.Options;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
 public class ServiceImpl implements Service {
-
-    private static final long THRESHOLD_BYTES = 1 << 27;
 
     private final ServiceConfig config;
     private HttpServer server;
@@ -65,13 +61,13 @@ public class ServiceImpl implements Service {
     }
 
     @Override
-    public CompletableFuture<?> stop() throws IOException {
+    public CompletableFuture<?> stop() {
         server.stop();
         return CompletableFuture.completedFuture(null);
     }
 
     @Path("/v0/entity")
-    public Response handle(Request request) throws IOException {
+    public Response handle(Request request) {
         String id = request.getParameter("id=");
         if (id == null) {
             return new Response(
@@ -108,10 +104,6 @@ public class ServiceImpl implements Service {
                 return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             }
         }
-    }
-
-    private static MemorySegment stringToMemorySegment(String s) {
-        return MemorySegment.ofArray(s.getBytes(StandardCharsets.UTF_8));
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
