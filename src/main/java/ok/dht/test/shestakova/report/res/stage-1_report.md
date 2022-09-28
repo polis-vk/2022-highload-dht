@@ -6,25 +6,27 @@
 ##### PUT-запросы
 Для определения стабильной нагрузки параметр -R (rate) варьировался следующим образом: { 1000, 10000, 20000, 30000, 40000, 50000 }.
 Среднее значение latency при искомом параметре, равном 50000, достигало 1.94 с, при 46000 - 2.89 мс, а при 40000 - менее одной миллисекунды. Таким образом было выбрано значение rate = 45000, при котором интересующий нас параметр latency avg стал принимать значение 0.96 мс.
+На 90% запросов затрачивалось не более 1.88 мс при rate = 46000, 7.16 мс при rate = 50000, из чего можно сделать вывод о том, что первый вариант можно считать рабочей нагрузкой.
 
 `wrk -t 1 -c 1 -d 1m -R 45000 -s put.lua -L http://localhost:19234`
-Running 1m test @ http://localhost:19234
-  1 threads and 1 connections
-  Thread calibration: mean lat.: 65.427ms, rate sampling interval: 289ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     0.96ms    1.13ms  10.56ms   91.13%
-    Req/Sec    37.41k    16.87k   46.15k    83.24%
-  Latency Distribution (HdrHistogram - Recorded Latency)
- 50.000%  711.00us
- 75.000%    1.02ms
- 90.000%    1.88ms
- 99.000%    6.23ms
- 99.900%    9.87ms
- 99.990%   10.38ms
- 99.999%   10.53ms
-100.000%   10.57ms
 
-  Detailed Percentile spectrum:
+Running 1m test @ http://localhost:19234  
+  1 threads and 1 connections  
+  Thread calibration: mean lat.: 65.427ms, rate sampling interval: 289ms  
+  Thread Stats   Avg      Stdev     Max   +/- Stdev  
+    Latency     0.96ms    1.13ms  10.56ms   91.13%  
+    Req/Sec    37.41k    16.87k   46.15k    83.24%  
+  Latency Distribution (HdrHistogram - Recorded Latency)  
+ 50.000%  711.00us  
+ 75.000%    1.02ms  
+ 90.000%    1.88ms  
+ 99.000%    6.23ms  
+ 99.900%    9.87ms  
+ 99.990%   10.38ms  
+ 99.999%   10.53ms  
+100.000%   10.57ms  
+
+  Detailed Percentile spectrum:  
        Value   Percentile   TotalCount 1/(1-Percentile)
 
        0.018     0.000000            2         1.00
@@ -138,23 +140,24 @@ Running 1m test @ http://localhost:19234
 ----------------------------------------------------------
 
 `wrk -t 1 -c 1 -d 1m -R 46000 -s put.lua -L http://localhost:19234`
-Running 1m test @ http://localhost:19234
-  1 threads and 1 connections
-  Thread calibration: mean lat.: 114.967ms, rate sampling interval: 341ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     2.89ms    5.40ms  35.62ms   90.94%
-    Req/Sec    24.56k    22.95k   47.71k    52.74%
-  Latency Distribution (HdrHistogram - Recorded Latency)
- 50.000%    0.90ms
- 75.000%    2.43ms
- 90.000%    7.16ms
- 99.000%   28.01ms
- 99.900%   34.91ms
- 99.990%   35.58ms
- 99.999%   35.65ms
-100.000%   35.65ms
 
-  Detailed Percentile spectrum:
+Running 1m test @ http://localhost:19234  
+  1 threads and 1 connections  
+  Thread calibration: mean lat.: 114.967ms, rate sampling interval: 341ms  
+  Thread Stats   Avg      Stdev     Max   +/- Stdev  
+    Latency     2.89ms    5.40ms  35.62ms   90.94%  
+    Req/Sec    24.56k    22.95k   47.71k    52.74%  
+  Latency Distribution (HdrHistogram - Recorded Latency)  
+ 50.000%    0.90ms  
+ 75.000%    2.43ms  
+ 90.000%    7.16ms  
+ 99.000%   28.01ms  
+ 99.900%   34.91ms  
+ 99.990%   35.58ms  
+ 99.999%   35.65ms  
+100.000%   35.65ms  
+
+  Detailed Percentile spectrum:  
        Value   Percentile   TotalCount 1/(1-Percentile)
 
        0.018     0.000000            7         1.00
@@ -247,25 +250,27 @@ Running 1m test @ http://localhost:19234
 ##### GET-запросы на заполненной (~1000000 записей) БД
 Для определения стабильной нагрузки параметр -R (rate) варьировался следующим образом: { 1000, 10000 }.
 Среднее значение latency при искомом параметре, равном 10000, достигало 2.76 с, при 9000 - 1.03 с, а **при 8000 - 1.62 мс**.
+На 90% запросов затрачивалось не более 2.97 мс при rate = 8000, 1.66 с при rate = 9000, из чего можно сделать вывод о том, что первый вариант можно считать рабочей нагрузкой.
 
 `wrk -t 1 -c 1 -d 30 -R 8000 -s get.lua -L http://localhost:19234`
-Running 30s test @ http://localhost:19234
-  1 threads and 1 connections
-  Thread calibration: mean lat.: 47.132ms, rate sampling interval: 365ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.62ms    3.17ms  26.14ms   92.95%
-    Req/Sec     8.01k    83.73     8.39k    88.89%
-  Latency Distribution (HdrHistogram - Recorded Latency)
- 50.000%  831.00us
- 75.000%    1.14ms
- 90.000%    2.97ms
- 99.000%   20.66ms
- 99.900%   25.69ms
- 99.990%   26.09ms
- 99.999%   26.16ms
-100.000%   26.16ms
 
-  Detailed Percentile spectrum:
+Running 30s test @ http://localhost:19234  
+  1 threads and 1 connections  
+  Thread calibration: mean lat.: 47.132ms, rate sampling interval: 365ms  
+  Thread Stats   Avg      Stdev     Max   +/- Stdev  
+    Latency     1.62ms    3.17ms  26.14ms   92.95%  
+    Req/Sec     8.01k    83.73     8.39k    88.89%  
+  Latency Distribution (HdrHistogram - Recorded Latency)  
+ 50.000%  831.00us  
+ 75.000%    1.14ms  
+ 90.000%    2.97ms  
+ 99.000%   20.66ms  
+ 99.900%   25.69ms  
+ 99.990%   26.09ms  
+ 99.999%   26.16ms  
+100.000%   26.16ms  
+
+  Detailed Percentile spectrum:  
        Value   Percentile   TotalCount 1/(1-Percentile)
 
        0.098     0.000000            1         1.00
@@ -359,23 +364,24 @@ Running 30s test @ http://localhost:19234
 С увеличением rate с 8000 до 9000 среднее значение latency значительно возрастает: в 10^3 раз.
 
 `wrk -t 1 -c 1 -d 30 -R 9000 -s get.lua -L http://localhost:19234`
-Running 30s test @ http://localhost:19234
-  1 threads and 1 connections
-  Thread calibration: mean lat.: 214.454ms, rate sampling interval: 610ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.03s   502.40ms   1.80s    59.07%
-    Req/Sec     8.32k   477.77     9.52k    81.25%
-  Latency Distribution (HdrHistogram - Recorded Latency)
- 50.000%    1.13s
- 75.000%    1.46s
- 90.000%    1.66s
- 99.000%    1.79s
- 99.900%    1.80s
- 99.990%    1.81s
- 99.999%    1.81s
-100.000%    1.81s
 
-  Detailed Percentile spectrum:
+Running 30s test @ http://localhost:19234  
+  1 threads and 1 connections  
+  Thread calibration: mean lat.: 214.454ms, rate sampling interval: 610ms  
+  Thread Stats   Avg      Stdev     Max   +/- Stdev  
+    Latency     1.03s   502.40ms   1.80s    59.07%  
+    Req/Sec     8.32k   477.77     9.52k    81.25%  
+  Latency Distribution (HdrHistogram - Recorded Latency)  
+ 50.000%    1.13s  
+ 75.000%    1.46s  
+ 90.000%    1.66s  
+ 99.000%    1.79s  
+ 99.900%    1.80s  
+ 99.990%    1.81s  
+ 99.999%    1.81s  
+100.000%    1.81s  
+
+  Detailed Percentile spectrum:  
        Value   Percentile   TotalCount 1/(1-Percentile)
 
      210.687     0.000000            3         1.00
