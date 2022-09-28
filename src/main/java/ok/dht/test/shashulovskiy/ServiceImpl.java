@@ -111,7 +111,7 @@ public class ServiceImpl implements Service {
                 }
             }
         } catch (DBException exception) {
-            LOG.error("Internal dao exception occurred on" + request.getPath(), exception);
+            LOG.error("Internal dao exception occurred on " + request.getPath(), exception);
             return new Response(
                     Response.INTERNAL_ERROR,
                     Utf8.toBytes("An error occurred when accessing database.")
