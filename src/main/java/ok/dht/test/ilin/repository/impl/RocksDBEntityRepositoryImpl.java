@@ -8,8 +8,10 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+
 
 public class RocksDBEntityRepositoryImpl implements EntityRepository {
     private final RocksDB rocksDB;
