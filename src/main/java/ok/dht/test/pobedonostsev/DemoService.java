@@ -68,7 +68,7 @@ public class DemoService implements Service {
         if (entry == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
-        return Response.ok(entry.value().toByteArray());
+        return new Response(Response.OK, entry.value().toByteArray());
     }
 
     @Path("/v0/entity")
