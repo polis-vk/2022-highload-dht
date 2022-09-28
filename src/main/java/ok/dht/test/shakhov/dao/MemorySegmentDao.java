@@ -40,7 +40,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     }
 
     @Override
-    public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) throws IOException {
+    public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
         if (from == null) {
             return getTombstoneFilteringIterator(VERY_FIRST_KEY, to);
         }
@@ -61,7 +61,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     }
 
     @Override
-    public Entry<MemorySegment> get(MemorySegment key) throws IOException {
+    public Entry<MemorySegment> get(MemorySegment key) {
         State curState = accessState();
 
         Entry<MemorySegment> result = curState.memory.get(key);
@@ -78,7 +78,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     }
 
     @Override
-    public void upsert(Entry<MemorySegment> entry) throws IOException {
+    public void upsert(Entry<MemorySegment> entry) {
         State curState = accessState();
 
         boolean runFlush;

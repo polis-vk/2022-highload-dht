@@ -11,7 +11,6 @@ import ok.dht.test.shakhov.dao.Entry;
 import ok.dht.test.shakhov.dao.MemorySegmentDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
@@ -19,11 +18,15 @@ import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 public class KeyValueService implements Service {
+    private static final Logger log = LoggerFactory.getLogger(KeyValueService.class);
+
     private static final int FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024; // 4 mb
 
     private final ServiceConfig serviceConfig;
@@ -39,12 +42,7 @@ public class KeyValueService implements Service {
         DaoConfig daoConfig = new DaoConfig(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES);
         dao = new MemorySegmentDao(daoConfig);
         HttpServerConfig httpServerConfig = createHttpServerConfigFromPort(serviceConfig.selfPort());
-        server = new HttpServer(httpServerConfig) {
-            @Override
-            public void handleDefault(Request request, HttpSession session) throws IOException {
-                session.sendResponse(badRequest());
-            }
-        };
+        server = new KeyValueHttpServer(httpServerConfig);
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
@@ -59,41 +57,56 @@ public class KeyValueService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id) throws IOException {
-        if (id.isEmpty()) {
-            return badRequest();
+    public Response handleGet(@Param(value = "id", required = true) String id) {
+        try {
+            if (id.isEmpty()) {
+                return badRequest();
+            }
+            MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
+            Entry<MemorySegment> entry = dao.get(key);
+            if (entry == null) {
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
+            }
+            return new Response(Response.OK, entry.value().toByteArray());
+        } catch (Exception e) {
+            log.error("Unexpected error", e);
+            return internalError();
         }
-        MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
-        Entry<MemorySegment> entry = dao.get(key);
-        if (entry == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-        return new Response(Response.OK, entry.value().toByteArray());
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(@Param(value = "id", required = true) String id, Request request) throws IOException {
-        if (id.isEmpty()) {
-            return badRequest();
+    public Response handlePut(@Param(value = "id", required = true) String id, Request request) {
+        try {
+            if (id.isEmpty()) {
+                return badRequest();
+            }
+            MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
+            MemorySegment value = MemorySegment.ofArray(request.getBody());
+            Entry<MemorySegment> entry = new BaseEntry<>(key, value);
+            dao.upsert(entry);
+            return new Response(Response.CREATED, Response.EMPTY);
+        } catch (Exception e) {
+            log.error("Unexpected error", e);
+            return internalError();
         }
-        MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
-        MemorySegment value = MemorySegment.ofArray(request.getBody());
-        Entry<MemorySegment> entry = new BaseEntry<>(key, value);
-        dao.upsert(entry);
-        return new Response(Response.CREATED, Response.EMPTY);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) String id) throws IOException {
-        if (id.isEmpty()) {
-            return badRequest();
+    public Response handleDelete(@Param(value = "id", required = true) String id) {
+        try {
+            if (id.isEmpty()) {
+                return badRequest();
+            }
+            MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
+            Entry<MemorySegment> entry = new BaseEntry<>(key, null);
+            dao.upsert(entry);
+            return new Response(Response.ACCEPTED, Response.EMPTY);
+        } catch (Exception e) {
+            log.error("Unexpected error", e);
+            return internalError();
         }
-        MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
-        Entry<MemorySegment> entry = new BaseEntry<>(key, null);
-        dao.upsert(entry);
-        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     private static HttpServerConfig createHttpServerConfigFromPort(int port) {
@@ -109,7 +122,11 @@ public class KeyValueService implements Service {
         return new Response(Response.BAD_REQUEST, Response.EMPTY);
     }
 
-    @ServiceFactory(stage = 1, week = 1)
+    private static Response internalError() {
+        return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+    }
+
+    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class StorageServiceFactory implements ServiceFactory.Factory {
 
         @Override

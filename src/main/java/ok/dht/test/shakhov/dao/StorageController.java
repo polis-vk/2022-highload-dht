@@ -72,7 +72,7 @@ public final class StorageController {
             Collection<Entry<MemorySegment>> entries) throws IOException {
         int nextSSTableIndex = previousState.getSstables().size();
         Path sstablePath = daoConfig.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
-        save(entries::iterator, sstablePath);
+        save(entries, sstablePath);
     }
 
     private static void save(
