@@ -23,6 +23,9 @@ public final class StorageUtil {
     private static final long VERSION = 0;
     private static final String FILE_EXT_TMP = ".tmp";
 
+    private StorageUtil() {
+    }
+
     static void save(Storage.Data entries, Path sstablePath) throws IOException {
 
         Path sstableTmpPath = sstablePath.resolveSibling(sstablePath.getFileName().toString() + FILE_EXT_TMP);

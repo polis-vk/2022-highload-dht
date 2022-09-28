@@ -33,18 +33,14 @@ class Storage implements Closeable {
     private final List<MemorySegment> sstables;
     private final boolean hasTombstones;
 
-    private static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
-        @Override
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "Storage-Cleaner") {
+    private static final Cleaner CLEANER = Cleaner.create((r) -> new Thread(r, "Storage-Cleaner") {
                 @Override
                 public synchronized void start() {
                     setDaemon(true);
                     super.start();
                 }
-            };
-        }
-    });
+            }
+    );
 
     static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
