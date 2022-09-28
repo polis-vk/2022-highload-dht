@@ -16,7 +16,9 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -40,6 +42,16 @@ public class MyService implements Service {
             public void handleDefault(Request request, HttpSession session) throws IOException {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             }
+
+            @Override
+            public synchronized void stop() {
+                for (SelectorThread selectorThread : selectors) {
+                    for (Session session : selectorThread.selector) {
+                        session.close();
+                    }
+                }
+                super.stop();
+            }
         };
         server.start();
         server.addRequestHandlers(this);
@@ -59,6 +71,10 @@ public class MyService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
+        server.stop();
+        server = null;
+        dao.close();
+        dao = null;
         return CompletableFuture.completedFuture(null);
     }
 
