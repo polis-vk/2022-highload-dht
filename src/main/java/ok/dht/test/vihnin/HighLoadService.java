@@ -75,8 +75,6 @@ public class HighLoadService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-
-
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
