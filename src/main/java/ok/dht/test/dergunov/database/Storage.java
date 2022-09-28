@@ -9,9 +9,10 @@ import java.io.IOException;
 import java.lang.ref.Cleaner;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.ThreadFactory;
 
-public final class Storage implements Closeable {
+final class Storage implements Closeable {
 
     static final Cleaner CLEANER = Cleaner.create(new ThreadFactory() {
         @Override
@@ -36,10 +37,10 @@ public final class Storage implements Closeable {
     static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
     private final ResourceScope scope;
 
-    final ArrayList<MemorySegment> sstables;
+    final List<MemorySegment> sstables;
     private final boolean hasTombstones;
 
-    Storage(ResourceScope scope, ArrayList<MemorySegment> sstables, boolean hasTombstones) {
+    Storage(ResourceScope scope, List<MemorySegment> sstables, boolean hasTombstones) {
         this.scope = scope;
         this.sstables = sstables;
         this.hasTombstones = hasTombstones;
@@ -162,7 +163,8 @@ public final class Storage implements Closeable {
             try {
                 scope.close();
                 return;
-            } catch (IllegalStateException ignored) {
+            } catch (IllegalStateException suppressed) {
+                throw new RuntimeException(suppressed);
             }
         }
     }

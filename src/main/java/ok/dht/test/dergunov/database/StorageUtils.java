@@ -55,7 +55,8 @@ public class StorageUtils {
                 break;
             }
         }
-        Files.move(compactedFile, config.basePath().resolve(Storage.FILE_NAME + 0 + Storage.FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
+        Files.move(compactedFile, config.basePath().resolve(Storage.FILE_NAME + 0 + Storage.FILE_EXT),
+                StandardCopyOption.ATOMIC_MOVE);
     }
 
     static Storage load(Config config) throws IOException {
@@ -110,7 +111,8 @@ public class StorageUtils {
             long offset = dataStart;
             for (Iterator<Entry<MemorySegment>> iterator = entries.iterator(); iterator.hasNext(); ) {
                 Entry<MemorySegment> entry = iterator.next();
-                MemoryAccess.setLongAtOffset(nextSSTable, Storage.INDEX_HEADER_SIZE + index * Storage.INDEX_RECORD_SIZE, offset);
+                MemoryAccess.setLongAtOffset(nextSSTable, Storage.INDEX_HEADER_SIZE + index
+                        * Storage.INDEX_RECORD_SIZE, offset);
                 offset += writeRecord(nextSSTable, offset, entry.key());
                 offset += writeRecord(nextSSTable, offset, entry.value());
                 index++;

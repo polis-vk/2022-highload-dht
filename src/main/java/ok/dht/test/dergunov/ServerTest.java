@@ -14,7 +14,8 @@ public final class ServerTest {
     private ServerTest() {
     }
 
-    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException, TimeoutException {
+    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException,
+            TimeoutException {
         int port = 8084;
         String url = "http://localhost:" + port;
         ServiceConfig config = new ServiceConfig(
