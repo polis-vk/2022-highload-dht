@@ -15,6 +15,7 @@ public final class Constants {
 
         @Override
         public void run() {
+            LOG.info("Storage-cleaner thread {} started", Thread.currentThread().getName());
             super.run();
         }
     });

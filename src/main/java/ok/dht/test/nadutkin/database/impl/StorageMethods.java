@@ -15,26 +15,24 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 
-import static ok.dht.test.nadutkin.database.impl.Constants.*;
-
 public final class StorageMethods {
     private StorageMethods() {
     }
 
     public static Storage load(Config config) throws IOException {
         Path basePath = config.basePath();
-        Path compactedFile = config.basePath().resolve(COMPACTED_FILE);
+        Path compactedFile = config.basePath().resolve(Constants.COMPACTED_FILE);
         if (Files.exists(compactedFile)) {
             finishCompact(config, compactedFile);
         }
 
         ArrayList<MemorySegment> sstables = new ArrayList<>();
-        ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
+        ResourceScope scope = ResourceScope.newSharedScope(Constants.CLEANER);
 
         boolean haveFile = true;
         int index = 0;
         while (haveFile) {
-            Path nextFile = basePath.resolve(FILE_NAME + index + FILE_EXT);
+            Path nextFile = basePath.resolve(Constants.FILE_NAME + index + Constants.FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));
                 index++;
@@ -53,7 +51,8 @@ public final class StorageMethods {
             Storage previousState,
             Collection<Entry<MemorySegment>> entries) throws IOException {
         int nextSSTableIndex = previousState.sstables.size();
-        Path sstablePath = config.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
+        Path sstablePath = config.basePath()
+                .resolve(Constants.FILE_NAME + nextSSTableIndex + Constants.FILE_EXT);
         save(entries::iterator, sstablePath);
     }
 
@@ -62,7 +61,8 @@ public final class StorageMethods {
             Path sstablePath
     ) throws IOException {
 
-        Path sstableTmpPath = sstablePath.resolveSibling(sstablePath.getFileName().toString() + FILE_EXT_TMP);
+        Path sstableTmpPath = sstablePath
+                .resolveSibling(sstablePath.getFileName().toString() + Constants.FILE_EXT_TMP);
 
         Files.deleteIfExists(sstableTmpPath);
         Files.createFile(sstableTmpPath);
@@ -79,7 +79,7 @@ public final class StorageMethods {
                 entriesCount++;
             }
 
-            long dataStart = INDEX_HEADER_SIZE + INDEX_RECORD_SIZE * entriesCount;
+            long dataStart = Constants.INDEX_HEADER_SIZE + Constants.INDEX_RECORD_SIZE * entriesCount;
 
             MemorySegment nextSSTable = MemorySegment.mapFile(
                     sstableTmpPath,
@@ -92,7 +92,8 @@ public final class StorageMethods {
             long index = 0;
             long offset = dataStart;
             for (var entry : entries) {
-                MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
+                MemoryAccess.setLongAtOffset(nextSSTable,
+                        Constants.INDEX_HEADER_SIZE + index * Constants.INDEX_RECORD_SIZE, offset);
 
                 offset += writeRecord(nextSSTable, offset, entry.key());
                 offset += writeRecord(nextSSTable, offset, entry.value());
@@ -100,7 +101,7 @@ public final class StorageMethods {
                 index++;
             }
 
-            MemoryAccess.setLongAtOffset(nextSSTable, 0, VERSION);
+            MemoryAccess.setLongAtOffset(nextSSTable, 0, Constants.VERSION);
             MemoryAccess.setLongAtOffset(nextSSTable, 8, entriesCount);
             MemoryAccess.setLongAtOffset(nextSSTable, 16, hasTombstone ? 1 : 0);
 
@@ -129,20 +130,21 @@ public final class StorageMethods {
     }
 
     public static void compact(Config config, UtilsClass.Data data) throws IOException {
-        Path compactedFile = config.basePath().resolve(COMPACTED_FILE);
+        Path compactedFile = config.basePath().resolve(Constants.COMPACTED_FILE);
         save(data, compactedFile);
         finishCompact(config, compactedFile);
     }
 
     public static void finishCompact(Config config, Path compactedFile) throws IOException {
         for (int i = 0; ; i++) {
-            Path nextFile = config.basePath().resolve(FILE_NAME + i + FILE_EXT);
+            Path nextFile = config.basePath().resolve(Constants.FILE_NAME + i + Constants.FILE_EXT);
             if (!Files.deleteIfExists(nextFile)) {
                 break;
             }
         }
 
-        Files.move(compactedFile, config.basePath().resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
+        Files.move(compactedFile, config.basePath()
+                .resolve(Constants.FILE_NAME + 0 + Constants.FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
     }
 
     public static long getSize(Entry<MemorySegment> entry) {
@@ -154,6 +156,6 @@ public final class StorageMethods {
     }
 
     public static long getSizeOnDisk(Entry<MemorySegment> entry) {
-        return getSize(entry) + INDEX_RECORD_SIZE;
+        return getSize(entry) + Constants.INDEX_RECORD_SIZE;
     }
 }
