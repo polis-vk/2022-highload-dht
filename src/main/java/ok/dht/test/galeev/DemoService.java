@@ -26,10 +26,6 @@ import java.util.concurrent.CompletableFuture;
 public class DemoService implements Service {
 
     public static final int FLUSH_THRESHOLD_BYTES = 16777216; // 16MB
-    public static final Response BAD_RESPONSE
-            = new Response(Response.BAD_REQUEST, Response.EMPTY);
-    public static final Response NOT_FOUND_RESPONSE
-            = new Response(Response.NOT_FOUND, Response.EMPTY);
     private final ServiceConfig config;
     private HttpServer server;
     private DaoMiddleLayer<String, byte[]> dao;
@@ -59,12 +55,12 @@ public class DemoService implements Service {
     public Response handleGet(@Param(value = "id", required = true) String id)
             throws IOException {
         if (id.isEmpty()) {
-            return BAD_RESPONSE;
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         Entry<String, byte[]> entry = dao.get(id);
         if (entry == null) {
-            return NOT_FOUND_RESPONSE;
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
         return new Response(Response.OK, entry.value());
     }
@@ -74,7 +70,7 @@ public class DemoService implements Service {
     public Response handlePut(Request request,
                               @Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
-            return BAD_RESPONSE;
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         dao.upsert(id, request.getBody());
         return new Response(Response.CREATED, Response.EMPTY);
@@ -84,7 +80,7 @@ public class DemoService implements Service {
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(@Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
-            return BAD_RESPONSE;
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         dao.delete(id);
         return new Response(Response.ACCEPTED, Response.EMPTY);
@@ -109,7 +105,7 @@ public class DemoService implements Service {
             @Override
             public void handleDefault(Request request,
                                       HttpSession session) throws IOException {
-                session.sendResponse(BAD_RESPONSE);
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             }
 
             @Override
