@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.ThreadFactory;
 
 import static ok.dht.test.saskov.database.drozdov.StorageUtil.COMPACTED_FILE;
 import static ok.dht.test.saskov.database.drozdov.StorageUtil.FILE_EXT;
@@ -27,13 +26,14 @@ import static ok.dht.test.saskov.database.drozdov.StorageUtil.INDEX_RECORD_SIZE;
 import static ok.dht.test.saskov.database.drozdov.StorageUtil.finishCompact;
 import static ok.dht.test.saskov.database.drozdov.StorageUtil.mapForRead;
 
+@SuppressWarnings("PMD.TooManyStaticImports")
 class Storage implements Closeable {
     // supposed to have fresh files first
     private final ResourceScope scope;
     private final List<MemorySegment> sstables;
     private final boolean hasTombstones;
 
-    private static final Cleaner CLEANER = Cleaner.create((r) -> new Thread(r, "Storage-Cleaner") {
+    private static final Cleaner CLEANER = Cleaner.create((Runnable r) -> new Thread(r, "Storage-Cleaner") {
                 @Override
                 public synchronized void start() {
                     setDaemon(true);
@@ -52,7 +52,7 @@ class Storage implements Closeable {
         ArrayList<MemorySegment> sstables = new ArrayList<>();
         ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
 
-        for (int i = 0; ; i++) {
+        for (int i = 0; true; i++) {
             Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
             try {
                 sstables.add(mapForRead(scope, nextFile));
