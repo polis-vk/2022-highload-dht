@@ -17,7 +17,6 @@ public class RocksDBEntityRepositoryImpl implements EntityRepository {
     private final RocksDB rocksDB;
     private final Logger logger;
 
-
     public RocksDBEntityRepositoryImpl(ServiceConfig serviceConfig) throws IOException {
         this.logger = LoggerFactory.getLogger(RocksDBEntityRepositoryImpl.class);
         RocksDB.loadLibrary();
