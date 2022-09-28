@@ -23,7 +23,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 
-class Storage implements Closeable {
+public class Storage implements Closeable {
 
     private static final long VERSION = 0;
     private static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
