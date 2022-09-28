@@ -13,8 +13,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 
-
-public class StorageUtils {
+public final class StorageUtils {
     private static final String FILE_NAME = "data";
     private static final String FILE_EXT = ".dat";
     private static final String FILE_EXT_TMP = ".tmp";
@@ -101,7 +100,8 @@ public class StorageUtils {
             long index = 0;
             long offset = dataStart;
             for (Entry<MemorySegment> entry : entries) {
-                MemoryAccess.setLongAtOffset(nextSSTable, Storage.INDEX_HEADER_SIZE + index * Storage.INDEX_RECORD_SIZE, offset);
+                MemoryAccess.setLongAtOffset(nextSSTable,
+                        Storage.INDEX_HEADER_SIZE + index * Storage.INDEX_RECORD_SIZE, offset);
 
                 offset += Storage.writeRecord(nextSSTable, offset, entry.key());
                 offset += Storage.writeRecord(nextSSTable, offset, entry.value());
