@@ -14,7 +14,7 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
-import ok.dht.kovalenko.dao.base.ByteBufferDaoFactory;
+import ru.mail.polis.test.kovalenko.ByteBufferDaoFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -23,7 +23,7 @@ import java.util.concurrent.CompletableFuture;
 
 public class MyService implements Service {
 
-    private static final int N_ENTRIES = 100_000_000; // About 3 GB
+    private static final int N_ENTRIES = 80_000_000; // About 3 GB
     private static final ByteBufferDaoFactory daoFactory = new ByteBufferDaoFactory();
     private final ServiceConfig config;
     private LSMDao dao;

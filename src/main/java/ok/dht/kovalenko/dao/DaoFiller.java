@@ -25,13 +25,13 @@ public final class DaoFiller {
 
     public static void fillDao(LSMDao dao, ByteBufferDaoFactory daoFactory, int nEntries) throws Exception {
         List<TypedEntry> entries = entries(nEntries, daoFactory);
-        for (int i = 0; i < entries.size(); ++i) {
-            dao.upsert(entries.get(i));
-            if (i % 10_000 == 0) {
-                Thread.sleep(100);
-            }
-        }
-        //entries.forEach(dao::upsert);
+//        for (int i = 0; i < entries.size(); ++i) {
+//            dao.upsert(entries.get(i));
+//            if (i % 10_000 == 0) {
+//                Thread.sleep(100);
+//            }
+//        }
+        entries.forEach(dao::upsert);
         //runInParallel(10, nEntries, value -> dao.upsert(entries.get(value))).close();
     }
 
@@ -48,9 +48,9 @@ public final class DaoFiller {
                 if (index >= count || index < 0) {
                     throw new IndexOutOfBoundsException("Index is " + index + ", size is " + count);
                 }
-                String paddedIdx = String.format("%010d", index);
-                ByteBuffer key = daoFactory.fromString(keyPrefix + paddedIdx);
-                ByteBuffer value = daoFactory.fromString(valuePrefix + paddedIdx);
+                //String paddedIdx = String.format("%010d", index);
+                ByteBuffer key = daoFactory.fromString(keyPrefix + index);
+                ByteBuffer value = daoFactory.fromString(valuePrefix + index);
                 return new TypedBaseEntry(key, value);
             }
 

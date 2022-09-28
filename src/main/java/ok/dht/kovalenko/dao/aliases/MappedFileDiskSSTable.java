@@ -2,8 +2,6 @@ package ok.dht.kovalenko.dao.aliases;
 
 
 import ok.dht.kovalenko.dao.Serializer;
-import ok.dht.kovalenko.dao.dto.ByteBufferRange;
-import ok.dht.kovalenko.dao.dto.FileMeta;
 import ok.dht.kovalenko.dao.dto.MappedPairedFiles;
 import ok.dht.kovalenko.dao.utils.DaoUtils;
 import ok.dht.kovalenko.dao.utils.FileUtils;
@@ -21,9 +19,10 @@ public class MappedFileDiskSSTable
     }
 
     public TypedEntry get(ByteBuffer key) {
-        ByteBufferRange fileRange = serializer.range(this.value.dataFile());
-        if (DaoUtils.byteBufferComparator.lessThan(key, fileRange.from())
-                || DaoUtils.byteBufferComparator.greaterThan(key, fileRange.to())) {
+        ByteBuffer fromRange = serializer.readKey(this.value, 0);
+        ByteBuffer toRange = serializer.readKey(this.value, this.value.indexesLimit() - FileUtils.INDEX_SIZE);
+        if (DaoUtils.byteBufferComparator.lessThan(key, fromRange)
+                || DaoUtils.byteBufferComparator.greaterThan(key, toRange)) {
             return null;
         }
         TypedEntry res = null;
@@ -34,14 +33,15 @@ public class MappedFileDiskSSTable
         return res;
     }
 
-    public TypedIterator get(ByteBufferRange range) {
-        ByteBufferRange fileRange = serializer.range(this.value.dataFile());
-        if (DaoUtils.byteBufferComparator.lessThan(fileRange.to(), range.from())
-                || DaoUtils.byteBufferComparator.greaterThan(fileRange.from(), range.to())) {
+    public TypedIterator get(ByteBuffer from, ByteBuffer to) {
+        ByteBuffer fromRange = serializer.readKey(this.value, 0);
+        ByteBuffer toRange = serializer.readKey(this.value, this.value.indexesLimit() - FileUtils.INDEX_SIZE);
+        if (DaoUtils.byteBufferComparator.lessThan(toRange, from)
+                || DaoUtils.byteBufferComparator.greaterThan(fromRange, to)) {
             return null;
         }
-        int fromPos = greaterOrEqualEntryIndex(this.value, range.from());
-        int toPos = greaterOrEqualEntryIndex(this.value, range.to());
+        int fromPos = greaterOrEqualEntryIndex(this.value, from);
+        int toPos = greaterOrEqualEntryIndex(this.value, to);
         MappedPairedFiles mappedPairedFiles = this.value;
         return new TypedIterator() {
             int curPos = fromPos;

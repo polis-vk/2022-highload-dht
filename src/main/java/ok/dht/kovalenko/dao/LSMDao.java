@@ -6,10 +6,10 @@ import ok.dht.kovalenko.dao.aliases.MappedFileDiskSSTableStorage;
 import ok.dht.kovalenko.dao.aliases.MemorySSTable;
 import ok.dht.kovalenko.dao.aliases.MemorySSTableStorage;
 import ok.dht.kovalenko.dao.aliases.TypedEntry;
-import ok.dht.kovalenko.dao.dto.ByteBufferRange;
 import ok.dht.kovalenko.dao.iterators.MergeIterator;
 import ok.dht.kovalenko.dao.runnables.CompactRunnable;
 import ok.dht.kovalenko.dao.runnables.FlushRunnable;
+import ok.dht.kovalenko.dao.utils.DaoUtils;
 import ok.dht.kovalenko.dao.visitors.ConfigVisitor;
 import ok.dht.kovalenko.dao.base.Dao;
 
@@ -29,8 +29,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
 
-    private static final int N_MEMORY_SSTABLES = 2;
-    private static final int FLUSH_TRESHOLD_BYTES = 70 * (1 << 20); // 50MB
+    private static final int N_MEMORY_SSTABLES = 100;
+    private static final int FLUSH_TRESHOLD_BYTES = 1 * (1 << 20); // 70MB
     private final ServiceConfig config;
     private final Serializer serializer;
     private final ReadWriteLock rwlock = new ReentrantReadWriteLock();
@@ -77,8 +77,7 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
     @Override
     public Iterator<TypedEntry> get(ByteBuffer from, ByteBuffer to) throws IOException {
         try {
-            ByteBufferRange range = new ByteBufferRange(from, to);
-            return new MergeIterator(this.memoryStorage.get(range), this.diskStorage.get(range));
+            return new MergeIterator(this.memoryStorage.get(from, to), this.diskStorage.get(from, to));
         } catch (ReflectiveOperationException ex) {
             throw new RuntimeException(ex);
         }
@@ -169,10 +168,11 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
             return res;
         }
 
-        public List<Iterator<TypedEntry>> get(ByteBufferRange range) {
+        public List<Iterator<TypedEntry>> get(ByteBuffer from, ByteBuffer to) {
             List<Iterator<TypedEntry>> res = new LinkedList<>();
-            addMemorySSTables(this.memoryWriteSSTables.iterator(), res, range);
-            addMemorySSTables(this.memoryFlushSSTables.iterator(), res, range);
+            ByteBuffer from1 = from == null ? DaoUtils.EMPTY_BYTEBUFFER : from;
+            addMemorySSTables(this.memoryWriteSSTables.iterator(), res, from1, to);
+            addMemorySSTables(this.memoryFlushSSTables.iterator(), res, from1, to);
             return res;
         }
 
@@ -191,13 +191,13 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
 
         private void addMemorySSTables(Iterator<MemorySSTable> it,
                                        List<Iterator<TypedEntry>> iterators,
-                                       ByteBufferRange range) {
+                                       ByteBuffer from, ByteBuffer to) {
             while (it.hasNext()) {
                 MemorySSTable memorySSTable = it.next();
                 if (memorySSTable.isEmpty()) {
                     continue;
                 }
-                Iterator<TypedEntry> rangeIt = memorySSTable.get(range.from(), range.to());
+                Iterator<TypedEntry> rangeIt = memorySSTable.get(from, to);
                 if (rangeIt == null) {
                     continue;
                 }

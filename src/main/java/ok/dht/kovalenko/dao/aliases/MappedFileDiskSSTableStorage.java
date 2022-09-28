@@ -3,9 +3,9 @@ package ok.dht.kovalenko.dao.aliases;
 
 import ok.dht.ServiceConfig;
 import ok.dht.kovalenko.dao.Serializer;
-import ok.dht.kovalenko.dao.dto.ByteBufferRange;
 import ok.dht.kovalenko.dao.dto.FileMeta;
 import ok.dht.kovalenko.dao.dto.MappedPairedFiles;
+import ok.dht.kovalenko.dao.utils.DaoUtils;
 import ok.dht.kovalenko.dao.utils.FileUtils;
 
 import java.io.Closeable;
@@ -76,8 +76,7 @@ public class MappedFileDiskSSTableStorage
                         dataChannel.map(FileChannel.MapMode.READ_ONLY, 0, dataChannel.size());
                 MappedByteBuffer mappedIndexesFile =
                         indexesChannel.map(FileChannel.MapMode.READ_ONLY, 0, indexesChannel.size());
-                FileMeta meta = serializer.meta(mappedDataFile);
-                mappedDataFile.position(meta.size());
+                mappedDataFile.position(FileMeta.size());
                 this.put(
                         priority,
                         new MappedFileDiskSSTable(priority, new MappedPairedFiles(mappedDataFile, mappedIndexesFile), serializer)
@@ -87,25 +86,22 @@ public class MappedFileDiskSSTableStorage
     }
 
     public TypedEntry get(ByteBuffer key) throws IOException {
-        try {
-            updateTables();
-            TypedEntry res = null;
-            for (MappedFileDiskSSTable diskSSTable : this.descendingMap().values()) {
-                if ((res = diskSSTable.get(key)) != null) {
-                    return res;
-                }
+        //updateTables();
+        TypedEntry res = null;
+        for (MappedFileDiskSSTable diskSSTable : this.descendingMap().values()) {
+            if ((res = diskSSTable.get(key)) != null) {
+                return res;
             }
-            return res;
-        } catch (ReflectiveOperationException ex) {
-            throw new RuntimeException(ex);
         }
+        return res;
     }
 
-    public List<Iterator<TypedEntry>> get(ByteBufferRange range) throws ReflectiveOperationException, IOException {
-        updateTables();
+    public List<Iterator<TypedEntry>> get(ByteBuffer from, ByteBuffer to) throws ReflectiveOperationException, IOException {
+        //updateTables();
         List<Iterator<TypedEntry>> res = new LinkedList<>();
+        ByteBuffer from1 = from == null ? DaoUtils.EMPTY_BYTEBUFFER : from;
         for (MappedFileDiskSSTable diskSSTable: this.descendingMap().values()) {
-            Iterator<TypedEntry> rangeIt = diskSSTable.get(range);
+            Iterator<TypedEntry> rangeIt = diskSSTable.get(from1, to);
             if (rangeIt == null) {
                 continue;
             }

@@ -4,9 +4,9 @@ import ok.dht.ServiceConfig;
 import ok.dht.kovalenko.dao.Serializer;
 import ok.dht.kovalenko.dao.aliases.MappedFileDiskSSTableStorage;
 import ok.dht.kovalenko.dao.aliases.TypedIterator;
-import ok.dht.kovalenko.dao.dto.ByteBufferRange;
 import ok.dht.kovalenko.dao.dto.PairedFiles;
 import ok.dht.kovalenko.dao.iterators.MergeIterator;
+import ok.dht.kovalenko.dao.utils.DaoUtils;
 import ok.dht.kovalenko.dao.utils.FileUtils;
 import ok.dht.kovalenko.dao.visitors.CompactVisitor;
 
@@ -41,7 +41,7 @@ public class CompactRunnable implements Runnable {
 
             this.lastNFiles.set(FileUtils.nFiles(this.config));
             TypedIterator mergeIterator
-                    = new MergeIterator(Collections.emptyList(), this.diskStorage.get(ByteBufferRange.ALL_RANGE));
+                    = new MergeIterator(Collections.emptyList(), this.diskStorage.get(DaoUtils.EMPTY_BYTEBUFFER, null));
             if (!mergeIterator.hasNext()) {
                 return;
             }

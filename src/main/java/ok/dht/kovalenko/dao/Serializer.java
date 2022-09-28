@@ -5,7 +5,6 @@ import ok.dht.ServiceConfig;
 import ok.dht.kovalenko.dao.aliases.MemorySSTable;
 import ok.dht.kovalenko.dao.aliases.TypedBaseEntry;
 import ok.dht.kovalenko.dao.aliases.TypedEntry;
-import ok.dht.kovalenko.dao.dto.ByteBufferRange;
 import ok.dht.kovalenko.dao.dto.FileMeta;
 import ok.dht.kovalenko.dao.dto.MappedPairedFiles;
 import ok.dht.kovalenko.dao.dto.PairedFiles;
@@ -61,27 +60,21 @@ public final class Serializer {
         try (RandomAccessFile dataFile = new RandomAccessFile(dataFilePath.toString(), "rw");
              RandomAccessFile indexesFile = new RandomAccessFile(indexesFilePath.toString(), "rw")) {
             byte hasTombstones = FileMeta.HAS_NOT_TOMBSTONES;
-            writeMeta(FileMeta.DEFAULT_META, dataFile);
+            writeMeta(new FileMeta(FileMeta.INCOMPLETELY_WRITTEN, FileMeta.HAS_NOT_TOMBSTONES), dataFile);
 
             int curOffset = (int) dataFile.getFilePointer();
             int bbSize = 0;
             ByteBuffer offset = ByteBuffer.allocate(FileUtils.INDEX_SIZE);
-            ByteBuffer fromRange = null;
             TypedEntry curEntry = null;
             while (data.hasNext()) {
                 curOffset += bbSize;
                 writeOffset(curOffset, offset, indexesFile);
                 curEntry = data.next();
-                if (fromRange == null) {
-                    fromRange = curEntry.key();
-                }
                 hasTombstones = curEntry.isTombstone() ? FileMeta.HAS_TOMBSTONES : FileMeta.HAS_NOT_TOMBSTONES;
                 bbSize = writeEntry(curEntry, dataFile);
             }
-            ByteBuffer toRange = curEntry.key(); // non null!
 
-            writeMeta(new FileMeta(FileMeta.COMPLETELY_WRITTEN, hasTombstones,
-                    new ByteBufferRange(fromRange, toRange)), dataFile);
+            writeMeta(new FileMeta(FileMeta.COMPLETELY_WRITTEN, hasTombstones), dataFile);
             if (hasTombstones == FileMeta.HAS_TOMBSTONES) {
                 this.wasCompacted.set(true);
             }
@@ -100,11 +93,7 @@ public final class Serializer {
         ByteBuffer from = readByteBuffer(file, 2);
         ByteBuffer to = readByteBuffer(file, 2 + Integer.BYTES + from.rewind().remaining());
         file.position(pos);
-        return new FileMeta(completelyWritten, hasTombstones, new ByteBufferRange(from, to));
-    }
-
-    public ByteBufferRange range(MappedByteBuffer file) {
-        return meta(file).range();
+        return new FileMeta(completelyWritten, hasTombstones);
     }
 
     public FileMeta meta(Path pathToFile) throws IOException {
@@ -112,15 +101,7 @@ public final class Serializer {
             // fixme
             byte completelyWritten = file.readByte();
             byte hasTombstones = file.readByte();
-            int fromSize = file.readInt();
-            byte[] fromArr = new byte[fromSize];
-            file.readFully(fromArr);
-            ByteBuffer from = ByteBuffer.wrap(fromArr);
-            int toSize = file.readInt();
-            byte[] toArr = new byte[toSize];
-            file.readFully(toArr);
-            ByteBuffer to = ByteBuffer.wrap(toArr);
-            return new FileMeta(completelyWritten, hasTombstones, new ByteBufferRange(from, to));
+            return new FileMeta(completelyWritten, hasTombstones);
         }
     }
 
@@ -128,10 +109,6 @@ public final class Serializer {
         file.seek(0);
         file.write(meta.completelyWritten());
         file.write(meta.hasTombstones());
-        file.writeInt(meta.fromSize());
-        file.write(meta.from());
-        file.writeInt(meta.toSize());
-        file.write(meta.to());
     }
 
     private int readDataFileOffset(MappedByteBuffer indexesFile, int indexesPos) {

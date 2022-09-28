@@ -32,7 +32,7 @@ public final class MyServer extends HttpServer {
                 port,
                 url,
                 Collections.singletonList(url),
-                Paths.get("/home/pavel/IntelliJIdeaProjects/tables/data_verybigtables/")
+                Paths.get("/home/pavel/IntelliJIdeaProjects/tables/data_bigtables/")
         );
         new MyService(cfg).start().get(1, TimeUnit.SECONDS);
         System.out.println("Socket is ready: " + url);
