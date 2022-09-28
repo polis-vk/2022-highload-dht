@@ -29,6 +29,7 @@ public class ServiceImpl implements Service {
     private final ServiceConfig config;
     private HttpServer server;
     private MemorySegmentDao dao;
+
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
     }
@@ -36,6 +37,7 @@ public class ServiceImpl implements Service {
     private byte[] getBytes(String message) {
         return message.getBytes(StandardCharsets.UTF_8);
     }
+
     @Override
     public CompletableFuture<?> start() throws IOException {
         long flushThresholdBytes = 1_000_000;

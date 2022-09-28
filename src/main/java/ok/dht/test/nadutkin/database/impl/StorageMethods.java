@@ -15,14 +15,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 
-import static ok.dht.test.nadutkin.database.impl.Constants.CLEANER;
-import static ok.dht.test.nadutkin.database.impl.Constants.COMPACTED_FILE;
-import static ok.dht.test.nadutkin.database.impl.Constants.FILE_EXT;
-import static ok.dht.test.nadutkin.database.impl.Constants.FILE_EXT_TMP;
-import static ok.dht.test.nadutkin.database.impl.Constants.FILE_NAME;
-import static ok.dht.test.nadutkin.database.impl.Constants.INDEX_HEADER_SIZE;
-import static ok.dht.test.nadutkin.database.impl.Constants.INDEX_RECORD_SIZE;
-import static ok.dht.test.nadutkin.database.impl.Constants.VERSION;
+import static ok.dht.test.nadutkin.database.impl.Constants.*;
 
 public final class StorageMethods {
     private StorageMethods() {
