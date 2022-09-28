@@ -18,6 +18,7 @@ public final class UtilsClass {
     }
 
     public interface Data extends Iterable<Entry<MemorySegment>> {
+        @Override
         Iterator<Entry<MemorySegment>> iterator();
     }
 

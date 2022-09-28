@@ -65,7 +65,8 @@ public class ServiceImpl implements Service {
     }
 
     @Override
-    public CompletableFuture<?> stop() {
+    public CompletableFuture<?> stop() throws IOException {
+        dao.close();
         server.stop();
         return CompletableFuture.completedFuture(null);
     }
