@@ -20,15 +20,12 @@ public final class MyServer {
         String url = "http://localhost:" + port;
         Path dir = Paths.get("/Users", "lev.saskov", "MyProgramms", "Polis", "database");
         // For tests
-        Path snapshot = dir.resolve("server_snapshot");
         ServiceConfig cfg = new ServiceConfig(
                 port,
                 url,
                 Collections.singletonList(url),
-//                Files.createTempDirectory(dir, "server")
-                snapshot
+                Files.createTempDirectory(dir, "server")
         );
         new MyService(cfg).start().get(1, TimeUnit.SECONDS);
-        System.out.println("Socket is ready: " + url);
     }
 }
