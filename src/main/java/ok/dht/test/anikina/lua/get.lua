@@ -2,7 +2,6 @@ counter = 0
 
 request = function()
     path = "/v0/entity?id=keyNumber" .. counter
-    wrk.method = "GET"
     counter = counter + 1
-    return wrk.format(nil, path)
+    return "GET " .. path .. " HTTP/1.1\r\nContent-Length: 0\r\n\r\n"
 end

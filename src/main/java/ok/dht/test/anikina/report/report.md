@@ -1,4 +1,6 @@
-Нарузочное Тестирование производительности базы данных проводилось при помощи wrk2.  
+#Нарузочное тестирование
+
+Нарузочное тестирование базы данных проводилось при помощи wrk2.  
 Генерация запросов производилась при помощи put.lua, на каждый ключ размера примерно 10 байт 
 записыаем значение размера 360 байт.
 Подаем rate = 10000 запросов/сек и нагружаем в течение 5 минут:  
@@ -347,3 +349,34 @@ Value   Percentile   TotalCount 1/(1-Percentile)
 Requests/sec:    300.00
 Transfer/sec:    124.22KB
 ```
+
+#Профилирование
+Запустить async-profiler на Mac M1 не получилось, падал с такой ошибкой:
+
+```bash
+veronika@MacBook-Pro-Veronika async-profiler % ./profiler.sh -f profiler_put.jfr start DemoServer 
+Failed to inject profiler into 41659
+/Users/veronika/Documents/Github/async-profiler/build/libasyncProfiler.so:
+	build/libasyncProfiler.so (compatibility version 0.0.0, current version 0.0.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1311.100.3)
+	/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 1300.23.0)
+```
+Поэтому я использовала idea async profiler.
+##PUT  
+
+###CPU  
+Большую долю времени занимает обработка запросов - 40% а также select - 32%. 
+Помимо этого около 10% времени занимает непосредственная запись в бд.  
+
+###ALLOC  
+70% аллокаций были заняты обработкой запросов, 15% заняли select. 
+Всего 10% заняла непосредственная запись в бд.
+
+##GET
+
+###CPU
+Аналогично с PUT, 45% занимает обработка запросов, 33% select, 
+19% времени занимает формирование ответа базой данных.
+
+###ALLOC
+Почти весь процент памяти - 90% - занимает обработка запросов, так как в базу мы ничего не записываем.
