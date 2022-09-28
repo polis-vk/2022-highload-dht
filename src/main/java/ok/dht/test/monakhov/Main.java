@@ -6,7 +6,11 @@ import java.nio.file.Files;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
-public class Main {
+public final class Main {
+
+    private Main() {
+    }
+
     public static void main(String[] args) throws Exception {
         int port = 19234;
         String url = "http://localhost:" + port;
