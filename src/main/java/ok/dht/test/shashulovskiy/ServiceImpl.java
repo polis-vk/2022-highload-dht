@@ -19,10 +19,15 @@ import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
+import org.iq80.leveldb.DB;
+import org.iq80.leveldb.Options;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
+
+import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
 public class ServiceImpl implements Service {
 
@@ -31,7 +36,7 @@ public class ServiceImpl implements Service {
     private final ServiceConfig config;
     private HttpServer server;
 
-    private Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private DB dao;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -39,7 +44,10 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        this.dao = new MemorySegmentDao(new Config(config.workingDir(), THRESHOLD_BYTES));
+        Options options = new Options();
+        options.createIfMissing(true);
+
+        this.dao = factory.open(config.workingDir().toFile(), options);
 
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
@@ -85,30 +93,20 @@ public class ServiceImpl implements Service {
 
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
-                Entry<MemorySegment> memorySegmentEntry = dao.get(stringToMemorySegment(id));
-                if (memorySegmentEntry == null) {
+                byte[] result = dao.get(Utf8.toBytes(id));
+                if (result == null) {
                     return new Response(Response.NOT_FOUND, Response.EMPTY);
                 } else {
-                    return new Response(Response.OK, memorySegmentEntry.value().toByteArray());
+                    return new Response(Response.OK, result);
                 }
             }
             case Request.METHOD_PUT -> {
-                dao.upsert(
-                        new BaseEntry<>(
-                                stringToMemorySegment(id),
-                                MemorySegment.ofArray(request.getBody())
-                        )
-                );
+                dao.put(Utf8.toBytes(id), request.getBody());
 
                 return new Response(Response.CREATED, Response.EMPTY);
             }
             case Request.METHOD_DELETE -> {
-                dao.upsert(
-                        new BaseEntry<>(
-                                stringToMemorySegment(id),
-                                null
-                        )
-                );
+                dao.delete(Utf8.toBytes(id));
 
                 return new Response(Response.ACCEPTED, Response.EMPTY);
             }
