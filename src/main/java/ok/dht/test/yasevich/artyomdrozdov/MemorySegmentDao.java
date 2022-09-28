@@ -194,16 +194,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     private void awaitAndUnwrap(Future<?> future) throws IOException {
         try {
             future.get();
-        } catch (InterruptedException e) {
+        } catch (ExecutionException | InterruptedException e) {
             throw new RuntimeException(e);
-        } catch (ExecutionException e) {
-            try {
-                throw e.getCause();
-            } catch (RuntimeException | IOException | Error r) {
-                throw r;
-            } catch (Throwable t) {
-                throw new RuntimeException(t);
-            }
         }
     }
 
