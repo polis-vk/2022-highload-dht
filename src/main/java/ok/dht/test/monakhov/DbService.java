@@ -18,10 +18,7 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 public class DbService implements Service {
     private final ServiceConfig serviceConfig;
@@ -30,19 +27,6 @@ public class DbService implements Service {
 
     public DbService(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
-    }
-
-    public static void main(String[] args) throws Exception {
-        int port = 19234;
-        String url = "http://localhost:" + port;
-        ServiceConfig cfg = new ServiceConfig(
-            port,
-            url,
-            Collections.singletonList(url),
-            Files.createTempDirectory("server")
-        );
-        new DbService(cfg).start().get(1, TimeUnit.SECONDS);
-        System.out.println("Socket is ready: " + url);
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
