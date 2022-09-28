@@ -19,12 +19,15 @@ import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 public class MyService implements Service {
     private static final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
+    private static final Logger log = LoggerFactory.getLogger(MyService.class);
     private final ServiceConfig config;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private HttpServer server;
@@ -49,12 +52,15 @@ public class MyService implements Service {
                 new Config(config.workingDir(), FLUSH_THRESHOLD)
         );
 
+        log.info("Service was started on: " + config.selfUrl() + " successfully.");
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
         dao.close();
+
+        log.info("Service was stopped successfully.");
         return CompletableFuture.completedFuture(null);
     }
 
@@ -73,8 +79,7 @@ public class MyService implements Service {
         }
 
         return entry == null || entry.isTombstone() ?
-                new Response(Response.NOT_FOUND, Response.EMPTY) :
-                new Response(Response.OK, entry.value().toByteArray());
+                new Response(Response.NOT_FOUND, Response.EMPTY) : new Response(Response.OK, entry.value().toByteArray());
     }
 
     @Path("/v0/entity")

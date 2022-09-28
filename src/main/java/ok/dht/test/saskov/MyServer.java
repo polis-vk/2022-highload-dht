@@ -2,11 +2,14 @@ package ok.dht.test.saskov;
 
 import ok.dht.ServiceConfig;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collections;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public final class MyServer {
 
@@ -15,7 +18,7 @@ public final class MyServer {
     }
 
     // With new folder
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException, TimeoutException {
         int port = 12345;
         String url = "http://localhost:" + port;
         Path dir = Paths.get("/Users", "lev.saskov", "MyProgramms", "Polis", "database");
