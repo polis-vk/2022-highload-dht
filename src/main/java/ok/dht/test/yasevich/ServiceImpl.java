@@ -24,6 +24,9 @@ import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
+
+    private static final int FLUSH_THRESHOLD = 10 * 1024 * 1024;
+
     private final ServiceConfig config;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private HttpServer server;
@@ -34,7 +37,7 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        dao = new MemorySegmentDao(new Config(config.workingDir(), 100 * 1024 * 1024));
+        dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD));
         server = new CustomHttpServer(createConfigFromPort(config.selfPort()));
         server.start();
         server.addRequestHandlers(this);
@@ -93,7 +96,7 @@ public class ServiceImpl implements Service {
     }
 
     private static MemorySegment fromString(String data) {
-        return data == null ? null : MemorySegment.ofArray(data.toCharArray());
+        return MemorySegment.ofArray(data.toCharArray());
     }
 
     private static class CustomHttpServer extends HttpServer {
@@ -119,7 +122,7 @@ public class ServiceImpl implements Service {
 
     }
 
-    @ServiceFactory(stage = 1, week = 1)
+    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
