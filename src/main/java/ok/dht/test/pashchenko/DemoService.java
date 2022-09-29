@@ -1,15 +1,10 @@
-package ok.dht.test.drozdov;
+package ok.dht.test.pashchenko;
 
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.drozdov.dao.MemorySegmentDao;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
+import ok.dht.test.pashchenko.dao.MemorySegmentDao;
+import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
 
