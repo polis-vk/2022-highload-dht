@@ -4,7 +4,6 @@ import ok.dht.kovalenko.dao.aliases.TypedEntry;
 import ok.dht.kovalenko.dao.iterators.PeekIterator;
 
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 
