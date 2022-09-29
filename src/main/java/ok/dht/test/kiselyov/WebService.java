@@ -14,7 +14,10 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
+import org.apache.log4j.Logger;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -27,6 +30,7 @@ public class WebService implements Service {
     private HttpServer server;
     private PersistentDao dao;
     private static final int FLUSH_THRESHOLD_BYTES = 1 << 20;
+    static Logger logger = Logger.getLogger(WebService.class);
 
     public WebService(ServiceConfig config) {
         this.config = config;
@@ -44,6 +48,16 @@ public class WebService implements Service {
                 Response defaultResponse = new Response(Response.BAD_REQUEST, Response.EMPTY);
                 session.sendResponse(defaultResponse);
             }
+
+            @Override
+            public synchronized void stop() {
+                for (SelectorThread selectorThread : selectors) {
+                    for (Session session : selectorThread.selector) {
+                        session.close();
+                    }
+                }
+                super.stop();
+            }
         };
         server.start();
         server.addRequestHandlers(this);
@@ -59,11 +73,18 @@ public class WebService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id) throws IOException {
+    public Response handleGet(@Param(value = "id", required = true) String id) {
         if (id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        BaseEntry<byte[]> result = dao.get(id.getBytes(StandardCharsets.UTF_8));
+        BaseEntry<byte[]> result;
+        try {
+            result = dao.get(id.getBytes(StandardCharsets.UTF_8));
+        }
+        catch (Exception e) {
+            logger.fatal("GET operation from GET request with id " + id + " failed: " + e.getMessage());
+            return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
+        }
         if (result == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
@@ -76,7 +97,13 @@ public class WebService implements Service {
         if (id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), putRequest.getBody()));
+        try {
+            dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), putRequest.getBody()));
+        }
+        catch (Exception e) {
+            logger.fatal("UPSERT operation from PUT request with id " + id + " failed: " + e.getMessage());
+            return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
+        }
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
@@ -86,7 +113,13 @@ public class WebService implements Service {
         if (id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), null));
+        try {
+            dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), null));
+        }
+        catch (Exception e) {
+            logger.fatal("UPSERT operation from DELETE request with id " + id + " failed: " + e.getMessage());
+            return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
+        }
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
@@ -99,7 +132,7 @@ public class WebService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 1, week = 1)
+    @ServiceFactory(stage = 1, week = 2, bonuses="SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
