@@ -17,6 +17,7 @@ import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 
 public class MyService implements Service {
@@ -74,7 +75,7 @@ public class MyService implements Service {
                 return new Response(Response.NOT_FOUND, Response.EMPTY);
             }
 
-            return Response.ok(res.value().array());
+            return Response.ok(daoFactory.toString(res.value()).getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
         }
