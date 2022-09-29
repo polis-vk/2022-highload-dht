@@ -80,9 +80,8 @@ public class WebService implements Service {
         BaseEntry<byte[]> result;
         try {
             result = dao.get(id.getBytes(StandardCharsets.UTF_8));
-        }
-        catch (Exception e) {
-            logger.fatal("GET operation from GET request with id " + id + " failed: " + e.getMessage());
+        } catch (Exception e) {
+            logger.fatal("GET operation with id " + id + " from GET request failed: " + e.getMessage());
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         if (result == null) {
@@ -99,9 +98,8 @@ public class WebService implements Service {
         }
         try {
             dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), putRequest.getBody()));
-        }
-        catch (Exception e) {
-            logger.fatal("UPSERT operation from PUT request with id " + id + " failed: " + e.getMessage());
+        } catch (Exception e) {
+            logger.fatal("UPSERT operation with id " + id + " from PUT request failed: " + e.getMessage());
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         return new Response(Response.CREATED, Response.EMPTY);
@@ -115,9 +113,8 @@ public class WebService implements Service {
         }
         try {
             dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), null));
-        }
-        catch (Exception e) {
-            logger.fatal("UPSERT operation from DELETE request with id " + id + " failed: " + e.getMessage());
+        } catch (Exception e) {
+            logger.fatal("UPSERT operation with id " + id + " from DELETE request failed: " + e.getMessage());
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         return new Response(Response.ACCEPTED, Response.EMPTY);
@@ -132,7 +129,7 @@ public class WebService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 1, week = 2, bonuses="SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 1, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
