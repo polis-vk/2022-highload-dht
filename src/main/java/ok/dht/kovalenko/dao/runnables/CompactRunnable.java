@@ -39,7 +39,7 @@ public class CompactRunnable implements Runnable {
                 return;
             }
 
-            this.lastNFiles.set(FileUtils.nFiles(this.config));
+            this.lastNFiles.set(FileUtils.numFilesOnDisk(this.config));
             TypedIterator mergeIterator
                     = new MergeIterator(Collections.emptyList(), this.diskStorage.get(DaoUtils.EMPTY_BYTEBUFFER, null));
             if (!mergeIterator.hasNext()) {
@@ -49,7 +49,7 @@ public class CompactRunnable implements Runnable {
             PairedFiles pairedFiles = FileUtils.createPairedFiles(this.config);
             this.serializer.write(mergeIterator, pairedFiles);
             Files.walkFileTree(this.config.workingDir(), new CompactVisitor(this.config, pairedFiles, this.serializer));
-            this.lastNFiles.set(FileUtils.nFiles(this.config));
+            this.lastNFiles.set(FileUtils.numFilesOnDisk(this.config));
             this.wasCompacted.set(true);
         } catch (IOException | ReflectiveOperationException e) {
             throw new RuntimeException(e);

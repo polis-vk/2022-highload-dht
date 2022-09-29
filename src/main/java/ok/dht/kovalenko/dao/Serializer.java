@@ -1,7 +1,5 @@
 package ok.dht.kovalenko.dao;
 
-
-import ok.dht.ServiceConfig;
 import ok.dht.kovalenko.dao.aliases.MemorySSTable;
 import ok.dht.kovalenko.dao.aliases.TypedBaseEntry;
 import ok.dht.kovalenko.dao.aliases.TypedEntry;
@@ -22,12 +20,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class Serializer {
 
-    private final ServiceConfig config;
     private final AtomicBoolean wasCompacted;
 
-    public Serializer(ServiceConfig config, AtomicBoolean wasCompacted)
+    public Serializer(AtomicBoolean wasCompacted)
             throws ReflectiveOperationException {
-        this.config = config;
         this.wasCompacted = wasCompacted;
     }
 
@@ -65,7 +61,7 @@ public final class Serializer {
             int curOffset = (int) dataFile.getFilePointer();
             int bbSize = 0;
             ByteBuffer offset = ByteBuffer.allocate(FileUtils.INDEX_SIZE);
-            TypedEntry curEntry = null;
+            TypedEntry curEntry;
             while (data.hasNext()) {
                 curOffset += bbSize;
                 writeOffset(curOffset, offset, indexesFile);
@@ -85,20 +81,8 @@ public final class Serializer {
         }
     }
 
-    public FileMeta meta(MappedByteBuffer file) {
-        int pos = file.position();
-        file.position(0);
-        byte completelyWritten = file.get();
-        byte hasTombstones = file.get();
-        ByteBuffer from = readByteBuffer(file, 2);
-        ByteBuffer to = readByteBuffer(file, 2 + Integer.BYTES + from.rewind().remaining());
-        file.position(pos);
-        return new FileMeta(completelyWritten, hasTombstones);
-    }
-
     public FileMeta meta(Path pathToFile) throws IOException {
         try (RandomAccessFile file = new RandomAccessFile(pathToFile.toString(), "r")) {
-            // fixme
             byte completelyWritten = file.readByte();
             byte hasTombstones = file.readByte();
             return new FileMeta(completelyWritten, hasTombstones);
@@ -139,9 +123,12 @@ public final class Serializer {
 
     /*
      * Write entries in format:
-     * ┌───────────────────┬──────────────┬────────────────────────────────────┬────────────────┬────────────────────────────────────────┐
-     * │ isTombstone: byte │ keySize: int │ key: byte[entry.key().remaining()] │ valueSize: int │ value: byte[entry.value().remaining()] │
-     * └───────────────────┴──────────────┴────────────────────────────────────┴────────────────┴────────────────────────────────────────┘
+     * ┌───────────────────┬──────────────┬────────────────────────────────────┬────────────────┬
+     * │ isTombstone: byte │ keySize: int │ key: byte[entry.key().remaining()] │ valueSize: int │
+     * └───────────────────┴──────────────┴────────────────────────────────────┴────────────────┴
+     * ┬────────────────────────────────────────┐
+     * │ value: byte[entry.value().remaining()] │
+     * ┴────────────────────────────────────────┘
      */
     private int writeEntry(TypedEntry entry, RandomAccessFile dataFile) throws IOException {
         int bbSize = MemorySSTable.sizeOf(entry);

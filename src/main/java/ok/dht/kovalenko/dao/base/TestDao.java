@@ -10,13 +10,11 @@ import java.util.List;
 
 public class TestDao<D, E extends Entry<D>> implements Dao<String, Entry<String>> {
 
-    Dao<D, E> delegate;
-
-    final DaoFactory.Factory<D, E> factory;
     public final ServiceConfig config;
+    final DaoFactory.Factory<D, E> factory;
     final String name;
-
     final List<Closeable> children = new ArrayList<>();
+    Dao<D, E> delegate;
 
     public TestDao(DaoFactory.Factory<D, E> factory, ServiceConfig config) throws IOException {
         this.factory = factory;

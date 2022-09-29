@@ -6,12 +6,12 @@ import ok.dht.kovalenko.dao.aliases.MappedFileDiskSSTableStorage;
 import ok.dht.kovalenko.dao.aliases.MemorySSTable;
 import ok.dht.kovalenko.dao.aliases.MemorySSTableStorage;
 import ok.dht.kovalenko.dao.aliases.TypedEntry;
+import ok.dht.kovalenko.dao.base.Dao;
 import ok.dht.kovalenko.dao.iterators.MergeIterator;
 import ok.dht.kovalenko.dao.runnables.CompactRunnable;
 import ok.dht.kovalenko.dao.runnables.FlushRunnable;
 import ok.dht.kovalenko.dao.utils.DaoUtils;
 import ok.dht.kovalenko.dao.visitors.ConfigVisitor;
-import ok.dht.kovalenko.dao.base.Dao;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -24,8 +24,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
 
@@ -33,7 +31,6 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
     private static final int FLUSH_TRESHOLD_BYTES = 1 * (1 << 20); // 70MB
     private final ServiceConfig config;
     private final Serializer serializer;
-    private final ReadWriteLock rwlock = new ReentrantReadWriteLock();
 
     private final MemoryStorage memoryStorage = new MemoryStorage(N_MEMORY_SSTABLES);
     private final MappedFileDiskSSTableStorage diskStorage;
@@ -42,12 +39,12 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
     private final Runnable flushRunnable;
     private final Runnable compactRunnable;
 
-    private AtomicLong curBytesForEntries = new AtomicLong();
+    private final AtomicLong curBytesForEntries = new AtomicLong();
 
     public LSMDao(ServiceConfig config) throws IOException {
         try {
             this.config = config;
-            this.serializer = new Serializer(this.config, this.wasCompacted);
+            this.serializer = new Serializer(this.wasCompacted);
             this.diskStorage = new MappedFileDiskSSTableStorage(config, this.serializer);
             if (Files.exists(config.workingDir())) {
                 Files.walkFileTree(
@@ -59,7 +56,8 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
             }
 
             this.flushRunnable = new FlushRunnable(this.config, this.serializer, this.memoryStorage);
-            this.compactRunnable = new CompactRunnable(this.config, this.serializer, this.diskStorage, this.wasCompacted);
+            this.compactRunnable = new CompactRunnable(this.config, this.serializer,
+                    this.diskStorage, this.wasCompacted);
         } catch (ReflectiveOperationException ex) {
             throw new RuntimeException(ex);
         }
@@ -67,11 +65,15 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
 
     @Override
     public TypedEntry get(ByteBuffer key) throws IOException {
-        TypedEntry res = this.memoryStorage.get(key);
-        if (res == null) {
-            res = this.diskStorage.get(key);
+        try {
+            TypedEntry res = this.memoryStorage.get(key);
+            if (res == null) {
+                res = this.diskStorage.get(key);
+            }
+            return res == null || res.isTombstone() ? null : res;
+        } catch (ReflectiveOperationException ex) {
+            throw new RuntimeException(ex);
         }
-        return res == null || res.isTombstone() ? null : res;
     }
 
     @Override
@@ -127,7 +129,7 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
             this.diskStorage.close();
             this.diskStorage.clear();
         } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException(e.getMessage());
         }
     }
 

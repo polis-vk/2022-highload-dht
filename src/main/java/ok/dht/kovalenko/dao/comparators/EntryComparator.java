@@ -18,20 +18,4 @@ public final class EntryComparator
     public int compare(TypedEntry e1, TypedEntry e2) {
         return DaoUtils.byteBufferComparator.compare(e1.key(), e2.key());
     }
-
-    public boolean equal(TypedEntry e1, TypedEntry e2) {
-        return compare(e1, e2) == 0;
-    }
-
-    public boolean lessThan(TypedEntry e1, TypedEntry e2) {
-        return compare(e1, e2) < 0;
-    }
-
-    public boolean notLessThan(TypedEntry e1, TypedEntry e2) {
-        return compare(e1, e2) >= 0;
-    }
-
-    public boolean notMoreThan(TypedEntry e1, TypedEntry e2) {
-        return compare(e1, e2) <= 0;
-    }
 }

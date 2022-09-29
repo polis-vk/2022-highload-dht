@@ -1,7 +1,6 @@
 package ok.dht.kovalenko.dao.utils;
 
 import ok.dht.ServiceConfig;
-import ok.dht.kovalenko.dao.Serializer;
 import ok.dht.kovalenko.dao.dto.PairedFiles;
 
 import java.io.IOException;
@@ -23,15 +22,11 @@ public final class FileUtils {
     public static final String COMPACT_SUFFIX = "Log";
 
     public static final String DATA_FILENAME = DATA_PREFIX + "?" + EXTENSION;
-    public static final String compactDataFilenameToBeSet
+    public static final String COMPACT_DATA_FILENAME_TO_BE_SET
             = getFullFilename(DATA_FILENAME, 1);
     public static final String INDEXES_FILENAME = INDEXES_PREFIX + "?" + EXTENSION;
-    public static final String compactIndexesFilenameToBeSet
+    public static final String COMPACT_INDEXES_FILENAME_TO_BE_SET
             = getFullFilename(INDEXES_FILENAME, 1);
-    public static final String COMPACT_DATA_FILENAME
-            = DATA_PREFIX + COMPACT_SUFFIX + "?" + EXTENSION;
-    public static final String COMPACT_INDEXES_FILENAME
-            = INDEXES_PREFIX + COMPACT_SUFFIX + "?" + EXTENSION;
     private static final String NUMBER_PATTERN = "(\\d+)";
     private static final Pattern DATA_FILENAME_PATTERN
             = getFilePattern(DATA_PREFIX);
@@ -79,19 +74,12 @@ public final class FileUtils {
         return getFullFilename(INDEXES_FILENAME, ordinal);
     }
 
-    public static String getCompactDataFilename(long ordinal) {
-        return getFullFilename(COMPACT_DATA_FILENAME, ordinal);
-    }
-
-    public static String getCompactIndexesFilename(long ordinal) {
-        return getFullFilename(COMPACT_INDEXES_FILENAME, ordinal);
-    }
-
     public static Path getFilePath(String filename, ServiceConfig config) {
         return config.workingDir().resolve(filename);
     }
 
-    public static Path createFile(Function<Integer, String> filenameGenerator, int priority, ServiceConfig config) throws IOException {
+    public static Path createFile(Function<Integer, String> filenameGenerator, int priority, ServiceConfig config)
+            throws IOException {
         String filename = filenameGenerator.apply(priority);
         Path file = FileUtils.getFilePath(filename, config);
         Files.createFile(file);
@@ -107,7 +95,8 @@ public final class FileUtils {
                         FileUtils.createFile(FileUtils::getDataFilename, fileOrdinal, config),
                         FileUtils.createFile(FileUtils::getIndexesFilename, fileOrdinal, config)
                 );
-            } catch (FileAlreadyExistsException ignored) {
+            } catch (FileAlreadyExistsException ex) {
+                break;
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -116,24 +105,9 @@ public final class FileUtils {
         return pairedFiles;
     }
 
-    public static long nFiles(ServiceConfig config) throws IOException {
+    public static long numFilesOnDisk(ServiceConfig config) throws IOException {
         try (Stream<Path> paths = Files.list(config.workingDir())) {
             return paths.count();
-        }
-    }
-
-    public static long nWrittenSSTables(ServiceConfig config, Serializer serializer) {
-        try {
-            long nFiles = nFiles(config);
-            long nWrittenFiles = 0;
-            for (long i = 1; i <= nFiles / 2; ++i) {
-                if (serializer.meta(getFilePath(getDataFilename(i), config)).written()) {
-                    ++nWrittenFiles;
-                }
-            }
-            return nWrittenFiles;
-        } catch (IOException ex) {
-            throw new UncheckedIOException(ex);
         }
     }
 

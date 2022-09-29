@@ -26,7 +26,7 @@ public final class MergeIteratorUtils {
     public static void skipEntry(Queue<PeekIterator> iterators, TypedEntry toBeSkipped) {
         List<PeekIterator> toBeRefreshed = new LinkedList<>();
         for (PeekIterator iterator : iterators) {
-            if (iterator.hasNext() && DaoUtils.entryComparator.equal(iterator.peek(), toBeSkipped)) {
+            if (iterator.hasNext() && DaoUtils.entryComparator.compare(iterator.peek(), toBeSkipped) == 0) {
                 iterator.next();
                 toBeRefreshed.add(iterator);
             }

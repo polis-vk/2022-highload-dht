@@ -5,6 +5,7 @@ import ok.dht.ServiceConfig;
 import ok.dht.kovalenko.dao.LSMDao;
 import ok.dht.kovalenko.dao.aliases.TypedBaseEntry;
 import ok.dht.kovalenko.dao.aliases.TypedEntry;
+import ok.dht.kovalenko.dao.base.ByteBufferDaoFactory;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.Param;
@@ -13,16 +14,13 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
-import ok.dht.kovalenko.dao.base.ByteBufferDaoFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 
 public class MyService implements Service {
 
-    private static final int N_ENTRIES = 80_000_000; // About 3 GB
     private static final ByteBufferDaoFactory daoFactory = new ByteBufferDaoFactory();
     private final ServiceConfig config;
     private LSMDao dao;
@@ -32,11 +30,19 @@ public class MyService implements Service {
         this.config = config;
     }
 
+    private static HttpServerConfig createConfigFromPort(int port) {
+        HttpServerConfig httpConfig = new HttpServerConfig();
+        AcceptorConfig acceptor = new AcceptorConfig();
+        acceptor.port = port;
+        acceptor.reusePort = true;
+        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+        return httpConfig;
+    }
+
     @Override
     public CompletableFuture<?> start() throws IOException {
         try {
             this.dao = new LSMDao(this.config);
-            //DaoFiller.fillDao(this.dao, MyService.daoFactory, N_ENTRIES);
             this.server = new MyServer(createConfigFromPort(this.config.selfPort()));
             this.server.start();
             this.server.addRequestHandlers(this);
@@ -68,7 +74,7 @@ public class MyService implements Service {
                 return new Response(Response.NOT_FOUND, Response.EMPTY);
             }
 
-            return Response.ok(daoFactory.toString(res.value()).getBytes(StandardCharsets.UTF_8));
+            return Response.ok(res.value().array());
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
         }
@@ -104,14 +110,5 @@ public class MyService implements Service {
         } catch (RuntimeException e) {
             return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
         }
-    }
-
-    private static HttpServerConfig createConfigFromPort(int port) {
-        HttpServerConfig httpConfig = new HttpServerConfig();
-        AcceptorConfig acceptor = new AcceptorConfig();
-        acceptor.port = port;
-        acceptor.reusePort = true;
-        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
-        return httpConfig;
     }
 }

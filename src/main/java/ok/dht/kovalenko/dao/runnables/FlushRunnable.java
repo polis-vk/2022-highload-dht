@@ -8,8 +8,6 @@ import ok.dht.kovalenko.dao.dto.PairedFiles;
 import ok.dht.kovalenko.dao.utils.FileUtils;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
 
 public class FlushRunnable implements Runnable {
 
@@ -39,7 +37,8 @@ public class FlushRunnable implements Runnable {
             this.memoryStorage.flushSSTables().add(memorySSTable);
             PairedFiles pairedFiles = FileUtils.createPairedFiles(this.config);
             this.serializer.write(memorySSTable.values().iterator(), pairedFiles);
-            this.memoryStorage.flushSSTables().remove(memorySSTable); // It is impossible that any other thread will capture memorySSTable
+            // It is impossible that any other thread will capture memorySSTable
+            this.memoryStorage.flushSSTables().remove(memorySSTable);
             this.memoryStorage.writeSSTables().add(new MemorySSTable());
         } catch (IOException e) {
             throw new RuntimeException(e);

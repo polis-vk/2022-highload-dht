@@ -44,6 +44,7 @@ public class MappedFileDiskSSTableStorage
     private final ServiceConfig config;
 
     public MappedFileDiskSSTableStorage(ServiceConfig config, Serializer serializer) {
+        super();
         this.config = config;
         this.serializer = serializer;
     }
@@ -63,10 +64,11 @@ public class MappedFileDiskSSTableStorage
         }
     }
 
-    private void mapForRead(long nTablesToMap, Serializer serializer) throws IOException, ReflectiveOperationException {
+    private void mapForRead(long numTablesToMap, Serializer serializer)
+            throws IOException, ReflectiveOperationException {
         unmapFiles();
 
-        for (long priority = 1; priority <= nTablesToMap; ++priority) {
+        for (long priority = 1; priority <= numTablesToMap; ++priority) {
             Path dataFile = FileUtils.getFilePath(FileUtils.getDataFilename(priority), this.config);
             Path indexesFile = FileUtils.getFilePath(FileUtils.getIndexesFilename(priority), this.config);
 
@@ -79,14 +81,15 @@ public class MappedFileDiskSSTableStorage
                 mappedDataFile.position(FileMeta.size());
                 this.put(
                         priority,
-                        new MappedFileDiskSSTable(priority, new MappedPairedFiles(mappedDataFile, mappedIndexesFile), serializer)
+                        new MappedFileDiskSSTable(priority,
+                                new MappedPairedFiles(mappedDataFile, mappedIndexesFile), serializer)
                 );
             }
         }
     }
 
-    public TypedEntry get(ByteBuffer key) throws IOException {
-        //updateTables();
+    public TypedEntry get(ByteBuffer key) throws IOException, ReflectiveOperationException {
+        updateTables();
         TypedEntry res = null;
         for (MappedFileDiskSSTable diskSSTable : this.descendingMap().values()) {
             if ((res = diskSSTable.get(key)) != null) {
@@ -96,18 +99,18 @@ public class MappedFileDiskSSTableStorage
         return res;
     }
 
-    public List<Iterator<TypedEntry>> get(ByteBuffer from, ByteBuffer to) throws ReflectiveOperationException, IOException {
-        //updateTables();
+    public List<Iterator<TypedEntry>> get(ByteBuffer from, ByteBuffer to)
+            throws ReflectiveOperationException, IOException {
+        updateTables();
         List<Iterator<TypedEntry>> res = new LinkedList<>();
         ByteBuffer from1 = from == null ? DaoUtils.EMPTY_BYTEBUFFER : from;
-        for (MappedFileDiskSSTable diskSSTable: this.descendingMap().values()) {
+        for (MappedFileDiskSSTable diskSSTable : this.descendingMap().values()) {
             Iterator<TypedEntry> rangeIt = diskSSTable.get(from1, to);
             if (rangeIt == null) {
                 continue;
             }
             res.add(rangeIt);
         }
-        //this.descendingMap().values().forEach(sstable -> res.add(sstable.get(range)));
         return res;
     }
 
@@ -121,7 +124,7 @@ public class MappedFileDiskSSTableStorage
     }
 
     private void updateTables() throws ReflectiveOperationException, IOException {
-        long diskSSTablesSize = FileUtils.nFiles(config)/2;
+        long diskSSTablesSize = FileUtils.numFilesOnDisk(config) / 2;
         if (this.get(diskSSTablesSize) == null) {
             mapForRead(diskSSTablesSize, serializer);
         }

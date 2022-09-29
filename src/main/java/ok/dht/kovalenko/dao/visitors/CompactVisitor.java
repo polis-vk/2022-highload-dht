@@ -26,8 +26,8 @@ public class CompactVisitor extends SimpleFileVisitor<Path> {
     public CompactVisitor(ServiceConfig config, PairedFiles pairedFiles, Serializer serializer) {
         this.compactedDataPath = pairedFiles.dataFile();
         this.compactedIndexesPath = pairedFiles.indexesFile();
-        this.dataPathToBeSet = FileUtils.getFilePath(FileUtils.compactDataFilenameToBeSet, config);
-        this.indexesPathToBeSet = FileUtils.getFilePath(FileUtils.compactIndexesFilenameToBeSet, config);
+        this.dataPathToBeSet = FileUtils.getFilePath(FileUtils.COMPACT_DATA_FILENAME_TO_BE_SET, config);
+        this.indexesPathToBeSet = FileUtils.getFilePath(FileUtils.COMPACT_INDEXES_FILENAME_TO_BE_SET, config);
         this.serializer = serializer;
     }
 

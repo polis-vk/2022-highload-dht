@@ -24,9 +24,9 @@ public class PeekIterator implements TypedIterator {
 
     @Override
     public TypedEntry next() {
-        TypedEntry peek = peek();
+        TypedEntry peekNext = peek();
         this.peek = null;
-        return peek;
+        return peekNext;
     }
 
     public TypedEntry peek() {

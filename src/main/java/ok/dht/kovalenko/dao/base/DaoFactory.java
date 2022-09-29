@@ -1,9 +1,6 @@
 package ok.dht.kovalenko.dao.base;
 
 import ok.dht.ServiceConfig;
-import ok.dht.kovalenko.dao.base.Dao;
-import ok.dht.kovalenko.dao.base.Entry;
-import ok.dht.kovalenko.dao.base.TestDao;
 
 import java.io.IOException;
 import java.lang.annotation.ElementType;
@@ -16,9 +13,18 @@ import java.lang.annotation.Target;
 public @interface DaoFactory {
 
     int stage() default 1;
+
     int week() default 1;
 
     interface Factory<D, E extends Entry<D>> {
+
+        static ServiceConfig extractConfig(Dao<String, Entry<String>> dao) {
+            return ((TestDao<?, ?>) dao).config;
+        }
+
+        static Dao<String, Entry<String>> reopen(Dao<String, Entry<String>> dao) throws IOException {
+            return ((TestDao<?, ?>) dao).reopen();
+        }
 
         default Dao<D, E> createDao() throws IOException {
             throw new UnsupportedOperationException("Need to override one of createDao methods");
@@ -33,14 +39,6 @@ public @interface DaoFactory {
         D fromString(String data);
 
         E fromBaseEntry(Entry<D> baseEntry);
-
-        static ServiceConfig extractConfig(Dao<String, Entry<String>> dao) {
-            return ((TestDao<?,?>)dao).config;
-        }
-
-        static Dao<String, Entry<String>> reopen(Dao<String, Entry<String>> dao) throws IOException {
-            return ((TestDao<?,?>)dao).reopen();
-        }
 
         default Dao<String, Entry<String>> createStringDao(ServiceConfig config) throws IOException {
             return new TestDao<>(this, config);

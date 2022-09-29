@@ -5,13 +5,13 @@ import ok.dht.kovalenko.dao.utils.FileUtils;
 
 import java.util.Map;
 
-public abstract class DiskSSTable<PairedFileType>
-        implements Map.Entry<Long/*priority*/, PairedFileType> {
+public abstract class DiskSSTable<PairedFileT>
+        implements Map.Entry<Long/*priority*/, PairedFileT> {
 
     protected final long key;
-    protected PairedFileType value;
+    protected PairedFileT value;
 
-    public DiskSSTable(long key, PairedFileType value) {
+    public DiskSSTable(long key, PairedFileT value) {
         this.key = key;
         this.value = value;
     }
@@ -26,12 +26,13 @@ public abstract class DiskSSTable<PairedFileType>
     }
 
     @Override
-    public PairedFileType getValue() {
+    public PairedFileT getValue() {
         return this.value;
     }
 
     @Override
-    public PairedFileType setValue(PairedFileType value) {
-        return (this.value = value);
+    public PairedFileT setValue(PairedFileT value) {
+        this.value = value;
+        return this.value;
     }
 }

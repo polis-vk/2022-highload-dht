@@ -31,8 +31,8 @@ public class ConfigVisitor
 
     public ConfigVisitor(ServiceConfig config, Serializer serializer) {
         this.serializer = serializer;
-        this.compactedDataFilePathToBeSet = FileUtils.getFilePath(FileUtils.compactDataFilenameToBeSet, config);
-        this.compactedIndexesFilePathToBeSet = FileUtils.getFilePath(FileUtils.compactIndexesFilenameToBeSet, config);
+        this.compactedDataFilePathToBeSet = FileUtils.getFilePath(FileUtils.COMPACT_DATA_FILENAME_TO_BE_SET, config);
+        this.compactedIndexesFilePathToBeSet = FileUtils.getFilePath(FileUtils.COMPACT_INDEXES_FILENAME_TO_BE_SET, config);
     }
 
     @Override
@@ -133,8 +133,8 @@ public class ConfigVisitor
 
     private void checkIfDataAndIndexesFilesSizeMatch() {
         if (this.dataFiles.size() != this.indexesFiles.size()) {
-            throw new IllegalStateException("Mismatch in the number of data-files and indexes-files;" +
-                    " expected: equal, got: " + this.dataFiles.size() + ":" + this.indexesFiles.size());
+            throw new IllegalStateException("Mismatch in the number of data-files and indexes-files;"
+                    + " expected: equal, got: " + this.dataFiles.size() + ":" + this.indexesFiles.size());
         }
     }
 
@@ -157,6 +157,6 @@ public class ConfigVisitor
     }
 
     private boolean isTargetFile(Path file) {
-        return !file.getFileName().toString().equals(FileUtils.compactDataFilenameToBeSet);
+        return !file.getFileName().toString().equals(FileUtils.COMPACT_DATA_FILENAME_TO_BE_SET);
     }
 }
