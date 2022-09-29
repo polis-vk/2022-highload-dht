@@ -61,54 +61,38 @@ public class MyService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id) {
-        try {
-            if (id.isEmpty()) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
-
-            ByteBuffer key = daoFactory.fromString(id);
-            TypedEntry res = this.dao.get(key);
-
-            if (res == null) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
-            }
-
-            return Response.ok(res.value().array());
-        } catch (IOException e) {
-            return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
+    public Response handleGet(@Param(value = "id", required = true) String id) throws IOException {
+        if (id.isEmpty()) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+        ByteBuffer key = daoFactory.fromString(id);
+        TypedEntry res = this.dao.get(key);
+        if (res == null) {
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
+        }
+        return Response.ok(res.value().array());
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(Request request, @Param(value = "id", required = true) String id) {
-        try {
-            if (id.isEmpty()) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
-
-            ByteBuffer key = daoFactory.fromString(id);
-            ByteBuffer value = ByteBuffer.wrap(request.getBody());
-            this.dao.upsert(new TypedBaseEntry(key, value));
-            return new Response(Response.CREATED, Response.EMPTY);
-        } catch (RuntimeException e) {
-            return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
+        if (id.isEmpty()) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+        ByteBuffer key = daoFactory.fromString(id);
+        ByteBuffer value = ByteBuffer.wrap(request.getBody());
+        this.dao.upsert(new TypedBaseEntry(key, value));
+        return new Response(Response.CREATED, Response.EMPTY);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(@Param(value = "id", required = true) String id) {
-        try {
-            if (id.isEmpty()) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-            }
-            ByteBuffer key = daoFactory.fromString(id);
-            this.dao.upsert(new TypedBaseEntry(key, null));
-            return new Response(Response.ACCEPTED, Response.EMPTY);
-        } catch (RuntimeException e) {
-            return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
+        if (id.isEmpty()) {
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
+        ByteBuffer key = daoFactory.fromString(id);
+        this.dao.upsert(new TypedBaseEntry(key, null));
+        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 }
