@@ -70,6 +70,9 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         return (result == null || result.isTombstone()) ? null : result;
     }
 
+    // we do not want to wait for background flush here, so future is ignored
+    // in case of error during flush error message is logged and storage is closed
+    @SuppressWarnings("FutureReturnValueIgnored")
     @Override
     public void upsert(final Entry<MemorySegment> entry) {
         final DaoState freezedState = accessState();
