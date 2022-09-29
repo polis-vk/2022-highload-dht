@@ -131,7 +131,6 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
             this.diskStorage.clear();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException(Arrays.toString(e.getStackTrace()));
         }
     }
 

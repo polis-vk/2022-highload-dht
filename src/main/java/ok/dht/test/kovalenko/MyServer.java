@@ -1,6 +1,5 @@
 package ok.dht.test.kovalenko;
 
-import ok.dht.ServiceConfig;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -10,11 +9,6 @@ import one.nio.net.Session;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
-import java.nio.file.Paths;
-import java.util.Collections;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 public final class MyServer extends HttpServer {
 

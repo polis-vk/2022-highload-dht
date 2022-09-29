@@ -1,6 +1,5 @@
 package ok.dht.kovalenko.dao.aliases;
 
-
 import ok.dht.kovalenko.dao.Serializer;
 import ok.dht.kovalenko.dao.dto.MappedPairedFiles;
 import ok.dht.kovalenko.dao.utils.DaoUtils;
