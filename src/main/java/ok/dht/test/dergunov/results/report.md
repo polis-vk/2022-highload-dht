@@ -2,7 +2,9 @@
 
 ## Нагрузочное тестирование с помощью wrk2 ##
 
-Тестирование производится на Ubuntu
+Тестирование производится на `Ubuntu 22.04.1 LTS` ядро `Linux 5.15.0-48-generic`
+процессор `Intel(R) Xeon(R) CPU E5-2620 v3 @ 2.40GHz`
+кеш L3 `15 Mb` диск nvme
 
 ### PUT ###
 
@@ -13,19 +15,19 @@
 будем использовать 1 поток, 1 подключение и скрипт `put.lua`
 (`-d 60 -t 1 -c 1 -s put.lua`)
 
-`wrk -d 60 -t 1 -c 1 -R 20000 -s put.lua -L http://localhost:8082` - Avg Latency 1.49s - сервис не справился
+`wrk -d 60 -t 1 -c 1 -R 20000 -s ./put.lua -L http://localhost:8084` - Avg Latency 1.49s - сервис не справился
 
-`wrk -d 60 -t 1 -c 1 -R 10000 -s put.lua -L http://localhost:8082` - Avg Latency 675.08us - сервис справился
+`wrk -d 60 -t 1 -c 1 -R 10000 -s ./put.lua -L http://localhost:8084` - Avg Latency 675.08us - сервис справился
 
-`wrk -d 60 -t 1 -c 1 -R 15000 -s put.lua -L http://localhost:8082` - Avg Latency 61.79ms - сервис не справился
+`wrk -d 60 -t 1 -c 1 -R 15000 -s ./put.lua -L http://localhost:8084` - Avg Latency 61.79ms - сервис не справился
 
-`wrk -d 60 -t 1 -c 1 -R 12500 -s put.lua -L http://localhost:8082` - Avg Latency 2.38ms - сервис не справился
+`wrk -d 60 -t 1 -c 1 -R 12500 -s ./put.lua -L http://localhost:8084` - Avg Latency 2.38ms - сервис не справился
 
-`wrk -d 60 -t 1 -c 1 -R 11250 -s put.lua -L http://localhost:8082` - Avg Latency 0.98ms - сервис справился
+`wrk -d 60 -t 1 -c 1 -R 11250 -s ./put.lua -L http://localhost:8084` - Avg Latency 0.98ms - сервис справился
 
+В 90 % случаях ответ давался меньше за 1.11ms
 Будем считать что сервис при данных параметра нагрузки хорошо справляется с rate 9687
-Консольный вывод при rate 9375
-
+Консольный вывод при rate 9375,
 ```
 nikita@nikita-X99:~/wrk2$ wrk -d 60 -t 1 -c 1 -R 11250 -s ./put.lua -L http://localhost:8084
 Running 1m test @ http://localhost:8084
@@ -151,16 +153,28 @@ Transfer/sec:    736.07KB
 
 ### GET ###
 
-Перед выполением заполним нашу базу с помощью wrk
+Перед выполнением нагрузки на get запрос,
+заполним нашу базу с помощью wrk
 `wrk -d 120 -t 1 -c 1 -R 11250 -s put.lua -L http://localhost:8082`
-получим повторяющиеся записи внутри базы, в базе порялка 1.3 миллионов записей
+получим повторяющиеся записи внутри базы, в базе порядка 1.3 миллионов записей
 
-выполним чтение с тем же
-`wrk -d 60 -t 1 -c 1 -R 11250 -s get.lua -L http://localhost:8082` - Avg Latency 205.22ms - сервис не справился
-`wrk -d 60 -t 1 -c 1 -R 5625 -s get.lua -L http://localhost:8082` - Avg Latency 730.87us - сервис справился
-`wrk -d 60 -t 1 -c 1 -R 7813 -s get.lua -L http://localhost:8082` - Avg Latency 660.84us - сервис справился
-`wrk -d 60 -t 1 -c 1 -R 8906 -s get.lua -L http://localhost:8082` - Avg Latency 849.78us - сервис справился
-`wrk -d 60 -t 1 -c 1 -R 9453 -s get.lua -L http://localhost:8082` - Avg Latency 44.44ms - сервис не справился
+Запросы нагрузки для get запросов будем искать так же бин поиском, за верхнюю границу возьмем `-R 11250`
+
+`wrk -d 60 -t 1 -c 1 -R 11250 -s ./get.lua -L http://localhost:8084` - Avg Latency 205.22ms - сервис не справился
+
+`wrk -d 60 -t 1 -c 1 -R 5625 -s ./get.lua -L http://localhost:8084` - Avg Latency 730.87us - сервис справился
+
+`wrk -d 60 -t 1 -c 1 -R 7813 -s ./get.lua -L http://localhost:8084` - Avg Latency 660.84us - сервис справился
+
+`wrk -d 60 -t 1 -c 1 -R 8906 -s ./get.lua -L http://localhost:8084` - Avg Latency 849.78us - сервис справился
+
+`wrk -d 60 -t 1 -c 1 -R 9453 -s ./get.lua -L http://localhost:8084` - Avg Latency 44.44ms - сервис не справился
+
+`wrk -d 60 -t 1 -c 1 -R 8906 -s ./get.lua -L http://localhost:8084` - Avg Latency 849.78us - сервис справился
+
+В 90 % случаях ответ давался меньше за 1.08ms
+Будем считать что сервис при данных параметра нагрузки хорошо справляется с rate 8906
+Консольный вывод при rate 8906:
 
 ```
 nikita@nikita-X99:~/wrk2$ wrk -d 60 -t 1 -c 1 -R 8906 -s ./get.lua -L http://localhost:8084
@@ -287,14 +301,47 @@ Running 1m test @ http://localhost:8084
   534350 requests in 1.00m, 37.59MB read
 Requests/sec:   8905.86
 Transfer/sec:    641.62KB
-
 ```
 
 ## Профилирование с помощью async-profiler ##
 
 ### PUT ###
 
-wrk -d 60 -t 1 -c 1 -R 11250 -s ./put.lua -L http://localhost:8084
+Выполним старт приложения и дадим нагрузку с помощью wrk:
+`wrk -d 60 -t 1 -c 1 -R 11250 -s ./put.lua -L http://localhost:8084`
+
+#### CPU ####
+
+![PUT CPU async-profiler](put_cpu.png)
+За тестирование, только 10% времени CPU использовалось на upsert,
+10 процентов времени на работу сборщика мусора G1,
+Но большая часть времени на работу с сетью
+
+#### ALLOC ####
+
+![PUT ALLOC async-profiler](put_alloc.png)
+За тестирование, только 3.16% аллокаций использовалось на upsert,
+и 10% на сохранение sstables
+
+### GET ###
+
+Перед этим заполним
+`wrk -d 60 -t 1 -c 1 -R 11250 -s ./put.lua -L http://localhost:8084`
+
+GET `wrk -d 60 -t 1 -c 1 -R 8906 -s ./get.lua -L http://localhost:8084`
+
+#### CPU ####
+
+![GET CPU async-profiler](get_cpu.png)
+За тестирование, только 13% времени CPU использовалось на get внутрь диска,
+4.6% на память внутрь памяти, большая часть времени на работу с сетью
+
+#### ALLOC ####
+
+![GET ALLOC async-profiler](get_alloc.png)
+При get же 80% аллокаций идёт на запрос в базу данных, при этом 78%
+в том случае когда мы идем за данными на диск и только 2% если мы идем в память
+
 
 
 
