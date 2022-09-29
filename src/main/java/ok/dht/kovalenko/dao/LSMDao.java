@@ -16,6 +16,7 @@ import ok.dht.kovalenko.dao.visitors.ConfigVisitor;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -171,7 +172,7 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
         }
 
         public List<Iterator<TypedEntry>> get(ByteBuffer from, ByteBuffer to) {
-            List<Iterator<TypedEntry>> res = new LinkedList<>();
+            List<Iterator<TypedEntry>> res = new ArrayList<>();
             ByteBuffer from1 = from == null ? DaoUtils.EMPTY_BYTEBUFFER : from;
             addMemorySSTables(this.memoryWriteSSTables.iterator(), res, from1, to);
             addMemorySSTables(this.memoryFlushSSTables.iterator(), res, from1, to);

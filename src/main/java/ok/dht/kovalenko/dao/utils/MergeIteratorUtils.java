@@ -3,6 +3,7 @@ package ok.dht.kovalenko.dao.utils;
 import ok.dht.kovalenko.dao.aliases.TypedEntry;
 import ok.dht.kovalenko.dao.iterators.PeekIterator;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
@@ -24,7 +25,7 @@ public final class MergeIteratorUtils {
     }
 
     public static void skipEntry(Queue<PeekIterator> iterators, TypedEntry toBeSkipped) {
-        List<PeekIterator> toBeRefreshed = new LinkedList<>();
+        List<PeekIterator> toBeRefreshed = new ArrayList<>();
         for (PeekIterator iterator : iterators) {
             if (iterator.hasNext() && DaoUtils.entryComparator.compare(iterator.peek(), toBeSkipped) == 0) {
                 iterator.next();

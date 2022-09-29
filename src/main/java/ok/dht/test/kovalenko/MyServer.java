@@ -38,7 +38,7 @@ public final class MyServer extends HttpServer {
         );
         MyService service = new MyService(cfg);
         service.start().get(1, TimeUnit.SECONDS);
-        LOG.debug("Socket is ready: " + url);
+        LOG.debug("Socket is ready: {}", url);
     }
 
     @Override

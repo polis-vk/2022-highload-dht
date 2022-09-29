@@ -15,6 +15,7 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -101,7 +102,7 @@ public class MappedFileDiskSSTableStorage
     public List<Iterator<TypedEntry>> get(ByteBuffer from, ByteBuffer to)
             throws ReflectiveOperationException, IOException {
         updateTables();
-        List<Iterator<TypedEntry>> res = new LinkedList<>();
+        List<Iterator<TypedEntry>> res = new ArrayList<>();
         ByteBuffer from1 = from == null ? DaoUtils.EMPTY_BYTEBUFFER : from;
         for (MappedFileDiskSSTable diskSSTable : this.descendingMap().values()) {
             Iterator<TypedEntry> rangeIt = diskSSTable.get(from1, to);
