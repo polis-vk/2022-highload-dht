@@ -75,7 +75,7 @@ public class MyService implements Service {
                 return new Response(Response.NOT_FOUND, Response.EMPTY);
             }
 
-            return Response.ok(daoFactory.toString(res.value()).getBytes(StandardCharsets.UTF_8));
+            return Response.ok(res.value().array());
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, daoFactory.fromString(e.getMessage()).array());
         }
