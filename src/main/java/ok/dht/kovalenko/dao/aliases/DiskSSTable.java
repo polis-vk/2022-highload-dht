@@ -1,6 +1,5 @@
 package ok.dht.kovalenko.dao.aliases;
 
-
 import ok.dht.kovalenko.dao.utils.FileUtils;
 
 import java.util.Map;

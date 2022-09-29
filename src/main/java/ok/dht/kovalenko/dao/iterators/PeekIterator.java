@@ -1,6 +1,5 @@
 package ok.dht.kovalenko.dao.iterators;
 
-
 import ok.dht.kovalenko.dao.aliases.TypedEntry;
 import ok.dht.kovalenko.dao.aliases.TypedIterator;
 

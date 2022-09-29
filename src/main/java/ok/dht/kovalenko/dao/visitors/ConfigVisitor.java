@@ -31,8 +31,10 @@ public class ConfigVisitor
 
     public ConfigVisitor(ServiceConfig config, Serializer serializer) {
         this.serializer = serializer;
-        this.compactedDataFilePathToBeSet = FileUtils.getFilePath(FileUtils.COMPACT_DATA_FILENAME_TO_BE_SET, config);
-        this.compactedIndexesFilePathToBeSet = FileUtils.getFilePath(FileUtils.COMPACT_INDEXES_FILENAME_TO_BE_SET, config);
+        this.compactedDataFilePathToBeSet
+                = FileUtils.getFilePath(FileUtils.COMPACT_DATA_FILENAME_TO_BE_SET, config);
+        this.compactedIndexesFilePathToBeSet
+                = FileUtils.getFilePath(FileUtils.COMPACT_INDEXES_FILENAME_TO_BE_SET, config);
     }
 
     @Override

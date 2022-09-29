@@ -1,6 +1,5 @@
 package ok.dht.kovalenko.dao.comparators;
 
-
 import ok.dht.kovalenko.dao.aliases.TypedEntry;
 import ok.dht.kovalenko.dao.utils.DaoUtils;
 

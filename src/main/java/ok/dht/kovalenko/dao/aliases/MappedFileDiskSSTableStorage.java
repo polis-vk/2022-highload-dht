@@ -1,6 +1,5 @@
 package ok.dht.kovalenko.dao.aliases;
 
-
 import ok.dht.ServiceConfig;
 import ok.dht.kovalenko.dao.Serializer;
 import ok.dht.kovalenko.dao.dto.FileMeta;

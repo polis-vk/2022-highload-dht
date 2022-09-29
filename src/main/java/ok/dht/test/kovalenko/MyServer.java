@@ -22,20 +22,6 @@ public final class MyServer extends HttpServer {
         super(config, routers);
     }
 
-    public static void main(String[] args)
-            throws IOException, ExecutionException, InterruptedException, TimeoutException {
-        int port = 19234;
-        String url = "http://localhost:" + port;
-        ServiceConfig cfg = new ServiceConfig(
-                port,
-                url,
-                Collections.singletonList(url),
-                Paths.get("/home/pavel/IntelliJIdeaProjects/tables/data_bigtables/")
-        );
-        new MyService(cfg).start().get(1, TimeUnit.SECONDS);
-        System.err.println("Socket is ready: " + url);
-    }
-
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);

@@ -16,6 +16,7 @@ import ok.dht.kovalenko.dao.visitors.ConfigVisitor;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -129,7 +130,8 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
             this.diskStorage.close();
             this.diskStorage.clear();
         } catch (InterruptedException e) {
-            throw new RuntimeException(e.getMessage());
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(Arrays.toString(e.getStackTrace()));
         }
     }
 
