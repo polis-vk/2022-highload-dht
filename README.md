@@ -10,7 +10,7 @@ Cloning into '2022-highload-dht'...
 ...
 $ git remote add upstream git@github.com:polis-vk/2022-highload-dht.git
 $ git fetch upstream
-From github.com:polis-vk/202-highload-dht
+From github.com:polis-vk/2022-highload-dht
  * [new branch]      master     -> upstream/master
 ```
 
@@ -45,7 +45,7 @@ $ ./gradlew run
 
 Приложите полученный консольный вывод `wrk2` для обоих видов нагрузки.
 
-Отпрофилируйте приложение (CPU и alloc) под `PUT` и `GET` нагрузкой с помощью [async-profiler](https://github.com/jvm-profiling-tools/async-profiler).
+Отпрофилируйте приложение (CPU и alloc) под `PUT` и `GET` нагрузкой с помощью [async-profiler](https://github.com/Artyomcool/async-profiler).
 Приложите SVG-файлы FlameGraph `cpu`/`alloc` для `PUT`/`GET` нагрузки.
 
 **Объясните** результаты нагрузочного тестирования и профилирования и приложите **текстовый отчёт** (в Markdown).
@@ -56,3 +56,14 @@ $ ./gradlew run
 ### Report
 Когда всё будет готово, присылайте pull request со своей реализацией и оптимизациями на review.
 Не забывайте **отвечать на комментарии в PR** (в том числе автоматизированные) и **исправлять замечания**!
+
+## Этап 2. Асинхронный сервер (deadline 2022-10-05 23:59:59 MSK)
+
+Вынесите **обработку** запросов в отдельный `ExecutorService` с ограниченной очередью, чтобы разгрузить `SelectorThread`ы HTTP сервера.
+
+Проведите нагрузочное тестирование с помощью [wrk2](https://github.com/giltene/wrk2) с **большим количеством соединений** (не меньше 64) `PUT` и `GET` запросами.
+
+Отпрофилируйте приложение (CPU, alloc и lock) под `PUT` и `GET` нагрузкой с помощью [async-profiler](https://github.com/Artyomcool/async-profiler).
+
+### Report
+Когда всё будет готово, присылайте pull request с изменениями, результатами нагрузочного тестирования и профилирования, а также анализом результатов **по сравнению с предыдущей** (синхронной) версией.
