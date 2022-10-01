@@ -43,6 +43,7 @@
 ### Результаты с профилировщика (flamegraph)
 **CPU**
 [![cpu get](./img/profile_get.png)](https://htmlpreview.github.io/?https://github.com/levs2001/2022-highload-dht/blob/stage1/src/main/java/ok/dht/test/saskov/stress_testing/myserver_profile_get.html)
+Видно, что очень много ресурсов уходит на работу селекторов, именно в них мы упираемся на данном этапе. Главная идея по улучшению заставить их делать свою работу сопоставлять сокеты результатам, а не ждать этих результатов, то есть они должны перестать ждать, когда закончится put, get и тп.
 
 Скорее всего, рост задержки больше чем в 2 раза связан с jit компиляцией и работой jit-а над оптимизацией:
 ![](./img/compilation_get.png)
