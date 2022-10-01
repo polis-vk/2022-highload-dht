@@ -11,7 +11,7 @@
 Также из [вывода wrk](./wrk/put/wrk_put.txt) можно узнать 2 не менее важных показателя. Средняя задержка составила 744 микросекунды, максимальная была 5 миллисекунд. Из гистограммы видим, что доля больших задержек несущественна, да и 5 миллисекунд задержка не критичная на данном этапе.
 
 ### Результаты с профилировщика (flamegraph)
-[![flamegraph put](./img/profile_diff_put.png)](./myserver_profile_put.html)
+[![flamegraph put](./img/profile_diff_put.png)](https://htmlpreview.github.io/?https://github.com/levs2001/2022-highload-dht/blob/stage1/src/main/java/ok/dht/test/saskov/stress_testing/myserver_profile_put.html)
 При втором запуске задержка была меньше. На хитмапе при сравнении двух тестов хорошо видно, почему так произошло. 
 
 Одной из причин было то, что временные буффера и память необходимая при чтении и записи уже были выделены jvm:
@@ -33,6 +33,6 @@
 Задержка достаточно большая и при большем rate база начинает захлебываться (нагрузка становится не стабильной), что не есть хорошо.
 
 ### Результаты с профилировщика (flamegraph)
-[![flamegraph get](./img/profile_get.png)](./myserver_profile_get.html)
+[![flamegraph get](./img/profile_get.png)](https://htmlpreview.github.io/?https://github.com/levs2001/2022-highload-dht/blob/stage1/src/main/java/ok/dht/test/saskov/stress_testing/myserver_profile_get.html)
 
 Результаты обеих тестов схожи.
