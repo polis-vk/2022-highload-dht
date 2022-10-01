@@ -52,7 +52,7 @@ public class MyService implements Service {
                 new Config(config.workingDir(), FLUSH_THRESHOLD)
         );
 
-        log.info("Service was started on: " + config.selfUrl() + " successfully.");
+        log.info("Service was started on {} successfully.", config.selfUrl());
         return CompletableFuture.completedFuture(null);
     }
 

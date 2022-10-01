@@ -22,7 +22,7 @@ public final class MyServer {
             throws IOException, ExecutionException, InterruptedException, TimeoutException {
         int port = 12345;
         String url = "http://localhost:" + port;
-        Path dir = Paths.get("/Users", "lev.saskov", "MyProgramms", "Polis", "database");
+        Path dir = Path.of("/Users", "lev.saskov", "MyProgramms", "Polis", "database");
         // For tests
         ServiceConfig cfg = new ServiceConfig(
                 port,

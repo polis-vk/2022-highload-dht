@@ -71,6 +71,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     }
 
     @Override
+    @SuppressWarnings("FutureReturnValueIgnored") // I don't check future from flush in background here.
     public void upsert(Entry<MemorySegment> entry) {
         State state = accessState();
 
@@ -241,10 +242,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
         public TombstoneFilteringIterator(Iterator<Entry<MemorySegment>> iterator) {
             this.iterator = iterator;
-        }
-
-        public Entry<MemorySegment> peek() {
-            return hasNext() ? current : null;
         }
 
         @Override
