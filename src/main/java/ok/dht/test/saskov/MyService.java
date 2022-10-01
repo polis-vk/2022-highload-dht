@@ -17,7 +17,9 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +40,9 @@ public class MyService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
+        dao = new MemorySegmentDao(
+                new Config(config.workingDir(), FLUSH_THRESHOLD)
+        );
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
@@ -45,12 +50,8 @@ public class MyService implements Service {
                 session.sendResponse(response);
             }
         };
-        server.start();
         server.addRequestHandlers(this);
-
-        dao = new MemorySegmentDao(
-                new Config(config.workingDir(), FLUSH_THRESHOLD)
-        );
+        server.start();
 
         log.info("Service was started on {} successfully.", config.selfUrl());
         return CompletableFuture.completedFuture(null);
@@ -58,8 +59,8 @@ public class MyService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
+        server.stop();
         dao.close();
-
         log.info("Service was stopped successfully.");
         return CompletableFuture.completedFuture(null);
     }
