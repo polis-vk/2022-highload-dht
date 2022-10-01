@@ -1,6 +1,7 @@
 package ok.dht.test.siniachenko;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.siniachenko.service.Service;
 
 import java.io.IOException;
 import java.nio.file.Files;
