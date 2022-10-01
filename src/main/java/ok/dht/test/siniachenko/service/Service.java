@@ -36,16 +36,6 @@ public class Service implements ok.dht.Service {
                 Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
                 session.sendResponse(response);
             }
-
-//            @Override
-//            public synchronized void stop() {
-//                super.stop();
-//                for (SelectorThread selectorThread : this.selectors) {
-//                    for (Session session : selectorThread.selector) {
-//                        session.close();
-//                    }
-//                }
-//            }
         };
         server.addRequestHandlers(this);
         server.start();
@@ -72,7 +62,7 @@ public class Service implements ok.dht.Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
+        if (id == null || id.isEmpty()) {
             return new Response(
                 Response.BAD_REQUEST,
                 Response.EMPTY
@@ -99,7 +89,7 @@ public class Service implements ok.dht.Service {
         @Param(value = "id", required = true) String id,
         Request request
     ) {
-        if (id.isEmpty()) {
+        if (id == null || id.isEmpty()) {
             return new Response(
                 Response.BAD_REQUEST,
                 Response.EMPTY
@@ -122,7 +112,7 @@ public class Service implements ok.dht.Service {
     public Response deleteEntity(
         @Param(value = "id", required = true) String id
     ) {
-        if (id.isEmpty()) {
+        if (id == null || id.isEmpty()) {
             return new Response(
                 Response.BAD_REQUEST,
                 Response.EMPTY
