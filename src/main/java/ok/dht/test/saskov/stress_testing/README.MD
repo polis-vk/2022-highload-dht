@@ -8,14 +8,22 @@
 ![](./wrk/put/wrk_put_histogram.png)
 Из гистограммы персентилей для задержек видно, что нагрузка была стабильной. 99% задержек не превышали 2 мс, а 90% и вовсе были около 1 мс. 
 
-Также из [вывода wrk](./wrk/put/wrk_put.txt) можно узнать 2 не менее важных показателя. Средняя задержка составила 744 микросекунды, максимальная была 5 миллисекунд. Из гистограммы видим, что доля больших задержек несущественна, да и 5 миллисекунд задержка не критичная на данном этапе.
+Также из [вывода wrk](./wrk/put/wrk_put.txt) можно узнать 2 не менее важных показателя. Средняя задержка составила 744 микросекунды, максимальная была 5 миллисекунд. Посмотрим с помощью профилировщика чем была вызвана максимальная задержка.
 
 ### Результаты с профилировщика (flamegraph)
-[![flamegraph put](./img/profile_diff_put.png)](https://htmlpreview.github.io/?https://github.com/levs2001/2022-highload-dht/blob/stage1/src/main/java/ok/dht/test/saskov/stress_testing/myserver_profile_put.html)
-При втором запуске задержка была меньше. На хитмапе при сравнении двух тестов хорошо видно, почему так произошло. 
+**CPU**
+[![cpu put](./img/compilation_put_last_run_cpu.png)](https://htmlpreview.github.io/?https://github.com/levs2001/2022-highload-dht/blob/stage1/src/main/java/ok/dht/test/saskov/stress_testing/myserver_profile_put.html)
+Видим, что часть времени тратится на JIT компиляцию, именно это вызывает максимальную задержку.
 
-Одной из причин было то, что временные буффера и память необходимая при чтении и записи уже были выделены jvm:
-![](./img/profile_diff_put_direct_temporary.png)
+Процесс JIT компиляции при первом запуске наиболее ярко выраженный (мы еще не входили в большинство методов, JIT-у нужно время, чтобы их скомпилировать):
+![cpu jit put](./img/compilation_put_cpu.png)
+
+Также какое-то количество времени тратится на flush, это тоже вносит увеличение задержки:
+![cpu flush put](./img/flush_put_cpu.png)
+
+**Alloc**
+[![alloc put](./img/alloc_put.png)](https://htmlpreview.github.io/?https://github.com/levs2001/2022-highload-dht/blob/stage1/src/main/java/ok/dht/test/saskov/stress_testing/alloc_put.html)
+На графике для Аллоков хорошо видны моменты флашей (красные кубики). Также можно обратить внимание, что к концу каждого теста эти кубики постепенно сближаются, это связано с тем, что размер entry, которое я кладу увеличивается (в скрипте счетчик), соответственно флашить приходится чаще. 
 
 ---
 
@@ -33,6 +41,13 @@
 Задержка достаточно большая и при большем rate база начинает захлебываться (нагрузка становится не стабильной), что не есть хорошо.
 
 ### Результаты с профилировщика (flamegraph)
-[![flamegraph get](./img/profile_get.png)](https://htmlpreview.github.io/?https://github.com/levs2001/2022-highload-dht/blob/stage1/src/main/java/ok/dht/test/saskov/stress_testing/myserver_profile_get.html)
+**CPU**
+[![cpu get](./img/profile_get.png)](https://htmlpreview.github.io/?https://github.com/levs2001/2022-highload-dht/blob/stage1/src/main/java/ok/dht/test/saskov/stress_testing/myserver_profile_get.html)
+
+Скорее всего, рост задержки больше чем в 2 раза связан с jit компиляцией и работой jit-а над оптимизацией:
+![](./img/compilation_get.png)
+
+**Alloc**
+[![alloc get](./img/alloc_get.png)](https://htmlpreview.github.io/?https://github.com/levs2001/2022-highload-dht/blob/stage1/src/main/java/ok/dht/test/saskov/stress_testing/alloc_get.html)
 
 Результаты обеих тестов схожи.
