@@ -4,37 +4,22 @@ import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.siniachenko.storage.BaseEntry;
+import ok.dht.test.siniachenko.storage.Config;
+import ok.dht.test.siniachenko.storage.Entry;
+import ok.dht.test.siniachenko.storage.MemorySegmentDao;
 import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
-import org.iq80.leveldb.DB;
-import org.iq80.leveldb.Options;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
-import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
-
 public class Service implements ok.dht.Service {
 
-    public static final Response NOT_FOUND_RESPONSE = new Response(
-        Response.NOT_FOUND,
-        Response.EMPTY
-    );
-    public static final Response CREATED_RESPONSE = new Response(
-        Response.CREATED,
-        Response.EMPTY
-    );
-    public static final Response ACCEPTED_RESPONSE = new Response(
-        Response.ACCEPTED,
-        Response.EMPTY
-    );
-    public static final Response BAD_REQUEST_RESPONSE = new Response(
-        Response.BAD_REQUEST,
-        Response.EMPTY
-    );
+    public static final long FLUSH_THRESHOLD_BYTES = (long) 1E20;
+
     private final ServiceConfig config;
-    private DB levelDBStore;
+    private MemorySegmentDao db;
     private HttpServer server;
 
     public Service(ServiceConfig config) {
@@ -43,17 +28,28 @@ public class Service implements ok.dht.Service {
 
     @java.lang.Override
     public CompletableFuture<?> start() throws IOException {
-        Options options = new Options();
-        levelDBStore = factory.open(config.workingDir().toFile(), options);
+        db = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         System.out.println("Started DB in directory " + config.workingDir());
-        server = new HttpServer(createConfigFromPort(config.selfPort()));
+        server = new HttpServer(createConfigFromPort(config.selfPort())) {
+            @Override
+            public void handleDefault(Request request, HttpSession session) throws IOException {
+                Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+                session.sendResponse(response);
+            }
+
+//            @Override
+//            public synchronized void stop() {
+//                super.stop();
+//                for (SelectorThread selectorThread : this.selectors) {
+//                    for (Session session : selectorThread.selector) {
+//                        session.close();
+//                    }
+//                }
+//            }
+        };
+        server.addRequestHandlers(this);
         server.start();
         System.out.println("Service started on " + config.selfUrl());
-        server.addRequestHandlers(this);
-        for (int i = 0; i < 100_000_000; ++i) {
-            levelDBStore.put(stringToBytes("key" + i), stringToBytes("value"));
-        }
-        System.out.println("added 100_000_000 values to DB");
         return CompletableFuture.completedFuture(null);
     }
 
@@ -69,28 +65,27 @@ public class Service implements ok.dht.Service {
     @java.lang.Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
-        levelDBStore.close();
+        db.close();
         return CompletableFuture.completedFuture(null);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id", required = true) String id) {
-//        System.out.println("GET");
         if (id.isEmpty()) {
             return new Response(
                 Response.BAD_REQUEST,
                 Response.EMPTY
             );
         }
-        byte[] value = levelDBStore.get(stringToBytes(id));
-//        byte[] value = Utf8.toBytes("3234123");
-        if (value == null) {
+        Entry<MemorySegment> valueSegment = db.get(MemorySegment.ofArray(stringToBytes(id)));
+        if (valueSegment == null) {
             return new Response(
                 Response.NOT_FOUND,
                 Response.EMPTY
             );
         } else {
+            byte[] value = valueSegment.value().toByteArray();
             return new Response(
                 Response.OK,
                 value
@@ -104,16 +99,18 @@ public class Service implements ok.dht.Service {
         @Param(value = "id", required = true) String id,
         Request request
     ) {
-//        System.out.println("PUT");
-//        System.out.println(id);
-//        System.out.println(Utf8.toString(request.getBody()));
         if (id.isEmpty()) {
             return new Response(
                 Response.BAD_REQUEST,
                 Response.EMPTY
             );
         }
-        levelDBStore.put(stringToBytes(id), request.getBody());
+        db.upsert(
+            new BaseEntry<>(
+                MemorySegment.ofArray(stringToBytes(id)),
+                MemorySegment.ofArray(request.getBody())
+            )
+        );
         return new Response(
             Response.CREATED,
             Response.EMPTY
@@ -125,14 +122,18 @@ public class Service implements ok.dht.Service {
     public Response deleteEntity(
         @Param(value = "id", required = true) String id
     ) {
-//        System.out.println("DELETE");
         if (id.isEmpty()) {
             return new Response(
                 Response.BAD_REQUEST,
                 Response.EMPTY
             );
         }
-        levelDBStore.delete(stringToBytes(id));
+        db.upsert(
+            new BaseEntry<>(
+                MemorySegment.ofArray(stringToBytes(id)),
+                null
+            )
+        );
         return new Response(
             Response.ACCEPTED,
             Response.EMPTY
@@ -141,14 +142,6 @@ public class Service implements ok.dht.Service {
 
     private static byte[] stringToBytes(String string) {
         return Utf8.toBytes(string);
-    }
-
-    @RequestMethod(Request.METHOD_GET)
-    public Response defaultHandleRequest() {
-        return new Response(
-            Response.BAD_REQUEST,
-            Response.EMPTY
-        );
     }
 
     @ServiceFactory(stage = 1, week = 1)
