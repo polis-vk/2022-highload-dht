@@ -33,11 +33,11 @@ public class KeyValueHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
+        super.stop();
         for (SelectorThread selector : selectors) {
             for (Session session : selector.selector) {
                 session.scheduleClose();
             }
         }
-        super.stop();
     }
 }

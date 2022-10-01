@@ -78,6 +78,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     }
 
     @Override
+    @SuppressWarnings("FutureReturnValueIgnored")
     public void upsert(Entry<MemorySegment> entry) {
         State curState = accessState();
 
