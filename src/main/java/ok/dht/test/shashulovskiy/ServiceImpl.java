@@ -78,6 +78,7 @@ public class ServiceImpl implements Service {
                     session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
                 }
             }
+
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
                 Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
