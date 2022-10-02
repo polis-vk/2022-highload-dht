@@ -41,6 +41,11 @@ public class DaoHttpServer extends HttpServer {
     // as one-nio does not define it
     private static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
 
+    private final PathMapper pathMapper;
+
+    private final ExecutorService handlerExecutorService;
+    private final Service service;
+
     public static HttpServerConfig createConfigFromPort(final int port) {
         final HttpServerConfig httpConfig = new HttpServerConfig();
         final AcceptorConfig acceptor = new AcceptorConfig();
@@ -49,11 +54,6 @@ public class DaoHttpServer extends HttpServer {
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
         return httpConfig;
     }
-
-    private final PathMapper pathMapper;
-
-    private final ExecutorService handlerExecutorService;
-    private final Service service;
 
     public DaoHttpServer(@Nonnull final HttpServerConfig config,
                          @Nonnull final ExecutorService handlerExecutorService,
@@ -79,9 +79,10 @@ public class DaoHttpServer extends HttpServer {
         final RequestHandler handler = pathMapper.find(path, method);
         if (handler != null) {
             handler.handleRequest(request, session);
-        } else {
-            handleDefault(request, session);
+            return;
         }
+
+        handleDefault(request, session);
     }
 
     @Override
@@ -165,7 +166,7 @@ public class DaoHttpServer extends HttpServer {
         public void run() {
             try {
                 wrappedHandler.handleRequest(request, session);
-            } catch (final Throwable handleRequestException) {
+            } catch (final Exception handleRequestException) {
                 LOG.error("Fatal error on request handling", handleRequestException);
                 stopService(handleRequestException);
             }

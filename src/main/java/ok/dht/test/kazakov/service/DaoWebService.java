@@ -27,6 +27,7 @@ public class DaoWebService implements Service {
 
     private static final int ASYNC_EXECUTOR_THREADS = 64;
     private static final int EXECUTOR_SERVICE_QUEUE_CAPACITY = ASYNC_EXECUTOR_THREADS;
+    public static final String ENTITY_API_PATH = "/v0/entity";
 
     private final ServiceConfig config;
     private final Clock clock;
@@ -62,9 +63,9 @@ public class DaoWebService implements Service {
                 daoRequestsValidatorBuilder = new DaoRequestsValidatorBuilder();
 
                 server = new DaoHttpServer(DaoHttpServer.createConfigFromPort(config.selfPort()), asyncExecutor, this);
-                server.addRequestHandler("/v0/entity", Request.METHOD_GET, this::handleGet);
-                server.addRequestHandler("/v0/entity", Request.METHOD_PUT, this::handleUpsert);
-                server.addRequestHandler("/v0/entity", Request.METHOD_DELETE, this::handleDelete);
+                server.addRequestHandler(ENTITY_API_PATH, Request.METHOD_GET, this::handleGet);
+                server.addRequestHandler(ENTITY_API_PATH, Request.METHOD_PUT, this::handleUpsert);
+                server.addRequestHandler(ENTITY_API_PATH, Request.METHOD_DELETE, this::handleDelete);
                 server.start();
             } catch (final IOException e) {
                 LOG.error("Unexpected IOException during DaoWebService.start()", e);
