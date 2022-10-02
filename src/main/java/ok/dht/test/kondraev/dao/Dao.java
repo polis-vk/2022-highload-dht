@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -31,15 +32,21 @@ public final class Dao {
     private volatile State state;
     private final ReadWriteLock upsertLock = new ReentrantReadWriteLock();
 
-    private Dao(Config config, State state) {
-        flushThresholdBytes = config.flushThresholdBytes();
+    private Dao(long flushThresholdBytes, State state) {
+        this.flushThresholdBytes = flushThresholdBytes;
         this.state = state;
     }
 
-    public static Dao of(Config config) throws IOException {
+    /**
+     * Constructs Data access object.
+     * @param flushThresholdBytes minimal size of MemoryTable to flush it automatically
+     * @param basePath folder which used by Dao Storage
+     * @throws IOException if any occur when initialize storage
+     */
+    public static Dao of(long flushThresholdBytes, Path basePath) throws IOException {
         return new Dao(
-                config,
-                State.newState(Storage.load(config.basePath()))
+                flushThresholdBytes,
+                State.newState(Storage.load(basePath))
         );
     }
 
