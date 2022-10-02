@@ -42,9 +42,8 @@ public class DemoService implements Service {
                 session.sendResponse(response);
             }
         };
-
-        server.start();
         server.addRequestHandlers(this);
+        server.start();
         return CompletableFuture.completedFuture(null);
     }
 
