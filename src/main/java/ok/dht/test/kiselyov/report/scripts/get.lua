@@ -1,9 +1,6 @@
-counter = 0
+math.randomseed(os.time())
 request = function()
-    path = "/v0/entity?id=" .. counter
-    wrk.method = "GET"
-    wrk.headers["X-Counter"] = counter
-    wrk.body = counter
-    counter = counter + 1
-    return wrk.format(nil, path)
+    local id = math.random(0,999999)
+    path = "/v0/entity?id=" .. id
+    return wrk.format("GET", path, {"Content-Type: text/plain"})
 end
