@@ -1,5 +1,8 @@
 package ok.dht.test.kondraev.dao;
 
+import jdk.incubator.foreign.MemorySegment;
+import jdk.incubator.foreign.ResourceScope;
+
 import java.io.IOException;
 import java.lang.ref.Cleaner;
 import java.nio.file.Files;
@@ -14,10 +17,7 @@ import java.util.List;
 import java.util.Spliterator;
 import java.util.stream.Stream;
 
-import jdk.incubator.foreign.MemorySegment;
-import jdk.incubator.foreign.ResourceScope;
-
-import static ok.dht.test.kondraev.dao.ConcurrentFilesBackedDao.allStored;
+import static ok.dht.test.kondraev.dao.Dao.allStored;
 import static ok.dht.test.kondraev.dao.Files.filenameOf;
 
 public class Storage {
@@ -43,7 +43,12 @@ public class Storage {
     private final ResourceScope scope;
     private final boolean hasTombstones;
 
-    public Storage(List<SortedStringTable> sortedStringTables, Path basePath, ResourceScope scope, boolean hasTombstones) {
+    public Storage(
+            List<SortedStringTable> sortedStringTables,
+            Path basePath,
+            ResourceScope scope,
+            boolean hasTombstones
+    ) {
         this.sortedStringTables = sortedStringTables;
         this.basePath = basePath;
         compactDir = basePath.resolve(COMPACT_NAME);
@@ -145,6 +150,7 @@ public class Storage {
                 scope.close();
                 return;
             } catch (IllegalStateException ignored) {
+                // continue trying on exception
             }
         }
     }

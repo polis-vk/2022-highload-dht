@@ -29,7 +29,6 @@ public final class MemorySegmentEntry {
                 entrySegment.byteSize());
     }
 
-
     public MemorySegment key() {
         return key;
     }

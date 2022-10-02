@@ -1,5 +1,6 @@
 package ok.dht.test.kondraev.dao;
 
+import jdk.incubator.foreign.MemorySegment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,13 +19,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import jdk.incubator.foreign.MemorySegment;
-
 /**
  * Author: Dmitry Kondraev.
  */
-public final class ConcurrentFilesBackedDao {
-    private static final Logger LOG = LoggerFactory.getLogger(ConcurrentFilesBackedDao.class);
+public final class Dao {
+    private static final Logger LOG = LoggerFactory.getLogger(Dao.class);
 
     private final ExecutorService backgroundExecutor =
             Executors.newSingleThreadExecutor(r -> new Thread(r, "ConcurrentFilesBackedDaoBackground"));
@@ -32,13 +31,13 @@ public final class ConcurrentFilesBackedDao {
     private volatile State state;
     private final ReadWriteLock upsertLock = new ReentrantReadWriteLock();
 
-    private ConcurrentFilesBackedDao(Config config, State state) {
+    private Dao(Config config, State state) {
         flushThresholdBytes = config.flushThresholdBytes();
         this.state = state;
     }
 
-    public static ConcurrentFilesBackedDao of(Config config) throws IOException {
-        return new ConcurrentFilesBackedDao(
+    public static Dao of(Config config) throws IOException {
+        return new Dao(
                 config,
                 State.newState(Storage.load(config.basePath()))
         );
@@ -84,7 +83,7 @@ public final class ConcurrentFilesBackedDao {
             upsertLock.readLock().unlock();
         }
         if (byteSizeAfter >= flushThresholdBytes) {
-            flushInBackground(false);
+            Future<?> ignored = flushInBackground(false);
         }
     }
 
@@ -300,6 +299,7 @@ public final class ConcurrentFilesBackedDao {
             }
             return new State(storage, memoryTable, flushingTable, true);
         }
+
         static State newState(Storage storage) {
             return new State(storage, new MemoryTable(), null, false);
         }

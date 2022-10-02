@@ -24,9 +24,8 @@ final class MergedIterator implements Iterator<MemorySegmentEntry> {
      * @return iterator which entries are <em>also</em> strict ordered by key.
      */
     public static MergedIterator of(List<PeekIterator<MemorySegmentEntry>> iterators) {
-        Comparator<Integer> indexComparator = Comparator
-                .comparing((Integer i) -> iterators.get(i).peek().key(), MemorySegmentComparator.INSTANCE)
-                .thenComparing(Function.identity());
+        Comparator<Integer> indexComparator = Comparator.comparing((Integer i) ->
+                iterators.get(i).peek().key(), MemorySegmentComparator.INSTANCE).thenComparing(Function.identity());
         final PriorityQueue<Integer> indexes = new PriorityQueue<>(iterators.size(), indexComparator);
         for (int i = 0; i < iterators.size(); i++) {
             if (iterators.get(i).hasNext()) {
