@@ -3,6 +3,9 @@ package ok.dht.test.ushkov;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
@@ -15,19 +18,11 @@ import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 public class RocksDBService implements Service {
-    public static final String V0_ENTITY = "/v0/entity";
-    public static final int N_SELECTORS = 5;
-    public static final int N_WORKERS = 5;
-    public static final int QUEUE_CAP = 100;
-
-    public static final long STOP_TIMEOUT_MINUTES = 1;
-
     private final ServiceConfig config;
-    public RocksDB db;
-    private RocksDBHttpServer server;
+    private RocksDB db;
+    private HttpServer server;
 
     public RocksDBService(ServiceConfig config) {
         this.config = config;
@@ -52,23 +47,16 @@ public class RocksDBService implements Service {
         acceptor.port = port;
         acceptor.reusePort = true;
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
-        httpConfig.selectors = N_SELECTORS;
-        httpConfig.workers = N_WORKERS;
-        httpConfig.queueCapacity = QUEUE_CAP;
+        httpConfig.selectors = 5;
+        httpConfig.workers = 5;
+        httpConfig.queueCapacity = 100;
         return httpConfig;
     }
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-            server.stop();
-            try {
-                server.awaitStop(STOP_TIMEOUT_MINUTES, TimeUnit.MINUTES);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            server = null;
-        });
+        server.stop();
+        server = null;
 
         try {
             db.closeE();
@@ -77,10 +65,10 @@ public class RocksDBService implements Service {
         }
         db = null;
 
-        return future;
+        return CompletableFuture.completedFuture(null);
     }
 
-    @Path(V0_ENTITY)
+    @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response entityGet(@Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
@@ -98,7 +86,7 @@ public class RocksDBService implements Service {
         }
     }
 
-    @Path(V0_ENTITY)
+    @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response entityPut(@Param(value = "id", required = true) String id, Request request) {
         if (id.isEmpty()) {
@@ -112,7 +100,7 @@ public class RocksDBService implements Service {
         }
     }
 
-    @Path(V0_ENTITY)
+    @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response entityDelete(@Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
@@ -126,13 +114,7 @@ public class RocksDBService implements Service {
         }
     }
 
-    @Path(V0_ENTITY)
-    @RequestMethod(Request.METHOD_POST)
-    public Response entityPost() {
-        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-    }
-
-    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 1)
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
