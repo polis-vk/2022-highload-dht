@@ -4,7 +4,7 @@ import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;
 
 public final class MemorySegmentEntry {
-    private final MemorySegment key;
+    final MemorySegment key;
     private final MemorySegment value;
     private final long byteSize;
 
@@ -29,14 +29,6 @@ public final class MemorySegmentEntry {
                 entrySegment.byteSize());
     }
 
-    public MemorySegment key() {
-        return key;
-    }
-
-    public MemorySegment value() {
-        return value;
-    }
-
     public long bytesSize() {
         return byteSize;
     }
@@ -46,7 +38,7 @@ public final class MemorySegmentEntry {
         if (!isTombStone()) {
             entrySegment.asSlice(Long.BYTES, value.byteSize()).copyFrom(value);
         }
-        entrySegment.asSlice(Long.BYTES + (isTombStone() ? 0 : value().byteSize())).copyFrom(key);
+        entrySegment.asSlice(Long.BYTES + (isTombStone() ? 0 : value.byteSize())).copyFrom(key);
     }
 
     /**

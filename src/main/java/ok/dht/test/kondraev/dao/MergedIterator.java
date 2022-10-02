@@ -25,7 +25,7 @@ final class MergedIterator implements Iterator<MemorySegmentEntry> {
      */
     public static MergedIterator of(List<PeekIterator<MemorySegmentEntry>> iterators) {
         Comparator<Integer> indexComparator = Comparator.comparing((Integer i) ->
-                iterators.get(i).peek().key(), MemorySegmentComparator.INSTANCE).thenComparing(Function.identity());
+                iterators.get(i).peek().key, MemorySegmentComparator.INSTANCE).thenComparing(Function.identity());
         final PriorityQueue<Integer> indexes = new PriorityQueue<>(iterators.size(), indexComparator);
         for (int i = 0; i < iterators.size(); i++) {
             if (iterators.get(i).hasNext()) {
@@ -56,7 +56,7 @@ final class MergedIterator implements Iterator<MemorySegmentEntry> {
         while (!indexes.isEmpty()) {
             Integer nextIndex = indexes.peek();
             PeekIterator<MemorySegmentEntry> nextIterator = iterators.get(nextIndex);
-            if (MemorySegmentComparator.INSTANCE.compare(nextIterator.peek().key(), entry.key()) != 0) {
+            if (MemorySegmentComparator.INSTANCE.compare(nextIterator.peek().key, entry.key) != 0) {
                 break;
             }
             indexes.remove();

@@ -112,7 +112,7 @@ final class SortedStringTable {
         int high = last;
         while (low < high) {
             int mid = low + (high - low) / 2;
-            int compare = MemorySegmentComparator.INSTANCE.compare(mappedEntry(mid).key(), key);
+            int compare = MemorySegmentComparator.INSTANCE.compare(mappedEntry(mid).key, key);
             if (compare < 0) {
                 low = mid + 1;
             } else if (compare > 0) {
