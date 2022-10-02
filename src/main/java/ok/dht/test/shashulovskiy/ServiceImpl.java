@@ -1,6 +1,5 @@
 package ok.dht.test.shashulovskiy;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
@@ -21,7 +20,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
@@ -30,7 +33,6 @@ public class ServiceImpl implements Service {
     private static final Logger LOG = LoggerFactory.getLogger(ServiceImpl.class);
     private static final int MAXIMUM_POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private static final int CORE_POOL_SIZE = Math.max(1, MAXIMUM_POOL_SIZE / 4);
-
 
     private final ServiceConfig config;
     private HttpServer server;
@@ -60,6 +62,7 @@ public class ServiceImpl implements Service {
 
         // TODO Extract this after Stage 1 is merged
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
+
             @Override
             public void handleRequest(Request request, HttpSession session) throws IOException {
                 try {
