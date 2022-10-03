@@ -66,12 +66,12 @@ public class WebService implements Service {
                         try {
                             super.handleRequest(request, session);
                         } catch (IOException e) {
-                            LOGGER.error("Error handling request: " + e.getMessage());
+                            LOGGER.error("Error handling request.", e);
                             throw new RuntimeException(e);
                         }
                     }));
                 } catch (RejectedExecutionException e) {
-                    LOGGER.error("Cannot execute task: " + e.getMessage());
+                    LOGGER.error("Cannot execute task: ", e);
                     throw new RejectedExecutionException(e);
                 }
             }
@@ -119,7 +119,7 @@ public class WebService implements Service {
         try {
             result = dao.get(id.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
-            LOGGER.error("GET operation with id " + id + " from GET request failed: " + e.getMessage());
+            LOGGER.error(String.format("GET operation with id %s from GET request failed.", id), e);
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         if (result == null) {
@@ -137,7 +137,7 @@ public class WebService implements Service {
         try {
             dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), putRequest.getBody()));
         } catch (Exception e) {
-            LOGGER.error("UPSERT operation with id " + id + " from PUT request failed: " + e.getMessage());
+            LOGGER.error(String.format("UPSERT operation with id %s from PUT request failed.", id), e);
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         return new Response(Response.CREATED, Response.EMPTY);
@@ -152,7 +152,7 @@ public class WebService implements Service {
         try {
             dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), null));
         } catch (Exception e) {
-            LOGGER.error("UPSERT operation with id " + id + " from DELETE request failed: " + e.getMessage());
+            LOGGER.error(String.format("UPSERT operation with id %s from DELETE request failed.", id), e);
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         return new Response(Response.ACCEPTED, Response.EMPTY);
