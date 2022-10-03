@@ -30,7 +30,7 @@ public class WebService implements Service {
     private HttpServer server;
     private PersistentDao dao;
     private static final int FLUSH_THRESHOLD_BYTES = 1 << 20;
-    static Logger logger = Logger.getLogger(WebService.class);
+    private static final Logger LOGGER = Logger.getLogger(WebService.class);
 
     public WebService(ServiceConfig config) {
         this.config = config;
@@ -81,7 +81,7 @@ public class WebService implements Service {
         try {
             result = dao.get(id.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
-            logger.fatal("GET operation with id " + id + " from GET request failed: " + e.getMessage());
+            LOGGER.error(String.format("GET operation with id %s from GET request failed.", id), e);
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         if (result == null) {
@@ -99,7 +99,7 @@ public class WebService implements Service {
         try {
             dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), putRequest.getBody()));
         } catch (Exception e) {
-            logger.fatal("UPSERT operation with id " + id + " from PUT request failed: " + e.getMessage());
+            LOGGER.error(String.format("UPSERT operation with id %s from PUT request failed.", id), e);
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         return new Response(Response.CREATED, Response.EMPTY);
@@ -114,7 +114,7 @@ public class WebService implements Service {
         try {
             dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), null));
         } catch (Exception e) {
-            logger.fatal("UPSERT operation with id " + id + " from DELETE request failed: " + e.getMessage());
+            LOGGER.error(String.format("UPSERT operation with id %s from DELETE request failed.", id), e);
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         return new Response(Response.ACCEPTED, Response.EMPTY);
