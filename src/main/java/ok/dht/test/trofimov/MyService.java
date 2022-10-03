@@ -17,12 +17,13 @@ import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Base64;
+import one.nio.util.Utf8;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 public class MyService implements Service {
-
+    private static final long FLUSH_THRESHOLD = 1 << 20;
     private final ServiceConfig config;
     private HttpServer server;
     private InMemoryDao dao;
@@ -32,8 +33,7 @@ public class MyService implements Service {
     }
 
     private Config createDaoConfig() {
-        long flushThreshold = 1 << 20;
-        return new Config(config.workingDir(), flushThreshold);
+        return new Config(config.workingDir(), FLUSH_THRESHOLD);
     }
 
     @Override
@@ -56,43 +56,58 @@ public class MyService implements Service {
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(@Param(value = "id", required = true) String id) throws IOException {
         if (id.isEmpty()) {
-            return createResponse(Response.BAD_REQUEST, Response.EMPTY);
+            return emptyResponseFor(Response.BAD_REQUEST);
         }
-        Entry<String> entry = dao.get(id);
-        if (entry == null) {
-            return createResponse(Response.NOT_FOUND, Response.EMPTY);
+
+        try {
+            Entry<String> entry = dao.get(id);
+            if (entry == null) {
+                return emptyResponseFor(Response.NOT_FOUND);
+            }
+            String value = entry.value();
+            char[] chars = value.toCharArray();
+            return new Response(Response.OK, Base64.decodeFromChars(chars));
+        } catch (Exception e) {
+            return errorResponse(e);
         }
-        String value = entry.value();
-        char[] chars = value.toCharArray();
-
-        return createResponse(Response.OK, Base64.decodeFromChars(chars));
-
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(Request request, @Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
-            return createResponse(Response.BAD_REQUEST, Response.EMPTY);
+            return emptyResponseFor(Response.BAD_REQUEST);
         }
 
         byte[] value = request.getBody();
-        dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
-        return createResponse(Response.CREATED, Response.EMPTY);
+        try {
+            dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
+        } catch (Exception e) {
+            return errorResponse(e);
+        }
+        return emptyResponseFor(Response.CREATED);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(@Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
-            return createResponse(Response.BAD_REQUEST, Response.EMPTY);
+            return emptyResponseFor(Response.BAD_REQUEST);
         }
-        dao.upsert(new BaseEntry<>(id, null));
-        return createResponse(Response.ACCEPTED, Response.EMPTY);
+        try {
+            dao.upsert(new BaseEntry<>(id, null));
+        } catch (Exception e) {
+            return errorResponse(e);
+        }
+        return emptyResponseFor(Response.ACCEPTED);
     }
 
-    private Response createResponse(String status, byte[] body) {
-        return new Response(status, body);
+    private Response emptyResponseFor(String status) {
+        return new Response(status, Response.EMPTY);
+    }
+
+    private Response errorResponse(Exception e) {
+        return new Response(Response.INTERNAL_ERROR, Utf8.toBytes(e.toString()));
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
