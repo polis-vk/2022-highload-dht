@@ -6,6 +6,7 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.kiselyov.dao.BaseEntry;
 import ok.dht.test.kiselyov.dao.Config;
 import ok.dht.test.kiselyov.dao.impl.PersistentDao;
+import ok.dht.test.kiselyov.util.CustomLinkedBlockingDeque;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -23,6 +24,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class WebService implements Service {
 
@@ -30,7 +35,12 @@ public class WebService implements Service {
     private HttpServer server;
     private PersistentDao dao;
     private static final int FLUSH_THRESHOLD_BYTES = 1 << 20;
-    static Logger logger = Logger.getLogger(WebService.class);
+    private ExecutorService executorService;
+    private static final int CORE_POOL_SIZE = 64;
+    private static final int MAXIMUM_POOL_SIZE = 64;
+    private static final int DEQUE_CAPACITY = 100;
+
+    private static final Logger LOGGER = Logger.getLogger(WebService.class);
 
     public WebService(ServiceConfig config) {
         this.config = config;
@@ -42,7 +52,26 @@ public class WebService implements Service {
             Files.createDirectory(config.workingDir());
         }
         dao = new PersistentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+        executorService = new ThreadPoolExecutor(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, 0L, TimeUnit.MILLISECONDS, new CustomLinkedBlockingDeque<>(DEQUE_CAPACITY));
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
+            @Override
+            public void handleRequest(Request request, HttpSession session) {
+                try {
+                    executorService.submit(() -> {
+                        try {
+                            super.handleRequest(request, session);
+                        } catch (IOException e) {
+                            LOGGER.error("Error handling request: " + e.getMessage());
+                            throw new RuntimeException(e);
+                        }
+                    });
+                } catch (RejectedExecutionException e) {
+                    LOGGER.error("Cannot execute task: " + e.getMessage());
+                    throw new RejectedExecutionException(e);
+                }
+
+            }
+
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
                 Response defaultResponse = new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -73,15 +102,15 @@ public class WebService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id) {
-        if (id.isBlank()) {
+    public Response handleGet(@Param(value = "id") String id) {
+        if (id == null || id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         BaseEntry<byte[]> result;
         try {
             result = dao.get(id.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
-            logger.fatal("GET operation with id " + id + " from GET request failed: " + e.getMessage());
+            LOGGER.error("GET operation with id " + id + " from GET request failed: " + e.getMessage());
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         if (result == null) {
@@ -92,14 +121,14 @@ public class WebService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(@Param(value = "id", required = true) String id, Request putRequest) {
-        if (id.isBlank()) {
+    public Response handlePut(@Param(value = "id") String id, Request putRequest) {
+        if (id == null || id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         try {
             dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), putRequest.getBody()));
         } catch (Exception e) {
-            logger.fatal("UPSERT operation with id " + id + " from PUT request failed: " + e.getMessage());
+            LOGGER.error("UPSERT operation with id " + id + " from PUT request failed: " + e.getMessage());
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         return new Response(Response.CREATED, Response.EMPTY);
@@ -107,14 +136,14 @@ public class WebService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) String id) {
-        if (id.isBlank()) {
+    public Response handleDelete(@Param(value = "id") String id) {
+        if (id == null || id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         try {
             dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), null));
         } catch (Exception e) {
-            logger.fatal("UPSERT operation with id " + id + " from DELETE request failed: " + e.getMessage());
+            LOGGER.error("UPSERT operation with id " + id + " from DELETE request failed: " + e.getMessage());
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         return new Response(Response.ACCEPTED, Response.EMPTY);
@@ -129,7 +158,7 @@ public class WebService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 1, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
