@@ -43,7 +43,6 @@ public class WebService implements Service {
     private static final int MAXIMUM_POOL_SIZE = 64;
     private static final int DEQUE_CAPACITY = 100;
     private List<Future<?>> tasks;
-
     private static final Logger LOGGER = Logger.getLogger(WebService.class);
 
     public WebService(ServiceConfig config) {
@@ -105,6 +104,7 @@ public class WebService implements Service {
                 task.cancel(true);
             }
         }
+        executorService.shutdown();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
