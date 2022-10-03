@@ -9,26 +9,28 @@ import ok.dht.test.galeev.dao.utils.DaoConfig;
 import ok.dht.test.galeev.dao.utils.StringByteConverter;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
-import one.nio.server.SelectorThread;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class DemoService implements Service {
 
+
     public static final int FLUSH_THRESHOLD_BYTES = 16777216; // 16MB
+    protected SkipOldThreadExecutorFactory skipOldThreadExecutorFactory = new SkipOldThreadExecutorFactory();
     private final ServiceConfig config;
     private HttpServer server;
     private DaoMiddleLayer<String, byte[]> dao;
+    private ThreadPoolExecutor executorService;
 
     public DemoService(ServiceConfig config) {
         this.config = config;
@@ -37,24 +39,26 @@ public class DemoService implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         dao = getDao(config);
-        server = getCloseableServer(config.selfPort());
-        server.start();
+        executorService = skipOldThreadExecutorFactory.getExecutor();
+        server = getServer(config.selfPort(), executorService);
         server.addRequestHandlers(this);
+        server.start();
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
+        executorService.shutdown();
         dao.stop();
         return CompletableFuture.completedFuture(null);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id)
+    public Response handleGet(String id)
             throws IOException {
-        if (id.isEmpty()) {
+        if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -67,9 +71,8 @@ public class DemoService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(Request request,
-                              @Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
+    public Response handlePut(Request request, String id) {
+        if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         dao.upsert(id, request.getBody());
@@ -78,8 +81,8 @@ public class DemoService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
+    public Response handleDelete(String id) {
+        if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         dao.delete(id);
@@ -100,24 +103,8 @@ public class DemoService implements Service {
         );
     }
 
-    private static HttpServer getCloseableServer(final int port) throws IOException {
-        return new HttpServer(createConfigFromPort(port)) {
-            @Override
-            public void handleDefault(Request request,
-                                      HttpSession session) throws IOException {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            }
-
-            @Override
-            public synchronized void stop() {
-                for (SelectorThread thread : selectors) {
-                    for (Session session : thread.selector) {
-                        session.socket().close();
-                    }
-                }
-                super.stop();
-            }
-        };
+    private static CustomHttpServer getServer(final int port, ThreadPoolExecutor executorService) throws IOException {
+        return new CustomHttpServer(createConfigFromPort(port), executorService);
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -129,7 +116,7 @@ public class DemoService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
+    @ServiceFactory(stage = 2, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
