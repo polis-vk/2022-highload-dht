@@ -22,9 +22,9 @@ public final class MyServer {
                     Files.createTempDirectory("server")
             );
             
-            (new MyServiceImpl(cfg)).start().get();
+            new MyServiceImpl(cfg).start().get();
         } catch (Exception e) {
-            e.printStackTrace();
+            System.err.println(e.getMessage());
         }
     }
 }
