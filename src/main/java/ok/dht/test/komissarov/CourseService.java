@@ -9,7 +9,7 @@ import ok.dht.test.komissarov.database.models.BaseEntry;
 import ok.dht.test.komissarov.database.models.Config;
 import ok.dht.test.komissarov.database.models.Entry;
 import ok.dht.test.komissarov.utils.CustomHttpServer;
-import ok.dht.test.komissarov.utils.Validator;
+import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.Param;
 import one.nio.http.Path;
@@ -17,15 +17,16 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Utf8;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.concurrent.CompletableFuture;
 
 public class CourseService implements Service {
 
-    private static final Validator validator = new Validator();
     private final ServiceConfig config;
-    private CustomHttpServer server;
+    private HttpServer server;
     private MemorySegmentDao dao;
 
     public CourseService(ServiceConfig config) {
@@ -39,15 +40,15 @@ public class CourseService implements Service {
                 1 << 20
         ));
         server = new CustomHttpServer(createConfigFromPort(config.selfPort()));
-        server.start();
         server.addRequestHandlers(this);
+        server.start();
         return CompletableFuture.completedFuture(null);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response findById(@Param(value = "id", required = true) String id) {
-        if (validator.validate(id)) {
+        if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -62,7 +63,7 @@ public class CourseService implements Service {
     @RequestMethod(Request.METHOD_PUT)
     public Response persist(@Param(value = "id", required = true) String id,
                             Request request) {
-        if (validator.validate(id)) {
+        if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -77,7 +78,7 @@ public class CourseService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response delete(@Param(value = "id", required = true) String id) {
-        if (validator.validate(id)) {
+        if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -91,8 +92,8 @@ public class CourseService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        dao.close();
         server.stop();
+        dao.close();
         return CompletableFuture.completedFuture(null);
     }
 
@@ -106,7 +107,7 @@ public class CourseService implements Service {
     }
 
     private static MemorySegment fromString(String value) {
-        return MemorySegment.ofArray(value.toCharArray());
+        return value == null ? null : MemorySegment.ofArray(Utf8.toBytes(value));
     }
 
     @ServiceFactory(stage = 1, week = 1)
