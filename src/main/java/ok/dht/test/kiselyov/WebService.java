@@ -74,7 +74,6 @@ public class WebService implements Service {
                     LOGGER.error("Cannot execute task: " + e.getMessage());
                     throw new RejectedExecutionException(e);
                 }
-
             }
 
             @Override
