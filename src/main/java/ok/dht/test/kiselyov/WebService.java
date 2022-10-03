@@ -23,8 +23,11 @@ import org.apache.log4j.Logger;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -39,6 +42,7 @@ public class WebService implements Service {
     private static final int CORE_POOL_SIZE = 64;
     private static final int MAXIMUM_POOL_SIZE = 64;
     private static final int DEQUE_CAPACITY = 100;
+    private List<Future<?>> tasks;
 
     private static final Logger LOGGER = Logger.getLogger(WebService.class);
 
@@ -52,19 +56,20 @@ public class WebService implements Service {
             Files.createDirectory(config.workingDir());
         }
         dao = new PersistentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+        tasks = new ArrayList<>();
         executorService = new ThreadPoolExecutor(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, 0L, TimeUnit.MILLISECONDS, new CustomLinkedBlockingDeque<>(DEQUE_CAPACITY));
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleRequest(Request request, HttpSession session) {
                 try {
-                    executorService.submit(() -> {
+                    tasks.add(executorService.submit(() -> {
                         try {
                             super.handleRequest(request, session);
                         } catch (IOException e) {
                             LOGGER.error("Error handling request: " + e.getMessage());
                             throw new RuntimeException(e);
                         }
-                    });
+                    }));
                 } catch (RejectedExecutionException e) {
                     LOGGER.error("Cannot execute task: " + e.getMessage());
                     throw new RejectedExecutionException(e);
@@ -96,6 +101,11 @@ public class WebService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
+        for (Future<?> task : tasks) {
+            if (!task.isCancelled()) {
+                task.cancel(true);
+            }
+        }
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
