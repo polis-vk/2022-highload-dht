@@ -66,5 +66,4 @@ public class ServiceInfo {
     private HttpRequest.Builder requestForKey(String key) {
         return request("/v0/entity?id=" + key);
     }
-
 }
