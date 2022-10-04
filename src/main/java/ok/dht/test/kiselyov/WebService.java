@@ -25,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -41,7 +42,7 @@ public class WebService implements Service {
     private ExecutorService executorService;
     private static final int CORE_POOL_SIZE = 64;
     private static final int MAXIMUM_POOL_SIZE = 64;
-    private static final int DEQUE_CAPACITY = 100;
+    private static final int DEQUE_CAPACITY = 64;
     private List<Future<?>> tasks;
     private static final Logger LOGGER = Logger.getLogger(WebService.class);
 
@@ -85,7 +86,7 @@ public class WebService implements Service {
             public synchronized void stop() {
                 for (SelectorThread selectorThread : selectors) {
                     for (Session session : selectorThread.selector) {
-                        session.close();
+                        session.socket().close();
                     }
                 }
                 super.stop();

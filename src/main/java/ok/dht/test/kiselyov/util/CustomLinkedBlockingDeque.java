@@ -13,12 +13,13 @@ public class CustomLinkedBlockingDeque<E> extends LinkedBlockingDeque<E> {
 
     @Override
     public E take() throws InterruptedException {
-        if (isHead.get()) {
+        return super.takeLast();
+        /*if (isHead.get()) {
             isHead.set(!isHead.get());
             return super.takeFirst();
         } else {
             isHead.set(!isHead.get());
             return super.takeLast();
-        }
+        }*/
     }
 }
