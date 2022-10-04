@@ -1,7 +1,7 @@
 # 2022-highload-dht
 Курсовой проект 2022 года [курса "Проектирование высоконагруженных систем"](https://polis.vk.company/curriculum/program/discipline/1444/) [VK Образования](https://polis.vk.company/).
 
-В своём Java package `ok.dht.test.<username>` реализуйте интерфейсы [`Service`](../../../Service.java) и [`ServiceFactory.Factory`](../../ServiceFactory.java) и поддержите следующий HTTP REST API протокол:
+В своём Java package `ok.dht.test.<username>` реализуйте интерфейсы [`Service`](../../../../Service.java) и [`ServiceFactory.Factory`](../../../ServiceFactory.java) и поддержите следующий HTTP REST API протокол:
 * HTTP `GET /v0/entity?id=<ID>` -- получить данные по ключу `<ID>`. Возвращает `200 OK` и данные или `404 Not Found`.
 * HTTP `PUT /v0/entity?id=<ID>` -- создать/перезаписать (upsert) данные по ключу `<ID>`. Возвращает `201 Created`.
 * HTTP `DELETE /v0/entity?id=<ID>` -- удалить данные по ключу `<ID>`. Возвращает `202 Accepted`.
@@ -723,7 +723,7 @@ Requests/sec:   6093.28
 Также как при put запросах значительная часть CPU тратится на сравнение элементов, 
 поэтому важна эффективность реализации функции compare для содержимого базы. 
 
-Графики [`Latency от Percentile`](http://hdrhistogram.github.io/HdrHistogram/plotFiles.html) находятся в папке [`hdrhistogram`](../hdrhistogram). 
+Графики [`Latency от Percentile`](http://hdrhistogram.github.io/HdrHistogram/plotFiles.html) находятся в папке [`hdrhistogram`](../../hdrhistogram). 
 Подробнее о построении можно прочитать на странице Acknowledgements [wrk2](https://github.com/giltene/wrk2). \
 Заметим, что при стабильной работе сервера, изменение Latency на графиках(get3000, put-10000) практически не заметно. \
 При увеличении нагрузки на сервер наблюдаем рост Latency: для get5000 начиная с 95%, а для put 15000 с 77%. \
