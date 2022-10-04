@@ -21,6 +21,8 @@ import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
@@ -40,22 +42,6 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         this.httpServer = new HttpServer(createServerConfig(serviceConfig)) {
-            @Override
-            public void handleDefault(Request request, HttpSession session) throws IOException {
-                Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-                session.sendResponse(response);
-            }
-
-            @Override
-            public synchronized void stop() {
-                for (SelectorThread thread : selectors) {
-                    for (Session session : thread.selector) {
-                        session.socket().close();
-                    }
-                }
-
-                super.stop();
-            }
         };
         this.dao = new MemorySegmentDao(
                 new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES)
