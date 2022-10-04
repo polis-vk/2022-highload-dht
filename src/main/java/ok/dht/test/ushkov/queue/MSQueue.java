@@ -36,7 +36,7 @@ public class MSQueue<T> extends AbstractQueue<T> {
     @Override
     public synchronized int size() {
         int count = 0;
-        for (T value : this) {
+        for (T ignored : this) {
             count++;
         }
         return count;
