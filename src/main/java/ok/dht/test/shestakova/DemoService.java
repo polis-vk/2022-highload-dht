@@ -7,26 +7,22 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.shestakova.dao.MemorySegmentDao;
 import ok.dht.test.shestakova.dao.base.BaseEntry;
 import ok.dht.test.shestakova.dao.base.Config;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
+import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.*;
 
 public class DemoService implements Service {
 
     private final ServiceConfig config;
     private HttpServer server;
     private MemorySegmentDao dao;
-    private final long flushThreshold = 1 << 20; // 1 MB
+    private final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
+    private final int POOL_SIZE = Runtime.getRuntime().availableProcessors();
+    private final int QUEUE_CAPACITY = 256;
+    private ExecutorService workersPool;
 
     public DemoService(ServiceConfig config) {
         this.config = config;
@@ -34,8 +30,26 @@ public class DemoService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        dao = new MemorySegmentDao(new Config(config.workingDir(), flushThreshold));
+        dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD));
+        workersPool = new ThreadPoolExecutor(
+                POOL_SIZE,
+                POOL_SIZE,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(QUEUE_CAPACITY)
+        );
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
+            @Override
+            public void handleRequest(Request request, HttpSession session) {
+                workersPool.execute(() -> {
+                    try {
+                        super.handleRequest(request, session);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+            }
+
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
                 Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -50,14 +64,22 @@ public class DemoService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
+        workersPool.shutdown();
+        try {
+            if (!workersPool.awaitTermination(10, TimeUnit.SECONDS)) {
+                throw new RuntimeException("Error during termination");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
+    public Response handleGet(@Param(value = "id") String id) {
+        if (id == null || id.isEmpty()) {
             return new Response(
                     Response.BAD_REQUEST,
                     Response.EMPTY
@@ -81,8 +103,8 @@ public class DemoService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(Request request, @Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
+    public Response handlePut(Request request, @Param(value = "id") String id) {
+        if (id == null || id.isEmpty()) {
             return new Response(
                     Response.BAD_REQUEST,
                     Response.EMPTY
@@ -102,8 +124,8 @@ public class DemoService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
+    public Response handleDelete(@Param(value = "id") String id) {
+        if (id == null || id.isEmpty()) {
             return new Response(
                     Response.BAD_REQUEST,
                     Response.EMPTY
