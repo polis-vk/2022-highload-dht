@@ -30,9 +30,9 @@ import static ok.dht.test.lutsenko.service.ServiceUtils.uncheckedSendResponse;
 public class DemoService implements Service {
 
     private final ServiceConfig config;
-    private final ThreadPoolExecutor requestExecutor = RequestExecutorService.requestExecutorDiscard();
-    private PersistenceRangeDao dao;
     private HttpServer server;
+    private PersistenceRangeDao dao;
+    private ThreadPoolExecutor requestExecutor;
 
     public DemoService(ServiceConfig config) {
         this.config = config;
@@ -40,6 +40,7 @@ public class DemoService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
+        requestExecutor = RequestExecutorService.requestExecutorDiscard();
         dao = new PersistenceRangeDao(DaoConfig.defaultConfig());
         if (Files.notExists(config.workingDir())) {
             Files.createDirectory(config.workingDir());
@@ -73,9 +74,9 @@ public class DemoService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
+        shutdownAndAwaitTermination(requestExecutor);
         server.stop();
         dao.close();
-        shutdownAndAwaitTermination(requestExecutor);
         return CompletableFuture.completedFuture(null);
     }
 

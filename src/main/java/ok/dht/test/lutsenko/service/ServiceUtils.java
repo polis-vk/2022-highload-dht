@@ -24,7 +24,7 @@ public final class ServiceUtils {
     public static void shutdownAndAwaitTermination(ThreadPoolExecutor executorService) {
         executorService.shutdown();
         try {
-            if (!executorService.awaitTermination(Integer.MAX_VALUE, TimeUnit.HOURS)) {
+            if (!executorService.awaitTermination(Integer.MAX_VALUE, TimeUnit.MILLISECONDS)) {
                 executorService.shutdownNow();
                 throw new RuntimeException("Await termination too long");
             }
