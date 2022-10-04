@@ -26,15 +26,6 @@ public class DemoService implements Service {
         this.config = config;
     }
 
-    private static HttpServerConfig createConfigFromPort(int port) {
-        HttpServerConfig httpConfig = new HttpServerConfig();
-        AcceptorConfig acceptor = new AcceptorConfig();
-        acceptor.port = port;
-        acceptor.reusePort = true;
-        httpConfig.acceptors = new AcceptorConfig[] {acceptor};
-        return httpConfig;
-    }
-
     @Override
     public CompletableFuture<?> start() throws IOException {
         server = new HttpServer(createConfigFromPort(config.selfPort()));
@@ -55,6 +46,15 @@ public class DemoService implements Service {
                 Response.OK,
                 Utf8.toBytes("HELLO\n")
         );
+    }
+
+    private static HttpServerConfig createConfigFromPort(int port) {
+        HttpServerConfig httpConfig = new HttpServerConfig();
+        AcceptorConfig acceptor = new AcceptorConfig();
+        acceptor.port = port;
+        acceptor.reusePort = true;
+        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+        return httpConfig;
     }
 
     @ServiceFactory(stage = 0, week = 1)
