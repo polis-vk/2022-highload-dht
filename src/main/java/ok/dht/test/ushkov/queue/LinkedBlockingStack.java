@@ -1,68 +1,81 @@
 package ok.dht.test.ushkov.queue;
 
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 
-public final class LinkedBlockingStack<T> extends LinkedBlockingDeque<T> {
-    private LinkedBlockingStack(int capacity) {
-        super(capacity);
-    }
+public class LinkedBlockingStack<T> implements BlockingQueue<T> {
+    private final LinkedBlockingDeque<T> deque;
 
-    // Static generator used to hide public methods of LinkedBlockingDeque.
-    public static <T> BlockingQueue<T> newInstance(int capacity) {
-        return new LinkedBlockingStack<>(capacity);
+    public LinkedBlockingStack(int capacity) {
+        deque = new LinkedBlockingDeque<>(capacity);
     }
 
     @Override
     public boolean add(T t) {
-        return super.offerFirst(t);
+        return deque.offerFirst(t);
     }
 
     @Override
     public boolean offer(T t) {
-        return super.offerFirst(t);
+        return deque.offerFirst(t);
     }
 
     @Override
     public T remove() {
-        return super.removeFirst();
+        return deque.removeFirst();
     }
 
     @Override
     public T poll() {
-        return super.pollFirst();
+        return deque.pollFirst();
     }
 
     @Override
     public T element() {
-        return super.getFirst();
+        return deque.getFirst();
     }
 
     @Override
     public T peek() {
-        return super.peekFirst();
+        return deque.peekFirst();
     }
 
     @Override
     public void put(T t) throws InterruptedException {
-        super.putFirst(t);
+        deque.putFirst(t);
     }
 
     @Override
     public boolean offer(T t, long timeout, TimeUnit unit) throws InterruptedException {
-        return super.offerFirst(t, timeout, unit);
+        return deque.offerFirst(t, timeout, unit);
     }
 
     @Override
     public T take() throws InterruptedException {
-        return super.takeFirst();
+        return deque.takeFirst();
     }
 
     @Override
     public T poll(long timeout, TimeUnit unit) throws InterruptedException {
-        return super.pollFirst(timeout, unit);
+        return deque.pollFirst(timeout, unit);
+    }
+
+    @Override
+    public int remainingCapacity() {
+        return deque.remainingCapacity();
+    }
+
+    @Override
+    public boolean remove(Object o) {
+        return deque.remove(o);
+    }
+
+    @Override
+    public boolean containsAll(Collection<?> c) {
+        return deque.containsAll(c);
     }
 
     @Override
@@ -73,5 +86,60 @@ public final class LinkedBlockingStack<T> extends LinkedBlockingDeque<T> {
             }
         }
         return true;
+    }
+
+    @Override
+    public boolean removeAll(Collection<?> c) {
+        return deque.removeAll(c);
+    }
+
+    @Override
+    public boolean retainAll(Collection<?> c) {
+        return deque.retainAll(c);
+    }
+
+    @Override
+    public void clear() {
+        deque.clear();
+    }
+
+    @Override
+    public int size() {
+        return deque.size();
+    }
+
+    @Override
+    public boolean isEmpty() {
+        return deque.isEmpty();
+    }
+
+    @Override
+    public boolean contains(Object o) {
+        return deque.contains(o);
+    }
+
+    @Override
+    public Iterator<T> iterator() {
+        return deque.iterator();
+    }
+
+    @Override
+    public Object[] toArray() {
+        return deque.toArray();
+    }
+
+    @Override
+    public <T1> T1[] toArray(T1[] a) {
+        return deque.toArray(a);
+    }
+
+    @Override
+    public int drainTo(Collection<? super T> c) {
+        return deque.drainTo(c);
+    }
+
+    @Override
+    public int drainTo(Collection<? super T> c, int maxElements) {
+        return deque.drainTo(c, maxElements);
     }
 }
