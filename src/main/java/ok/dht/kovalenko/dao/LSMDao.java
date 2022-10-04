@@ -27,8 +27,8 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
 
-    private static final int N_MEMORY_SSTABLES = 100;
-    private static final int FLUSH_TRESHOLD_BYTES = 1 * (1 << 20); // 70MB
+    private static final int N_MEMORY_SSTABLES = 2;
+    private static final int FLUSH_TRESHOLD_BYTES = 70 * (1 << 20); // 70MB
     private final ServiceConfig config;
     private final Serializer serializer;
 
@@ -105,9 +105,10 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
 
     @Override
     public void flush() throws IOException {
-        if (this.memoryStorage.writeSSTables().isEmpty()) {
+        if (this.memoryStorage.writeSSTables().isEmpty() || this.memoryStorage.writeSSTables().peek().isEmpty()) {
             return;
         }
+        //this.flushRunnable.run();
         this.service.submit(this.flushRunnable);
         this.curBytesForEntries.set(0);
     }
@@ -183,7 +184,8 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
         }
 
         public boolean empty() {
-            return this.memoryWriteSSTables.peek().isEmpty() && this.memoryFlushSSTables.isEmpty(); // non null!
+            return !this.memoryWriteSSTables.isEmpty() && this.memoryWriteSSTables.peek().isEmpty()
+                    && this.memoryFlushSSTables.isEmpty();
         }
 
         public void clear() {

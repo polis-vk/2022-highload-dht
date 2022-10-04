@@ -2,6 +2,7 @@ package ok.dht.test.kovalenko;
 
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
+import ok.dht.kovalenko.dao.DaoFiller;
 import ok.dht.kovalenko.dao.LSMDao;
 import ok.dht.kovalenko.dao.aliases.TypedBaseEntry;
 import ok.dht.kovalenko.dao.aliases.TypedEntry;
@@ -17,6 +18,7 @@ import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 
 public class MyService implements Service {
@@ -43,12 +45,13 @@ public class MyService implements Service {
     public CompletableFuture<?> start() throws IOException {
         try {
             this.dao = new LSMDao(this.config);
+            //DaoFiller.fillDao(dao, daoFactory, 100_000_000);
             this.server = new MyServer(createConfigFromPort(this.config.selfPort()));
-            this.server.start();
             this.server.addRequestHandlers(this);
+            this.server.start();
             return CompletableFuture.completedFuture(null);
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            return CompletableFuture.failedFuture(e);
         }
     }
 
@@ -70,7 +73,7 @@ public class MyService implements Service {
         if (res == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
-        return Response.ok(res.value().array());
+        return Response.ok(daoFactory.toString(res.value()).getBytes(StandardCharsets.UTF_8));
     }
 
     @Path("/v0/entity")

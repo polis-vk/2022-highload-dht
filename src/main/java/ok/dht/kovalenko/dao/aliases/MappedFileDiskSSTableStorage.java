@@ -81,7 +81,7 @@ public class MappedFileDiskSSTableStorage
                 this.put(
                         priority,
                         new MappedFileDiskSSTable(priority,
-                                new MappedPairedFiles(mappedDataFile, mappedIndexesFile), serializer)
+                                new MappedPairedFiles(mappedDataFile, mappedIndexesFile, serializer), serializer)
                 );
             }
         }

@@ -1,11 +1,13 @@
 package ok.dht.kovalenko.dao.aliases;
 
 import ok.dht.kovalenko.dao.Serializer;
+import ok.dht.kovalenko.dao.dto.ByteBufferRange;
 import ok.dht.kovalenko.dao.dto.MappedPairedFiles;
 import ok.dht.kovalenko.dao.utils.DaoUtils;
 import ok.dht.kovalenko.dao.utils.FileUtils;
 
 import java.nio.ByteBuffer;
+import java.util.Map;
 
 public class MappedFileDiskSSTable
         extends DiskSSTable<MappedPairedFiles> {
@@ -18,10 +20,9 @@ public class MappedFileDiskSSTable
     }
 
     public TypedEntry get(ByteBuffer key) {
-        ByteBuffer fromRange = serializer.readKey(this.value, 0);
-        ByteBuffer toRange = serializer.readKey(this.value, this.value.indexesLimit() - FileUtils.INDEX_SIZE);
-        if (DaoUtils.byteBufferComparator.lessThan(key, fromRange)
-                || DaoUtils.byteBufferComparator.greaterThan(key, toRange)) {
+        ByteBufferRange range = this.value.range();
+        if (DaoUtils.byteBufferComparator.lessThan(key, range.from())
+                || DaoUtils.byteBufferComparator.greaterThan(key, range.to())) {
             return null;
         }
         TypedEntry res = null;
@@ -33,10 +34,9 @@ public class MappedFileDiskSSTable
     }
 
     public TypedIterator get(ByteBuffer from, ByteBuffer to) {
-        ByteBuffer fromRange = serializer.readKey(this.value, 0);
-        ByteBuffer toRange = serializer.readKey(this.value, this.value.indexesLimit() - FileUtils.INDEX_SIZE);
-        if (DaoUtils.byteBufferComparator.lessThan(toRange, from)
-                || DaoUtils.byteBufferComparator.greaterThan(fromRange, to)) {
+        ByteBufferRange range = this.value.range();
+        if (DaoUtils.byteBufferComparator.lessThan(range.to(), from)
+                || DaoUtils.byteBufferComparator.greaterThan(range.from(), to)) {
             return null;
         }
         int fromPos = greaterOrEqualEntryIndex(this.value, from);

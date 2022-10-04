@@ -96,7 +96,8 @@ public final class FileUtils {
                         FileUtils.createFile(FileUtils::getIndexesFilename, fileOrdinal, config)
                 );
             } catch (FileAlreadyExistsException ex) {
-                break;
+                ++fileOrdinal;
+                continue;
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }

@@ -13,32 +13,47 @@ public final class DaoFiller {
     private DaoFiller() {
     }
 
-    public static void fillDao(LSMDao dao, ByteBufferDaoFactory daoFactory, int numEntries) {
-        List<TypedEntry> entries = entries(numEntries, daoFactory);
-        entries.forEach(dao::upsert);
+    public static void fillDao(LSMDao dao, ByteBufferDaoFactory daoFactory, int numEntries) throws InterruptedException {
+        var entries = entries(numEntries, daoFactory);
+        for (int i = 0; i < entries.size(); ++i) {
+            if (i % 10_000 == 0) {
+                Thread.sleep(100);
+            }
+            dao.upsert(entries.get(i));
+        }
     }
 
     private static List<TypedEntry> entries(int count, ByteBufferDaoFactory daoFactory) {
         return entries("k", "v", count, daoFactory);
     }
 
+    private static List<TypedEntry> entries(int idxFrom, int idxTo, ByteBufferDaoFactory daoFactory) {
+        return entries("k", "v", idxFrom, idxTo, daoFactory);
+    }
+
     private static List<TypedEntry> entries(String keyPrefix, String valuePrefix, int count,
+                                            ByteBufferDaoFactory daoFactory) {
+        return entries(keyPrefix, valuePrefix, 1, count, daoFactory);
+    }
+
+    private static List<TypedEntry> entries(String keyPrefix, String valuePrefix, int idxFrom, int idxTo,
                                             ByteBufferDaoFactory daoFactory) {
         return new AbstractList<>() {
             @Override
             public TypedEntry get(int index) {
-                checkInterrupted();
-                if (index >= count || index < 0) {
-                    throw new IndexOutOfBoundsException("Index is " + index + ", size is " + count);
-                }
-                ByteBuffer key = daoFactory.fromString(keyPrefix + index);
-                ByteBuffer value = daoFactory.fromString(valuePrefix + index);
+                //checkInterrupted();
+//                if (index > idxTo || index + 1 < idxFrom) {
+//                    throw new IndexOutOfBoundsException("Index is " + index + ", size is " + size());
+//                }
+
+                ByteBuffer key = daoFactory.fromString(keyPrefix + (index + idxFrom));
+                ByteBuffer value = daoFactory.fromString(valuePrefix + (index + idxFrom));
                 return new TypedBaseEntry(key, value);
             }
 
             @Override
             public int size() {
-                return count;
+                return idxTo - idxFrom + 1;
             }
         };
     }

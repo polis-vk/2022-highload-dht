@@ -8,6 +8,7 @@ import ok.dht.kovalenko.dao.dto.PairedFiles;
 import ok.dht.kovalenko.dao.utils.FileUtils;
 
 import java.io.IOException;
+import java.util.ConcurrentModificationException;
 
 public class FlushRunnable implements Runnable {
 
@@ -38,7 +39,9 @@ public class FlushRunnable implements Runnable {
             PairedFiles pairedFiles = FileUtils.createPairedFiles(this.config);
             this.serializer.write(memorySSTable.values().iterator(), pairedFiles);
             // It is impossible that any other thread will capture memorySSTable
-            this.memoryStorage.flushSSTables().remove(memorySSTable);
+            if (!this.memoryStorage.flushSSTables().remove(memorySSTable)) {
+                throw new ConcurrentModificationException("Unexpected concurrent removing SSTable");
+            }
             this.memoryStorage.writeSSTables().add(new MemorySSTable());
         } catch (IOException e) {
             throw new RuntimeException(e);
