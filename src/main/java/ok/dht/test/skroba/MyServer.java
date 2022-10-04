@@ -11,6 +11,7 @@ public final class MyServer {
     private static final Logger LOG = LoggerFactory.getLogger(
             MyServer.class
     );
+    
     private MyServer() {
         // Only main method
     }
