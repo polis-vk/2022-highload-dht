@@ -24,6 +24,7 @@ import java.util.Base64;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 
+import static ok.dht.test.lutsenko.service.ServiceUtils.shutdownAndAwaitTermination;
 import static ok.dht.test.lutsenko.service.ServiceUtils.uncheckedSendResponse;
 
 public class DemoService implements Service {
@@ -74,6 +75,7 @@ public class DemoService implements Service {
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
         dao.close();
+        shutdownAndAwaitTermination(requestExecutor);
         return CompletableFuture.completedFuture(null);
     }
 

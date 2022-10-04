@@ -5,6 +5,8 @@ import one.nio.http.Response;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public final class ServiceUtils {
 
@@ -16,6 +18,19 @@ public final class ServiceUtils {
             session.sendResponse(response);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    public static void shutdownAndAwaitTermination(ThreadPoolExecutor executorService) {
+        executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(Integer.MAX_VALUE, TimeUnit.HOURS)) {
+                executorService.shutdownNow();
+                throw new RuntimeException("Await termination too long");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Await termination interrupted", e);
         }
     }
 }
