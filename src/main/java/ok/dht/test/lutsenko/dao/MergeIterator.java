@@ -5,7 +5,6 @@ import ok.dht.test.lutsenko.dao.common.BaseEntry;
 import java.io.IOException;
 import java.nio.MappedByteBuffer;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -13,13 +12,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class MergeIterator implements Iterator<BaseEntry<String>> {
 
     private final NavigableMap<String, BaseEntry<String>> tempData = new TreeMap<>();
     private final Map<String, Integer> tempDataPriorities = new HashMap<>();
-    private final Map<String, List<FileInfo>> lastElementWithFilesMap = new HashMap<>();
-    private final List<Map.Entry<Path, MappedByteBuffer>> filesMapEntries = new ArrayList<>();
+    private final Map<String, CopyOnWriteArrayList<FileInfo>> lastElementWithFilesMap = new HashMap<>();
+    private final List<Map.Entry<Path, FileInfo> > fileInfos = new CopyOnWriteArrayList<>();
     private final Iterator<BaseEntry<String>> inMemoryIterator;
     private final String to;
     private final boolean isFromNull;
@@ -29,24 +29,24 @@ public class MergeIterator implements Iterator<BaseEntry<String>> {
     private boolean hasNextCalled;
     private boolean hasNextResult;
 
-    public MergeIterator(PersistenceRangeDao dao, String from, String to, boolean includingMemory) throws IOException {
+    public MergeIterator(PersistenceRangeDao dao, String from, String to, boolean includingMemory) {
         this.to = to;
         this.isFromNull = from == null;
         this.isToNull = to == null;
-        this.filesMapEntries.addAll(dao.getFilesMap().entrySet());
+        this.fileInfos.addAll(dao.getFileInfosMap().entrySet());
         int priority = 1;
-        for (Map.Entry<Path, MappedByteBuffer> filesMapEntry : filesMapEntries) {
-            MappedByteBuffer mappedByteBuffer = filesMapEntry.getValue();
-            mappedByteBuffer.position(0);
+        for (Map.Entry<Path, FileInfo> fileInfosMapEntry : fileInfos) {
+            fileInfosMapEntry.getValue().position.set(0);
+            MappedByteBuffer mappedByteBuffer = fileInfosMapEntry.getValue().mappedByteBuffer;
             BaseEntry<String> firstEntry = isFromNull
-                    ? DaoUtils.readEntry(mappedByteBuffer)
-                    : DaoUtils.ceilKey(mappedByteBuffer, from);
+                    ? DaoUtils.readEntry(mappedByteBuffer, fileInfosMapEntry.getValue().position)
+                    : DaoUtils.ceilKey(mappedByteBuffer, from, fileInfosMapEntry.getValue().position);
             if (firstEntry != null && (isToNull || firstEntry.key().compareTo(to) < 0)) {
                 tempData.put(firstEntry.key(), firstEntry);
                 tempDataPriorities.put(firstEntry.key(), priority);
                 lastElementWithFilesMap
-                        .computeIfAbsent(firstEntry.key(), files -> new ArrayList<>())
-                        .add(new FileInfo(priority, mappedByteBuffer));
+                        .computeIfAbsent(firstEntry.key(), files -> new CopyOnWriteArrayList<>())
+                        .add(fileInfosMapEntry.getValue());
                 priority++;
             }
         }
@@ -112,7 +112,7 @@ public class MergeIterator implements Iterator<BaseEntry<String>> {
             return;
         }
         for (FileInfo fileInfo : filesToRead) {
-            BaseEntry<String> newEntry = DaoUtils.readEntry(fileInfo.mappedByteBuffer);
+            BaseEntry<String> newEntry = DaoUtils.readEntry(fileInfo.mappedByteBuffer, fileInfo.position);
             if (newEntry == null) {
                 continue;
             }
@@ -122,23 +122,14 @@ public class MergeIterator implements Iterator<BaseEntry<String>> {
                 tempDataPriorities.put(newEntry.key(), fileInfo.fileNumber);
             }
             lastElementWithFilesMap
-                    .computeIfAbsent(newEntry.key(), files -> new ArrayList<>())
+                    .computeIfAbsent(newEntry.key(), files -> new CopyOnWriteArrayList<>())
                     .add(fileInfo);
         }
         lastElementWithFilesMap.remove(polledEntry.key());
     }
 
-    public List<Map.Entry<Path, MappedByteBuffer>> getFilesMapEntries() {
-        return filesMapEntries;
+    public List<Map.Entry<Path, FileInfo>> getFileInfos() {
+        return fileInfos;
     }
 
-    private static final class FileInfo {
-        private final int fileNumber;
-        private final MappedByteBuffer mappedByteBuffer;
-
-        private FileInfo(int fileNumber, MappedByteBuffer mappedByteBuffer) {
-            this.fileNumber = fileNumber;
-            this.mappedByteBuffer = mappedByteBuffer;
-        }
-    }
 }

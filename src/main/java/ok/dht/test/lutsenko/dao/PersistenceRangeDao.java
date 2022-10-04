@@ -61,7 +61,7 @@ public class PersistenceRangeDao implements Dao<String, BaseEntry<String>> {
     private final AtomicBoolean isClosed = new AtomicBoolean(false);
     private final DaoConfig daoConfig;
     private final MemStorage memStorage;
-    private final ConcurrentSkipListMap<Path, MappedByteBuffer> filesMap = new ConcurrentSkipListMap<>(
+    private final ConcurrentSkipListMap<Path, FileInfo> filesMap = new ConcurrentSkipListMap<>(
             Comparator.comparingInt(this::getFileNumber)
     );
     private final ExecutorService flushExecutor = Executors.newSingleThreadExecutor();
@@ -74,7 +74,9 @@ public class PersistenceRangeDao implements Dao<String, BaseEntry<String>> {
                 (p, a) -> a.isRegularFile() && p.getFileName().toString().endsWith(DATA_FILE_EXTENSION))) {
             List<Path> paths = stream.toList();
             for (Path path : paths) {
-                filesMap.put(path, mapFile(path));
+                ThreadLocal<Integer> position = new ThreadLocal<>();
+                position.set(0);
+                filesMap.put(path, new FileInfo(getFileNumber(path), mapFile(path), position));
             }
             currentFileNumber.set(filesMap.isEmpty() ? 0 : getFileNumber(filesMap.lastKey()) + 1);
         } catch (NoSuchFileException e) {
@@ -84,7 +86,7 @@ public class PersistenceRangeDao implements Dao<String, BaseEntry<String>> {
     }
 
     @Override
-    public Iterator<BaseEntry<String>> get(String from, String to) throws IOException {
+    public Iterator<BaseEntry<String>> get(String from, String to) {
         checkNotClosed();
         lock.readLock().lock();
         try {
@@ -138,7 +140,9 @@ public class PersistenceRangeDao implements Dao<String, BaseEntry<String>> {
                 MappedByteBuffer mappedByteBuffer = mapFile(dataFilePath);
                 lock.writeLock().lock();
                 try {
-                    filesMap.put(dataFilePath, mappedByteBuffer);
+                    ThreadLocal<Integer> position = new ThreadLocal<>();
+                    position.set(0);
+                    filesMap.put(dataFilePath, new FileInfo(getFileNumber(dataFilePath), mappedByteBuffer, position));
                     memStorage.clearFirstTable();
                 } finally {
                     lock.writeLock().unlock();
@@ -159,9 +163,10 @@ public class PersistenceRangeDao implements Dao<String, BaseEntry<String>> {
         if (!memStorage.isEmpty()) {
             DaoUtils.writeToFile(generateNextFilePath(), inMemoryDataIterator(null, null));
         }
-        for (MappedByteBuffer mappedByteBuffer : filesMap.values()) {
-            unmap(mappedByteBuffer);
+        for (FileInfo fileInfo : filesMap.values()) {
+            unmap(fileInfo.mappedByteBuffer);
         }
+        filesMap.clear();
     }
 
     @Override
@@ -187,10 +192,10 @@ public class PersistenceRangeDao implements Dao<String, BaseEntry<String>> {
             Path tempCompactionFilePath = generateTempPath(COMPACTION_FILE_NAME);
             Path lastFilePath = generateNextFilePath();
             MappedByteBuffer lastFileInputStream;
-            List<Map.Entry<Path, MappedByteBuffer>> compactionFilesMapEntries;
+            List<Map.Entry<Path, FileInfo>> compactionFileInfosMapEntries;
             try {
                 MergeIterator allEntriesIterator = new MergeIterator(this, null, null, false);
-                compactionFilesMapEntries = allEntriesIterator.getFilesMapEntries(); // copy of filesMap in iterator
+                compactionFileInfosMapEntries = allEntriesIterator.getFileInfos(); // copy of filesMap in iterator
                 DaoUtils.writeToFile(tempCompactionFilePath, allEntriesIterator);
                 Files.move(tempCompactionFilePath, lastFilePath);
                 lastFileInputStream = mapFile(lastFilePath);
@@ -199,10 +204,12 @@ public class PersistenceRangeDao implements Dao<String, BaseEntry<String>> {
             }
             lock.writeLock().lock();
             try {
-                filesMap.put(lastFilePath, lastFileInputStream);
-                for (Map.Entry<Path, MappedByteBuffer> filesMapEntry : compactionFilesMapEntries) {
+                ThreadLocal<Integer> position = new ThreadLocal<>();
+                position.set(0);
+                filesMap.put(lastFilePath, new FileInfo(getFileNumber(lastFilePath), lastFileInputStream, position));
+                for (Map.Entry<Path, FileInfo> filesMapEntry : compactionFileInfosMapEntries) {
                     filesMap.remove(filesMapEntry.getKey());
-                    unmap(filesMapEntry.getValue());
+                    unmap(filesMapEntry.getValue().mappedByteBuffer);
                     Files.delete(filesMapEntry.getKey());
                 }
             } catch (IOException e) {
@@ -243,7 +250,7 @@ public class PersistenceRangeDao implements Dao<String, BaseEntry<String>> {
         return daoConfig;
     }
 
-    public Map<Path, MappedByteBuffer> getFilesMap() {
+    public Map<Path, FileInfo> getFileInfosMap() {
         lock.readLock().lock();
         try {
             return filesMap;

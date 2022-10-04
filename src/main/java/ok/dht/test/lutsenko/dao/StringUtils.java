@@ -38,6 +38,9 @@ public final class StringUtils {
     }
 
     public static String postprocess(byte[] bytes) {
+        if (bytes == null) {
+            return null;
+        }
         int i = 0;
         for (byte b : bytes) {
             if (b == (byte)'\\') {

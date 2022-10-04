@@ -34,31 +34,36 @@ public final class DaoUtils {
         return entry.key().length() + (entry.value() == null ? NULL_BYTES : entry.value().length());
     }
 
-    public static String readKey(ByteBuffer byteBuffer) {
-        int keyLength = byteBuffer.getInt();
+    public static String readKey(ByteBuffer byteBuffer, ThreadLocal<Integer> position) {
+        Integer positionBefore = position.get();
+        int keyLength = byteBuffer.getInt(positionBefore);
         byte[] keyBytes = new byte[keyLength];
-        byteBuffer.get(keyBytes);
+        byteBuffer.get(positionBefore + BYTES_IN_INT, keyBytes);
+        position.set(positionBefore + keyLength + BYTES_IN_INT);
         return postprocess(keyBytes);
     }
 
-    public static String readValue(ByteBuffer byteBuffer) {
-        if (byteBuffer.getInt() == EXISTING_MARK) {
-            int valueLength = byteBuffer.getInt();
+    public static String readValue(MappedByteBuffer byteBuffer, ThreadLocal<Integer> position) {
+        Integer positionBefore = position.get();
+        if (byteBuffer.getInt(positionBefore) == EXISTING_MARK) {
+            int valueLength = byteBuffer.getInt(positionBefore + BYTES_IN_INT);
             byte[] valueBytes = new byte[valueLength];
-            byteBuffer.get(valueBytes);
-            byteBuffer.get(); // читаем '\n'
+            byteBuffer.get(positionBefore + BYTES_IN_INT + BYTES_IN_INT, valueBytes);
+            byteBuffer.get(positionBefore + BYTES_IN_INT + BYTES_IN_INT + valueBytes.length); // читаем '\n'
+            position.set(positionBefore + BYTES_IN_INT + BYTES_IN_INT + valueBytes.length + 1);
             return postprocess(valueBytes);
         }
-        byteBuffer.get(); // читаем '\n'
+        byteBuffer.get(position.get() + BYTES_IN_INT); // читаем '\n'
+        position.set(positionBefore + BYTES_IN_INT + 1);
         return null;
     }
 
-    public static BaseEntry<String> readEntry(ByteBuffer byteBuffer) {
-        byteBuffer.position(byteBuffer.position() + BYTES_IN_INT); // Пропускаем длину предыдущей записи
-        if (isEnd(byteBuffer)) {
+    public static BaseEntry<String> readEntry(MappedByteBuffer byteBuffer, ThreadLocal<Integer> position) {
+        position.set(position.get() + BYTES_IN_INT); // Пропускаем длину предыдущей записи
+        if (isEnd(byteBuffer, position)) {
             return null;
         }
-        return new BaseEntry<>(readKey(byteBuffer), readValue(byteBuffer));
+        return new BaseEntry<>(readKey(byteBuffer, position), readValue(byteBuffer, position));
     }
 
     public static void writeKey(byte[] keyBytes, ByteBuffer byteBuffer) {
@@ -116,7 +121,7 @@ public final class DaoUtils {
 
     /**
      * Для лучшего понимаю См. Описание формата файла в PersistenceRangeDao.
-     * Все размер / длины ы в количественном измерении относительно char, то есть int это 2 char
+     * Все размер / длины ы в количественном измерении относительно char, то есть int это 4 айта
      * Везде, где упоминается размер / длина, имеется в виду относительно char, а не байтов.
      * left - левая граница,
      * right - правая граница равная размеру файла минус размер числа,
@@ -134,7 +139,7 @@ public final class DaoUtils {
      * Всегда идет проверка на случай если мы пополи на середину последней строки :
      * position + readBytes(прочитанные байты с помощью readline) == right,
      * Если равенство выполняется, то возвращаемся в конец последней строки -
-     * position ставим в left + CHARS_IN_INT (длина числа, размера предыдущей строки), readBytes обнуляем,
+     * position ставим в left + BYTES_IN_INT (длина числа, размера предыдущей строки), readBytes обнуляем,
      * дальше идет обычная обработка :
      * Читаем ключ, значение (все равно придется его читать чтобы дойти до след ключа),
      * сравниваем ключ, если он равен, то return
@@ -147,62 +152,57 @@ public final class DaoUtils {
      * В итоге идея следующая найти пару ключей, между которыми лежит исходный и вернуть второй или равный исходному,
      * при этом не храня индексы для сдвигов ключей вовсе.
      */
-    public static BaseEntry<String> ceilKey(ByteBuffer byteBuffer, String key) {
-        int prevEntryLength;
-        String currentKey;
-        long left = 0;
+    public static BaseEntry<String> ceilKey(MappedByteBuffer byteBuffer, String key, ThreadLocal<Integer> position) {
+        long left = BYTES_IN_INT;
         long right = (long) byteBuffer.capacity() - BYTES_IN_INT;
-        long position;
         while (left < right) {
-            position = (left + right) / 2;
-            byteBuffer.mark();
-            byteBuffer.position((int) position);
-            int leastPartOfLineLength = getLeastPartOfLineLength(byteBuffer);
+            position.set((int) ((left + right) / 2));
+            int startPosition = position.get();
+            int leastPartOfLineLength = getLeastPartOfLineLength(byteBuffer, position);
             int readBytes = leastPartOfLineLength + BYTES_IN_INT; // BYTES_IN_INT -> prevEntryLength
-            prevEntryLength = byteBuffer.getInt();
-            if (position + readBytes >= right) {
-                byteBuffer.reset();
-                byteBuffer.position(byteBuffer.position() + BYTES_IN_INT);
-                right = position + readBytes - prevEntryLength + 1;
+            int prevEntryLength = byteBuffer.getInt(position.get());
+            position.set(position.get() + BYTES_IN_INT);
+            if (position.get() >= right) {
+                right = (long) startPosition + readBytes - prevEntryLength + 1;
                 readBytes = 0;
-                position = left;
+                position.set((int) left);
             }
-            currentKey = readKey(byteBuffer);
-            String currentValue = readValue(byteBuffer);
+            String currentKey = readKey(byteBuffer, position);
+            String currentValue = readValue(byteBuffer, position);
             int compareResult = key.compareTo(currentKey);
             if (compareResult == 0) {
                 return new BaseEntry<>(currentKey, currentValue);
             }
             if (compareResult > 0) {
-                byteBuffer.mark();
-                prevEntryLength = byteBuffer.getInt();
-                if (isEnd(byteBuffer)) {
+                prevEntryLength = byteBuffer.getInt(position.get());
+                position.set(position.get() + BYTES_IN_INT);
+                if (isEnd(byteBuffer, position)) {
                     return null;
                 }
-                String nextKey = readKey(byteBuffer);
+                String nextKey = readKey(byteBuffer, position);
                 if (key.compareTo(nextKey) <= 0) {
-                    return new BaseEntry<>(nextKey, readValue(byteBuffer));
+                    return new BaseEntry<>(nextKey, readValue(byteBuffer, position));
                 }
-                left = position + readBytes + prevEntryLength;
-                byteBuffer.reset();
+                left = (long) startPosition + readBytes + prevEntryLength;
             } else {
-                right = position + readBytes;
-                byteBuffer.reset();
+                right = (long) startPosition + readBytes;
             }
         }
-        return left == 0 ? readEntry(byteBuffer) : null;
+        return left == 0 ? readEntry(byteBuffer, position) : null;
     }
 
-    private static int getLeastPartOfLineLength(ByteBuffer byteBuffer) {
+    private static int getLeastPartOfLineLength(MappedByteBuffer byteBuffer, ThreadLocal<Integer> position) {
         int leastPartOfLineLength = 0;
-        while (byteBuffer.get() != NEXT_LINE_BYTE) {
+        int startPosition = position.get();
+        while (byteBuffer.get(startPosition + leastPartOfLineLength) != NEXT_LINE_BYTE) {
             leastPartOfLineLength++;
         }
-        return leastPartOfLineLength;
+        position.set(startPosition + leastPartOfLineLength + 1);
+        return leastPartOfLineLength + 1;
     }
 
-    public static boolean isEnd(ByteBuffer byteBuffer) {
-        return byteBuffer.position() == byteBuffer.limit();
+    public static boolean isEnd(ByteBuffer byteBuffer, ThreadLocal<Integer> position) {
+        return position.get() == byteBuffer.limit();
     }
 
     public static MappedByteBuffer mapFile(Path path) throws IOException {
