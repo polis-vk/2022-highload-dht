@@ -25,7 +25,6 @@ public class ServiceImpl implements Service {
 
     public static final int FLUSH_THRESHOLD_BYTES = 1_048_576;
     private static final String BAD_ID = "Given id is bad.";
-
     private static final String NO_SUCH_METHOD = "No such method.";
     private final ServiceConfig config;
     private MemorySegmentDao dao;
@@ -93,8 +92,8 @@ public class ServiceImpl implements Service {
                 }
             }
         };
-        server.start();
         server.addRequestHandlers(this);
+        server.start();
         return CompletableFuture.completedFuture(null);
     }
 
