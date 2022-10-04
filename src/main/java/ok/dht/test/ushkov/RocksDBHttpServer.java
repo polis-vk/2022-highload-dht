@@ -17,9 +17,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class RocksDBHttpServer extends HttpServer {
-    public static final long STOP_TIMEOUT_MINUTES = 1;
-
-    private ExecutorService executor;
+    private final ExecutorService executor;
     private static final Logger LOG = LoggerFactory.getLogger(RocksDBHttpServer.class);
 
     public RocksDBHttpServer(RocksDBHttpServerConfig config, Object... routers) throws IOException {
@@ -37,20 +35,26 @@ public class RocksDBHttpServer extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            executor.execute(() -> {
-                try {
-                    super.handleRequest(request, session);
-                } catch (Exception e) {
-                    try {
-                        session.sendError(Response.BAD_REQUEST, e.getMessage());
-                    } catch (IOException e1) {
-                        // Do nothing
-                    }
-                }
-            });
+            executor.execute(() -> doHandleRequest(request, session));
         } catch (RejectedExecutionException e) {
             LOG.info("drop request, queue is full");
             session.sendError(Response.SERVICE_UNAVAILABLE, e.getMessage());
+        }
+    }
+
+    private void doHandleRequest(Request request, HttpSession session) {
+        try {
+            super.handleRequest(request, session);
+        } catch (Exception e) {
+            handleException(session, e);
+        }
+    }
+
+    private void handleException(HttpSession session, Exception e) {
+        try {
+            session.sendError(Response.BAD_REQUEST, e.getMessage());
+        } catch (IOException e1) {
+            LOG.error("could not send response", e1);
         }
     }
 

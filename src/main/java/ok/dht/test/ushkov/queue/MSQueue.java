@@ -26,7 +26,7 @@ public class MSQueue<T> extends AbstractQueue<T> {
 
             @Override
             public T next() {
-                T value = current.x;
+                T value = current.value;
                 current = current.next.get();
                 return value;
             }
@@ -36,15 +36,15 @@ public class MSQueue<T> extends AbstractQueue<T> {
     @Override
     public synchronized int size() {
         int count = 0;
-        for (T x : this) {
+        for (T value : this) {
             count++;
         }
         return count;
     }
 
     @Override
-    public boolean offer(T x) {
-        Node<T> newTail = new Node(x);
+    public boolean offer(T value) {
+        Node<T> newTail = new Node(value);
         while (true) {
             Node<T> currentTail = tail.get();
             if (currentTail.next.compareAndSet(null, newTail)) {
@@ -63,14 +63,14 @@ public class MSQueue<T> extends AbstractQueue<T> {
             Node<T> currentTail = tail.get();
             Node<T> next = currentHead.next.get();
             if (currentHead == head.get()) {
-                if (currentHead == currentTail) {
+                if (currentHead.equals(currentTail)) {
                     if (next == null) {
                         return null;
                     }
                     tail.compareAndSet(currentTail, next);
                 } else {
                     if (head.compareAndSet(currentHead, next)) {
-                        return next.x;
+                        return next.value;
                     }
                 }
             }
@@ -80,15 +80,15 @@ public class MSQueue<T> extends AbstractQueue<T> {
     public T peek() {
         Node<T> currentHead = head.get();
         Node<T> currentHeadNext = currentHead.next.get();
-        return currentHeadNext == null ? null : currentHeadNext.x;
+        return currentHeadNext == null ? null : currentHeadNext.value;
     }
 
     private static class Node<T> {
-        final T x;
+        final T value;
         AtomicReference<Node<T>> next = new AtomicReference<>(null);
 
-        Node(T x) {
-            this.x = x;
+        Node(T value) {
+            this.value = value;
         }
     }
 }

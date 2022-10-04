@@ -64,7 +64,7 @@ public class RocksDBService implements Service {
             try {
                 server.awaitStop(STOP_TIMEOUT_MINUTES, TimeUnit.MINUTES);
             } catch (InterruptedException e) {
-                // Do nothing.
+                Thread.currentThread().interrupt();
             }
             server = null;
         });
