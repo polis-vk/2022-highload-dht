@@ -12,8 +12,6 @@ import ok.dht.test.yasevich.dao.Entry;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
@@ -22,6 +20,9 @@ import one.nio.server.SelectorThread;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class ServiceImpl implements Service {
 
@@ -38,7 +39,7 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD));
-        server = new CustomHttpServer(createConfigFromPort(config.selfPort()));
+        server = new CustomHttpServer(createConfigFromPort(config.selfPort()), dao);
         server.start();
         server.addRequestHandlers(this);
         return CompletableFuture.completedFuture(null);
@@ -64,50 +65,81 @@ public class ServiceImpl implements Service {
         return httpConfig;
     }
 
-    @Path("/v0/entity")
-    public Response handleRequest(@Param(value = "id", required = true) String id, Request request) throws IOException {
-        if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-        return switch (request.getMethod()) {
-            case Request.METHOD_GET -> handleGet(id);
-            case Request.METHOD_PUT -> handlePost(id, request);
-            case Request.METHOD_DELETE -> handleDelete(id);
-            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        };
-    }
-
-    private Response handleGet(String id) throws IOException {
-        Entry<MemorySegment> entry = dao.get(fromString(id));
-        if (entry == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-        return new Response(Response.OK, entry.value().toByteArray());
-    }
-
-    private Response handleDelete(String id) {
-        dao.upsert(new BaseEntry<>(fromString(id), null));
-        return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    private Response handlePost(String id, Request request) {
-        dao.upsert(new BaseEntry<>(fromString(id), MemorySegment.ofArray(request.getBody())));
-        return new Response(Response.CREATED, Response.EMPTY);
-    }
-
     private static MemorySegment fromString(String data) {
         return MemorySegment.ofArray(data.toCharArray());
     }
 
     private static class CustomHttpServer extends HttpServer {
+        private static final int CPUs = Runtime.getRuntime().availableProcessors();
+        private static final int QUEUE_SIZE = 10_000;
+        private static final int FIFO_RARENESS = 3;
 
-        public CustomHttpServer(HttpServerConfig config, Object... routers) throws IOException {
+        private final Dao<MemorySegment, Entry<MemorySegment>> dao;
+        private final AlmostLifoQueue queue = new AlmostLifoQueue(QUEUE_SIZE, FIFO_RARENESS);
+        private final ExecutorService pool = new ThreadPoolExecutor(CPUs, CPUs, 0L, TimeUnit.MILLISECONDS, queue);
+
+
+        public CustomHttpServer(HttpServerConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao, Object... routers) throws IOException {
             super(config, routers);
+            this.dao = dao;
         }
 
         @Override
         public void handleDefault(Request request, HttpSession session) throws IOException {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        }
+
+        @Override
+        public void handleRequest(Request request, HttpSession session) throws IOException {
+            String id = request.getParameter("id");
+            if (id == null || id.isEmpty() || id.equals("=")) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
+            if (this.isOverloaded()) {
+                session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                return;
+            }
+            pool.execute(() -> {
+                Response response = switch (request.getMethod()) {
+                    case Request.METHOD_GET -> handleGet(id);
+                    case Request.METHOD_PUT -> handlePost(id, request);
+                    case Request.METHOD_DELETE -> handleDelete(id);
+                    default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                };
+                try {
+                    session.sendResponse(response);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+
+        private boolean isOverloaded() {
+            return queue.size() >= QUEUE_SIZE;
+        }
+
+        private Response handleGet(String id) {
+            Entry<MemorySegment> entry;
+            try {
+                entry = dao.get(fromString(id));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            if (entry == null) {
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
+            }
+            return new Response(Response.OK, entry.value().toByteArray());
+        }
+
+        private Response handleDelete(String id) {
+            dao.upsert(new BaseEntry<>(fromString(id), null));
+            return new Response(Response.ACCEPTED, Response.EMPTY);
+        }
+
+        private Response handlePost(String id, Request request) {
+            dao.upsert(new BaseEntry<>(fromString(id), MemorySegment.ofArray(request.getBody())));
+            return new Response(Response.CREATED, Response.EMPTY);
         }
 
         @Override
@@ -118,6 +150,7 @@ public class ServiceImpl implements Service {
                 }
             }
             super.stop();
+            pool.shutdown();
         }
 
     }
