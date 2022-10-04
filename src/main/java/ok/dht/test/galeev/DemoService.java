@@ -97,7 +97,7 @@ public class DemoService implements Service {
         return new DaoMiddleLayer<>(
                 new DaoConfig(
                         config.workingDir(),
-                        FLUSH_THRESHOLD_BYTES //1MB
+                        FLUSH_THRESHOLD_BYTES //16MB
                 ),
                 new StringByteConverter()
         );
