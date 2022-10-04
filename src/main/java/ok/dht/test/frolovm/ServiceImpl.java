@@ -4,11 +4,9 @@ import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.frolovm.artyomdrozdov.BaseEntry;
-import ok.dht.test.frolovm.artyomdrozdov.Config;
-import ok.dht.test.frolovm.artyomdrozdov.Dao;
-import ok.dht.test.frolovm.artyomdrozdov.Entry;
-import ok.dht.test.frolovm.artyomdrozdov.MemorySegmentDao;
+import ok.dht.test.drozdov.dao.Config;
+import ok.dht.test.drozdov.dao.Entry;
+import ok.dht.test.drozdov.dao.MemorySegmentDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -26,18 +24,18 @@ import java.util.concurrent.CompletableFuture;
 public class ServiceImpl implements Service {
 
     public static final int FLUSH_THRESHOLD_BYTES = 1_048_576;
-    private static final byte[] BAD_ID = Utf8.toBytes("Given id is bad.");
+    private static final String BAD_ID = "Given id is bad.";
 
-    private static final byte[] NO_SUCH_METHOD = Utf8.toBytes("No such method.");
+    private static final String NO_SUCH_METHOD = "No such method.";
     private final ServiceConfig config;
-    private Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private MemorySegmentDao dao;
     private HttpServer server;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
     }
 
-    public ServiceImpl(ServiceConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao) {
+    public ServiceImpl(ServiceConfig config, MemorySegmentDao dao) {
         this.config = config;
         this.dao = dao;
     }
@@ -101,7 +99,7 @@ public class ServiceImpl implements Service {
     }
 
     private Response getHandler(String id) {
-        Entry<MemorySegment> result = dao.get(stringToSegment(id));
+        Entry result = dao.get(stringToSegment(id));
         if (result == null) {
             return emptyResponse(Response.NOT_FOUND);
         } else {
@@ -112,7 +110,7 @@ public class ServiceImpl implements Service {
     @Path("/v0/entity")
     public Response entityHandler(@Param(value = "id", required = true) String id, Request request) {
         if (!checkId(id)) {
-            return new Response(Response.BAD_REQUEST, BAD_ID);
+            return new Response(Response.BAD_REQUEST, Utf8.toBytes(BAD_ID));
         }
         switch (request.getMethod()) {
             case Request.METHOD_PUT:
@@ -122,18 +120,18 @@ public class ServiceImpl implements Service {
             case Request.METHOD_DELETE:
                 return deleteHandler(id);
             default:
-                return new Response(Response.BAD_REQUEST, NO_SUCH_METHOD);
+                return new Response(Response.BAD_REQUEST, Utf8.toBytes(NO_SUCH_METHOD));
         }
     }
 
     private Response putHandler(Request request, String id) {
         MemorySegment bodySegment = MemorySegment.ofArray(request.getBody());
-        dao.upsert(new BaseEntry<>(stringToSegment(id), bodySegment));
+        dao.upsert(new Entry(stringToSegment(id), bodySegment));
         return emptyResponse(Response.CREATED);
     }
 
     private Response deleteHandler(String id) {
-        dao.upsert(new BaseEntry<>(stringToSegment(id), null));
+        dao.upsert(new Entry(stringToSegment(id), null));
         return emptyResponse(Response.ACCEPTED);
     }
 
