@@ -218,5 +218,4 @@ class SingleNodeTest extends TestBase {
                 service.post(key, value).statusCode()
         );
     }
-
 }
