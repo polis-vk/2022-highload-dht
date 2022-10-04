@@ -1,11 +1,16 @@
 package ok.dht.test.skroba;
 
 import ok.dht.ServiceConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.util.Collections;
 
 public final class MyServer {
+    private static final Logger LOG = LoggerFactory.getLogger(
+            MyServer.class
+    );
     private MyServer() {
         // Only main method
     }
@@ -24,7 +29,7 @@ public final class MyServer {
             
             new MyServiceImpl(cfg).start().get();
         } catch (Exception e) {
-            System.err.println(e.getMessage());
+            LOG.error(e.getMessage());
         }
     }
 }

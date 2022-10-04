@@ -32,7 +32,7 @@ public class MyServiceImpl implements Service {
     private static final int FLUSH_THRESHOLD_BYTES = 8 * 1048;
     
     private static final Logger LOG = LoggerFactory.getLogger(
-            DemoService.class
+            MyServiceImpl.class
     );
     
     private final ServiceConfig config;
