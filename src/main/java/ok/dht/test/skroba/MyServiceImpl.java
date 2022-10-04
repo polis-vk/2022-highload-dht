@@ -4,7 +4,6 @@ import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.drozdov.DemoService;
 import ok.dht.test.skroba.dao.MemorySegmentDao;
 import ok.dht.test.skroba.dao.base.BaseEntry;
 import ok.dht.test.skroba.dao.base.Config;
