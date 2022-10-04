@@ -19,7 +19,7 @@ public class MergeIterator implements Iterator<BaseEntry<String>> {
     private final NavigableMap<String, BaseEntry<String>> tempData = new TreeMap<>();
     private final Map<String, Integer> tempDataPriorities = new HashMap<>();
     private final Map<String, CopyOnWriteArrayList<FileInfo>> lastElementWithFilesMap = new HashMap<>();
-    private final List<Map.Entry<Path, FileInfo> > fileInfos = new CopyOnWriteArrayList<>();
+    private final List<Map.Entry<Path, FileInfo>> fileInfos = new CopyOnWriteArrayList<>();
     private final Iterator<BaseEntry<String>> inMemoryIterator;
     private final String to;
     private final boolean isFromNull;

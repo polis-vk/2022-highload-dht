@@ -125,7 +125,6 @@ public class DemoService implements Service {
         );
     }
 
-
     private static HttpServerConfig createConfigFromPort(int port) {
         HttpServerConfig httpConfig = new HttpServerConfig();
         AcceptorConfig acceptor = new AcceptorConfig();
@@ -144,4 +143,3 @@ public class DemoService implements Service {
     }
 
 }
-
