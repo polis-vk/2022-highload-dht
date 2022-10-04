@@ -80,8 +80,8 @@ public class MyServiceImpl implements Service {
             }
         };
         dao = createDaoFromDir(config.workingDir());
-        server.start();
         server.addRequestHandlers(this);
+        server.start();
         return CompletableFuture.completedFuture(null);
     }
     

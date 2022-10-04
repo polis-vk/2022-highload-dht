@@ -27,8 +27,8 @@ public class DemoService implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         server = new HttpServer(createConfigFromPort(config.selfPort()));
-        server.addRequestHandlers(this);
         server.start();
+        server.addRequestHandlers(this);
         return CompletableFuture.completedFuture(null);
     }
 
