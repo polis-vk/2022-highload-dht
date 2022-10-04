@@ -20,10 +20,19 @@ import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public final class ServiceImpl implements Service {
 
-    private static final long DEFAULT_FLUSH_THRESHOLD_BYTES = 4194304; // 4 MB
+    public static final long DEFAULT_FLUSH_THRESHOLD_BYTES = 4194304; // 4 MB
+    private static final ConcurrentLinkedDeque<Request> requests = new ConcurrentLinkedDeque<>();
+    //private static ExecutorService executorService = Executors.newFixedThreadPool(10);
+    private static final ExecutorService executorService = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+            new LinkedBlockingQueue<Runnable>());
     private HttpServer server;
     private final ServiceConfig config;
     private MemorySegmentDao database;
