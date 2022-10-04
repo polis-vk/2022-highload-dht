@@ -1,10 +1,13 @@
 package ok.dht.test.ushkov.queue;
 
 import java.util.AbstractQueue;
+import java.util.Collection;
 import java.util.Iterator;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class MSQueue<T> extends AbstractQueue<T> {
+public class MSQueue<T> extends AbstractQueue<T> implements BlockingQueue<T> {
     private final AtomicReference<Node<T>> head;
     private final AtomicReference<Node<T>> tail;
 
@@ -14,8 +17,9 @@ public class MSQueue<T> extends AbstractQueue<T> {
         this.tail = new AtomicReference<>(dummy);
     }
 
+    // Not thread safe method
     @Override
-    public synchronized Iterator<T> iterator() {
+    public Iterator<T> iterator() {
         return new Iterator<>() {
             private Node<T> current = head.get().next.get();
 
@@ -33,8 +37,9 @@ public class MSQueue<T> extends AbstractQueue<T> {
         };
     }
 
+    // Not thread safe method
     @Override
-    public synchronized int size() {
+    public int size() {
         int count = 0;
         for (Iterator<T> it = iterator(); it.hasNext(); it.next()) {
             count++;
@@ -81,6 +86,41 @@ public class MSQueue<T> extends AbstractQueue<T> {
         Node<T> currentHead = head.get();
         Node<T> currentHeadNext = currentHead.next.get();
         return currentHeadNext == null ? null : currentHeadNext.value;
+    }
+
+    @Override
+    public void put(T t) throws InterruptedException {
+        offer(t);
+    }
+
+    @Override
+    public boolean offer(T t, long timeout, TimeUnit unit) throws InterruptedException {
+        return offer(t);
+    }
+
+    @Override
+    public T take() throws InterruptedException {
+        return poll();
+    }
+
+    @Override
+    public T poll(long timeout, TimeUnit unit) throws InterruptedException {
+        return poll();
+    }
+
+    @Override
+    public int remainingCapacity() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public int drainTo(Collection<? super T> c) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public int drainTo(Collection<? super T> c, int maxElements) {
+        throw new UnsupportedOperationException();
     }
 
     private static class Node<T> {
