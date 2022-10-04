@@ -6,9 +6,9 @@ import jdk.incubator.foreign.MemorySegment;
 import java.util.Comparator;
 
 /**
- * lexicographic comparison of UTF-8 strings can be done by byte, according to RFC 3239
- * (https://www.rfc-editor.org/rfc/rfc3629.txt, page 2)
- * this string comparison likely won't work with collation different from ASCII
+ * Lexicographic comparison of UTF-8 strings can be done by byte, according to
+ * <a href="https://www.rfc-editor.org/rfc/rfc3629.txt">RFC 3239</a>, page 2.
+ * This string comparison likely won't work with collation different from ASCII.
  */
 public final class MemorySegmentComparator implements Comparator<MemorySegment> {
     /**

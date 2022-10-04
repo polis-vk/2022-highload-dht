@@ -4,8 +4,8 @@ import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;
 
 public final class MemorySegmentEntry {
-    final MemorySegment key;
-    private final MemorySegment value;
+    public final MemorySegment key;
+    public final MemorySegment value;
     private final long byteSize;
 
     private MemorySegmentEntry(MemorySegment key, MemorySegment value, long byteSize) {
