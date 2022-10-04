@@ -12,15 +12,14 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-public class Server {
+public final class Server {
     private static final Logger LOG = LoggerFactory.getLogger(Server.class);
 
     private Server() {
     }
 
     public static void main(String[] args)
-        throws IOException, ExecutionException, InterruptedException, TimeoutException
-    {
+        throws IOException, ExecutionException, InterruptedException, TimeoutException {
         int port = 12345;
         String url = String.format("http://localhost:%d", port);
         ServiceConfig config;
