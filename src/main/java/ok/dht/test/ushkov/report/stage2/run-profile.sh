@@ -5,7 +5,7 @@ ASYNC_PROFILER_DIR="/Users/udav318/ITMO/7-term/hl/async-profiler"
 VANILLA_CONVERTER_DIR="/Users/udav318/ITMO/7-term/hl/converters/converter.jar"
 
 DATE=$(date '+%Y-%m-%d-%H-%M-%S')
-DIR="profiles/${DATE}_${SCRIPT%.lua}_t${t}_c${c}_R${R}_d${d}"
+DIR="profiles/${DATE}_${TAG}_${SCRIPT%.lua}_t${t}_c${c}_R${R}_d${d}"
 mkdir -p "$DIR"
 
 function async-profiler-start() {
@@ -27,7 +27,7 @@ echo "=== Start async-profiler"
 async-profiler-start
 
 echo "=== Start wrk2"
-wrk2 -t "$t" -c "$c" -R "$R" -d "$d" -s "scripts/$SCRIPT" http://localhost:8000 > "$DIR/wrk2.txt"
+wrk2 -t "$t" -c "$c" -R "$R" -d "$d" -s "scripts/$SCRIPT" -L http://localhost:8000 > "$DIR/wrk2.txt"
 
 echo "=== Stop async-profiler"
 async-profiler-stop
