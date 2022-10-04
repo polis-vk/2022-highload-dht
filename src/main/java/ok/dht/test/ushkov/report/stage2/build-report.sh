@@ -104,5 +104,41 @@ $(cat "profiles/2022-10-04-10-39-28_new_stack_get_t4_c64_R70000_d1m/wrk2.txt")
 [lock flame graph](profiles/2022-10-04-10-39-28_new_stack_get_t4_c64_R70000_d1m/lock.html)
 ![image](profiles/2022-10-04-10-39-28_new_stack_get_t4_c64_R70000_d1m/lock.png)
 
+Далее следуют реузльтаты профилирования с использованием неблокирующей очереди Майкла Скотта.
+Данная очередь имеет неограниченную емкость, что безусловно приведет к проблемам на практике, так как
+в ней скопится очень много запросов и часть из них уже будут неактуальны. Автор осознает этот момент и
+все же рискнет ее отпрофилировать.
+
+## MSQueue PUT t=4 c=64 R=70000 d=1m
+wrk2 output:
+\`\`\`
+$(cat "profiles/2022-10-04-20-55-59_new_msqueue_put_t4_c64_R70000_d1m/wrk2.txt")
+\`\`\`
+
+[cpu heatmap & flame graph](profiles/2022-10-04-20-55-59_new_msqueue_put_t4_c64_R70000_d1m/cpu.html)
+![image](profiles/2022-10-04-20-55-59_new_msqueue_put_t4_c64_R70000_d1m/cpu.png)
+
+[alloc heatmap & flame graph](profiles/2022-10-04-20-55-59_new_msqueue_put_t4_c64_R70000_d1m/alloc.html)
+![image](profiles/2022-10-04-20-55-59_new_msqueue_put_t4_c64_R70000_d1m/alloc.png)
+
+[lock flame graph](profiles/2022-10-04-20-55-59_new_msqueue_put_t4_c64_R70000_d1m/lock.html)
+![image](profiles/2022-10-04-20-55-59_new_msqueue_put_t4_c64_R70000_d1m/lock.png)
+
+## MSQueue GET t=4 c=64 R=70000 d=1m
+wrk2 output:
+\`\`\`
+$(cat "profiles/2022-10-04-21-05-19_new_msqueue_get_t4_c64_R70000_d1m/wrk2.txt")
+\`\`\`
+
+[cpu heatmap & flame graph](profiles/2022-10-04-21-05-19_new_msqueue_get_t4_c64_R70000_d1m/cpu.html)
+![image](profiles/2022-10-04-21-05-19_new_msqueue_get_t4_c64_R70000_d1m/cpu.png)
+
+[alloc heatmap & flame graph](profiles/2022-10-04-21-05-19_new_msqueue_get_t4_c64_R70000_d1m/alloc.html)
+![image](profiles/2022-10-04-21-05-19_new_msqueue_get_t4_c64_R70000_d1m/alloc.png)
+
+[lock flame graph](profiles/2022-10-04-21-05-19_new_msqueue_get_t4_c64_R70000_d1m/lock.html)
+![image](profiles/2022-10-04-21-05-19_new_msqueue_get_t4_c64_R70000_d1m/lock.png)
+
+
 $(cat "tpl/conclusion.md")
 EOF
