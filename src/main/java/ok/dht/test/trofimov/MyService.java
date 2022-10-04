@@ -10,6 +10,7 @@ import ok.dht.test.trofimov.dao.MyHttpServer;
 import ok.dht.test.trofimov.dao.impl.InMemoryDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
@@ -21,12 +22,16 @@ import one.nio.util.Utf8;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MyService implements Service {
     private static final long FLUSH_THRESHOLD = 1 << 20;
     private final ServiceConfig config;
     private HttpServer server;
     private InMemoryDao dao;
+
+    private final ExecutorService requestsExecutor = Executors.newCachedThreadPool();
 
     public MyService(ServiceConfig config) {
         this.config = config;
@@ -52,54 +57,84 @@ public class MyService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
+
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id) throws IOException {
-        if (id.isEmpty()) {
-            return emptyResponseFor(Response.BAD_REQUEST);
-        }
-
-        try {
-            Entry<String> entry = dao.get(id);
-            if (entry == null) {
-                return emptyResponseFor(Response.NOT_FOUND);
+    public void handleGet(@Param(value = "id", required = true) String id, HttpSession session) {
+        requestsExecutor.submit(() -> {
+            Response response;
+            if (id.isEmpty()) {
+                response = emptyResponseFor(Response.BAD_REQUEST);
+            } else {
+                try {
+                    Entry<String> entry = dao.get(id);
+                    if (entry == null) {
+                        response = emptyResponseFor(Response.NOT_FOUND);
+                    } else {
+                        String value = entry.value();
+                        char[] chars = value.toCharArray();
+                        response = new Response(Response.OK, Base64.decodeFromChars(chars));
+                    }
+                } catch (Exception e) {
+                    response = errorResponse(e);
+                }
             }
-            String value = entry.value();
-            char[] chars = value.toCharArray();
-            return new Response(Response.OK, Base64.decodeFromChars(chars));
-        } catch (Exception e) {
-            return errorResponse(e);
+            sendResponse(session, response);
+        });
+    }
+
+    private static void sendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(Request request, @Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
-            return emptyResponseFor(Response.BAD_REQUEST);
-        }
-
-        byte[] value = request.getBody();
-        try {
-            dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
-        } catch (Exception e) {
-            return errorResponse(e);
-        }
-        return emptyResponseFor(Response.CREATED);
+    public void handlePut(Request request, @Param(value = "id", required = true) String id, HttpSession session) {
+        requestsExecutor.submit(() -> {
+            Response response;
+            if (id.isEmpty()) {
+                response = emptyResponseFor(Response.BAD_REQUEST);
+            } else {
+                byte[] value = request.getBody();
+                try {
+                    dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
+                    response = emptyResponseFor(Response.CREATED);
+                } catch (Exception e) {
+                    response = errorResponse(e);
+                }
+            }
+            sendResponse(session, response);
+        });
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
-            return emptyResponseFor(Response.BAD_REQUEST);
-        }
-        try {
-            dao.upsert(new BaseEntry<>(id, null));
-        } catch (Exception e) {
-            return errorResponse(e);
-        }
-        return emptyResponseFor(Response.ACCEPTED);
+    public void handleDelete(@Param(value = "id", required = true) String id, HttpSession session) {
+        requestsExecutor.submit(() -> {
+            Response response;
+            if (id.isEmpty()) {
+                response = emptyResponseFor(Response.BAD_REQUEST);
+            } else {
+                try {
+                    dao.upsert(new BaseEntry<>(id, null));
+                    response = emptyResponseFor(Response.ACCEPTED);
+                } catch (Exception e) {
+                    response = errorResponse(e);
+                }
+            }
+            sendResponse(session, response);
+        });
+
+    }
+
+    @Path("/v0/entity")
+    @RequestMethod(Request.METHOD_POST)
+    public Response handlePost() {
+        return emptyResponseFor(Response.METHOD_NOT_ALLOWED);
     }
 
     private Response emptyResponseFor(String status) {
@@ -119,7 +154,7 @@ public class MyService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 1, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
