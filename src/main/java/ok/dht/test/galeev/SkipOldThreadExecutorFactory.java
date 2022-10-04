@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class SkipOldThreadExecutorFactory {
 
-    protected static final int CORE_POLL_SIZE = 100;
+    protected static final int CORE_POLL_SIZE = 32;
     protected static final int KEEP_ALIVE_TIME = 0;
     protected static final int QUEUE_CAPACITY = 128;
     protected static final RejectedExecutionHandler defaultHandler = (newRunnable, e) -> {
