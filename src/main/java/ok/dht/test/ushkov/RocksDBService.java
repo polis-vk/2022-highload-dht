@@ -3,9 +3,6 @@ package ok.dht.test.ushkov;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
@@ -18,11 +15,18 @@ import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 public class RocksDBService implements Service {
+    public static final int N_SELECTORS = 5;
+    public static final int N_WORKERS = 5;
+    public static final int QUEUE_CAP = 100;
+
+    public static final long STOP_TIMEOUT_MINUTES = 1;
+
     private final ServiceConfig config;
-    private RocksDB db;
-    private HttpServer server;
+    public RocksDB db;
+    private RocksDBHttpServer server;
 
     public RocksDBService(ServiceConfig config) {
         this.config = config;
@@ -47,16 +51,23 @@ public class RocksDBService implements Service {
         acceptor.port = port;
         acceptor.reusePort = true;
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
-        httpConfig.selectors = 5;
-        httpConfig.workers = 5;
-        httpConfig.queueCapacity = 100;
+        httpConfig.selectors = N_SELECTORS;
+        httpConfig.workers = N_WORKERS;
+        httpConfig.queueCapacity = QUEUE_CAP;
         return httpConfig;
     }
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        server.stop();
-        server = null;
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+            server.stop();
+            try {
+                server.awaitStop(STOP_TIMEOUT_MINUTES, TimeUnit.MINUTES);
+            } catch (InterruptedException e) {
+                // Do nothing.
+            }
+            server = null;
+        });
 
         try {
             db.closeE();
@@ -65,7 +76,7 @@ public class RocksDBService implements Service {
         }
         db = null;
 
-        return CompletableFuture.completedFuture(null);
+        return future;
     }
 
     @Path("/v0/entity")
