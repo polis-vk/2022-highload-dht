@@ -10,16 +10,22 @@ import ok.dht.test.siniachenko.storage.MemorySegmentDao;
 import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
+import org.iq80.leveldb.DB;
+import org.iq80.leveldb.Options;
+import org.iq80.leveldb.impl.DbImpl;
+import org.iq80.leveldb.impl.Level;
+import org.iq80.leveldb.impl.Level0;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 public class Service implements ok.dht.Service {
 
-    public static final long FLUSH_THRESHOLD_BYTES = (long) 1E20;
+    public static final long FLUSH_THRESHOLD_BYTES = (long) 1E15;
 
     private final ServiceConfig config;
-    private MemorySegmentDao db;
+//    private MemorySegmentDao db;
+    private DB levelDb;
     private HttpServer server;
 
     public Service(ServiceConfig config) {
@@ -28,7 +34,8 @@ public class Service implements ok.dht.Service {
 
     @java.lang.Override
     public CompletableFuture<?> start() throws IOException {
-        db = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+        levelDb = new DbImpl(new Options(), config.workingDir().toFile());
+//        db = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         System.out.println("Started DB in directory " + config.workingDir());
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
@@ -55,7 +62,8 @@ public class Service implements ok.dht.Service {
     @java.lang.Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
-        db.close();
+//        db.close();
+        levelDb.close();
         return CompletableFuture.completedFuture(null);
     }
 
@@ -68,14 +76,15 @@ public class Service implements ok.dht.Service {
                 Response.EMPTY
             );
         }
-        Entry<MemorySegment> valueSegment = db.get(MemorySegment.ofArray(stringToBytes(id)));
-        if (valueSegment == null) {
+//        Entry<MemorySegment> valueSegment = db.get(MemorySegment.ofArray(Utf8.toBytes(id)));
+        byte[] value = levelDb.get(Utf8.toBytes(id));
+        if (value == null) {
             return new Response(
                 Response.NOT_FOUND,
                 Response.EMPTY
             );
         } else {
-            byte[] value = valueSegment.value().toByteArray();
+//            byte[] value = valueSegment.value().toByteArray();
             return new Response(
                 Response.OK,
                 value
@@ -95,12 +104,13 @@ public class Service implements ok.dht.Service {
                 Response.EMPTY
             );
         }
-        db.upsert(
-            new BaseEntry<>(
-                MemorySegment.ofArray(stringToBytes(id)),
-                MemorySegment.ofArray(request.getBody())
-            )
-        );
+//        db.upsert(
+//            new BaseEntry<>(
+//                MemorySegment.ofArray(Utf8.toBytes(id)),
+//                MemorySegment.ofArray(request.getBody())
+//            )
+//        );
+        levelDb.put(Utf8.toBytes(id), request.getBody());
         return new Response(
             Response.CREATED,
             Response.EMPTY
@@ -118,20 +128,17 @@ public class Service implements ok.dht.Service {
                 Response.EMPTY
             );
         }
-        db.upsert(
-            new BaseEntry<>(
-                MemorySegment.ofArray(stringToBytes(id)),
-                null
-            )
-        );
+//        db.upsert(
+//            new BaseEntry<>(
+//                MemorySegment.ofArray(Utf8.toBytes(id)),
+//                null
+//            )
+//        );
+        levelDb.delete(Utf8.toBytes(id));
         return new Response(
             Response.ACCEPTED,
             Response.EMPTY
         );
-    }
-
-    private static byte[] stringToBytes(String string) {
-        return Utf8.toBytes(string);
     }
 
     @ServiceFactory(stage = 1, week = 1)
