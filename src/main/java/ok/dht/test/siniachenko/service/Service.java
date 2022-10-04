@@ -2,7 +2,14 @@ package ok.dht.test.siniachenko.service;
 
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
@@ -10,11 +17,14 @@ import one.nio.util.Utf8;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.impl.DbImpl;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 public class Service implements ok.dht.Service {
+    private static final Logger LOG = LoggerFactory.getLogger(Service.class);
 
     private final ServiceConfig config;
     private DB levelDb;
@@ -24,10 +34,10 @@ public class Service implements ok.dht.Service {
         this.config = config;
     }
 
-    @java.lang.Override
+    @Override
     public CompletableFuture<?> start() throws IOException {
         levelDb = new DbImpl(new Options(), config.workingDir().toFile());
-        System.out.println("Started DB in directory " + config.workingDir());
+        LOG.info("Started DB in directory {}", config.workingDir());
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
@@ -47,7 +57,7 @@ public class Service implements ok.dht.Service {
         };
         server.addRequestHandlers(this);
         server.start();
-        System.out.println("Service started on " + config.selfUrl());
+        LOG.info("Service started on {}", config.selfUrl());
         return CompletableFuture.completedFuture(null);
     }
 
@@ -60,7 +70,7 @@ public class Service implements ok.dht.Service {
         return httpServerConfig;
     }
 
-    @java.lang.Override
+    @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
         levelDb.close();
