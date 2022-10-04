@@ -1,12 +1,11 @@
 package ok.dht.test.gerasimov;
 
-import jdk.incubator.foreign.MemorySegment;
-import ok.dht.ServiceConfig;
-import ok.dht.test.gerasimov.lsm.Config;
-import ok.dht.test.gerasimov.lsm.Dao;
-import ok.dht.test.gerasimov.lsm.Entry;
-import ok.dht.test.gerasimov.lsm.artyomdrozdov.MemorySegmentDao;
-import one.nio.http.*;
+import ok.dht.test.gerasimov.exception.ServerException;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Request;
+import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
@@ -16,20 +15,18 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 
 public final class Server extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(Server.class);
-    private static final int FLUSH_THRESHOLD_BYTES = 4194304;
     private static final int DEFAULT_THREAD_POOL_SIZE = 16;
 
-    private final ServiceConfig serviceConfig;
     private final ExecutorService executorService;
 
-    private Dao<MemorySegment, Entry<MemorySegment>> dao;
-    public Server(ServiceConfig serviceConfig) throws IOException {
-        super(createHttpServerConfig(serviceConfig.selfPort()));
-        this.serviceConfig = serviceConfig;
+    public Server(int port) throws IOException {
+        super(createHttpServerConfig(port));
         this.executorService = Executors.newFixedThreadPool(DEFAULT_THREAD_POOL_SIZE);
+        LOG.info("Server created");
     }
 
     @Override
@@ -40,40 +37,34 @@ public final class Server extends HttpServer {
 
     @Override
     public synchronized void start() {
-        try {
-            this.dao = new MemorySegmentDao(
-                    new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES)
-            );
-            super.start();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        LOG.info("Server is starting up");
+        super.start();
+        LOG.info("Server is started");
     }
 
     @Override
     public synchronized void stop() {
-        try {
-            for (SelectorThread thread : selectors) {
-                for (Session session : thread.selector) {
-                    session.socket().close();
-                }
+        for (SelectorThread thread : selectors) {
+            for (Session session : thread.selector) {
+                session.socket().close();
             }
-            super.stop();
-            dao.close();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
         }
+        super.stop();
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        executorService.execute(() -> {
-            try {
-                super.handleRequest(request, session);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        });
+        try {
+            executorService.execute(() -> {
+                try {
+                    super.handleRequest(request, session);
+                } catch (IOException e) {
+                    throw new ServerException("Handler can not handle request", e);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            session.sendResponse(ResponseEntity.serviceUnavailable());
+        }
     }
 
     private static HttpServerConfig createHttpServerConfig(int port) {
