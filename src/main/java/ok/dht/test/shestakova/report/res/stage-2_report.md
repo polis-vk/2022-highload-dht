@@ -415,7 +415,7 @@ Transfer/sec:     80.74KB
 
 | Sync | Async |
 |:--------------:|:----------------------------:|
-|       ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/put_cpu.jpg)      |              ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/put_cpu.jpg)              |
+|       ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/put_cpu.jpg)      |              ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/put_cpu.jpg)              |
 
 
 
@@ -427,7 +427,7 @@ Transfer/sec:     80.74KB
 
 | Sync | Async |
 |:--------------:|:----------------------------:|
-|       ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/put_alloc.jpg)      |              ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/put_alloc.jpg)              |
+|       ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/put_alloc.jpg)      |              ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/put_alloc.jpg)              |
 
 По аллокациям сильных изменений помимо появления ThreadPoolExecutor не наблюдается: добавились аллокации на локи (менее 1% на лок в upsert).
 
@@ -440,7 +440,7 @@ Transfer/sec:     80.74KB
 
 | Sync | Async |
 |:--------------:|:----------------------------:|
-|       ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/get_cpu.jpg)      |              ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/get_cpu.jpg)              |
+|       ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/get_cpu.jpg)      |              ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/get_cpu.jpg)              |
 
 
 Как и в put-запросах заметно, что ThreadPoolExecutor забрал у SelectorThread работу с БД, чем освободил его.  
@@ -450,7 +450,7 @@ Transfer/sec:     80.74KB
 
 | Sync | Async |
 |:--------------:|:----------------------------:|
-|       ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/get_alloc.jpg)      |              ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/get_alloc.jpg)              |
+|       ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/get_alloc.jpg)      |              ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/get_alloc.jpg)              |
 
 В контексте аллокаций графики синхронного и асинхронного вариантов практически не различаются.
 
