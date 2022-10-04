@@ -1,18 +1,17 @@
 package ok.dht.test.ushkov.queue;
 
 import java.util.Collection;
-import java.util.Iterator;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 
-public class LinkedBlockingStack<T> extends LinkedBlockingDeque<T> {
+public final class LinkedBlockingStack<T> extends LinkedBlockingDeque<T> {
     private LinkedBlockingStack(int capacity) {
         super(capacity);
     }
 
     // Static generator used to hide public methods of LinkedBlockingDeque.
-    public static <T> BlockingQueue<T> getInstance(int capacity) {
+    public static <T> BlockingQueue<T> newInstance(int capacity) {
         return new LinkedBlockingStack<>(capacity);
     }
 
