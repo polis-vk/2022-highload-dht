@@ -18,7 +18,7 @@ request = function()
     return wrk.format("PUT", path)
 end
 ```
-А для GET использовал команду `wrk -d $1 -t 1 -c 1 -R $2 -s get-request.lua http://localhost:12345` в параметры
+А для GET использовал команду `wrk -d $1 -t 1 -c 1 -R $2 -s get-request.lua http://localhost:12345`, в параметры
 передавал то же самое. lua скрипт:
 ```
 request = function()
