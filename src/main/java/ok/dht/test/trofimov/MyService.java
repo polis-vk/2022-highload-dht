@@ -76,7 +76,7 @@ public class MyService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public void handleGet(@Param(value = "id", required = true) String id, HttpSession session) {
-        requestsExecutor.submit(() -> {
+        requestsExecutor.execute(() -> {
             Response response;
             if (id.isEmpty()) {
                 response = emptyResponseFor(Response.BAD_REQUEST);
@@ -109,7 +109,7 @@ public class MyService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public void handlePut(Request request, @Param(value = "id", required = true) String id, HttpSession session) {
-        requestsExecutor.submit(() -> {
+        requestsExecutor.execute(() -> {
             Response response;
             if (id.isEmpty()) {
                 response = emptyResponseFor(Response.BAD_REQUEST);
@@ -129,7 +129,7 @@ public class MyService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public void handleDelete(@Param(value = "id", required = true) String id, HttpSession session) {
-        requestsExecutor.submit(() -> {
+        requestsExecutor.execute(() -> {
             Response response;
             if (id.isEmpty()) {
                 response = emptyResponseFor(Response.BAD_REQUEST);
