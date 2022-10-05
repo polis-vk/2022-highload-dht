@@ -52,6 +52,13 @@ public class ServiceInfo {
         );
     }
 
+    public HttpResponse<byte[]> post(String key, byte[] data) throws Exception {
+        return client.send(
+                requestForKey(key).POST(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
     HttpRequest.Builder request(String path) {
         return HttpRequest.newBuilder(URI.create(url() + path));
     }
