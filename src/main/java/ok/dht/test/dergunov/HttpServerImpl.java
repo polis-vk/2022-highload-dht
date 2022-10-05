@@ -17,10 +17,17 @@ import one.nio.util.Utf8;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+
+import static one.nio.http.Request.METHOD_DELETE;
+import static one.nio.http.Request.METHOD_GET;
+import static one.nio.http.Request.METHOD_PUT;
 
 public class HttpServerImpl extends HttpServer {
 
@@ -29,7 +36,11 @@ public class HttpServerImpl extends HttpServer {
 
     private static final int SIZE_QUEUE = 128;
     private static final int COUNT_CORES = 6;
+
+    private static final Set<Integer> SUPPORTED_METHODS = new HashSet<>(Arrays.asList(METHOD_GET, METHOD_PUT,
+            METHOD_DELETE));
     private static final Response BAD_RESPONSE = new Response(Response.BAD_REQUEST, Response.EMPTY);
+    private static final Response METHOD_NOT_ALLOWED = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     private static final Response NOT_FOUND = new Response(Response.NOT_FOUND, Response.EMPTY);
     private final MemorySegmentDao database;
     private final PathMapper handlerMapper = new PathMapper();
@@ -45,7 +56,7 @@ public class HttpServerImpl extends HttpServer {
     public HttpServerImpl(HttpServerConfig config, MemorySegmentDao database, Object... routers) throws IOException {
         super(config, routers);
         this.database = database;
-        handlerMapper.add(PATH, new int[]{Request.METHOD_GET}, this::handleGet);
+        handlerMapper.add(PATH, new int[]{METHOD_GET}, this::handleGet);
         handlerMapper.add(PATH, new int[]{Request.METHOD_PUT}, this::handlePut);
         handlerMapper.add(PATH, new int[]{Request.METHOD_DELETE}, this::handleDelete);
     }
@@ -70,11 +81,16 @@ public class HttpServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) {
         poolExecutor.execute(() -> {
-            int methodName = request.getMethod();
-            String path = request.getPath();
-
-            RequestHandler handler = handlerMapper.find(path, methodName);
             try {
+                int methodName = request.getMethod();
+                if (!SUPPORTED_METHODS.contains(methodName)) {
+                    session.sendResponse(METHOD_NOT_ALLOWED);
+                    return;
+                }
+                String path = request.getPath();
+
+                RequestHandler handler = handlerMapper.find(path, methodName);
+
                 if (handler != null) {
                     handler.handleRequest(request, session);
                     return;
