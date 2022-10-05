@@ -44,7 +44,7 @@ public class KeyValueHttpServer extends HttpServer {
                 try {
                     session.sendError(Response.BAD_REQUEST, e.getMessage());
                 } catch (IOException ioEx) {
-                    log.error("IO Error occurred", ioEx);
+                    log.error("IO Error occurred:", ioEx);
                 }
             }
         });
