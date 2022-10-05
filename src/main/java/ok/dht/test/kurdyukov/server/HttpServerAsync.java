@@ -41,7 +41,11 @@ public class HttpServerAsync extends HttpServer {
             Request request,
             HttpSession session
     ) throws IOException {
-        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        if (request.getMethod() == Request.METHOD_POST) {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        } else {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        }
     }
 
     @Override
