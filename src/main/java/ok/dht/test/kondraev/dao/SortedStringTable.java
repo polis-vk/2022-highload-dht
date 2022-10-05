@@ -165,6 +165,13 @@ final class SortedStringTable {
         return MemorySegmentEntry.of(index.mappedEntrySegment(dataSegment, i));
     }
 
+    public static long sizeDelta(MemorySegmentEntry was, long becomeSize) {
+        if (was == null) {
+            return becomeSize + Long.BYTES;
+        }
+        return becomeSize - was.byteSize;
+    }
+
     private static class Index {
         final MemorySegment indexSegment;
 

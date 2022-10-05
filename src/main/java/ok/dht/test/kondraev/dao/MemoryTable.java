@@ -21,9 +21,8 @@ class MemoryTable {
      */
     public long upsert(MemorySegmentEntry entry) {
         // implicit check for non-null entry and entry.key()
-        // TODO check for threshold
-        map.put(entry.key, entry);
-        return byteSize.addAndGet(entry.byteSize);
+        MemorySegmentEntry was = map.put(entry.key, entry);
+        return byteSize.addAndGet(SortedStringTable.sizeDelta(was, entry.byteSize));
     }
 
     public MemorySegmentEntry get(MemorySegment key) {
