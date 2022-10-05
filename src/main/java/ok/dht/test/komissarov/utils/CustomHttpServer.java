@@ -18,10 +18,10 @@ public class CustomHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
+        super.stop();
         for (SelectorThread thread : selectors) {
             thread.selector.forEach(Session::close);
         }
-        super.stop();
     }
 
     @Override
