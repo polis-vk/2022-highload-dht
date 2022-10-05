@@ -187,7 +187,7 @@ public class Service implements ok.dht.Service {
         );
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public ok.dht.Service create(ServiceConfig config) {
