@@ -18,11 +18,11 @@ import static ok.dht.test.trofimov.dao.impl.InMemoryDao.INDEX_EXT;
 
 public class Compacter implements Runnable {
     private final Config config;
-    private final AtomicReference<Deque<String>> filesList;
+    private final AtomicReference<Deque<FileInfo>> filesList;
     private final InMemoryDao inMemoryDao;
     private final Lock filesLock;
 
-    public Compacter(Config config, AtomicReference<Deque<String>> filesList, InMemoryDao inMemoryDao,
+    public Compacter(Config config, AtomicReference<Deque<FileInfo>> filesList, InMemoryDao inMemoryDao,
                      Lock filesLock) {
         this.config = config;
         this.filesList = filesList;
@@ -40,25 +40,33 @@ public class Compacter implements Runnable {
              RandomAccessFile indexOut = new RandomAccessFile(index.toString(), "rw");
              RandomAccessFile allFilesOut = new RandomAccessFile(basePath.resolve(ALL_FILES).toString(), "rw")
         ) {
-            Pair<Deque<String>, List<PeekingIterator>> files =
+            Pair<Deque<FileInfo>, List<PeekingIterator>> files =
                     inMemoryDao.getFilePeekingIteratorList(null, null, 0);
             Iterator<Entry<String>> iterator = new MergeIterator(files.second);
             output.seek(Integer.BYTES);
             int count = 0;
+            String firstKey = null;
+            String lastKey;
+            Entry<String> entry = null;
             while (iterator.hasNext()) {
-                Entry<String> entry = iterator.next();
+                entry = iterator.next();
                 count++;
                 if (entry != null) {
+                    if (count == 1) {
+                        firstKey = entry.key();
+                    }
                     indexOut.writeLong(output.getFilePointer());
                     Utils.writeEntry(output, entry);
                 }
             }
+            lastKey = entry == null ? null : entry.key();
             output.seek(0);
             output.writeInt(count);
             filesLock.lock();
             try {
                 filesList.get().removeAll(files.first);
-                filesList.get().add(name);
+
+                filesList.get().add(new FileInfo(name, firstKey, lastKey));
             } finally {
                 filesLock.unlock();
             }

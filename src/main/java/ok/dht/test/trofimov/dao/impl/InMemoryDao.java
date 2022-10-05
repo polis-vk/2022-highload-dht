@@ -42,7 +42,7 @@ public class InMemoryDao implements Dao<String, Entry<String>> {
     private final BlockingDeque<ConcurrentNavigableMap<String, Entry<String>>> queueToFlush =
             new LinkedBlockingDeque<>(CAPACITY);
 
-    private final AtomicReference<Deque<String>> filesList = new AtomicReference<>(new ArrayDeque<>());
+    private final AtomicReference<Deque<FileInfo>> filesList = new AtomicReference<>(new ArrayDeque<>());
     private final AtomicLong dataSizeBytes = new AtomicLong(0);
     private final Lock filesLock = new ReentrantLock();
     private final ExecutorService flushExecutor = Executors.newSingleThreadExecutor();
@@ -81,24 +81,24 @@ public class InMemoryDao implements Dao<String, Entry<String>> {
         return new MergeIterator(iterators);
     }
 
-    public Pair<Deque<String>, List<PeekingIterator>> getFilePeekingIteratorList(String from, String to,
-                                                                                 int startPriority) throws IOException {
+    public Pair<Deque<FileInfo>, List<PeekingIterator>> getFilePeekingIteratorList(String from, String to,
+                                                                                int initPriority) throws IOException {
         String start = from;
         if (start == null) {
             start = "";
         }
         List<PeekingIterator> fileIterators = new ArrayList<>();
-        int priority = startPriority;
-        Deque<String> fileListCopy = cloneFileList();
-        for (String file : fileListCopy) {
+        int priority = initPriority;
+        Deque<FileInfo> fileListCopy = cloneFileList();
+        for (FileInfo file : fileListCopy) {
             fileIterators.add(new PeekingIterator(new FileIterator(config.basePath(), file, start, to), priority));
             ++priority;
         }
-        return new Pair(fileListCopy, fileIterators);
+        return new Pair<>(fileListCopy, fileIterators);
     }
 
-    private Deque<String> cloneFileList() {
-        Deque<String> fileListCopy;
+    private Deque<FileInfo> cloneFileList() {
+        Deque<FileInfo> fileListCopy;
         fileListCopy = new ArrayDeque<>(filesList.get());
         return fileListCopy;
     }
@@ -126,9 +126,9 @@ public class InMemoryDao implements Dao<String, Entry<String>> {
                 return getRealEntry(entry);
             }
         }
-        Deque<String> filesListCopy = cloneFileList();
+        Deque<FileInfo> filesListCopy = filesList.get();
         Path basePath = config.basePath();
-        for (String file : filesListCopy) {
+        for (FileInfo file : filesListCopy) {
             entry = findInFile(key, basePath, file);
             if (entry != null && entry.key().equals(key)) {
                 break;
@@ -139,13 +139,23 @@ public class InMemoryDao implements Dao<String, Entry<String>> {
         return getRealEntry(entry);
     }
 
-    private Entry<String> findInFile(String key, Path basePath, String file) throws IOException {
+    private Entry<String> findInFile(String key, Path basePath, FileInfo file) throws IOException {
+        if (!isInRange(key, file)) return null;
         Entry<String> entry;
         try (RandomAccessFile raf =
-                     new RandomAccessFile(basePath.resolve(file + DATA_EXT).toString(), "r")) {
-            entry = Utils.findCeilEntry(raf, key, basePath.resolve(file + INDEX_EXT));
+                     new RandomAccessFile(basePath.resolve(file.filename() + DATA_EXT).toString(), "r")) {
+            entry = Utils.findCeilEntry(raf, key, basePath.resolve(file.filename() + INDEX_EXT));
         }
         return entry;
+    }
+
+    private static boolean isInRange(String key, FileInfo file) {
+        int lowerKeyComparing = key.compareTo(file.keyFirst());
+        if (lowerKeyComparing < 0) {
+            return false;
+        }
+        int highestKeyComparing = key.compareTo(file.keyLast());
+        return highestKeyComparing <= 0;
     }
 
     private Entry<String> getRealEntry(Entry<String> entry) {
@@ -160,14 +170,7 @@ public class InMemoryDao implements Dao<String, Entry<String>> {
         lock.readLock().lock();
         try {
             Entry<String> prevVal = data.put(entry.key(), entry);
-            if (prevVal == null) {
-                dataSizeBytes.addAndGet(2L * entry.key().getBytes(StandardCharsets.UTF_8).length
-                        + (entry.isTombstone() ? 0 : entry.value().getBytes(StandardCharsets.UTF_8).length));
-            } else {
-                dataSizeBytes.addAndGet((entry.isTombstone() ? 0 :
-                        entry.value().getBytes(StandardCharsets.UTF_8).length)
-                        - (prevVal.isTombstone() ? 0 : prevVal.value().getBytes(StandardCharsets.UTF_8).length));
-            }
+            updateSize(entry, prevVal);
             commit = false;
         } finally {
             lock.readLock().unlock();
@@ -182,12 +185,23 @@ public class InMemoryDao implements Dao<String, Entry<String>> {
         }
     }
 
+    private void updateSize(Entry<String> entry, Entry<String> prevVal) {
+        if (prevVal == null) {
+            dataSizeBytes.addAndGet(2L * entry.key().getBytes(StandardCharsets.UTF_8).length
+                    + (entry.isTombstone() ? 0 : entry.value().getBytes(StandardCharsets.UTF_8).length));
+        } else {
+            dataSizeBytes.addAndGet((entry.isTombstone() ? 0 :
+                    entry.value().getBytes(StandardCharsets.UTF_8).length)
+                    - (prevVal.isTombstone() ? 0 : prevVal.value().getBytes(StandardCharsets.UTF_8).length));
+        }
+    }
+
     private void loadFilesList() throws IOException {
         try (RandomAccessFile reader =
                      new RandomAccessFile(config.basePath().resolve(ALL_FILES).toString(), "r")) {
             while (reader.getFilePointer() < reader.length()) {
                 String file = reader.readUTF();
-                filesList.get().addFirst(file);
+                filesList.get().addFirst(Utils.getFileInfo(config.basePath(), file));
             }
         } catch (FileNotFoundException ignored) {
             //it is ok because there can be no files
