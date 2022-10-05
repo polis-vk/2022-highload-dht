@@ -100,8 +100,9 @@ public final class Utils {
     }
 
     public static FileInfo getFileInfo(Path basePath, String file) throws IOException {
-        try (RandomAccessFile raf = new RandomAccessFile(basePath.resolve(file + InMemoryDao.DATA_EXT).toString(), "r");
-             RandomAccessFile index = new RandomAccessFile(basePath.resolve(file + InMemoryDao.INDEX_EXT).toString(), "r")) {
+        try (RandomAccessFile raf = new RandomAccessFile(basePath.resolve(file + DATA_EXT).toString(), "r");
+             RandomAccessFile index =
+                     new RandomAccessFile(basePath.resolve(file + INDEX_EXT).toString(), "r")) {
             int size = raf.readInt();
             long firstKeyPos = index.readLong();
             index.seek((long) (size - 1) * Long.BYTES);

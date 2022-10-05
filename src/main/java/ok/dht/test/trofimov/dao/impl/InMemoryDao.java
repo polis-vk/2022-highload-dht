@@ -82,13 +82,13 @@ public class InMemoryDao implements Dao<String, Entry<String>> {
     }
 
     public Pair<Deque<FileInfo>, List<PeekingIterator>> getFilePeekingIteratorList(String from, String to,
-                                                                                   int startPriority) throws IOException {
+                                                                                int initPriority) throws IOException {
         String start = from;
         if (start == null) {
             start = "";
         }
         List<PeekingIterator> fileIterators = new ArrayList<>();
-        int priority = startPriority;
+        int priority = initPriority;
         Deque<FileInfo> fileListCopy = cloneFileList();
         for (FileInfo file : fileListCopy) {
             fileIterators.add(new PeekingIterator(new FileIterator(config.basePath(), file, start, to), priority));

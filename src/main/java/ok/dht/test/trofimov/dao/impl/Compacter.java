@@ -59,7 +59,7 @@ public class Compacter implements Runnable {
                     Utils.writeEntry(output, entry);
                 }
             }
-            lastKey = entry.key();
+            lastKey = entry == null ? null : entry.key();
             output.seek(0);
             output.writeInt(count);
             filesLock.lock();
