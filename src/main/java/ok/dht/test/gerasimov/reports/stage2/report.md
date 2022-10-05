@@ -55,7 +55,7 @@ ThreadPoolExecutor потребляет наибольшее количеств�
 
 
 # put_lock
-</img src="put_lock.png"></img>
+<img src="put_lock.png"></img>
 # get_lock
 <img src="get_lock.png"></img>
 
