@@ -46,8 +46,8 @@ public class CourseService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response findById(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
+    public Response findById(@Param(value = "id") String id) {
+        if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -60,9 +60,9 @@ public class CourseService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response persist(@Param(value = "id", required = true) String id,
+    public Response persist(@Param(value = "id") String id,
                             Request request) {
-        if (id.isEmpty()) {
+        if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -76,8 +76,8 @@ public class CourseService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
+    public Response delete(@Param(value = "id") String id) {
+        if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -87,6 +87,13 @@ public class CourseService implements Service {
         );
         dao.upsert(removedEntry);
         return new Response(Response.ACCEPTED, Response.EMPTY);
+    }
+
+    @Path("/v0/entity")
+    @RequestMethod(Request.METHOD_POST)
+    public Response post() {
+        // NOT IMPLEMENTED
+        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
 
     @Override

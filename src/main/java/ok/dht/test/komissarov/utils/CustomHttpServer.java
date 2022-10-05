@@ -7,8 +7,8 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
-import org.apache.log4j.LogManager;
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
@@ -18,10 +18,10 @@ import java.util.concurrent.TimeUnit;
 
 public class CustomHttpServer extends HttpServer {
 
-    private static final Logger LOGGER = LogManager.getLogger(CustomHttpServer.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(CustomHttpServer.class);
 
     // FIXME hardcoded params
-    private final ExecutorService service = new ThreadPoolExecutor(
+    private final ExecutorService executorService = new ThreadPoolExecutor(
             4,
             8,
             30,
@@ -41,7 +41,7 @@ public class CustomHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) {
-        service.execute(() -> {
+        executorService.execute(() -> {
             try {
                 super.handleRequest(request, session);
             } catch (IOException e) {
@@ -52,7 +52,7 @@ public class CustomHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        service.shutdown();
+        executorService.shutdown();
         super.stop();
         for (SelectorThread thread : selectors) {
             thread.selector.forEach(Session::close);
