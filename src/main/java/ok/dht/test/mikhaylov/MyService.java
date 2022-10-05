@@ -40,7 +40,7 @@ public class MyService implements Service {
 
     private static final byte[] EMPTY_ID_RESPONSE_BODY = strToBytes("Empty id");
     private static final int REQUEST_HANDLERS = 4;
-    private static final int MAX_REQUESTS = 1024;
+    private static final int MAX_REQUESTS = 64;
 
     public MyService(ServiceConfig config) {
         this.config = config;
@@ -94,49 +94,44 @@ public class MyService implements Service {
     }
 
     @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) final String id) {
-        if (id.isEmpty()) {
+    public Response handle(Request request) {
+        String id = request.getParameter("id=");
+        if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, EMPTY_ID_RESPONSE_BODY);
         }
         try {
-            byte[] value = db.get(strToBytes(id));
-            if (value == null) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
-            } else {
-                return new Response(Response.OK, value);
+            switch (request.getMethod()) {
+                case Request.METHOD_GET:
+                    return handleGet(id);
+                case Request.METHOD_PUT:
+                    return handlePut(id, request.getBody());
+                case Request.METHOD_DELETE:
+                    return handleDelete(id);
+                default:
+                    return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             }
         } catch (RocksDBException e) {
-            return new Response(Response.INTERNAL_ERROR, strToBytes(e.getMessage()));
+            return new Response(Response.INTERNAL_ERROR, strToBytes("Could not access database"));
         }
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(@Param(value = "id", required = true) final String id, final Request request) {
-        if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, EMPTY_ID_RESPONSE_BODY);
-        }
-        try {
-            db.put(strToBytes(id), request.getBody());
-            return new Response(Response.CREATED, Response.EMPTY);
-        } catch (RocksDBException e) {
-            return new Response(Response.INTERNAL_ERROR, strToBytes(e.getMessage()));
+    private Response handleGet(final String id) throws RocksDBException {
+        byte[] value = db.get(strToBytes(id));
+        if (value == null) {
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
+        } else {
+            return new Response(Response.OK, value);
         }
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) final String id) {
-        if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, EMPTY_ID_RESPONSE_BODY);
-        }
-        try {
-            db.delete(strToBytes(id));
-            return new Response(Response.ACCEPTED, Response.EMPTY);
-        } catch (RocksDBException e) {
-            return new Response(Response.INTERNAL_ERROR, strToBytes(e.getMessage()));
-        }
+    private Response handlePut(final String id, final byte[] body) throws RocksDBException {
+        db.put(strToBytes(id), body);
+        return new Response(Response.CREATED, Response.EMPTY);
+    }
+
+    private Response handleDelete(final String id) throws RocksDBException {
+        db.delete(strToBytes(id));
+        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
