@@ -136,7 +136,7 @@ public class DhtService implements Service {
     }
 
     private void submit(HttpSession session, Supplier<Response> handel) {
-        var future = executorService.submit(() -> {
+        executorService.execute(() -> {
             try {
                 session.sendResponse(handel.get());
             } catch (IOException e) {
