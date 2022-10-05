@@ -36,10 +36,15 @@ public final class Server {
     private static final double NETWORK_RATE =
         GET_TO_PUT_RATE * NETWORK_GET_RATE + (1 - GET_TO_PUT_RATE) * NETWORK_PUT_RATE;
     private static final int MAX_WORKERS = (int) (Runtime.getRuntime().availableProcessors() * (1 + NETWORK_RATE));
+    private static final long KEEP_ALIVE_TIME = 20;
     private static final WorkersConfig.QueuePolicy QUEUE_POLICY = WorkersConfig.QueuePolicy.FIFO;
+    private static final int QUEUE_CAPACITY = 10000;
     private static final WorkersConfig WORKERS_CONFIG = new WorkersConfig.Builder()
+        .corePoolSize(MAX_WORKERS)
         .maxPoolSize(MAX_WORKERS)
+        .keepAliveTime(KEEP_ALIVE_TIME)
         .queuePolicy(QUEUE_POLICY)
+        .queueCapacity(QUEUE_CAPACITY)
         .build();
 
     private Server() {

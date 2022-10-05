@@ -1,13 +1,11 @@
 package ok.dht.test.shik.workers;
 
-import javax.annotation.Nonnull;
-
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -23,12 +21,13 @@ public class WorkersService {
     }
 
     public void start() {
-        BlockingQueue<Runnable> queue = config.getQueuePolicy() == WorkersConfig.QueuePolicy.LIFO
-            ? new LinkedBlockingStack(config.getQueueCapacity())
-            : new ArrayBlockingQueue<>(config.getQueueCapacity());
+        RejectedExecutionHandler rejectedHandler = config.getQueuePolicy() == WorkersConfig.QueuePolicy.FIFO
+            ? new ThreadPoolExecutor.DiscardPolicy()
+            : new ThreadPoolExecutor.DiscardOldestPolicy();
 
         pool = new ThreadPoolExecutor(config.getCorePoolSize(), config.getMaxPoolSize(),
-            config.getKeepAliveTime(), config.getUnit(), queue);
+            config.getKeepAliveTime(), config.getUnit(), new ArrayBlockingQueue<>(config.getQueueCapacity()),
+            Executors.defaultThreadFactory(), rejectedHandler);
     }
 
     public List<Runnable> stop() {
@@ -45,28 +44,5 @@ public class WorkersService {
 
     public void submitTask(Runnable runnable) {
          pool.submit(runnable);
-    }
-
-    private static class LinkedBlockingStack extends LinkedBlockingDeque<Runnable> {
-
-        public LinkedBlockingStack(int capacity) {
-            super(capacity);
-        }
-
-        @Override
-        public void put(@Nonnull Runnable e) throws InterruptedException {
-            super.putFirst(e);
-        }
-
-        @Override
-        public boolean offer(@Nonnull Runnable e) {
-            return super.offerFirst(e);
-        }
-
-        @Override
-        public boolean add(@Nonnull Runnable e) {
-            super.addFirst(e);
-            return true;
-        }
     }
 }
