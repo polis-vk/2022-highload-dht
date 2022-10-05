@@ -1,7 +1,9 @@
 # Stage 2
 
 ## Количество потоков воркеров
-Для начало нужно определиться с количеством воркеров. Определять будем с помощью get
+Для начало нужно определиться с количеством воркеров. Определять будем с помощью get.
+
+`Размер очереди 128(будут тесты, где это число меняется).`
 ### 10, как в selector thread
 ```
 └─$ wrk -t 1 -c 1 -d 60s -s /media/coradead/Windows1/Users/CORADEAD/IdeaProjects/2022-highload-dht/src/main/java/ok/dht/test/galeev/reports/scritps/get.lua -L http://localhost:19234 -R 500 
@@ -103,15 +105,15 @@ Running 1m test @ http://localhost:19234
 └─$ wrk -t 6 -c 64 -d 60s -s /media/coradead/Windows1/Users/CORADEAD/IdeaProjects/2022-highload-dht/src/main/java/ok/dht/test/galeev/reports/scritps/get.lua -L http://localhost:19234 -R 40000
 Running 1m test @ http://localhost:19234
   6 threads and 64 connections
-  Thread calibration: mean lat.: 7.850ms, rate sampling interval: 46ms
-  Thread calibration: mean lat.: 8.971ms, rate sampling interval: 50ms
-  Thread calibration: mean lat.: 9.183ms, rate sampling interval: 53ms
-  Thread calibration: mean lat.: 8.682ms, rate sampling interval: 50ms
-  Thread calibration: mean lat.: 7.753ms, rate sampling interval: 44ms
-  Thread calibration: mean lat.: 8.959ms, rate sampling interval: 50ms
+  Thread calibration: mean lat.: 3.582ms, rate sampling interval: 14ms
+  Thread calibration: mean lat.: 3.125ms, rate sampling interval: 13ms
+  Thread calibration: mean lat.: 3.434ms, rate sampling interval: 15ms
+  Thread calibration: mean lat.: 3.681ms, rate sampling interval: 14ms
+  Thread calibration: mean lat.: 3.377ms, rate sampling interval: 13ms
+  Thread calibration: mean lat.: 3.394ms, rate sampling interval: 14ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     2.63ms    3.24ms  57.86ms   91.21%
-    Req/Sec     6.74k   313.08     8.64k    76.40%
+    Latency     2.89ms    3.52ms  59.87ms   90.29%
+    Req/Sec     6.93k     0.95k   12.25k    73.71%
 ```
 Хуже во всем. Теперь же проведем повторные испытания, но в 1 поток.
 
@@ -127,16 +129,16 @@ Running 1m test @ http://localhost:19234
 ```
 Стало
 ```
-└─$ wrk -t 1 -c 64 -d 60s -s /media/coradead/Windows1/Users/CORADEAD/IdeaProjects/2022-highload-dht/src/main/java/ok/dht/test/galeev/reports/scritps/get.lua -L http://localhost:19234 -R 40000 
+└─$ wrk -t 1 -c 64 -d 60s -s /media/coradead/Windows1/Users/CORADEAD/IdeaProjects/2022-highload-dht/src/main/java/ok/dht/test/galeev/reports/scritps/get.lua -L http://localhost:19234 -R 40000
 Running 1m test @ http://localhost:19234
   1 threads and 64 connections
-  Thread calibration: mean lat.: 1075.483ms, rate sampling interval: 3289ms
+  Thread calibration: mean lat.: 63.969ms, rate sampling interval: 458ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   380.18ms  566.67ms   2.07s    79.78%
-    Req/Sec    41.27k     1.35k   43.61k    60.00%
+    Latency     8.15ms    9.40ms 107.97ms   87.54%
+    Req/Sec    40.04k   399.67    41.21k    76.85%
 ```
-Все так же плохо.
-Попробуем 1 поток, но количество соединений увеличим до 256
+Стало гораздо лучше.
+Попробуем 1 поток, но количество соединений увеличим до 256:
 
 Было
 ```
@@ -168,30 +170,137 @@ Running 1m test @ http://localhost:19234
 Requests/sec:  22515.92
 Transfer/sec:      1.59MB
 ```
-(уменьшение количества работников только ухудшает ситуацию)
 
-
-Посмотрим на флейм графы у `get`.
+##Посмотрим на флейм графы у `get` для `t=1` и `c=64`.
 
 Теперь selector thread занимает всего 8%, хотя раньше занимал 80%.
 А значит основную задачу пул воркеров выполнил, да и flamegraph стал
 равномернее. По памяти ничего особо не изменилось(кроме того факта,
-что теперь DAO выделяет память в воркерах). 70% процессорного времени
-занимает именно get(), для его улучшения можно, например, реализовать
-фильтр блума, который уменьшит количество запросов к памяти. Еще можно
-сделать очередь задач неблокирующей, ведь take занимает порядка 4.7%,
-а добавление 0.5%, но про это позже. А оптимизировать использование памяти,
-как и в прошлом stage - не получится.
+что теперь DAO выделяет память в воркерах).
+
+
+### Оптимизации
+70% процессорного времени занимает именно get(), для его улучшения можно,
+например, реализовать фильтр блума, который уменьшит количество запросов к
+памяти. Еще можно сделать очередь задач неблокирующей, ведь take занимает
+порядка 4.7%, а добавление 0.5%, но про это позже. А оптимизировать
+использование памяти, как и в прошлом stage - не получится.
 
 ![get cpu](./PNGs/cpu_get.png)
 ![get alloc](./PNGs/alloc_get.png)
 
-Так же можем взглянуть на wall(решил попробовать, посмотреть что это), 
-lock events. Так как тест начался не сразу - ворекры заждались. 
-Оптимизировать здесь мало что получится, так как на графике lock вообще не 
+Так же можем взглянуть на wall(решил попробовать, посмотреть что это),
+lock events. Так как тест начался не сразу - ворекры заждались.
+Оптимизировать здесь мало что получится, так как на графике lock вообще не
 видно функций DAO. 82% занимает take(), причем 76% это именно блокировки,
-и лишь 6.7% - сон. А значит изменение очереди на неблокирующую позволит 
-сэкономить почти все локи на взятие задачи.  
+и лишь 6.7% - сон. А значит изменение очереди на неблокирующую позволит
+сэкономить почти все локи на взятие задачи.
 
 ![get lock](./PNGs/lock_get.png)
 ![get wall](./PNGs/wall_get.png)
+
+## Почему же стало хуже?
+Если посмотреть на flame graph stage1 при тех же условиях, то становится
+понятно, в чем проблема. get у dao в новой версии занимает 69% времени,
+в то время как у старой 77%. 5% - потребляет пул и еще 1% - invoke - особенность
+реализации. А, учитывая тот факт, что ни один из запросов не отклонился из-за
+переполнения очереди, вполне логично, что занимать это все будет столько же времени и даже больше,
+ведь теперь еще приходится тратить время на пул, а количество ресурсов у системы не изменилось
+
+![get old cpu](./PNGs/cpu_get_old.png)
+
+Уменьшив очередь, сервер сам начинает скипать запросы, что конечно значительно уменьшает
+время ответа. Но вместо 40к ответ получают лишь 15к, но средняя задержки и максимальные
+задержки стали очень маленькими. Например, для `get`, если размер очереди равен 16,
+то сервер обрабатывает 15К/с, если же очередь равна 32, то количество обрабатываемых
+запросов увеличивается до 20к/с, 64 - 40к/с, а максимальные задержки 11ms, 40ms, 66ms
+соответственно.
+
+Для очереди в 16 элементов:
+```
+└─$ wrk -t 1 -c 64 -d 60s -s /media/coradead/Windows1/Users/CORADEAD/IdeaProjects/2022-highload-dht/src/main/java/ok/dht/test/galeev/reports/scritps/get.lua -L http://localhost:19234 -R 40000
+Running 1m test @ http://localhost:19234
+  1 threads and 64 connections
+  Thread calibration: mean lat.: 4.763ms, rate sampling interval: 10ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.46ms  684.77us  11.00ms   71.85%
+    Req/Sec    15.80k     0.98k   21.33k    73.22%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%    1.35ms
+ 75.000%    1.80ms
+ 90.000%    2.38ms
+ 99.000%    3.49ms
+ 99.900%    5.01ms
+ 99.990%    7.12ms
+ 99.999%    9.76ms
+100.000%   11.01ms
+-------------------------------------
+901238 requests in 1.00m, 63.60MB read
+  Socket errors: connect 0, read 0, write 0, timeout 1144
+Requests/sec:  15020.76
+Transfer/sec:      1.06MB
+```
+Для очереди в 32 элемента:
+```
+└─$ wrk -t 1 -c 64 -d 60s -s /media/coradead/Windows1/Users/CORADEAD/IdeaProjects/2022-highload-dht/src/main/java/ok/dht/test/galeev/reports/scritps/get.lua -L http://localhost:19234 -R 40000
+Running 1m test @ http://localhost:19234
+  1 threads and 64 connections
+  Thread calibration: mean lat.: 4.333ms, rate sampling interval: 10ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.61ms    1.62ms  40.10ms   96.43%
+    Req/Sec    21.07k     1.53k   39.33k    83.28%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%    1.40ms
+ 75.000%    1.88ms
+ 90.000%    2.46ms
+ 99.000%    4.82ms
+ 99.900%   29.74ms
+ 99.990%   35.39ms
+ 99.999%   37.15ms
+100.000%   40.13ms
+
+---------------------------------------------
+1210137 requests in 1.00m, 85.40MB read
+  Socket errors: connect 0, read 0, write 0, timeout 928
+Requests/sec:  20150.81
+Transfer/sec:      1.42MB
+```
+Для очереди в 64 элемента:
+```
+└─$ wrk -t 1 -c 64 -d 60s -s /media/coradead/Windows1/Users/CORADEAD/IdeaProjects/2022-highload-dht/src/main/java/ok/dht/test/galeev/reports/scritps/get.lua -L http://localhost:19234 -R 40000
+Running 1m test @ http://localhost:19234
+  1 threads and 64 connections
+  Thread calibration: mean lat.: 65.343ms, rate sampling interval: 418ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     5.01ms    5.49ms  66.11ms   88.01%
+    Req/Sec    40.05k   308.03    40.83k    76.27%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%    2.86ms
+ 75.000%    6.22ms
+ 90.000%   11.57ms
+ 99.000%   27.34ms
+ 99.900%   44.45ms
+ 99.990%   56.42ms
+ 99.999%   63.62ms
+100.000%   66.18ms
+----------------------------------------------------------
+  2359760 requests in 1.00m, 166.53MB read
+Requests/sec:  39329.54
+Transfer/sec:      2.78MB
+```
+
+## Вывод
+Реализованная нами фича должна помочь в реальной жизни, отклоняя некоторые запросы,
+благодаря чему максимальное время задержки значительно уменьшается, но в синтетических
+тестах разница будет не в пользу новой реализации, так как она потребляет некоторые
+дополнительные ресурсы для своей работы, а ресурсов у системы больше не становится. 
+Мы сделали хороший инструмент, который предоставляется нам возможность изменять 
+среднее, максимальное время ответа и количество обрабатываемых запросов.
+
+Реализованная фича при малом количестве соединений не дает заметных преимуществ, даже
+наоборот ухудшает ситуацию, так как новая реализация потребляет некоторые
+дополнительные ресурсы для своей работы, но при увеличении количества соединений более равномерная
+нагрузка(судя по heatmap) предоставляет нам большее процессорное время, за счет чего 
+получаем выигрыш. Так же мы сделали хороший инструмент, который предоставляет
+нам возможность изменять среднее, максимальное время ответа и количество обрабатываемых
+запросов в секунду, за счет увеличения размера очереди.
