@@ -19,10 +19,10 @@ import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
 
-public class HttpApi extends HttpServer {
+public final class HttpApi extends HttpServer {
+    public static final int FLUSH_THRESHOLD_BYTES = 8 * 1024 * 1024;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private final ServiceConfig config;
-    private static final Response HTTP_BAD_REQUEST = new Response(Response.BAD_REQUEST, Response.EMPTY);
 
     public HttpApi(ServiceConfig config) throws IOException {
         super(createConfigFromPort(config.selfPort()));
@@ -32,7 +32,7 @@ public class HttpApi extends HttpServer {
     @Override
     public synchronized void start() {
         try {
-            dao = new MemorySegmentDao(new Config(config.workingDir(), 8 * 1024 * 1024));
+            dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -50,15 +50,15 @@ public class HttpApi extends HttpServer {
     }
 
     @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-        session.sendResponse(HTTP_BAD_REQUEST);
+    public void handleDefault(final Request request, final HttpSession session) throws IOException {
+        session.sendResponse(getEmptyResponse(Response.BAD_REQUEST));
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String key) throws IOException {
+    public Response handleGet(@Param(value = "id", required = true) final String key) throws IOException {
         if (key.isEmpty()) {
-            return HTTP_BAD_REQUEST;
+            return getEmptyResponse(Response.BAD_REQUEST);
         }
         Entry<MemorySegment> result = dao.get(fromString(key));
         if (result == null) {
@@ -70,35 +70,33 @@ public class HttpApi extends HttpServer {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(@Param(value = "id", required = true) String key, Request req) {
+    public Response handlePut(@Param(value = "id", required = true) final String key, final Request req) {
         if (key.isEmpty()) {
-            return HTTP_BAD_REQUEST;
+            return getEmptyResponse(Response.BAD_REQUEST);
         }
         dao.upsert(new BaseEntry<>(fromString(key), MemorySegment.ofArray(req.getBody())));
-        return new Response(
-                Response.CREATED,
-                Response.EMPTY
-        );
+        return getEmptyResponse(Response.CREATED);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) String key) {
+    public Response handleDelete(@Param(value = "id", required = true) final String key) {
         if (key.isEmpty()) {
-            return HTTP_BAD_REQUEST;
+            return getEmptyResponse(Response.BAD_REQUEST);
         }
         dao.upsert(new BaseEntry<>(fromString(key), null));
-        return new Response(
-                Response.ACCEPTED,
-                Response.EMPTY
-        );
+        return getEmptyResponse(Response.ACCEPTED);
     }
 
-    private static MemorySegment fromString(String data) {
-        return data == null ? null : MemorySegment.ofArray(data.toCharArray());
+    private static Response getEmptyResponse(final String httpCode) {
+        return new Response(httpCode, Response.EMPTY);
     }
 
-    private static HttpServerConfig createConfigFromPort(int port) {
+    private static MemorySegment fromString(final String data) {
+        return MemorySegment.ofArray(data.toCharArray());
+    }
+
+    private static HttpServerConfig createConfigFromPort(final int port) {
         HttpServerConfig httpConfig = new HttpServerConfig();
         AcceptorConfig acceptor = new AcceptorConfig();
         acceptor.port = port;
