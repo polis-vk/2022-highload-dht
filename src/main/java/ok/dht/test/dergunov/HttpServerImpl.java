@@ -42,7 +42,6 @@ public class HttpServerImpl extends HttpServer {
             new LinkedBlockingQueue<>(SIZE_QUEUE)
     );
 
-
     public HttpServerImpl(HttpServerConfig config, MemorySegmentDao database, Object... routers) throws IOException {
         super(config, routers);
         this.database = database;
@@ -97,10 +96,6 @@ public class HttpServerImpl extends HttpServer {
         super.stop();
         poolExecutor.shutdown();
     }
-
-//    private static String toString(MemorySegment data) {
-//        return data == null ? null : new String(data.toByteArray());
-//    }
 
     private void handleGet(@Nonnull Request request, HttpSession session) throws IOException {
         String entityId = request.getParameter(PARAMETER_KEY, "");
