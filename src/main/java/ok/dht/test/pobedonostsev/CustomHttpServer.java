@@ -6,8 +6,6 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
-import one.nio.net.Socket;
-import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,17 +34,21 @@ public class CustomHttpServer extends HttpServer {
                 try {
                     super.handleRequest(request, session);
                 } catch (IOException e) {
-                    try {
-                        session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                        LOG.error("Cannot handle", e);
-                    } catch (IOException ex) {
-                        LOG.error("Cannot send response", e);
-                    }
+                    sendError(session, e);
                 }
             });
         } catch (RejectedExecutionException e) {
             LOG.error("Rejected task", e);
             session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
+        }
+    }
+
+    private void sendError(HttpSession session, Exception e) {
+        try {
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            LOG.error("Cannot handle", e);
+        } catch (IOException ex) {
+            LOG.error("Cannot send response", e);
         }
     }
 
