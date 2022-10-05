@@ -9,9 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.Spliterator;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -29,10 +27,10 @@ public final class Dao {
     private final ExecutorService backgroundExecutor =
             Executors.newSingleThreadExecutor(r -> new Thread(r, "ConcurrentFilesBackedDaoBackground"));
     private final long flushThresholdBytes;
-    private volatile State state;
+    private volatile DaoState state;
     private final ReadWriteLock upsertLock = new ReentrantReadWriteLock();
 
-    private Dao(long flushThresholdBytes, State state) {
+    private Dao(long flushThresholdBytes, DaoState state) {
         this.flushThresholdBytes = flushThresholdBytes;
         this.state = state;
     }
@@ -47,7 +45,7 @@ public final class Dao {
     public static Dao of(long flushThresholdBytes, Path basePath) throws IOException {
         return new Dao(
                 flushThresholdBytes,
-                State.newState(Storage.load(basePath))
+                DaoState.newState(Storage.load(basePath))
         );
     }
 
@@ -55,12 +53,12 @@ public final class Dao {
         if (from == null) {
             return get(MemorySegmentComparator.MINIMAL, to);
         }
-        State theState = accessState();
+        DaoState theState = accessState();
         PeekIterator<MemorySegmentEntry> inMemoryIterator = new PeekIterator<>(theState.memoryTable.get(from, to));
         Spliterator<SortedStringTable> tableSpliterator = theState.storage.spliterator();
         int tablesCount = (int) tableSpliterator.getExactSizeIfKnown();
         if (tablesCount == 0 && theState.flushingTable == null) {
-            return withoutTombStones(inMemoryIterator);
+            return new WithoutTombstonesIterator(inMemoryIterator);
         }
         List<PeekIterator<MemorySegmentEntry>> iterators =
                 new ArrayList<>(1 + (theState.flushingTable == null ? 0 : 1) + tablesCount);
@@ -69,7 +67,7 @@ public final class Dao {
             iterators.add(new PeekIterator<>(theState.flushingTable.get(from, to)));
         }
         tableSpliterator.forEachRemaining(t -> iterators.add(new PeekIterator<>(t.get(from, to))));
-        return withoutTombStones(new PeekIterator<>(MergedIterator.of(iterators)));
+        return new WithoutTombstonesIterator(new PeekIterator<>(MergedIterator.of(iterators)));
     }
 
     static Iterator<MemorySegmentEntry> allStored(Spliterator<SortedStringTable> tableSpliterator) {
@@ -77,11 +75,11 @@ public final class Dao {
                 new ArrayList<>((int) tableSpliterator.getExactSizeIfKnown());
         tableSpliterator.forEachRemaining(t ->
                 iterators.add(new PeekIterator<>(t.get(MemorySegmentComparator.MINIMAL, null))));
-        return withoutTombStones(new PeekIterator<>(MergedIterator.of(iterators)));
+        return new WithoutTombstonesIterator(new PeekIterator<>(MergedIterator.of(iterators)));
     }
 
     public void upsert(MemorySegmentEntry entry) {
-        State theState = accessState();
+        DaoState theState = accessState();
         long byteSizeAfter;
         // it is intentionally the read lock.
         upsertLock.readLock().lock();
@@ -90,40 +88,26 @@ public final class Dao {
         } finally {
             upsertLock.readLock().unlock();
         }
-        if (byteSizeAfter >= flushThresholdBytes) {
-            flushInBackground(false);
+        if (byteSizeAfter < flushThresholdBytes) {
+            return;
         }
-    }
-
-    private Future<?> flushInBackground(boolean tolerantToOngoingFlush) {
         upsertLock.writeLock().lock();
         try {
-            State theState = accessState();
-            if (theState.isFlushing()) {
-                if (tolerantToOngoingFlush) {
-                    return CompletableFuture.completedFuture(null);
-                }
+            DaoState theState1 = accessState();
+            if (theState1.isFlushing()) {
                 throw new TooManyBackgroundFlushesException();
             }
-            theState = theState.flushing();
-            this.state = theState;
+            theState1 = theState1.flushing();
+            state = theState1;
         } finally {
             upsertLock.writeLock().unlock();
         }
 
-        return backgroundExecutor.submit(() -> {
-            try {
-                flushImpl();
-            } catch (Exception e) {
-                LOG.error("Can't flush", e);
-                this.state.storage.close();
-                throw new RuntimeException(e);
-            }
-        });
+        backgroundExecutor.execute(this::flushImpl);
     }
 
     public MemorySegmentEntry get(MemorySegment key) throws IOException {
-        State theState = accessState();
+        DaoState theState = accessState();
         MemorySegmentEntry result = theState.memoryTable.get(key);
         if (result != null) {
             return result.isTombStone() ? null : result;
@@ -142,26 +126,47 @@ public final class Dao {
     }
 
     public void flush() {
-        getAndUnwrap(flushInBackground(true));
-    }
-
-    private void flushImpl() throws IOException {
-        State theState = accessState();
-        if (theState.flushingTable.isEmpty()) {
-            throw new IllegalStateException("Trying to flush empty MemoryTable");
-        }
-        Storage storage = theState.storage.store(theState.flushingTable.values());
         upsertLock.writeLock().lock();
         try {
-            theState = theState.afterFlush(storage);
-            this.state = theState;
+            DaoState theState = accessState();
+            if (theState.isFlushing()) {
+                return;
+            } else {
+                theState = theState.flushing();
+                state = theState;
+            }
         } finally {
             upsertLock.writeLock().unlock();
         }
+
+        Future<?> act = backgroundExecutor.submit(this::flushImpl);
+        getAndUnwrap(act);
+    }
+
+    private void flushImpl() {
+        try {
+            DaoState theState = accessState();
+            if (theState.flushingTable.isEmpty()) {
+                throw new IllegalStateException("Trying to flush empty MemoryTable");
+            }
+            Storage storage = theState.storage.store(theState.flushingTable.values());
+            upsertLock.writeLock().lock();
+            try {
+                theState = theState.afterFlush(storage);
+                state = theState;
+            } finally {
+                upsertLock.writeLock().unlock();
+            }
+        } catch (Exception e) {
+            LOG.error("Can't flush", e);
+            state.storage.close();
+            throw new RuntimeException(e);
+        }
+
     }
 
     public void compact() {
-        State beforeCompactState = accessState();
+        DaoState beforeCompactState = accessState();
         if (beforeCompactState.storage.isCompacted()) {
             return;
         }
@@ -186,7 +191,7 @@ public final class Dao {
     }
 
     private void compactImpl() throws IOException {
-        State theState = accessState();
+        DaoState theState = accessState();
         if (theState.storage.isCompacted()) {
             return;
         }
@@ -195,7 +200,7 @@ public final class Dao {
     }
 
     public synchronized void close() throws IOException {
-        State theState = state;
+        DaoState theState = state;
         if (theState.isClosed) {
             return; // close() is idempotent
         }
@@ -211,7 +216,7 @@ public final class Dao {
             }
             theState.storage.close();
             theState = theState.afterClosed();
-            this.state = theState;
+            state = theState;
             if (interrupted) {
                 Thread.currentThread().interrupt();
             }
@@ -219,101 +224,20 @@ public final class Dao {
     }
 
     private void finishCompaction() throws IOException {
-        State theState = accessState();
+        DaoState theState = accessState();
         Storage storage = theState.storage.finishCompact();
         upsertLock.writeLock().lock();
         try {
             theState = theState.afterCompact(storage);
-            this.state = theState;
+            state = theState;
         } finally {
             upsertLock.writeLock().unlock();
         }
     }
 
-    private static Iterator<MemorySegmentEntry> withoutTombStones(PeekIterator<MemorySegmentEntry> iterator) {
-        return new Iterator<>() {
-            @Override
-            public boolean hasNext() {
-                while (iterator.hasNext()) {
-                    if (!iterator.peek().isTombStone()) {
-                        return true;
-                    }
-                    iterator.next();
-                }
-                return false;
-            }
-
-            @Override
-            public MemorySegmentEntry next() {
-                if (!hasNext()) {
-                    throw new NoSuchElementException();
-                }
-                return iterator.next();
-            }
-        };
-    }
-
-    private State accessState() {
-        State theState = state;
+    private DaoState accessState() {
+        DaoState theState = state;
         theState.assertNotClosed();
         return theState;
-    }
-
-    /*
-     * Provides atomic access to MemoryTable + Storage state via
-     * `final` guarantees + volatile variable State.
-     */
-    private static class State {
-        final Storage storage;
-        final MemoryTable memoryTable;
-        final MemoryTable flushingTable;
-        final boolean isClosed;
-
-        private State(Storage storage, MemoryTable memoryTable, MemoryTable flushingTable, boolean isClosed) {
-            this.storage = storage;
-            this.memoryTable = memoryTable;
-            this.flushingTable = flushingTable;
-            this.isClosed = isClosed;
-        }
-
-        boolean isFlushing() {
-            return flushingTable != null;
-        }
-
-        State afterFlush(Storage storage) {
-            assertNotClosed();
-            return new State(storage, memoryTable, null, false);
-        }
-
-        public void assertNotClosed() {
-            if (isClosed) {
-                throw new IllegalStateException("Dao is already closed");
-            }
-        }
-
-        State flushing() {
-            assertNotClosed();
-            if (isFlushing()) {
-                throw new IllegalStateException("Trying to flush twice: already flushing");
-            }
-            return new State(storage, new MemoryTable(), memoryTable, false);
-        }
-
-        State afterClosed() {
-            assertNotClosed();
-            if (!storage.isClosed()) {
-                throw new IllegalStateException("Storage should be closed before Dao");
-            }
-            return new State(storage, memoryTable, flushingTable, true);
-        }
-
-        static State newState(Storage storage) {
-            return new State(storage, new MemoryTable(), null, false);
-        }
-
-        public State afterCompact(Storage storage) {
-            assertNotClosed();
-            return new State(storage, memoryTable, flushingTable, false);
-        }
     }
 }
