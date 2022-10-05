@@ -34,7 +34,7 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        long flushThresholdBytes = 1 << 26;
+        long flushThresholdBytes = 1 << 18;
         dao = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
         server = new HighLoadHttpServer(createConfigFromPort(config.selfPort()));
         server.addRequestHandlers(this);
@@ -84,6 +84,17 @@ public class ServiceImpl implements Service {
     public Response put(@Param(value = "id", required = true) String id,
                         @Param(value = "request", required = true) Request request) {
         return upsert(id, MemorySegment.ofArray(request.getBody()), Response.CREATED);
+    }
+
+    @Path("/v0/entity")
+    @RequestMethod({Request.METHOD_CONNECT,
+            Request.METHOD_HEAD,
+            Request.METHOD_OPTIONS,
+            Request.METHOD_PATCH,
+            Request.METHOD_POST,
+            Request.METHOD_TRACE})
+    public Response others() {
+        return new Response(Response.METHOD_NOT_ALLOWED, getBytes("Not implemented yet"));
     }
 
     @Path("/v0/entity")
