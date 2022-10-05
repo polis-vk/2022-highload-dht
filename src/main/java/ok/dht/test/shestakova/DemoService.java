@@ -7,21 +7,34 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.shestakova.dao.MemorySegmentDao;
 import ok.dht.test.shestakova.dao.base.BaseEntry;
 import ok.dht.test.shestakova.dao.base.Config;
-import one.nio.http.*;
+
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+
 
 public class DemoService implements Service {
 
     private final ServiceConfig config;
     private HttpServer server;
     private MemorySegmentDao dao;
-    private final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
-    private final int POOL_SIZE = Runtime.getRuntime().availableProcessors();
-    private final int QUEUE_CAPACITY = 256;
+    private static final long flushThreshold = 1 << 20; // 1 MB
+    private static final int poolSize = Runtime.getRuntime().availableProcessors();
+    private static final int queueCapacity = 256;
     private ExecutorService workersPool;
 
     public DemoService(ServiceConfig config) {
@@ -30,13 +43,13 @@ public class DemoService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD));
+        dao = new MemorySegmentDao(new Config(config.workingDir(), flushThreshold));
         workersPool = new ThreadPoolExecutor(
-                POOL_SIZE,
-                POOL_SIZE,
+                poolSize,
+                poolSize,
                 0L,
                 TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(QUEUE_CAPACITY)
+                new ArrayBlockingQueue<>(queueCapacity)
         );
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
