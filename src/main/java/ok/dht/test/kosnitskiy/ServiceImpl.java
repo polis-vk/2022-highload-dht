@@ -10,6 +10,7 @@ import ok.dht.test.kosnitskiy.dao.Entry;
 import ok.dht.test.kosnitskiy.dao.MemorySegmentDao;
 import ok.dht.test.kosnitskiy.server.HttpServerImpl;
 import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
@@ -22,6 +23,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 
 public class ServiceImpl implements Service {
 
@@ -39,7 +42,8 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         memorySegmentDao = new MemorySegmentDao(new Config(config.workingDir(), IN_MEMORY_SIZE));
-        server = new HttpServerImpl(createConfigFromPort(config.selfPort()));
+        server = new HttpServerImpl(createConfigFromPort(config.selfPort()),
+                (ThreadPoolExecutor) Executors.newCachedThreadPool());
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
@@ -54,8 +58,8 @@ public class ServiceImpl implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
+    public Response handleGet(@Param(value = "id") String id, HttpSession session) {
+        if (id == null || id.isEmpty()) {
             return new Response(
                     Response.BAD_REQUEST,
                     Response.EMPTY
@@ -82,8 +86,8 @@ public class ServiceImpl implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(@Param(value = "id", required = true) String id, Request request) {
-        if (id.isEmpty() || request.getBody() == null) {
+    public Response handlePut(@Param(value = "id") String id, Request request, HttpSession session) {
+        if (id == null || id.isEmpty() || request.getBody() == null) {
             return new Response(
                     Response.BAD_REQUEST,
                     Response.EMPTY
@@ -104,8 +108,8 @@ public class ServiceImpl implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
+    public Response handleDelete(@Param(value = "id") String id, HttpSession session) {
+        if (id == null || id.isEmpty()) {
             return new Response(
                     Response.BAD_REQUEST,
                     Response.EMPTY
