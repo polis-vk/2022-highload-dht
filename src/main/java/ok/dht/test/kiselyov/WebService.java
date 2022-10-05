@@ -62,14 +62,7 @@ public class WebService implements Service {
             @Override
             public void handleRequest(Request request, HttpSession session) throws IOException {
                 try {
-                    Future<?> task = executorService.submit(() -> {
-                        try {
-                            super.handleRequest(request, session);
-                        } catch (IOException e) {
-                            LOGGER.error("Error handling request.", e);
-                        }
-                    });
-                    tasks.add(task);
+                    tasks.add(executorService.submit(() -> tryHandleRequest(request, session)));
                 } catch (RejectedExecutionException e) {
                     LOGGER.error("Cannot execute task: ", e);
                     session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
@@ -90,6 +83,14 @@ public class WebService implements Service {
                     }
                 }
                 super.stop();
+            }
+
+            private void tryHandleRequest(Request request, HttpSession session) {
+                try {
+                    super.handleRequest(request, session);
+                } catch (IOException e) {
+                    LOGGER.error("Error handling request.", e);
+                }
             }
         };
         server.start();
