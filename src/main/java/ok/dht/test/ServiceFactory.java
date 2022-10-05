@@ -14,6 +14,7 @@ public @interface ServiceFactory {
 
     int stage();
     int week();
+    String[] bonuses() default {};
 
     interface Factory {
         Service create(ServiceConfig config);
