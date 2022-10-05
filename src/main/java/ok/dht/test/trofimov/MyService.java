@@ -58,8 +58,8 @@ public class MyService implements Service {
     }
 
     private void initExecutor() {
-        int nThreads = Runtime.getRuntime().availableProcessors();
-        requestsExecutor = new ThreadPoolExecutor(nThreads, nThreads,
+        int threadsCount = Runtime.getRuntime().availableProcessors();
+        requestsExecutor = new ThreadPoolExecutor(threadsCount, threadsCount,
                 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(REQUESTS_MAX_QUEUE_SIZE),
                 new ThreadPoolExecutor.DiscardOldestPolicy());
@@ -106,7 +106,7 @@ public class MyService implements Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_PUT)
     public void handlePut(Request request, @Param(value = "id", required = true) String id, HttpSession session) {
         requestsExecutor.execute(() -> {
@@ -126,7 +126,7 @@ public class MyService implements Service {
         });
     }
 
-    @Path("/v0/entity")
+    @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_DELETE)
     public void handleDelete(@Param(value = "id", required = true) String id, HttpSession session) {
         requestsExecutor.execute(() -> {
@@ -146,7 +146,7 @@ public class MyService implements Service {
 
     }
 
-    @Path("/v0/entity")
+    @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_POST)
     public Response handlePost() {
         return emptyResponseFor(Response.METHOD_NOT_ALLOWED);
