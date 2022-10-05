@@ -140,5 +140,37 @@ $(cat "profiles/2022-10-04-21-05-19_new_msqueue_get_t4_c64_R70000_d1m/wrk2.txt")
 ![image](profiles/2022-10-04-21-05-19_new_msqueue_get_t4_c64_R70000_d1m/lock.png)
 
 
+Далее идут результаты профилирования MultiQueue с 10 очередями, capacity каждой из которых равно 50.
+При запсуке использовалось 2 воркера и 5 селектор тредов.
+# MultiQueue PUT t=4 c=64 R=70000 d=1m
+wrk2 output:
+\`\`\`
+$(cat "profiles/2022-10-05-20-40-59_new_multiqueue_w2_q10_put_t4_c64_R70000_d1m/wrk2.txt")
+\`\`\`
+
+[cpu heatmap & flame graph](profiles/2022-10-05-20-40-59_new_multiqueue_w2_q10_put_t4_c64_R70000_d1m/cpu.html)
+![image](profiles/2022-10-05-20-40-59_new_multiqueue_w2_q10_put_t4_c64_R70000_d1m/cpu.png)
+
+[alloc heatmap & flame graph](profiles/2022-10-05-20-40-59_new_multiqueue_w2_q10_put_t4_c64_R70000_d1m/alloc.html)
+![image](profiles/2022-10-05-20-40-59_new_multiqueue_w2_q10_put_t4_c64_R70000_d1m/alloc.png)
+
+[lock flame graph](profiles/2022-10-05-20-40-59_new_multiqueue_w2_q10_put_t4_c64_R70000_d1m/lock.html)
+![image](profiles/2022-10-05-20-40-59_new_multiqueue_w2_q10_put_t4_c64_R70000_d1m/lock.png)
+
+# MultiQueue GET t=4 c=64 R=70000 d=1m
+wrk2 output:
+\`\`\`
+$(cat "profiles/2022-10-05-21-34-30_new_multiqueue_w2_q10_get_t4_c64_R70000_d1m/wrk2.txt")
+\`\`\`
+
+[cpu heatmap & flame graph](profiles/2022-10-05-21-34-30_new_multiqueue_w2_q10_get_t4_c64_R70000_d1m/cpu.html)
+![image](profiles/2022-10-05-21-34-30_new_multiqueue_w2_q10_get_t4_c64_R70000_d1m/cpu.png)
+
+[alloc heatmap & flame graph](profiles/2022-10-05-21-34-30_new_multiqueue_w2_q10_get_t4_c64_R70000_d1m/alloc.html)
+![image](profiles/2022-10-05-21-34-30_new_multiqueue_w2_q10_get_t4_c64_R70000_d1m/alloc.png)
+
+[lock flame graph](profiles/2022-10-05-21-34-30_new_multiqueue_w2_q10_get_t4_c64_R70000_d1m/lock.html)
+![image](profiles/2022-10-05-21-34-30_new_multiqueue_w2_q10_get_t4_c64_R70000_d1m/lock.png)
+
 $(cat "tpl/conclusion.md")
 EOF
