@@ -17,8 +17,8 @@ import one.nio.util.Utf8;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -39,7 +39,7 @@ public class HttpServerImpl extends HttpServer {
             COUNT_CORES,
             0L,
             TimeUnit.MILLISECONDS,
-            new LinkedBlockingQueue<>(SIZE_QUEUE)
+            new ArrayBlockingQueue<>(SIZE_QUEUE)
     );
 
     public HttpServerImpl(HttpServerConfig config, MemorySegmentDao database, Object... routers) throws IOException {
