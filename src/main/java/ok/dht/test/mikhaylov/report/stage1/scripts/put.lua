@@ -1,4 +1,4 @@
-index = 0
+index = 700000
 request = function()
     path = "/v0/entity?id=" .. index
     wrk.method = "PUT"
