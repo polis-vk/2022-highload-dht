@@ -1,13 +1,18 @@
-package ok.dht.test.nadutkin.database.impl;
+package ok.dht.test.nadutkin.impl;
 
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.nadutkin.database.Config;
 import ok.dht.test.nadutkin.database.Entry;
+import ok.dht.test.nadutkin.database.impl.MemorySegmentComparator;
+import ok.dht.test.nadutkin.database.impl.Storage;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -64,10 +69,10 @@ public final class UtilsClass {
 
     public static class State {
         final Config config;
-        final Memory memory;
-        final Memory flushing;
-        final Storage storage;
-        final boolean closed;
+        public final Memory memory;
+        public final Memory flushing;
+        public final Storage storage;
+        public final boolean closed;
 
         State(Config config, Memory memory, Memory flushing, Storage storage) {
             this.config = config;
@@ -85,7 +90,7 @@ public final class UtilsClass {
             this.closed = closed;
         }
 
-        static State newState(Config config, Storage storage) {
+        public static State newState(Config config, Storage storage) {
             return new State(
                     config,
                     new Memory(config.flushThresholdBytes()),
@@ -200,6 +205,28 @@ public final class UtilsClass {
 
         public Entry<MemorySegment> get(MemorySegment key) {
             return delegate.get(key);
+        }
+    }
+
+    public static byte[] getBytes(String message) {
+        return message.getBytes(StandardCharsets.UTF_8);
+    }
+
+    public static void shutdownAndAwaitTermination(ExecutorService pool) {
+        pool.shutdown(); // Disable new tasks from being submitted
+        try {
+            // Wait a while for existing tasks to terminate
+            if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
+                pool.shutdownNow(); // Cancel currently executing tasks
+                // Wait a while for tasks to respond to being cancelled
+                if (!pool.awaitTermination(60, TimeUnit.SECONDS))
+                    System.err.println("Pool did not terminate");
+            }
+        } catch (InterruptedException ie) {
+            // (Re-)Cancel if current thread also interrupted
+            pool.shutdownNow();
+            // Preserve interrupt status
+            Thread.currentThread().interrupt();
         }
     }
 }
