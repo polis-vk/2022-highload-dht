@@ -5,8 +5,6 @@ import jdk.incubator.foreign.MemorySegment;
 import jdk.incubator.foreign.ResourceScope;
 import ok.dht.test.nadutkin.database.Config;
 import ok.dht.test.nadutkin.database.Entry;
-import ok.dht.test.nadutkin.impl.Constants;
-import ok.dht.test.nadutkin.impl.UtilsClass;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;

@@ -1,4 +1,4 @@
-package ok.dht.test.nadutkin.impl;
+package ok.dht.test.nadutkin;
 
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
@@ -10,33 +10,55 @@ import ok.dht.test.nadutkin.database.Entry;
 import ok.dht.test.nadutkin.database.impl.MemorySegmentDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
-
-import static ok.dht.test.nadutkin.impl.UtilsClass.getBytes;
 
 public class ServiceImpl implements Service {
 
     private final ServiceConfig config;
     private HttpServer server;
     private MemorySegmentDao dao;
+
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
     }
 
+    private byte[] getBytes(String message) {
+        return message.getBytes(StandardCharsets.UTF_8);
+    }
 
     @Override
     public CompletableFuture<?> start() throws IOException {
         long flushThresholdBytes = 1 << 26;
         dao = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
-        server = new HighLoadHttpServer(createConfigFromPort(config.selfPort()));
+        server = new HttpServer(createConfigFromPort(config.selfPort())) {
+            @Override
+            public void handleDefault(Request request, HttpSession session) throws IOException {
+                Response response = new Response(Response.BAD_REQUEST, getBytes("Incorrect request path"));
+                session.sendResponse(response);
+            }
+
+            @Override
+            public synchronized void stop() {
+                for (SelectorThread selector : selectors) {
+                    for (Session session : selector.selector) {
+                        session.close();
+                    }
+                }
+                super.stop();
+            }
+        };
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
@@ -44,8 +66,8 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        server.stop();
         dao.close();
+        server.stop();
         return CompletableFuture.completedFuture(null);
     }
 

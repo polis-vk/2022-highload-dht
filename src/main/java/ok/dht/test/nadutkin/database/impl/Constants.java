@@ -1,6 +1,5 @@
-package ok.dht.test.nadutkin.impl;
+package ok.dht.test.nadutkin.database.impl;
 
-import ok.dht.test.nadutkin.database.impl.MemorySegmentDao;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

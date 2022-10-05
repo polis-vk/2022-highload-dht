@@ -5,7 +5,6 @@ import jdk.incubator.foreign.MemorySegment;
 import jdk.incubator.foreign.ResourceScope;
 import ok.dht.test.nadutkin.database.BaseEntry;
 import ok.dht.test.nadutkin.database.Entry;
-import ok.dht.test.nadutkin.impl.Constants;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -13,10 +12,10 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-import static ok.dht.test.nadutkin.impl.Constants.INDEX_HEADER_SIZE;
-import static ok.dht.test.nadutkin.impl.Constants.INDEX_RECORD_SIZE;
+import static ok.dht.test.nadutkin.database.impl.Constants.INDEX_HEADER_SIZE;
+import static ok.dht.test.nadutkin.database.impl.Constants.INDEX_RECORD_SIZE;
 
-public class Storage implements Closeable {
+class Storage implements Closeable {
     // supposed to have fresh files first
 
     private final ResourceScope scope;

@@ -1,8 +1,7 @@
 package ok.dht.test.nadutkin;
 
 import ok.dht.ServiceConfig;
-import ok.dht.test.nadutkin.impl.Constants;
-import ok.dht.test.nadutkin.impl.ServiceImpl;
+import ok.dht.test.nadutkin.database.impl.Constants;
 
 import java.io.IOException;
 import java.nio.file.Files;
