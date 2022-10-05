@@ -64,6 +64,11 @@ public class MyConcurrentHttpServer extends HttpServer {
             Request request,
             HttpSession session
     ) throws IOException {
+        if (request.getMethod() == Request.METHOD_POST) {
+            session.sendResponse(getEmptyResponse(Response.METHOD_NOT_ALLOWED));
+            return;
+        }
+        
         session.sendResponse(getEmptyResponse(Response.BAD_REQUEST));
     }
     
