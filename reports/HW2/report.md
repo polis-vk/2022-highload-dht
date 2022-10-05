@@ -215,88 +215,72 @@ Transfer/sec:      5.63MB
 
 ![image](histograms/lifo_workers/get_lifo_default.png)
 
-# Меньший `flushThresholdBytes = 1 << 18`
+## Выводы
 
-## Без вспомогательных `workers`
-
-### PUT
-
-```
-Running 30s test @ http://localhost:19234
-  8 threads and 64 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.62s   878.13ms   3.24s    59.84%
-    Req/Sec    10.61k   834.06    11.58k    82.14%
-  2684493 requests in 30.00s, 171.53MB read
-Requests/sec:  89487.31
-Transfer/sec:      5.72MB
-```
-
-### GET
-
-```
-Running 30s test @ http://localhost:19234
-  8 threads and 64 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     5.85s     2.09s   11.13s    62.76%
-    Req/Sec     8.71k   204.14     9.21k    66.67%
-  2109222 requests in 30.00s, 145.57MB read
-Requests/sec:  70309.97
-Transfer/sec:      4.85MB
-```
-
-## Обычный `ExecutorService`
+Как можно видеть передача работы от селекторов к `executors` только ухудшила результат, попробуем разобраться в причинах.
 
 ### PUT
 
-```
-Running 30s test @ http://localhost:19234
-  8 threads and 64 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     3.18s     1.34s    5.73s    57.46%
-    Req/Sec     9.71k   510.05    10.42k    56.94%
-  2415670 requests in 30.00s, 154.35MB read
-Requests/sec:  80525.34
-Transfer/sec:      5.15MB
-```
+**Requests/sec:**
+
+1. Без `executors`: 92730
+2. Дефолтные `executors`: 81377 (Просадка на 12 %)
+3. `executors` с `lifo`: 78714 (Просадка на 15 %)
+
+Рассматривая графики cpu [put_no](analysis/default%20size/no_workers/put_no_default_cpu.html),
+[put_default](analysis/default%20size/default_workers/put_default_default_cpu.html),
+[put_lifo](analysis/default%20size/lifo_workers/put_lifo_default_cpu.html)
+
+Можно увидеть, что работа с базой данных (`ServiceImpl.put`), никогда не занимала больше 11% от CPU,
+основное время тратилось на работу с сетью (посылка ответов, приём запросов, работа с селекторами),
+то есть put - не было bottle neck.
+
+Если считать, что 'Без `executors`', проделывает задачу за время t
+на 12 % производительнее, чем 'Дефолтные `executors`', проделывает задачу за время 1.136 * t; 
+и на 15 % производительнее, чем '`executors` с `lifo`', проделывает задачу за время 1.176 * t.
+То на `HttpServer.handleRequest` в
+1. 'Без `executors`' тратится 0.3987 * t.
+2. 'Дефолтные `executors`' тратится 0.2742 * 1.136 * t = 0.3115 * t
+3. '`executors` с `lifo`' тратится 0.2663 * 1.176 * t = 0.3137 * t
+
+Таким образом можно сказать, что добавление `executors` **ускорило** обработку запросов. 
+
+Однако остаётся вопрос: Почему же просадка? 
+
+Ответ лежит рядом, добавление `executors` заставило систему дополнительно работать над оркестрацией thread pool.
+Вследствие чего системе приходится тратить ресурсы на `park` и `unpark`.
+По итогу:
+- 'Дефолтные `executors`' тратят ~19 % всего времени на обслуживание thread pool.
+- '`executors` с `lifo`' тратят более 19 %.
+
+Что в обоих случаях больше времени затраченного `put` в базу данных.
 
 ### GET
 
-```
-Running 30s test @ http://localhost:19234
-  8 threads and 64 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     8.36s     1.77s   11.18s    59.57%
-    Req/Sec     8.47k   589.97     9.08k    68.75%
-  1897837 requests in 30.00s, 130.82MB read
-Requests/sec:  63263.79
-Transfer/sec:      4.36MB
-```
+Аналогично, смотря на цифры и на
+[get_no](analysis/default%20size/no_workers/get_no_default_cpu.html),
+[get_default](analysis/default%20size/default_workers/get_default_default_cpu.html),
+[get_lifo](analysis/default%20size/lifo_workers/get_lifo_default_cpu.html)
 
-## `LIFO`
+Видна просадка 'Дефолтные `executors`' на 12.6 % и '`executors` с `lifo`' на 14.5 % по сравнению с 'Без `executors`'.
 
-### PUT
+При этом смотря на время работы обработки самого запроса (`HttpServer.handleRequest`) видно, что в
+1. 'Без `executors`' на него тратится 0.3237 * t.
+2. 'Дефолтные `executors`' тратится 0.2234 * 1.144* t = 0.256 * t
+3. '`executors` с `lifo`' тратится 0.2122 * 1.17 * t = 0.248 * t
 
-```
-Running 30s test @ http://localhost:19234
-  8 threads and 64 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     2.15s   753.08ms   3.49s    58.90%
-    Req/Sec    10.85k   240.81    11.28k    61.61%
-  2651827 requests in 30.00s, 169.44MB read
-  Requests/sec:  88397.86
-  Transfer/sec:      5.65MB
-```
+То есть `executors` дают выигрыш в обработке, однако оркестрация thread pool нивелирует это достижение.
 
-### GET
+Получается, что добавление `ExecutorService` бесполезно и даже вредно?
+Не совсем. 
 
-```
-Running 30s test @ http://localhost:19234
-  8 threads and 64 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     5.28s     1.56s    8.19s    57.72%
-    Req/Sec     9.16k   406.19     9.90k    68.75%
-  2233604 requests in 30.00s, 154.23MB read
-  Requests/sec:  74456.07
-  Transfer/sec:      5.14MB
-```
+1. Как мы увидели они, сократили время обработки запроса,
+то есть, если `HttpServer.handleRequest` увеличит свой вес в CPU, то мы можем получить выигрыш. 
+Как мы знаем из предыдущего дз при уменьшении flushThresholdBytes
+поход в базу данных становится более весомым по производительности,
+так как база данных чаще сбрасывает данные на диск,
+а после обходит эти файлы, тратит время на аллокацию загружая их к себе и ища в них данные.
+
+2. Метод `park` вызывается в том случае, если очередь запросов пуста.
+Cам `park` мы ускорить мы не можем. Возможным решением могло быть переопределение сценария,
+когда поток уходит в сон, сидя некоторое время в активном ожидании (что выглядит достаточно заморочено).
