@@ -7,12 +7,12 @@ path_to_async_profiler="/Users/michael/Desktop/async-profiler/async-profiler"
 #server configuration
 server_host="localhost"
 server_port=25565
-server_name="Server"
+server_name="Main"
 
 #wrk2 configuration
-wrk2_duration=60
-wrk2_threads=1
-wrk2_connections=1
+wrk2_duration=30
+wrk2_threads=32
+wrk2_connections=64
 
 function wrk2_start() {
   local rate=$1
@@ -28,7 +28,7 @@ function async_profiler_start() {
   local file_path="$PWD/$file_name"
   local path=$PWD
   cd $path_to_async_profiler || exit
-  source "./profiler.sh" -e cpu,alloc --alloc 512 -f "$file_path" start Server
+  source "./profiler.sh" -e cpu,alloc,lock --alloc 512 -f "$file_path" start $server_name
   echo "async-profiler started"
   cd "$path" || exit
 }
@@ -56,8 +56,9 @@ echo "     /__/:/          \__\/    \  \:\        \  \:\           \__\/ "
 echo "     \__\/                     \__\/         \__\/                 "
 echo "                                                                   "
 
-rates=(1000 3000 5000 8000 12000 15000 20000)
-#rates=(1000)
+#rates=(500 1000 2000)
+#rates=(5000)
+rates=(10000)
 
 for rate in "${rates[@]}"; do
   type_request="put"
