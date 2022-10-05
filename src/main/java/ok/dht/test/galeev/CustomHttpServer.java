@@ -34,7 +34,13 @@ public class CustomHttpServer extends HttpServer {
     @Override
     public void handleDefault(Request request,
                               HttpSession session) throws IOException {
-        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        if (request.getMethod() == Request.METHOD_GET
+                || request.getMethod() == Request.METHOD_PUT
+                || request.getMethod() == Request.METHOD_DELETE) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        } else {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        }
     }
 
     @Override
@@ -114,7 +120,7 @@ public class CustomHttpServer extends HttpServer {
                     case Request.METHOD_PUT -> session.sendResponse(
                             (Response) handlerMethod.invoke(router, request, request.getParameter("id="))
                     );
-                    default -> session.sendError(Response.METHOD_NOT_ALLOWED, "Unknown method");
+                    default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
                 }
             } catch (IllegalAccessException e) {
                 throw new RuntimeException("Can not access method with name: " + handlerMethod.getName(), e);
