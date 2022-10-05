@@ -19,33 +19,26 @@ import java.util.concurrent.TimeUnit;
 
 public class ExpandableHttpServer extends HttpServer {
     private final ExecutorService executorService;
-    private final LinkedBlockingQueue<Runnable> queue;
-    private final ExpandableHttpServerConfig config;
     private final Logger logger = LoggerFactory.getLogger(ExpandableHttpServer.class);
 
     public ExpandableHttpServer(ExpandableHttpServerConfig config, Object... routers) throws IOException {
         super(config, routers);
-        this.config = config;
-        this.queue = new LinkedBlockingQueue<>(config.queueCapacity);
+        LinkedBlockingQueue<Runnable> queue = new LinkedBlockingQueue<>(config.queueCapacity);
         this.executorService = new ThreadPoolExecutor(
             config.workers,
             config.workers,
             0L,
             TimeUnit.MILLISECONDS,
-            this.queue
+            queue
         );
     }
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         switch (request.getMethod()) {
-            case Request.METHOD_GET:
-            case Request.METHOD_PUT:
-            case Request.METHOD_DELETE:
+            case Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE ->
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                break;
-            default:
-                session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
     }
 
@@ -57,11 +50,7 @@ public class ExpandableHttpServer extends HttpServer {
                     super.handleRequest(request, session);
                 } catch (Exception e) {
                     logger.error("failed to handle request: {}", e.getMessage());
-                    try {
-                        session.sendError(Response.BAD_REQUEST, "failed to execute request.");
-                    } catch (IOException ex) {
-                        logger.error("failed to send error: {}", e.getMessage());
-                    }
+                    sendBadRequest(session);
                 }
             });
         } catch (RejectedExecutionException e) {
@@ -75,6 +64,14 @@ public class ExpandableHttpServer extends HttpServer {
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         } catch (IOException e) {
             logger.error("Failed to send response: {}", e.getMessage());
+        }
+    }
+
+    private void sendBadRequest(HttpSession session) {
+        try {
+            session.sendError(Response.BAD_REQUEST, "failed to execute request.");
+        } catch (IOException e) {
+            logger.error("failed to send error: {}", e.getMessage());
         }
     }
 
