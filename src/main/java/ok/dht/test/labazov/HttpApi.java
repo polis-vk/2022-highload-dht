@@ -15,7 +15,9 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
 
 import java.io.IOException;
 
@@ -41,6 +43,12 @@ public final class HttpApi extends HttpServer {
 
     @Override
     public synchronized void stop() {
+        for (SelectorThread thread : selectors) {
+            for (Session session : thread.selector) {
+                session.close();
+            }
+        }
+
         super.stop();
         try {
             dao.close();
