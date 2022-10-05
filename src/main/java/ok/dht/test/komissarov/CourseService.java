@@ -109,7 +109,7 @@ public class CourseService implements Service {
         return value == null ? null : MemorySegment.ofArray(Utf8.toBytes(value));
     }
 
-    @ServiceFactory(stage = 1, week = 1)
+    @ServiceFactory(stage = 2, week = 1)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
