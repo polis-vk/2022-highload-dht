@@ -93,12 +93,12 @@ public final class Dao {
         }
         upsertLock.writeLock().lock();
         try {
-            DaoState theState1 = accessState();
-            if (theState1.isFlushing()) {
+            theState = accessState();
+            if (theState.isFlushing()) {
                 throw new TooManyBackgroundFlushesException();
             }
-            theState1 = theState1.flushing();
-            state = theState1;
+            theState = theState.flushing();
+            state = theState;
         } finally {
             upsertLock.writeLock().unlock();
         }

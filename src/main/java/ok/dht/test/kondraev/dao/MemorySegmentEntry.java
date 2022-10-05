@@ -6,7 +6,7 @@ import jdk.incubator.foreign.MemorySegment;
 public final class MemorySegmentEntry {
     public final MemorySegment key;
     public final MemorySegment value;
-    private final long byteSize;
+    public final long byteSize;
 
     private MemorySegmentEntry(MemorySegment key, MemorySegment value, long byteSize) {
         this.key = key;
@@ -27,10 +27,6 @@ public final class MemorySegmentEntry {
                 entrySegment.asSlice(Long.BYTES + Math.max(valueSize, 0)),
                 valueSize < 0 ? null : entrySegment.asSlice(Long.BYTES, valueSize),
                 entrySegment.byteSize());
-    }
-
-    public long bytesSize() {
-        return byteSize;
     }
 
     public void copyTo(MemorySegment entrySegment) {

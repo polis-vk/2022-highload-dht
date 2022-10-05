@@ -23,7 +23,7 @@ class MemoryTable {
         // implicit check for non-null entry and entry.key()
         // TODO check for threshold
         map.put(entry.key, entry);
-        return byteSize.addAndGet(entry.bytesSize());
+        return byteSize.addAndGet(entry.byteSize);
     }
 
     public MemorySegmentEntry get(MemorySegment key) {

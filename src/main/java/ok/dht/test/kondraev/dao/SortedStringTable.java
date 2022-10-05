@@ -201,7 +201,7 @@ final class SortedStringTable {
             MemoryAccess.setLongAtIndex(offsetsSegment, index++, currentOffset);
             boolean hasTombstones = false;
             for (MemorySegmentEntry entry : entries) {
-                currentOffset += entry.bytesSize();
+                currentOffset += entry.byteSize;
                 hasTombstones |= entry.isTombStone();
                 MemoryAccess.setLongAtIndex(offsetsSegment, index++, currentOffset);
             }
