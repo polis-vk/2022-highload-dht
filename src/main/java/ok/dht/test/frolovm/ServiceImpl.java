@@ -105,23 +105,26 @@ public class ServiceImpl implements Service {
 
             @Override
             public void handleRequest(Request request, HttpSession session) {
+                Runnable handleTask = () -> {
+                    try {
+                        super.handleRequest(request, session);
+                    } catch (IOException e) {
+                        sessionSendError(session, e);
+                    }
+                };
                 try {
-                    requestService.execute(
-                            () -> {
-                                try {
-                                    super.handleRequest(request, session);
-                                } catch (IOException e) {
-                                    try {
-                                        session.sendError(Response.BAD_REQUEST, e.getMessage());
-                                        LOGGER.error("Can't handle request", e);
-                                    } catch (IOException exception) {
-                                        LOGGER.error("Can't send error message to Bad Request", exception);
-                                    }
-                                }
-                            }
-                    );
+                    requestService.execute(handleTask);
                 } catch (RejectedExecutionException exception) {
                     LOGGER.error("If this task cannot be accepted for execution", exception);
+                }
+            }
+
+            private void sessionSendError(HttpSession session, IOException e) {
+                try {
+                    session.sendError(Response.BAD_REQUEST, e.getMessage());
+                    LOGGER.error("Can't handle request", e);
+                } catch (IOException exception) {
+                    LOGGER.error("Can't send error message to Bad Request", exception);
                 }
             }
 
