@@ -156,15 +156,17 @@ public class MyService implements Service {
         @Override
         public void handleRequest(Request request, HttpSession session) throws IOException {
             try {
-                requestHandlers.submit(() -> {
-                    try {
-                        super.handleRequest(request, session);
-                    } catch (Exception e) {
-                        handleRequestException(e, session);
-                    }
-                });
+                requestHandlers.submit(() -> handleRequestImpl(request, session));
             } catch (RejectedExecutionException ignored) {
                 session.sendError(Response.SERVICE_UNAVAILABLE, "Server is overloaded");
+            }
+        }
+
+        private void handleRequestImpl(Request request, HttpSession session) {
+            try {
+                super.handleRequest(request, session);
+            } catch (Exception e) {
+                handleRequestException(e, session);
             }
         }
 
