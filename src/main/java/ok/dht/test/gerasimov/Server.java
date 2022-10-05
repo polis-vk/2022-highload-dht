@@ -58,6 +58,7 @@ public final class Server extends HttpServer {
             }
         }
         super.stop();
+        executorService.shutdown();
     }
 
     @Override
