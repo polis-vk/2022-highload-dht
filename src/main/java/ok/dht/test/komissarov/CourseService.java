@@ -24,6 +24,8 @@ import java.util.concurrent.CompletableFuture;
 
 public class CourseService implements Service {
 
+    private static final String PATH = "/v0/entity";
+
     private final ServiceConfig config;
     private HttpServer server;
     private MemorySegmentDao dao;
@@ -44,7 +46,7 @@ public class CourseService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response findById(@Param(value = "id") String id) {
         if (id == null || id.isEmpty()) {
@@ -58,7 +60,7 @@ public class CourseService implements Service {
         return new Response(Response.OK, entry.value().toByteArray());
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response persist(@Param(value = "id") String id,
                             Request request) {
@@ -74,7 +76,7 @@ public class CourseService implements Service {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response delete(@Param(value = "id") String id) {
         if (id == null || id.isEmpty()) {
@@ -89,7 +91,7 @@ public class CourseService implements Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_POST)
     public Response post() {
         // NOT IMPLEMENTED

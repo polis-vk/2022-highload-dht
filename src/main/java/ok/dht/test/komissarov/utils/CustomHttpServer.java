@@ -20,7 +20,7 @@ public class CustomHttpServer extends HttpServer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CustomHttpServer.class);
 
-    // FIXME hardcoded params
+    // hardcoded params -> fix
     private final ExecutorService executorService = new ThreadPoolExecutor(
             4,
             8,
