@@ -36,7 +36,12 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+        Response response;
+        if (request.getMethod() == Request.METHOD_POST) {
+            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+        } else {
+            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+        }
         session.sendResponse(response);
     }
 
