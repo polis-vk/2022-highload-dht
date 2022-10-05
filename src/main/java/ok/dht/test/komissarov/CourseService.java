@@ -36,7 +36,7 @@ public class CourseService implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         dao = new MemorySegmentDao(new Config(
-                Files.createTempDirectory("dao"),
+                config.workingDir(),
                 1 << 20
         ));
         server = new CustomHttpServer(createConfigFromPort(config.selfPort()));
@@ -63,7 +63,7 @@ public class CourseService implements Service {
     @RequestMethod(Request.METHOD_PUT)
     public Response persist(@Param(value = "id", required = true) String id,
                             Request request) {
-        if (id == null || id.isEmpty()) {
+        if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
@@ -78,7 +78,7 @@ public class CourseService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response delete(@Param(value = "id", required = true) String id) {
-        if (id == null || id.isEmpty()) {
+        if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
