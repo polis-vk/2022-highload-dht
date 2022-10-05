@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 public class CustomHttpServer extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(CustomHttpServer.class);
     private static final int THREAD_COUNT = 64;
-    private static final int QUEUE_SIZE = 512;
+    private static final int QUEUE_SIZE = 1;
     private static ExecutorService es;
 
     public CustomHttpServer(HttpServerConfig config, Object... routers) throws IOException {
@@ -29,21 +29,16 @@ public class CustomHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        try {
-            es.execute(() -> {
-                try {
-                    super.handleRequest(request, session);
-                } catch (IOException e) {
-                    sendError(session, e);
-                }
-            });
-        } catch (RejectedExecutionException e) {
-            LOG.error("Rejected task", e);
-            session.sendResponse(new Response(Response.REQUEST_TIMEOUT, Response.EMPTY));
-        }
+        es.execute(() -> {
+            try {
+                super.handleRequest(request, session);
+            } catch (IOException | RejectedExecutionException e) {
+                sendError(session, e);
+            }
+        });
     }
 
-    private void sendError(HttpSession session, Exception e) {
+    private static void sendError(HttpSession session, Exception e) {
         try {
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             LOG.error("Cannot handle", e);
