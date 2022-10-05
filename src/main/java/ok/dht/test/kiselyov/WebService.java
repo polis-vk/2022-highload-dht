@@ -56,19 +56,21 @@ public class WebService implements Service {
         }
         dao = new PersistentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         tasks = new ArrayList<>();
-        executorService = new ThreadPoolExecutor(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, 0L, TimeUnit.MILLISECONDS, new CustomLinkedBlockingDeque<>(DEQUE_CAPACITY));
+        executorService = new ThreadPoolExecutor(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, 0L,
+                TimeUnit.MILLISECONDS, new CustomLinkedBlockingDeque<>(DEQUE_CAPACITY));
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleRequest(Request request, HttpSession session) {
                 try {
-                    tasks.add(executorService.submit(() -> {
+                    Future<?> task = executorService.submit(() -> {
                         try {
                             super.handleRequest(request, session);
                         } catch (IOException e) {
                             LOGGER.error("Error handling request.", e);
                             throw new RuntimeException(e);
                         }
-                    }));
+                    });
+                    tasks.add(task);
                 } catch (RejectedExecutionException e) {
                     LOGGER.error("Cannot execute task: ", e);
                     throw new RejectedExecutionException(e);
