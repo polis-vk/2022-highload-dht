@@ -38,7 +38,7 @@ public class MyService implements Service {
 
     private static final byte[] EMPTY_ID_RESPONSE_BODY = strToBytes("Empty id");
     private static final int REQUEST_HANDLERS = 4;
-    private static final int MAX_REQUESTS = 64;
+    private static final int MAX_REQUESTS = 128;
 
     public MyService(ServiceConfig config) {
         this.config = config;
