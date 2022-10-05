@@ -23,6 +23,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
@@ -31,6 +32,7 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
     private static final int FLUSH_TRESHOLD_BYTES = 70 * (1 << 20); // 70MB
     private final ServiceConfig config;
     private final Serializer serializer;
+    private final AtomicLong filesCounter = new AtomicLong();
 
     private final MemoryStorage memoryStorage = new MemoryStorage(N_MEMORY_SSTABLES);
     private final MappedFileDiskSSTableStorage diskStorage;
@@ -45,19 +47,21 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
         try {
             this.config = config;
             this.serializer = new Serializer(this.wasCompacted);
-            this.diskStorage = new MappedFileDiskSSTableStorage(config, this.serializer);
+            this.diskStorage = new MappedFileDiskSSTableStorage(config, this.serializer, this.filesCounter);
             if (Files.exists(config.workingDir())) {
                 Files.walkFileTree(
                         config.workingDir(),
-                        new ConfigVisitor(this.config, this.serializer)
+                        new ConfigVisitor(this.config, this.serializer, this.filesCounter)
                 );
             } else {
                 Files.createDirectory(config.workingDir());
             }
 
-            this.flushRunnable = new FlushRunnable(this.config, this.serializer, this.memoryStorage);
-            this.compactRunnable = new CompactRunnable(this.config, this.serializer,
-                    this.diskStorage, this.wasCompacted);
+            this.flushRunnable
+                    = new FlushRunnable(this.config, this.serializer, this.memoryStorage, this.filesCounter);
+            this.compactRunnable
+                    = new CompactRunnable(this.config, this.serializer, this.diskStorage, this.wasCompacted,
+                                          this.filesCounter);
         } catch (ReflectiveOperationException ex) {
             throw new RuntimeException(ex);
         }

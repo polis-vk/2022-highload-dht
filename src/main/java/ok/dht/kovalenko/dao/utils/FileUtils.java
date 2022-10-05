@@ -8,6 +8,8 @@ import java.io.UncheckedIOException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -86,7 +88,7 @@ public final class FileUtils {
         return file;
     }
 
-    public static PairedFiles createPairedFiles(ServiceConfig config) {
+    public static PairedFiles createPairedFiles(ServiceConfig config, AtomicLong filesCounter) {
         PairedFiles pairedFiles = null;
         int fileOrdinal = 1;
         while (pairedFiles == null) {
@@ -95,6 +97,7 @@ public final class FileUtils {
                         FileUtils.createFile(FileUtils::getDataFilename, fileOrdinal, config),
                         FileUtils.createFile(FileUtils::getIndexesFilename, fileOrdinal, config)
                 );
+                filesCounter.addAndGet(2);
             } catch (FileAlreadyExistsException ex) {
                 ++fileOrdinal;
                 continue;
@@ -106,9 +109,20 @@ public final class FileUtils {
         return pairedFiles;
     }
 
-    public static long numFilesOnDisk(ServiceConfig config) throws IOException {
-        try (Stream<Path> paths = Files.list(config.workingDir())) {
-            return paths.count();
+//    public static long numFilesOnDisk(ServiceConfig config) throws IOException {
+//        try (Stream<Path> paths = Files.list(config.workingDir())) {
+//            return paths.count();
+//        }
+//    }
+
+    public static void createFile(Path p, AtomicInteger filesCounter) throws IOException {
+        Files.createFile(p);
+        filesCounter.incrementAndGet();
+    }
+
+    public static void deleteFile(Path p, AtomicLong filesCounter) throws IOException {
+        if (Files.deleteIfExists(p)) {
+            filesCounter.decrementAndGet();
         }
     }
 

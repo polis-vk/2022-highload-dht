@@ -15,282 +15,438 @@
 
 ## GET
 
-Ввиду того, что бить по одному и тому же ключу непоказательно с точки зрения анализа
-перформанса БД (процессор закэширует нужную страницу и будет обращаться к ней, а не искать
-каждый раз её по-новой), было решено выставлять ключи рандомно.
-
 ### Бьём по одному и тому же существующему ключу
 
+На разогреве (500rps) видим, что латенси измеряется в микросекундах, что очень здорово.
 ```
-../wrk2/wrk -c 1 -d 60s -t 1 -R 500 http://localhost:19234/v0/entity\?id\=k0010000000 
-Running 1m test @ http://localhost:19234/v0/entity?id=k0010000000
+../wrk2/wrk -c 1 -d 60s -t 1 -R 500 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-existing-fixed.lua
+Running 1m test @ http://localhost:19234
   1 threads and 1 connections
-  Thread calibration: mean lat.: 241.004ms, rate sampling interval: 2379ms
+  Thread calibration: mean lat.: 5.928ms, rate sampling interval: 10ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     0.87ms  473.47us  15.33ms   88.64%
-    Req/Sec   499.76      0.43   500.00    100.00%
-  30001 requests in 1.00m, 2.12MB read
+    Latency   844.30us  402.55us   9.96ms   78.00%
+    Req/Sec   535.20     59.60     1.00k    74.06%
+    30001 requests in 1.00m, 2.03MB read
 Requests/sec:    500.01
-Transfer/sec:     36.13KB
+Transfer/sec:     34.67KB
 ```
+Вместе с тем имеется отклонение, максимальное время отклика достигло 10мс.
+На хитмапе замечаем выделяющуюся красную точку, в которой происходит компиляция
+JVMTI, занимающая 50% процессорного времени. Вероятно, на неё попал один или
+несколько гетов.
+![](./get/heatmap/existing-fixed/get-existing-fixed-c1t1R500.png)
 
+На 1Krps наблюдаем всё ещё хорошее время отклика, максимальное латенси превысило
+среднее в 5 раз.
 ```
-../wrk2/wrk -c 1 -d 60s -t 1 -R 1000 http://localhost:19234/v0/entity\?id\=k0010000000
-Running 1m test @ http://localhost:19234/v0/entity?id=k0010000000
+../wrk2/wrk -c 1 -d 60s -t 1 -R 1000 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-existing-fixed.lua
+Running 1m test @ http://localhost:19234
   1 threads and 1 connections
-  Thread calibration: mean lat.: 1.175ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.015ms, rate sampling interval: 10ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.32ms    1.24ms  33.15ms   95.69%
-    Req/Sec     1.06k   157.18     3.44k    84.11%
-  60000 requests in 1.00m, 4.23MB read
+    Latency     1.01ms  348.40us   5.64ms   59.82%
+    Req/Sec     1.06k    66.04     1.44k    93.87%
+    60000 requests in 1.00m, 4.06MB read
 Requests/sec:    999.99
-Transfer/sec:     72.27KB
+Transfer/sec:     69.34KB
 ```
+На хитмапе особо заметных красных точек не наблюдаем, чего-то сверхестественного
+тоже. Предполагаем, что какой-то запросв попал на компиляцию.
 
-На 10к рейте наблюдаем захлёб:
-
+На 2.5Krps ситуация точно такая же, что и на 1Krps.
 ```
-../wrk2/wrk -c 1 -d 60s -t 1 -R 10000 http://localhost:19234/v0/entity\?id\=k0010000000
-Running 1m test @ http://localhost:19234/v0/entity?id=k0010000000
+../wrk2/wrk -c 1 -d 60s -t 1 -R 2500 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-existing-fixed.lua
+Running 1m test @ http://localhost:19234
   1 threads and 1 connections
-  Thread calibration: mean lat.: 3641.648ms, rate sampling interval: 11001ms
+  Thread calibration: mean lat.: 1.118ms, rate sampling interval: 10ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    17.77s     6.94s   29.21s    55.14%
-    Req/Sec     5.31k   369.64     5.77k    50.00%
-  307805 requests in 1.00m, 21.72MB read
-Requests/sec:   5130.12
-Transfer/sec:    370.73KB
+    Latency     1.12ms  540.05us   5.14ms   60.36%
+    Req/Sec     2.62k   198.19     3.33k    72.30%
+    149995 requests in 1.00m, 10.16MB read
+Requests/sec:   2499.93
+Transfer/sec:    173.34KB
 ```
 
-Хотя страничка, в которую мы бьём, останется в кэше процессора, но на поиск самого ключа
-бинарным поиском будет всё равно уходить какое-то время. На малом рейте это почти незаметно,
-когда как повышая нагрузку на систему, становится очевидным, что головка на диске не успевает так
-шустро бегать по файлу и просто уходит в отказ. Чуть подробней эта проблема рассмотрится в следующих
-пунктах вариаций GET-запросов. На данном моменте замечаем, что по одному и тому же ключу наша база
-способна переварить 5к запросов в секунду.
+На 5Krps мы даже ускорились.
+```
+../wrk2/wrk -c 1 -d 60s -t 1 -R 5000 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-existing-fixed.lua
+Running 1m test @ http://localhost:19234
+  1 threads and 1 connections
+  Thread calibration: mean lat.: 0.714ms, rate sampling interval: 10ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency   703.31us  378.51us   8.09ms   64.82%
+    Req/Sec     5.29k   352.81     7.67k    65.15%
+    299999 requests in 1.00m, 20.31MB read
+Requests/sec:   4999.91
+Transfer/sec:    346.67KB
+```
+На хитмапе замечаем сектор, где появился GC. Он сделал stop the world, и время
+отклика на какой-то запрос стало больше.
+![](./get/heatmap/existing-fixed/get-existing-fixed-c1t1R5k.png)
 
-На гистограмме ниже видно, что разрыв между рейтом 500 и 1к невероятный,
-в десятки раз. Для рейта 500 наибольшее латенси после 99 перцентилей,
-для рейта 1к - после 70 перцентилей, а для рейта 5к латенси на всём промежукте
-константно велико.
-![](./get/latency/get_hist_existing-fixed.png)
+На 10Krps видим захлёб. Отклонение латенси относительно небольшое. По rps 
+ориентируемся на 8.5к.
+```
+../wrk2/wrk -c 1 -d 60s -t 1 -R 10000 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-existing-fixed.lua
+Running 1m test @ http://localhost:19234
+  1 threads and 1 connections
+  Thread calibration: mean lat.: 839.699ms, rate sampling interval: 2969ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     5.17s     1.92s    8.50s    59.39%
+    Req/Sec     8.63k   148.06     8.92k    81.25%
+    515030 requests in 1.00m, 34.87MB read
+Requests/sec:   8583.89
+Transfer/sec:    595.17KB
+```
+
+На 8.5Krps латенси не самое лучшее, но заметно также, что база работает на
+пределе своих возможностей. Отклонение по латенси в 3 раза.
+```
+../wrk2/wrk -c 1 -d 60s -t 1 -R 8500 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-existing-fixed.lua
+Running 1m test @ http://localhost:19234
+  1 threads and 1 connections
+  Thread calibration: mean lat.: 203.347ms, rate sampling interval: 574ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency   124.90ms  104.64ms 357.89ms   62.54%
+    Req/Sec     8.53k   256.71     8.94k    81.61%
+    508446 requests in 1.00m, 34.43MB read
+Requests/sec:   8474.15
+Transfer/sec:    587.56KB
+```
+Видим, что снова сработал GC.
+![](./get/heatmap/existing-fixed/get-existing-fixed-c1t1R8.5k.png)
+
+Сравнивая латенси на разных Krps,
+![](./get/latency/existing-fixed/get-existing-fixed-c1t1R500-5k-hist.png)
+видим, что 0.8% запросов на 500rps не укладываются в 2 мс, более того,
+на этих 0.8% запросах латенси заметно выше всех остальных. Смотря на хитмапу
+для 500rps более внимательно, обнаруживаем, что некоторое время наша база была
+залочена futex'ом.
+![](./get/latency/existing-fixed/get-existing-fixed-c1t1R500-final.png)
 
 ### Бьём по существующим ключам рандомно
 
-Разогрев на рейте 1к:
-
+На 500rps видим относительно хорошее время отклика (латенси), но вместе с тем
+есть большой разброс между средним и максимальным показателями (в 25 раз).
 ```
-../wrk2/wrk -c 1 -d 60s -t 1 -R 1000 -L http://localhost:19234/v0/entity -s get-existing-random.lua
-Running 1m test @ http://localhost:19234/v0/entity
+../wrk2/wrk -c 1 -d 60s -t 1 -R 500 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-existing-random.lua
+Running 1m test @ http://localhost:19234
   1 threads and 1 connections
-  Thread calibration: mean lat.: 5568.258ms, rate sampling interval: 17498ms
+  Thread calibration: mean lat.: 5.563ms, rate sampling interval: 25ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    32.44s    12.53s    0.89m    58.44%
-    Req/Sec   120.00     10.00   130.00    100.00%
-6813 requests in 1.00m, 491.79KB read
-  Non-2xx or 3xx responses: 113
-Requests/sec:    113.55
-Transfer/sec:      8.20KB
+    Latency     1.78ms    3.03ms  40.10ms   93.84%
+    Req/Sec   510.21     58.02     1.00k    88.25%
+    30001 requests in 1.00m, 2.03MB read
+Requests/sec:    500.01
+Transfer/sec:     34.61KB
 ```
+Смотрим на хитмапу и понимаем, что нагрузка неравномерна. Сравнивая начальный и
+конечный регионы, видим, что по мере "пробивания" нашей базы гетов становится
+в 3 раза меньше, чем было в самом начале. По хитмапе нельзя однозначно сказать,
+почему так произошло. Есть предположение, что по какой-то причине снизилась
+пропускная способность селекторов в принципе, то есть либо геты давали долгие ответы,
+либо в принципе приходило меньше запросов (что противоречит принципам работы wrk).
+Гет может давать долгий ответ только в случае, если происходит подмапливание
+недостающих файликов на диске. Но оно происходит при первом гете, и дальше не
+отражается на перформансе нашей БД. С прошлой версии отчёта изменился именно гет
+(больше не ходим на диск, вместо этого используем атомик, а также вместе с
+подмапленными файлами храним их key-range), но это не объясняет неравномерную
+нагрузку. Можно было бы предположить, что дело в page cache нашей ОС, но это объяснило
+бы лишь уменьшение пейдж фолтов, а на картинке видно уменьшение всего.
+![](./get/heatmap/existing-random/get-existing-random-c1t1R500.png)
 
-Разогрев не удался. База утонула. Попробуем снизить нагрузку:
-
+На 1Krps видим всё ещё хорошее латенси, база не захлёбывается, обрабатывает все запросы.
+Нагрузка также неравномерная, догадки были высказаны выше.
 ```
-../wrk2/wrk -c 1 -d 60s -t 1 -R 500 -L http://localhost:19234/v0/entity -s get-existing-random.lua
-Running 1m test @ http://localhost:19234/v0/entity
+../wrk2/wrk -c 1 -d 60s -t 1 -R 1000 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-existing-random.lua
+Running 1m test @ http://localhost:19234
   1 threads and 1 connections
-  Thread calibration: mean lat.: 4315.189ms, rate sampling interval: 14221ms
+  Thread calibration: mean lat.: 6.882ms, rate sampling interval: 21ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    25.08s    10.60s   44.11s    57.22%
-    Req/Sec   134.00     12.68   149.00     33.33%
-7931 requests in 1.00m, 572.51KB read
-  Non-2xx or 3xx responses: 129
-Requests/sec:    132.17
-Transfer/sec:      9.54KB
+    Latency     1.95ms    4.37ms  68.16ms   96.93%
+    Req/Sec     1.02k   111.28     2.29k    88.88%
+    60000 requests in 1.00m, 4.06MB read
+Requests/sec:    999.99
+Transfer/sec:     69.22KB
 ```
+На хитмапе замечаем одну выделяющуюся красную точку - вызывается WatcherThread,
+выполняющий периодические задачи JVM, но мы его видим лишь пару семплов,
+так что нет причин сваливать всю вину за такое большое max латенси на него.
+![](./get/heatmap/existing-random/get-existing-random-c1t1R1k.png)
 
+На 2.5Krps видим уже заметное увеличение среднего латенси, но ещё не критическое,
+тем более что база не захлёбывается судя по Requests/sec.
 ```
-./wrk2/wrk -c 1 -d 60s -t 1 -R 100 -L http://localhost:19234/v0/entity -s get-existing-random.lua
-Running 1m test @ http://localhost:19234/v0/entity
+../wrk2/wrk -c 1 -d 60s -t 1 -R 2500 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-existing-random.lua
+Running 1m test @ http://localhost:19234
   1 threads and 1 connections
-  Thread calibration: mean lat.: 63.569ms, rate sampling interval: 336ms
+  Thread calibration: mean lat.: 305.413ms, rate sampling interval: 1633ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    69.38ms  129.55ms 679.42ms   89.50%
-    Req/Sec    99.84     19.17   182.00     81.08%
-6000 requests in 1.00m, 433.11KB read
-  Non-2xx or 3xx responses: 100
-Requests/sec:     99.99
-Transfer/sec:      7.22KB
+    Latency    28.94ms  110.07ms 617.98ms   93.89%
+    Req/Sec     2.50k   186.18     3.26k    93.33%
+    149998 requests in 1.00m, 10.14MB read
+Requests/sec:   2499.94
+Transfer/sec:    173.05KB
 ```
+Нагрузка всё так же неравномерная. Хотя удаётся обработать все запросы, что нам
+поступают, факт того, что они обрабатываются неравномерно, не даёт покоя.
+![](./get/heatmap/existing-random/get-existing-random-c1t1R2.5k.png)
 
-Только на рейте 100 удалось добиться какой-то адекватной (хотя не до конца) латенси.
-Анализируя причины этого,
-![](./get/heatmap/get-cpu-1k-existing.png)
-на рейте 1к видим, что много времени тратится
-на пейдж-фолты (напомню, что мы имеем дело с относительно большими таблицами в памяти по 64МБ,
-а порог пейдж фолта наступает уже на 4КБ; поскольку наш бинарный поиск бегает по разным регионам
-памяти, то 4КБ-странички не хватает и процессор, что ему свойственно, подгружает каждый раз
-новую страничку, а поскольку в каждом файле порядка ~2млн энтрей, то на бинарный поиск уйдёт
-log2(2млн) ~ 21 итерация). Стоит также отметить, что профилирование проводилось на стареньком
-AMD Ryzen 3, что способствует понижению требований от компьютера.
+На 5Krps база начала захлёбываться. Отклонение среднего значения от максимального
+сравнительно мало, что в принципе хорошо, ибо компиляция (если она есть) оказывает
+минимальное воздействие на время отклика. Предлагается снизить нагрузку до 4.5Krps.
+```
+../wrk2/wrk -c 1 -d 60s -t 1 -R 5000 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-existing-random.lua
+Running 1m test @ http://localhost:19234
+  1 threads and 1 connections
+  Thread calibration: mean lat.: 1635.704ms, rate sampling interval: 6217ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     6.34s   478.03ms   6.89s    83.01%
+    Req/Sec     4.81k   756.05     5.60k    75.00%
+    271995 requests in 1.00m, 18.39MB read
+Requests/sec:   4533.27
+Transfer/sec:    313.81KB
+```
+На хитмапе наконец-то видим почти равномерную нагрузку. Замечаем несколько
+десятков семплов GC, ещё в паре семплов - компиляцию JVMTI.
+![](./get/heatmap/existing-random/get-existing-random-c1t1R5k.png)
 
-На гистограмме ниже видно, что разрыв по латенси между рейтом 100 и 500 огромен,
-высокая производительность наблюдается лишь на низком рейте. Вместе с тем последующий
-после 500 рейт становится примерно одного порядка с остальными, а огромные задержки у них
-наблюдаются уже на 0 перцентилях.
-![](./get/latency/get_hist_existing-random.png)
+На 4.5Krps ожидаемо видим приемлемое среднее латенси.
+```
+../wrk2/wrk -c 1 -d 60s -t 1 -R 4500 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-existing-random.lua
+Running 1m test @ http://localhost:19234
+  1 threads and 1 connections
+  Thread calibration: mean lat.: 9.791ms, rate sampling interval: 63ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.13ms    1.65ms  26.14ms   93.22%
+    Req/Sec     4.54k   170.63     5.79k    89.16%
+    269985 requests in 1.00m, 18.25MB read
+Requests/sec:   4499.77
+Transfer/sec:    311.49KB
+```
+Но нагрузка снова контрастирует. Тем не менее видим, что на наше чтение
+приходится порядка 60% процессорного времени, остальное время уходит на
+чтение/запись через сокет. Не так уж и плохо.
+![](./get/heatmap/existing-random/get-existing-random-c1t1R4.5k.png)
+
+По перцентилям ситуация следующая:
+![](./get/latency/existing-random/get-existing-random-c1t1R500-4.5k-hist.png)
+Заметно, что на 2.5Krps 8% запросов не укладывается в 8мс. Сопоставляя хитмапу
+для 2.5Krps и хитмапу для 4.5Krps, видим, что в первой было чуть больше запросов
+на irq (прерывание, 7 сэмпл против 2 сэмплов) и на tcp_ack
+(обращение к реестру HTTP, определяющая количество подтверждений; 31 против 25).
+Стоит также отметить, что проведённые оптимизации (key-range + подсчёт файлов на диске
+с помощью атомика) ускорили нашу базу примерно в 10-12 раз, поэтому испытания
+второго круга прошли лучше (в первый раз база не втащила даже 100rps).
 
 ### Бьём по несуществующим ключам
 
-Попытки дойти до захлёба по поиску несуществующих ключей (сделана оптимизация key-range,
-благодаря которой по всем файлам мы бегаем очень быстро):
-
+На 500rps видим хорошее среднее латенси. Вместе с тем разрыв среднего и максимального
+составляет 15 раз. 
 ```
-../wrk2/wrk -c 1 -d 60s -t 1 -R 500 -L http://localhost:19234/v0/entity\?id\=k-1       
-Running 1m test @ http://localhost:19234/v0/entity
+../wrk2/wrk -c 1 -d 60s -t 1 -R 500 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-non-existing.lua
+Running 1m test @ http://localhost:19234
   1 threads and 1 connections
-  Thread calibration: mean lat.: 1.535ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.117ms, rate sampling interval: 10ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   760.62us  559.65us  27.60ms   97.24%
-    Req/Sec   517.62     51.31     1.80k    78.56%
-30001 requests in 1.00m, 1.97MB read
+    Latency     0.91ms  524.10us  13.48ms   93.21%
+    Req/Sec   529.61     46.65     1.10k    95.22%
+    30001 requests in 1.00m, 1.97MB read
   Non-2xx or 3xx responses: 30001
 Requests/sec:    500.01
 Transfer/sec:     33.69KB
 ```
+На хитмапе видим, что значительный промежуток времени в начале работы wrk
+выполнялась компиляция потоков.
+![](./get/heatmap/non-existing/get-non-existing-c1t1R500.png)
 
+На 1Krps латенси всё ещё хорошее. Тут наблюдаем отклонение в 10 раз.
 ```
-../wrk2/wrk -c 1 -d 60s -t 1 -R 10000 -L http://localhost:19234/v0/entity\?id\=k-1 
-Running 1m test @ http://localhost:19234/v0/entity?id=k-1
+../wrk2/wrk -c 1 -d 60s -t 1 -R 1000 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-non-existing.lua
+Running 1m test @ http://localhost:19234
   1 threads and 1 connections
-  Thread calibration: mean lat.: 30.376ms, rate sampling interval: 199ms
+  Thread calibration: mean lat.: 1.092ms, rate sampling interval: 10ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.49ms    4.76ms  96.26ms   98.55%
-    Req/Sec    10.04k   412.80    13.63k    96.80%
-599997 requests in 1.00m, 39.48MB read
-  Non-2xx or 3xx responses: 599997
-Requests/sec:   9999.81
-Transfer/sec:    673.82KB
+    Latency     1.10ms  396.85us  10.03ms   68.44%
+    Req/Sec     1.05k    70.48     1.78k    93.19%
+    60000 requests in 1.00m, 3.95MB read
+  Non-2xx or 3xx responses: 60000
+Requests/sec:    999.99
+Transfer/sec:     67.38KB
 ```
+На хитмапе ничего необычного не видим, разве что на наши геты уходит лишь
+25% процессорного времени. Возможно, HTTP-вызовы send и __recv вытесняют с
+процессора наши геты, получая от него больше квантов времени на выполнение.
+![](./get/heatmap/non-existing/get-non-existing-c1t1R1k.png)
 
-На рейте 50к получаем захлёб:
-
+На 2.5Krps ситуация в общем и целом повторяет предыдущую, только ещё вклинивается
+GC.
 ```
-../wrk2/wrk -c 1 -d 60s -t 1 -R 50000 http://localhost:19234/v0/entity\?id\=-1  
-Running 1m test @ http://localhost:19234/v0/entity?id=-1
+../wrk2/wrk -c 1 -d 60s -t 1 -R 2500 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-non-existing.lua
+Running 1m test @ http://localhost:19234
   1 threads and 1 connections
-  Thread calibration: mean lat.: 2458.656ms, rate sampling interval: 8544ms
+  Thread calibration: mean lat.: 1.084ms, rate sampling interval: 10ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    14.95s     5.91s   25.17s    57.25%
-    Req/Sec    29.44k     0.99k   30.63k    60.00%
-  1741299 requests in 1.00m, 114.58MB read
-  Non-2xx or 3xx responses: 1741299
-Requests/sec:  29021.73
-Transfer/sec:      1.91MB
-
+    Latency     1.08ms  547.90us   8.05ms   63.89%
+    Req/Sec     2.64k   251.03     4.67k    66.24%
+    149999 requests in 1.00m, 9.87MB read
+  Non-2xx or 3xx responses: 149999
+Requests/sec:   2499.99
+Transfer/sec:    168.46KB
 ```
+![](./get/heatmap/non-existing/get-non-existing-c1t1R2.5k.png)
 
-Судя по всему, наша база способна выдерживать до 29к запросов в секунду по несуществующим ключам.
-Проверим это на 26к:
-
+Аналогично для 5Krps.
 ```
-../wrk2/wrk -c 1 -d 60s -t 1 -R 26000 http://localhost:19234/v0/entity\?id\=-1
-Running 1m test @ http://localhost:19234/v0/entity?id=-1
+../wrk2/wrk -c 1 -d 60s -t 1 -R 5000 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-non-existing.lua
+Running 1m test @ http://localhost:19234
   1 threads and 1 connections
-  Thread calibration: mean lat.: 77.601ms, rate sampling interval: 374ms
+  Thread calibration: mean lat.: 0.800ms, rate sampling interval: 10ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   150.89ms  181.20ms 708.10ms   86.04%
-    Req/Sec    26.08k     4.29k   32.73k    86.47%
-  1559837 requests in 1.00m, 102.64MB read
-  Non-2xx or 3xx responses: 1559837
-Requests/sec:  25997.35
-Transfer/sec:      1.71MB
+    Latency     0.85ms    1.01ms  19.58ms   98.45%
+    Req/Sec     5.29k   404.56     9.00k    76.98%
+    299996 requests in 1.00m, 19.74MB read
+  Non-2xx or 3xx responses: 299996
+Requests/sec:   4999.94
+Transfer/sec:    336.91KB
+```
+Большой разрыв между avg и max латенси происходит из-за того, что GC вызывается 4
+раза, а WatcherThread - 2 раза.
+
+На 10Krps наконец-то получаем захлёб.
+```
+../wrk2/wrk -c 1 -d 60s -t 1 -R 10000 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-non-existing.lua
+Running 1m test @ http://localhost:19234
+  1 threads and 1 connections
+  Thread calibration: mean lat.: 1528.199ms, rate sampling interval: 5484ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     9.96s     3.93s   16.79s    58.14%
+    Req/Sec     7.25k    63.58     7.34k    77.78%
+    431955 requests in 1.00m, 28.42MB read
+  Non-2xx or 3xx responses: 431955
+Requests/sec:   7199.29
+Transfer/sec:    485.11KB
+```
+Отклонение по латенси относительно небольшое, объясняется также GC. 
+
+С ориентиром на 7Krps видим, что база не захлёбывается, хотя 17мс - приличное
+время отклика. Причины разрыва между avg и max latency те же, что и выше.
+```
+../wrk2/wrk -c 1 -d 60s -t 1 -R 7000 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-non-existing.lua
+Running 1m test @ http://localhost:19234
+  1 threads and 1 connections
+  Thread calibration: mean lat.: 90.814ms, rate sampling interval: 286ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    17.72ms   27.31ms 118.91ms   83.56%
+    Req/Sec     7.03k   208.86     7.62k    75.29%
+    419927 requests in 1.00m, 27.63MB read
+  Non-2xx or 3xx responses: 419927
+Requests/sec:   6998.80
+Transfer/sec:    471.60KB
 ```
 
-Действительно, хотя 150мс - не самое лучшее латенси, но наша база ещё не захлёбывается.
-И всё же, что тормозит наш процесс, когда, казалось бы, придумана такая оптимизация
-key-range, позволяющая по двум чтениям из файла понять, находится ли в нём искомая
-информация или нет? Обращаясь к трате времени процессора при рейти 50к,
-![](./get/heatmap/get-cpu-50k-nonexisting.png)
-видим, что и тут нас не обделили пейдж фолты. Немного неочевидно, но случаются они как раз
-из-за того, что в каждом файле мы читаем 2 энтри в разных регионах (начале и конце файла),
-и на малой нагрузке этих пейдж фолтов мы не замечаем, там больше выделяются обработка
-http-запросов, однако перешагивая определённый порог в запросах, мы сталкиваемся с реальной проблемой.
-Одним из решений этой проблемы является перенос самого по себе диапазона ключей в мета-информацию
-файла в самом начале потока бит, однако проблема состоит в том, что мы заранее не знаем размера
-первого и последнего ключей, а значит, не может зарезервировать для них места в этом потоке бит.
-Мы можем взять про запас, но в общем случае это будет неэффективно, ибо банально входящие ключи
-всегда могут быть меньше тех, что мы зарезервировали, и сколько-то байт в каждом файле будет тратиться
-впустую, что в перспективе на сотни и тысячи этих файлов грозит нам своеобразной "утечкой памяти"
-на КБ и даже МБ (но если смотреть на это относительно хранилища на Террабайты, то проблема кажется
-сущим пустяком). Другим выходом является задание строгого правила касательно формата входящих ключей -
-если мы будем наверняка знать их размер (и он будет одинаков у всех ключей, например, мы храним по айдишке дату),
-то тогда мы сможем зарезервировать как раз места в мета-информации, и пейдж фолтов при поиске нужного файла не будет.
-Но если всё же мы как-то сможем уйти от пейдж фолтов, мы не сможем бесконечно уходить от большого
-количества хранимых файлов (что-то да конечно в этом мире, например, хип jvm). В качестве общей
-оптимизации предлагается фильтр Блума, который вероятносто сможет нам сказать, есть ли данные
-по такому ключу или нет в принципе во всей базе данных. Вместе с тем контрастирует также количество
-аллокаций на 50к запросах - их неимоверно много:
-![](./get/heatmap/get-alloc-50k.png)
-Отчасти поэтому и снижается перформанс. 25% всех сэмплов - это встроенные http-методы обращения,
-создания сессии и тд., ещё 15% - это так или иначе методы реализации взаимодействия с Dao,
-а порядка 50% - огромный скомпилированный пласт внутренних операций Java. Возможно, во внутренней
-реализации Dao ещё остались те слепые зоны, где тайком происходят аллокации, а может, именно
-из-за них и появился этот огромный Jit-пласт.
-
-На гистограмме ниже иллюстративно показаны два графика зависимости латенси от текущей нагрузки
-при двух рейтах - 500 и 5к. На рейте 500 видна "отсрочка" увеличения времени ответа
-до примерно 99,5 перцентилей, когда как на рейте 5к "взрыв" латенси происходит уже
-на 90 нагрузочных перцентилях.
-![](./get/latency/get_hist_nonexisting.png)
+По гистограмме
+![](./get/latency/non-existing/get-non-existing-hist.png)
+видим, что на рейте 7K порядка 85% запросов не укладываются в 5мс. Очевидных
+причин этому не наблюдается.
 
 ### Бьём смешанно (существующие + несуществующие)
 
+На разогреве уже очень большая разница между avg и max latency.
 ```
-../wrk2/wrk -c 1 -d 60s -t 1 -R 100 http://localhost:19234 -s get-mixed.lua
+../wrk2/wrk -c 1 -d 60s -t 1 -R 500 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-mixed.lua
 Running 1m test @ http://localhost:19234
   1 threads and 1 connections
-  Thread calibration: mean lat.: 4622.199ms, rate sampling interval: 12419ms
+  Thread calibration: mean lat.: 2395.939ms, rate sampling interval: 8085ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    18.83s     7.40s   32.39s    54.58%
-    Req/Sec    49.25      3.27    53.00     75.00%
-  2761 requests in 1.00m, 192.56KB read
-  Socket errors: connect 0, read 0, write 0, timeout 1
-  Non-2xx or 3xx responses: 1427
-Requests/sec:     46.02
-Transfer/sec:      3.21KB
+    Latency     1.34ms    1.75ms  36.35ms   92.50%
+    Req/Sec   499.67      0.47   500.00    100.00%
+    30001 requests in 1.00m, 2.00MB read
+  Non-2xx or 3xx responses: 14942
+Requests/sec:    500.01
+Transfer/sec:     34.15KB
+```
+По хитмапе видно, что нагрузка неравномерная. Вернулась старая проблема.
+![](./get/heatmap/mixed/get-mixed-c1t1R500.png)
+
+На 1Krps время отклика нормальное, однако отклонение - в 35 раз.
+```
+../wrk2/wrk -c 1 -d 60s -t 1 -R 1000 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-mixed.lua
+Running 1m test @ http://localhost:19234
+  1 threads and 1 connections
+  Thread calibration: mean lat.: 2.839ms, rate sampling interval: 13ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.59ms    2.26ms  50.82ms   93.95%
+    Req/Sec     1.04k   171.90     3.25k    86.12%
+    60000 requests in 1.00m, 4.00MB read
+  Non-2xx or 3xx responses: 29855
+Requests/sec:    999.99
+Transfer/sec:     68.31KB
+```
+Вначале немного покомпилировался WatcherThread, но нагрузка всё равно нестабильная.
+![](./get/heatmap/mixed/get-mixed-c1t1R1k.png)
+
+На 2.5Krps латенси оставляет желать лучшего, но база ещё не захлебнулась!
+```
+../wrk2/wrk -c 1 -d 60s -t 1 -R 2500 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-mixed.lua
+Running 1m test @ http://localhost:19234
+  1 threads and 1 connections
+  Thread calibration: mean lat.: 4044.165ms, rate sampling interval: 12287ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.99s     2.73s    7.26s    75.58%
+    Req/Sec     2.86k   378.64     3.38k    75.00%
+    149991 requests in 1.00m, 10.01MB read
+  Non-2xx or 3xx responses: 74355
+Requests/sec:   2499.80
+Transfer/sec:    170.77KB
 ```
 
+На 5Krps база-таки захлебнулась.
 ```
-../wrk2/wrk -c 1 -d 60s -t 1 -R 500 http://localhost:19234 -s get-mixed.lua
+../wrk2/wrk -c 1 -d 60s -t 1 -R 5000 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-mixed.lua
 Running 1m test @ http://localhost:19234
   1 threads and 1 connections
-  Thread calibration: mean lat.: 5422.833ms, rate sampling interval: 17481ms
+  Thread calibration: mean lat.: 3286.473ms, rate sampling interval: 10584ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    31.71s    12.59s    0.88m    57.25%
-    Req/Sec    59.00      0.00    59.00    100.00%
-  3453 requests in 1.00m, 240.87KB read
-  Non-2xx or 3xx responses: 1774
-Requests/sec:     57.54
-Transfer/sec:      4.01KB
+    Latency     9.73s   890.11ms  11.37s    72.51%
+    Req/Sec     4.64k     0.93k    5.85k    50.00%
+    247543 requests in 1.00m, 16.51MB read
+  Non-2xx or 3xx responses: 122799
+Requests/sec:   4125.72
+Transfer/sec:    281.84KB
 ```
+
+Попробуем на 4Krps:
+```
+../wrk2/wrk -c 1 -d 60s -t 1 -R 4000 -L http://localhost:19234 -s ../stage1_report/get/scripts/get-mixed.lua
+Running 1m test @ http://localhost:19234
+  1 threads and 1 connections
+  Thread calibration: mean lat.: 2973.301ms, rate sampling interval: 10772ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     4.10s     3.64s    8.95s    36.58%
+    Req/Sec     4.58k     1.28k    6.51k    50.00%
+    239998 requests in 1.00m, 16.01MB read
+  Non-2xx or 3xx responses: 119022
+Requests/sec:   3999.92
+Transfer/sec:    273.24KB
+```
+Система справляется, хоть и с совершенно неприемлемым временем отклика.
 
 Поскольку вероятность появления существующего и несуществующего ключей одна и та же (50/50),
-то на примере этих запросов мы наблюдаем "усреднение" по латенси, скорость нахождения несуществующих
-ключей (низкая) компенсирует скорость нахождения существующих ключей (высокая). И тем не менее
-наблюдаем захлёб нашей БД.
-
-На гистограмме ниже можно наглядно видеть, что ожидаемого "усреднения" по латенси не случилось -
-уже на райте 100 видим "взрыв" времени ответа нашей БД на 0 перцентилях.
-![](./get/latency/get_hist_mixed.png)
+то на примере этих запросов нам хотелось бы наблюдать "усреднение" по латенси,
+ведь скорость нахождения несуществующих ключей (низкая) должна бы компенсировать
+скорость нахождения существующих ключей (высокая). Однако наши мечты разбиваются о
+суровую реальность, в которой GC встревает со своим stop the world, компилируются
+различные потоки, а также появляются периодические задачи, необходимые для
+должного функционирования JVM.
 
 ### GET-статистика
 
-В целом наблюдаем, что на низком рейте аллокаций мало, на высоком - много, что весьма закономерно,
-поскольку в NoSQL-БД реализован механизм "ленивой аллокации" двух главных итераторов -
-по памяти и по диску, а вот на CPU нагрузка идёт всегда, где-то разреженная, где-то учащённая
-но главная проблема осталась с нами - низкая производительность самого процессора на нагрузках,
-которые считаются нормальными в современном мире.
+В целом наблюдаем, что на низком рейте аллокаций мало, на высоком - много, что весьма закономерно.
+Дополнительно хочется отметить, что два итератора (по памяти и по диску) выделяются
+последовательно, сначала проверяется память, и лишь потом аллоцируется итератор на диск
+(если по ключу ничего не найдено), за счёт чего проихсодит небольшая оптимизация
+аллокаций.
 
 ## PUT (DELETE)
 
@@ -358,10 +514,17 @@ Transfer/sec:      1.15MB
 ![](./put/heatmap/put_cpu_50k.png)
 а также по аллокациям:
 ![](./put/heatmap/put_alloc_50k.png)
-невооружённым глазом видно, что все ресурсы компьютера уходят именно на саму обработку
-HTTP-запросов. Таким образом, сверху мы ограничены нашим процессором (который, стоит напомнить,
-не самый сильный).
+видно, что На GC тратится 5% ресурсов, кажется, что не так уж и много,
+хотя можем попробовать вместо G1 использовать Z1, время отклика будет меньше,
+но пропускать через систему сможем так же меньше запросов. Помимо трети CPU на NativeSocket.write()
+можно отследить закономерность, что при увеличении Krps увеличивается частота флашей,
+и на 50Krps (перегрузка) мы наблюдаем флашинг буквально каждую секунду,
+а если поставить chunktime меньше, чем 1с, то есть вероятность увидеть флаши ещё чаще, чем раз в секунду.
+Итого на флаши приходится 20% ресурсов CPU, на путы - 25% (хотя это то, чего хотелось бы видеть по максимуму).
+По аллокациям - 10% тратится на преобразования энтрей String -> ByteBuffer, ещё порядка 8% - на флаши,
+вся оставшаяся память в полном распоряжении у one-nio.
 
 Напоследок приведём гистограмму путов на низких рейтах:
 ![](./put/latency/put_hist.png)
-Видно, что при заданных путах повышение латенси наблюдается в районе 95 перцентилей.
+Видно, что при заданных путах примерно 5% нагрузки не укладывается в допустимый диапазон
+латенси - 5мс.

@@ -16,6 +16,8 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Iterator;
 import java.util.NavigableSet;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class ConfigVisitor
         extends SimpleFileVisitor<Path> {
@@ -25,16 +27,18 @@ public class ConfigVisitor
     private final Serializer serializer;
     private final Path compactedDataFilePathToBeSet;
     private final Path compactedIndexesFilePathToBeSet;
+    private final AtomicLong filesCounter;
 
     private Path compactedDataPath;
     private Path compactedIndexesPath;
 
-    public ConfigVisitor(ServiceConfig config, Serializer serializer) {
+    public ConfigVisitor(ServiceConfig config, Serializer serializer, AtomicLong filesCounter) {
         this.serializer = serializer;
         this.compactedDataFilePathToBeSet
                 = FileUtils.getFilePath(FileUtils.COMPACT_DATA_FILENAME_TO_BE_SET, config);
         this.compactedIndexesFilePathToBeSet
                 = FileUtils.getFilePath(FileUtils.COMPACT_INDEXES_FILENAME_TO_BE_SET, config);
+        this.filesCounter = filesCounter;
     }
 
     @Override
@@ -50,6 +54,7 @@ public class ConfigVisitor
         } else {
             throw new IllegalStateException("Config folder contains unresolved file: " + file);
         }
+        this.filesCounter.incrementAndGet();
         return FileVisitResult.CONTINUE;
     }
 
@@ -88,8 +93,8 @@ public class ConfigVisitor
         {
             FileMeta meta = this.serializer.meta(this.compactedDataPath);
             if (meta.notWritten()) {
-                Files.delete(this.compactedDataPath);
-                Files.delete(this.compactedIndexesPath);
+                FileUtils.deleteFile(this.compactedDataPath, filesCounter);
+                FileUtils.deleteFile(this.compactedIndexesPath, filesCounter);
                 return false;
             }
         }
@@ -110,7 +115,7 @@ public class ConfigVisitor
 
         for (Path dataFile : this.dataFiles) {
             if (isTargetFile(dataFile)) {
-                Files.delete(dataFile);
+                FileUtils.deleteFile(dataFile, filesCounter);
             }
         }
 
@@ -127,8 +132,8 @@ public class ConfigVisitor
             Path indexesFile = indexesFiles.next();
             FileMeta meta = this.serializer.meta(dataFile);
             if (meta.notWritten()) {
-                Files.delete(dataFile);
-                Files.delete(indexesFile);
+                FileUtils.deleteFile(dataFile, filesCounter);
+                FileUtils.deleteFile(indexesFile, filesCounter);
             }
         }
     }
@@ -153,8 +158,8 @@ public class ConfigVisitor
     }
 
     private void deleteFiles(NavigableSet<Path> files) throws IOException {
-        for (Path file : files) {
-            Files.delete(file);
+        for (Path pathToFile : files) {
+            FileUtils.deleteFile(pathToFile, filesCounter);
         }
     }
 

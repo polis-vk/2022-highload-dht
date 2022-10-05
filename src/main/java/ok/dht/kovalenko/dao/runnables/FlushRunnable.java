@@ -9,18 +9,22 @@ import ok.dht.kovalenko.dao.utils.FileUtils;
 
 import java.io.IOException;
 import java.util.ConcurrentModificationException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class FlushRunnable implements Runnable {
 
     private final ServiceConfig config;
     private final Serializer serializer;
     private final LSMDao.MemoryStorage memoryStorage;
+    private final AtomicLong filesCounter;
 
     public FlushRunnable(ServiceConfig config, Serializer serializer,
-                         LSMDao.MemoryStorage memoryStorage) {
+                         LSMDao.MemoryStorage memoryStorage, AtomicLong filesCounter) {
         this.config = config;
         this.serializer = serializer;
         this.memoryStorage = memoryStorage;
+        this.filesCounter = filesCounter;
     }
 
     @Override
@@ -36,7 +40,7 @@ public class FlushRunnable implements Runnable {
             }
 
             this.memoryStorage.flushSSTables().add(memorySSTable);
-            PairedFiles pairedFiles = FileUtils.createPairedFiles(this.config);
+            PairedFiles pairedFiles = FileUtils.createPairedFiles(this.config, this.filesCounter);
             this.serializer.write(memorySSTable.values().iterator(), pairedFiles);
             // It is impossible that any other thread will capture memorySSTable
             if (!this.memoryStorage.flushSSTables().remove(memorySSTable)) {

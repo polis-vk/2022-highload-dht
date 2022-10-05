@@ -12,6 +12,8 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class CompactVisitor extends SimpleFileVisitor<Path> {
 
@@ -20,21 +22,24 @@ public class CompactVisitor extends SimpleFileVisitor<Path> {
     private final Path dataPathToBeSet;
     private final Path indexesPathToBeSet;
     private final Serializer serializer;
+    private final AtomicLong filesCounter;
 
     private int numberOfDeletedFiles;
 
-    public CompactVisitor(ServiceConfig config, PairedFiles pairedFiles, Serializer serializer) {
+    public CompactVisitor(ServiceConfig config, PairedFiles pairedFiles, Serializer serializer,
+                          AtomicLong filesCounter) {
         this.compactedDataPath = pairedFiles.dataFile();
         this.compactedIndexesPath = pairedFiles.indexesFile();
         this.dataPathToBeSet = FileUtils.getFilePath(FileUtils.COMPACT_DATA_FILENAME_TO_BE_SET, config);
         this.indexesPathToBeSet = FileUtils.getFilePath(FileUtils.COMPACT_INDEXES_FILENAME_TO_BE_SET, config);
         this.serializer = serializer;
+        this.filesCounter = filesCounter;
     }
 
     @Override
     public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
         if (isTargetFile(file) && serializer.meta(file).written()) {
-            Files.delete(file);
+            FileUtils.deleteFile(file, filesCounter);
             ++numberOfDeletedFiles;
         }
         return FileVisitResult.CONTINUE;

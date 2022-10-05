@@ -18,6 +18,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class MappedFileDiskSSTableStorage
         extends DiskSSTableStorage<MappedFileDiskSSTable>
@@ -41,11 +43,13 @@ public class MappedFileDiskSSTableStorage
 
     private final Serializer serializer;
     private final ServiceConfig config;
+    private final AtomicLong filesCounter;
 
-    public MappedFileDiskSSTableStorage(ServiceConfig config, Serializer serializer) {
+    public MappedFileDiskSSTableStorage(ServiceConfig config, Serializer serializer, AtomicLong filesCounter) {
         super();
         this.config = config;
         this.serializer = serializer;
+        this.filesCounter = filesCounter;
     }
 
     @Override
@@ -123,9 +127,9 @@ public class MappedFileDiskSSTableStorage
     }
 
     private void updateTables() throws ReflectiveOperationException, IOException {
-        long diskSSTablesSize = FileUtils.numFilesOnDisk(config) / 2;
-        if (this.get(diskSSTablesSize) == null) {
-            mapForRead(diskSSTablesSize, serializer);
+        long numFiles = filesCounter.get() / 2;
+        if (this.get(numFiles) == null) {
+            mapForRead(numFiles, serializer);
         }
     }
 }
