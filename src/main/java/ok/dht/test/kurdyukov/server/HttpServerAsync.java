@@ -59,6 +59,7 @@ public class HttpServerAsync extends HttpServer {
             }
         } catch (InterruptedException e) {
             logger.error("Fail stopping thread pool workers", e);
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -69,17 +70,21 @@ public class HttpServerAsync extends HttpServer {
         try {
             executorService.execute(
                     () -> {
-                        try {
-                            super.handleRequest(request, session);
-                        } catch (IOException e) {
-                            logger.error("Handling request exception", e);
-                            throw new UncheckedIOException(e);
-                        }
+                        extracted(request, session);
                     }
             );
         } catch (RejectedExecutionException e) {
             logger.warn("Reject request", e);
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
+    }
+
+    private void extracted(Request request, HttpSession session) {
+        try {
+            super.handleRequest(request, session);
+        } catch (IOException e) {
+            logger.error("Handling request exception", e);
+            throw new UncheckedIOException(e);
         }
     }
 }
