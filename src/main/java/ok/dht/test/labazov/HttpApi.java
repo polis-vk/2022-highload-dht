@@ -18,6 +18,8 @@ import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
@@ -27,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 
 public final class HttpApi extends HttpServer {
     public static final int FLUSH_THRESHOLD_BYTES = 8 * 1024 * 1024;
+    private static final Logger LOG = LoggerFactory.getLogger(HttpApi.class);
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private ExecutorService threadPool;
     private final ServiceConfig config;
@@ -74,7 +77,7 @@ public final class HttpApi extends HttpServer {
                 pool.shutdownNow(); // Cancel currently executing tasks
                 // Wait a while for tasks to respond to being cancelled
                 if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
-                    System.err.println("Pool did not terminate");
+                    LOG.error("Pool did not terminate");
                 }
             }
         } catch (InterruptedException ex) {
@@ -89,27 +92,39 @@ public final class HttpApi extends HttpServer {
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
             threadPool.submit(() -> {
-                try {
-                    super.handleRequest(request, session);
-                } catch (IOException e) {
-                    System.err.println("IOException during request handling: " + e.getMessage());
-                    try {
-                        session.sendResponse(getEmptyResponse(Response.INTERNAL_ERROR));
-                    } catch (IOException ex) {
-                        System.err.println("IOException during error reporting: " + e.getMessage());
-                    }
-                } catch (Exception e) {
-                    System.err.println("Exception during request handling: " + e.getMessage());
-                    try {
-                        handleDefault(request, session);
-                    } catch (IOException ex) {
-                        System.err.println("IOException during error reporting: " + e.getMessage());
-                    }
-                }
+                jobHandler(request, session);
             });
         } catch (RejectedExecutionException e) {
             session.sendResponse(getEmptyResponse(Response.SERVICE_UNAVAILABLE));
-            System.err.println("RejectedExecutionException during job submission: " + e.getMessage());
+            LOG.error("RejectedExecutionException during job submission: " + e.getMessage());
+        }
+    }
+
+    private void jobHandler(Request request, HttpSession session) {
+        try {
+            super.handleRequest(request, session);
+        } catch (IOException e) {
+            LOG.error("IOException during request handling: " + e.getMessage());
+            ioExceptionHandler(session, e);
+        } catch (Exception e) {
+            LOG.error("Exception during request handling: " + e.getMessage());
+            genericExceptionHandler(request, session, e);
+        }
+    }
+
+    private void genericExceptionHandler(Request request, HttpSession session, Exception e) {
+        try {
+            handleDefault(request, session);
+        } catch (IOException ex) {
+            LOG.error("IOException during error reporting: " + e.getMessage());
+        }
+    }
+
+    private static void ioExceptionHandler(HttpSession session, IOException e) {
+        try {
+            session.sendResponse(getEmptyResponse(Response.INTERNAL_ERROR));
+        } catch (IOException ex) {
+            LOG.error("IOException during error reporting: " + e.getMessage());
         }
     }
 
