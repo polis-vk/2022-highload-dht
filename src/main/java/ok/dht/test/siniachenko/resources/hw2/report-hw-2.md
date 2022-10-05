@@ -149,8 +149,6 @@ Transfer/sec:      3.21MB
 # Профили cpu, alloc и lock для сервера с 1 селектором
 
 html и jfr файлы для всех тестов слишком много весили, поэтому я решил запустить отдельно wrk на 30 секунд
-`put.sh 30 52000` с Requests/sec 51958.61 и latency 5.47ms
-`get.sh 30 45000` с Requests/sec 44720.02 и latency 1.90ms
 
 
 Профили лежат в файлах tycoon-server-1-selector-alloc.html, tycoon-server-1-selector-cpu.html
@@ -302,8 +300,6 @@ Transfer/sec:      3.82MB
 # Профили cpu, alloc и lock для сервера с 1 селектором
 
 Тут снова отдельно запустил нагрузку на меньшее время, чтобы html файлы не были огромного размера.
-`put.sh 30 52000` с Requests/sec 51955.12 и latency 4.39ms
-`get.sh 30 45000` с Requests/sec 44720.55 и latency 1.49ms
 
 Профили лежат в файлах tycoon-server-many-selectors-alloc.html, tycoon-server-many-selectors-cpu.html
 и tycoon-server-many-selectors-lock.html.
