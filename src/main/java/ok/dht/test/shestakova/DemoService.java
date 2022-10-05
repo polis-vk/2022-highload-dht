@@ -7,7 +7,6 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.shestakova.dao.MemorySegmentDao;
 import ok.dht.test.shestakova.dao.base.BaseEntry;
 import ok.dht.test.shestakova.dao.base.Config;
-
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -26,15 +25,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-
 public class DemoService implements Service {
 
     private final ServiceConfig config;
     private HttpServer server;
     private MemorySegmentDao dao;
-    private static final long flushThreshold = 1 << 20; // 1 MB
-    private static final int poolSize = Runtime.getRuntime().availableProcessors();
-    private static final int queueCapacity = 256;
+    private static final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
+    private static final int POOL_SIZE = Runtime.getRuntime().availableProcessors();
+    private static final int QUEUE_CAPACITY = 256;
     private ExecutorService workersPool;
 
     public DemoService(ServiceConfig config) {
@@ -43,13 +41,13 @@ public class DemoService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        dao = new MemorySegmentDao(new Config(config.workingDir(), flushThreshold));
+        dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD));
         workersPool = new ThreadPoolExecutor(
-                poolSize,
-                poolSize,
+                POOL_SIZE,
+                POOL_SIZE,
                 0L,
                 TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(queueCapacity)
+                new ArrayBlockingQueue<>(QUEUE_CAPACITY)
         );
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
