@@ -3,7 +3,7 @@ package ok.dht.test.gerasimov;
 import one.nio.http.Response;
 import one.nio.util.Utf8;
 
-public class ResponseEntity {
+public final class ResponseEntity {
 
     private ResponseEntity() {
     }
