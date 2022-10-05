@@ -6,6 +6,8 @@ import ok.dht.test.kondraev.dao.Dao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.FileAlreadyExistsException;
@@ -18,6 +20,7 @@ import java.util.concurrent.TimeoutException;
 
 public class Service implements ok.dht.Service {
     private static final long FLUSH_THRESHOLD_BYTES = 1 << 20; // 1 MB
+    private static final Logger LOG = LoggerFactory.getLogger(Service.class);
     private final ServiceConfig config;
     private HttpServer server;
     private Dao dao;
@@ -58,7 +61,7 @@ public class Service implements ok.dht.Service {
             throws IOException, ExecutionException, InterruptedException, TimeoutException {
         String defaultUrl = "http://localhost:19234";
         if (args.length != 1) {
-            System.out.printf("Usage: \n ./gradlew run --args=%s\n", defaultUrl);
+            LOG.error("Usage: ./gradlew run --args={}", defaultUrl);
             return;
         }
         String url = args[0];
@@ -66,7 +69,7 @@ public class Service implements ok.dht.Service {
         try {
             port = Integer.parseInt(url.split(":(?=\\d+$)", 2)[1]);
         } catch (IndexOutOfBoundsException ignored) {
-            System.err.printf("Url in wrong format. Try \"%s\"\n", defaultUrl);
+            LOG.error("Url in wrong format. Try \"{}\"", defaultUrl);
             return;
         }
         new Service(new ServiceConfig(
@@ -75,7 +78,7 @@ public class Service implements ok.dht.Service {
                 List.of(url),
                 Files.createTempDirectory("kondraev-server")
         )).start().get(1, TimeUnit.SECONDS);
-        System.out.printf("Ready on %s\n", url);
+        LOG.info("Ready on {}", url);
     }
 
     @ServiceFactory(stage = 1, week = 2)
