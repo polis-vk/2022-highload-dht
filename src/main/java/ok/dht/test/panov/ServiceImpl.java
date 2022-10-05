@@ -10,20 +10,16 @@ import ok.dht.test.panov.dao.Entry;
 import ok.dht.test.panov.dao.lsm.MemorySegmentDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.StreamSupport;
 
 public class ServiceImpl implements Service {
 
@@ -39,7 +35,7 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        server = initHttpServer(createConfigFromPort(config.selfPort()));
+        server = new ConcurrentHttpServer(createConfigFromPort(config.selfPort()));
         server.start();
         server.addRequestHandlers(this);
         dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
@@ -47,29 +43,8 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    private static HttpServer initHttpServer(final HttpServerConfig config) throws IOException {
-        return new HttpServer(config) {
-
-            @Override
-            public void handleDefault(Request request, HttpSession session) throws IOException {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            }
-
-            @Override
-            public synchronized void stop() {
-                cleanup.shutdown();
-
-                Arrays.stream(selectors)
-                        .flatMap(selectorThread -> StreamSupport.stream(selectorThread.selector.spliterator(), false))
-                        .forEach(Session::close);
-
-                super.stop();
-            }
-        };
-    }
-
     @Override
-    public CompletableFuture<?> stop() throws IOException {
+    public CompletableFuture<?> stop() {
         server.stop();
         dao.close();
 
@@ -128,7 +103,7 @@ public class ServiceImpl implements Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
