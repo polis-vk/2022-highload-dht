@@ -21,7 +21,7 @@ import static ok.dht.test.vihnin.ServiceUtils.emptyResponse;
 public class ParallelHttpServer extends HttpServer {
 
     private static final int WORKERS_NUMBER = 10;
-    private static final int QUEUE_CAPACITY = 100;
+    private static final int QUEUE_CAPACITY = 30;
 
     private final ExecutorService executorService = new ThreadPoolExecutor(
             WORKERS_NUMBER,
