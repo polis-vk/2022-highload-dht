@@ -27,10 +27,10 @@ public class ServiceImpl implements Service {
     private final ServiceConfig config;
     private HttpServer server;
     private MemorySegmentDao dao;
+
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
     }
-
 
     @Override
     public CompletableFuture<?> start() throws IOException {

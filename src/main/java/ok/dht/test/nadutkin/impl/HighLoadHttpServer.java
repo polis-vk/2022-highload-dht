@@ -61,7 +61,7 @@ public class HighLoadHttpServer extends HttpServer {
                 try {
                     session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                 } catch (IOException ex) {
-                    throw new RuntimeException(ex);
+                    LOG.error("Unable to send bad request. Exception: {}", ex.getMessage());
                 }
             }
         });
