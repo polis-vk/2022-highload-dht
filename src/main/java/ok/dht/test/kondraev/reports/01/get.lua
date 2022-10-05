@@ -1,7 +1,12 @@
-local bit = require("bit")
-function init()
+wrk.method = "GET"
+
+function init(args)
+    rs = require("randomstring")
     math.randomseed(os.time() ^ 13)
+    size = args[1]
 end
 
-wrk.method = "GET"
-wrk.path = "/v0/entity?id=k" .. math.random(bit.lshift(1, 16))
+function request()
+    wrk.path = "/v0/entity?id=k" .. rs.random_string(size)
+    return wrk.format()
+end
