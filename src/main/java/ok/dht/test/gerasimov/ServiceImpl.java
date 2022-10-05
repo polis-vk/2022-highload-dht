@@ -4,48 +4,40 @@ import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.gerasimov.exception.ServerException;
-import ok.dht.test.gerasimov.lsm.Config;
-import ok.dht.test.gerasimov.lsm.artyomdrozdov.MemorySegmentDao;
-import one.nio.http.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+import one.nio.http.HttpServer;
+import one.nio.http.Request;
+import one.nio.http.Response;
+import org.iq80.leveldb.DB;
+import org.iq80.leveldb.Options;
+
+import java.io.File;
 import java.io.IOException;
-import java.util.Optional;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 
+import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
+
 public class ServiceImpl implements Service {
-    private static final Logger LOG = LoggerFactory.getLogger(ServiceImpl.class);
     private static final String INVALID_ID_MESSAGE = "Invalid id";
-    private static final int FLUSH_THRESHOLD_BYTES = 4194304;
 
     private final ServiceConfig serviceConfig;
-    private final HttpServer httpServer;
 
-    private DaoService daoService;
+    private HttpServer httpServer;
+    private DB dao;
 
     public ServiceImpl(ServiceConfig serviceConfig) {
-        try {
-            this.serviceConfig = serviceConfig;
-            this.httpServer = new Server(serviceConfig.selfPort());
-            httpServer.addRequestHandlers(this);
-        } catch (IOException e) {
-            throw new ServerException("Error during server create", e);
-        }
+        this.serviceConfig = serviceConfig;
     }
 
     @Override
     public CompletableFuture<?> start() throws IOException {
         try {
-            this.daoService = new DaoService(
-                    new MemorySegmentDao(
-                            new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES)
-                    )
-            );
-            LOG.info("DAO created");
+            this.httpServer = new Server(serviceConfig.selfPort(), this);
+            this.dao = createDao(serviceConfig.workingDir());
             httpServer.start();
         } catch (IOException e) {
-            LOG.error("Error during server startup");
             throw new ServerException("DAO can not be created", e);
         }
 
@@ -56,54 +48,51 @@ public class ServiceImpl implements Service {
     public CompletableFuture<?> stop() {
         try {
             httpServer.stop();
-            daoService.close();
+            dao.close();
         } catch (IOException e) {
-            LOG.error("Error during server shutdown");
             throw new ServerException("Error during DAO close", e);
         }
 
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response handleGetRequest(@Param(value = "id", required = true) String id) {
+    public Response handleGetRequest(String id) {
         if (!checkId(id)) {
             return ResponseEntity.badRequest(INVALID_ID_MESSAGE);
         }
 
-        try {
-            Optional<byte[]> dataOpt = daoService.get(id);
-            if (dataOpt.isEmpty()) {
-                return ResponseEntity.notFound();
-            }
-
-            return ResponseEntity.ok(dataOpt.get());
-        } catch (IOException e) {
-            return ResponseEntity.internalError("IOException");
+        byte[] entry = dao.get(id.getBytes(StandardCharsets.UTF_8));
+        if (entry == null) {
+            return ResponseEntity.notFound();
         }
+
+        return ResponseEntity.ok(entry);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response handlePutRequest(@Param(value = "id", required = true) String id, Request request) {
+    public Response handlePutRequest(String id, Request request) {
         if (!checkId(id)) {
             return ResponseEntity.badRequest(INVALID_ID_MESSAGE);
         }
 
-        daoService.upsert(id, request.getBody());
+        dao.put(id.getBytes(StandardCharsets.UTF_8), request.getBody());
         return ResponseEntity.created();
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDeleteRequest(@Param(value = "id", required = true) String id) {
+    public Response handleDeleteRequest(String id) {
         if (!checkId(id)) {
             return ResponseEntity.badRequest(INVALID_ID_MESSAGE);
         }
 
-        daoService.delete(id);
+        dao.delete(id.getBytes(StandardCharsets.UTF_8));
         return ResponseEntity.accepted();
+    }
+
+    private static DB createDao(Path path) throws IOException {
+        try {
+            return factory.open(new File(path.toString()), new Options());
+        } catch (IOException e) {
+            throw e;
+        }
     }
 
     private static boolean checkId(String id) {

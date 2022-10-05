@@ -11,7 +11,7 @@ import java.util.concurrent.TimeoutException;
 
 public final class Main {
     private static final int PORT = 25565;
-    private static final String URL = "http://localhost:";
+    private static final String URL = "http://localhost";
 
     private Main() {
     }

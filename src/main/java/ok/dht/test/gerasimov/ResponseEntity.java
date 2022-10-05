@@ -28,7 +28,7 @@ public class ResponseEntity {
     }
 
     public static Response badRequest(String message) {
-        return new Response(Response.INTERNAL_ERROR, Utf8.toBytes(message));
+        return new Response(Response.BAD_REQUEST, Utf8.toBytes(message));
     }
 
     public static Response internalError(String message) {
