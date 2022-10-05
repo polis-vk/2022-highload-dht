@@ -176,7 +176,7 @@ Transfer/sec:    785.11KB
 #### PUT CPU
 Отпрофилиурем CPU с этой нагрузкой:
 
-![image](../profiling/images/1.png)
+![image](../profiling/stage1/images/1.png)
 
 На хитмапе видно отдельный временной регион, когда cpu нагружалось больше. 
 В этот момент асинхронно происходила компактизация.
@@ -201,7 +201,7 @@ Flush занял меньше процента. В RockDb он также аси
 
 #### PUT ALLOC
 Отпрофилиурем аллокации:
-![image](../profiling/images/2.png)
+![image](../profiling/stage1/images/2.png)
 Так как RocksDb написана на плюсах и в жаве используется только его апи. 
 Здесь мы видим только аллокации нашего сервера.
 
@@ -349,7 +349,7 @@ Transfer/sec:      1.59MB
 
 #### GET CPU
 Отпрофилиурем CPU с этой нагрузкой:
-![image](../profiling/images/3.png)
+![image](../profiling/stage1/images/3.png)
 
 Здесь хитмапа аналогична случию PUT запросов, за исключением того что во время GET компактизаций не происходит.
 
@@ -363,5 +363,5 @@ Transfer/sec:      1.59MB
 #### GET ALLOC
 Отпрофилиурем аллокации:
 
-![image](../profiling/images/4.png)
+![image](../profiling/stage1/images/4.png)
 Здесь ситуация полностью аналогично случаю ALLOC профилирования в PUT запросах.
