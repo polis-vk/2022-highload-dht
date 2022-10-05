@@ -33,8 +33,7 @@ public class ServiceImpl implements Service {
     public static final int FLUSH_THRESHOLD_BYTES = 1_048_576;
     public static final String PATH_ENTITY = "/v0/entity";
     public static final String PARAM_ID_NAME = "id=";
-    private static final int CORE_POLL_SIZE = 8;
-    private static final int MAXIMUM_POLL_SIZE = 64;
+    private static final int CORE_POLL_SIZE = Runtime.getRuntime().availableProcessors() * 2;
     private static final int KEEP_ALIVE_TIME = 0;
     private static final int QUEUE_CAPACITY = 128;
     private static final String BAD_ID = "Given id is bad.";
@@ -90,7 +89,7 @@ public class ServiceImpl implements Service {
             createDao();
             requestService = new ThreadPoolExecutor(
                     CORE_POLL_SIZE,
-                    MAXIMUM_POLL_SIZE,
+                    CORE_POLL_SIZE,
                     KEEP_ALIVE_TIME,
                     TimeUnit.SECONDS,
                     new ArrayBlockingQueue<>(QUEUE_CAPACITY)
