@@ -18,8 +18,8 @@ public class DataBaseRocksDBImpl implements DataBase<String, byte[]> {
     public byte[] get(String key) {
         try {
             return actualDataBase.get(Utf8.toBytes(key));
-        } catch (Throwable e) {
-            return null;
+        } catch (RocksDBException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -27,7 +27,7 @@ public class DataBaseRocksDBImpl implements DataBase<String, byte[]> {
     public boolean put(String key, byte[] value) {
         try {
             actualDataBase.put(Utf8.toBytes(key), value);
-        } catch (Throwable e) {
+        } catch (Exception e) {
             return false;
         }
         return true;
@@ -37,7 +37,7 @@ public class DataBaseRocksDBImpl implements DataBase<String, byte[]> {
     public boolean delete(String key) {
         try {
             actualDataBase.delete(Utf8.toBytes(key));
-        } catch (Throwable e) {
+        } catch (Exception e) {
             return false;
         }
         return true;

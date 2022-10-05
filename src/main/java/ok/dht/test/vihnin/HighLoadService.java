@@ -7,15 +7,12 @@ import ok.dht.test.vihnin.database.DataBase;
 import ok.dht.test.vihnin.database.DataBaseRocksDBImpl;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
-import one.nio.server.SelectorThread;
 import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
@@ -48,23 +45,6 @@ public class HighLoadService implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         storage = getDataStorage(this.config);
-//        server = new HttpServer(createConfigFromPort(config.selfPort())) {
-//            @Override
-//            public void handleDefault(Request request, HttpSession session) throws IOException {
-//                session.sendResponse(emptyResponse(Response.BAD_REQUEST));
-//            }
-//
-//            @Override
-//            public synchronized void stop() {
-//                for (SelectorThread selectorThread : selectors) {
-//                    for (Session session : selectorThread.selector) {
-//                        session.close();
-//                    }
-//                }
-//                super.stop();
-//            }
-//
-//        };
         server = new ParallelHttpServer(createConfigFromPort(config.selfPort()));
         server.start();
         server.addRequestHandlers(this);
@@ -87,11 +67,12 @@ public class HighLoadService implements Service {
         if (storage == null) return emptyResponse(Response.NOT_FOUND);
         if (id == null || id.isEmpty()) return emptyResponse(Response.BAD_REQUEST);
 
-        var searchResult = storage.get(id);
-
-        if (searchResult == null) return emptyResponse(Response.NOT_FOUND);
-
-        return Response.ok(searchResult);
+        try {
+            var searchResult = storage.get(id);
+            return Response.ok(searchResult);
+        } catch (RuntimeException e) {
+            return emptyResponse(Response.NOT_FOUND);
+        }
     }
 
     @Path(ENDPOINT)
@@ -114,9 +95,7 @@ public class HighLoadService implements Service {
         if (storage == null) return emptyResponse(Response.NOT_FOUND);
         if (id == null || id.isEmpty()) return emptyResponse(Response.BAD_REQUEST);
 
-        var value = storage.get(id);
-
-        if (value != null) storage.delete(id);
+        storage.delete(id);
 
         return emptyResponse(Response.ACCEPTED);
     }
