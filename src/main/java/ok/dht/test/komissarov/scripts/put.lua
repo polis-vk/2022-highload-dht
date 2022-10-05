@@ -1,9 +1,9 @@
-key = 0;
+k = 0;
 
 request = function()
-    path = "/v0/entity?id=k" .. key
+    path = "/v0/entity?id=k" .. k
     wrk.method = "PUT"
-    wrk.body = "v" .. key
-    key = key + 1
+    wrk.body = "v" .. k
+    k = k + 1
     return wrk.format(nil, path)
 end
