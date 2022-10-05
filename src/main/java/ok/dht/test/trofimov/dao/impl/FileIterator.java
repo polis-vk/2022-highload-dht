@@ -15,11 +15,11 @@ public class FileIterator implements Iterator<Entry<String>> {
     private Entry<String> nextEntry;
     private final long fileLength;
 
-    public FileIterator(Path basePath, String name, String from, String to) throws IOException {
+    public FileIterator(Path basePath, FileInfo file, String from, String to) throws IOException {
         this.to = to;
-        raf = new RandomAccessFile(basePath.resolve(name + InMemoryDao.DATA_EXT).toString(), "r");
+        raf = new RandomAccessFile(basePath.resolve(file.filename() + InMemoryDao.DATA_EXT).toString(), "r");
         fileLength = raf.length();
-        nextEntry = Utils.findCeilEntry(raf, from, basePath.resolve(name + InMemoryDao.INDEX_EXT));
+        nextEntry = Utils.findCeilEntry(raf, from, basePath.resolve(file.filename() + InMemoryDao.INDEX_EXT));
     }
 
     @Override

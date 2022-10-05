@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.ConcurrentNavigableMap;
@@ -19,11 +20,11 @@ import static ok.dht.test.trofimov.dao.impl.InMemoryDao.INDEX_EXT;
 public class Flusher implements Runnable {
     private final Config config;
     private final BlockingDeque<ConcurrentNavigableMap<String, Entry<String>>> queueToFlush;
-    private final AtomicReference<Deque<String>> filesList;
+    private final AtomicReference<Deque<FileInfo>> filesList;
     private final Lock filesLock;
 
     public Flusher(Config config, BlockingDeque<ConcurrentNavigableMap<String, Entry<String>>> queueToFlush,
-                   AtomicReference<Deque<String>> filesList, Lock filesLock) {
+                   AtomicReference<Deque<FileInfo>> filesList, Lock filesLock) {
         this.config = config;
         this.queueToFlush = queueToFlush;
         this.filesList = filesList;
@@ -58,12 +59,14 @@ public class Flusher implements Runnable {
                     Utils.writeEntry(output, value);
                 }
 
+                String firstKey = dataToFlush.firstKey();
+                String lastKey = dataToFlush.lastKey();
+                Deque<FileInfo> fileInfos = new ArrayDeque<>(filesList.get());
                 filesLock.lock();
                 try {
-                    filesList.updateAndGet(d -> {
-                        d.addFirst(name);
-                        return d;
-                    });
+                    FileInfo fileInfo = new FileInfo(name, firstKey, lastKey);
+                    fileInfos.addFirst(fileInfo);
+                    filesList.set(fileInfos);
                 } finally {
                     filesLock.unlock();
                     queueToFlush.removeFirst();

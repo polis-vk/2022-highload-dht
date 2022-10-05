@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Deque;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
@@ -25,11 +26,12 @@ public final class Utils {
     private Utils() {
     }
 
-    public static String getUniqueFileName(Deque<String> files) {
+    public static String getUniqueFileName(Deque<FileInfo> files) {
+        List<String> fileNames = files.stream().map(FileInfo::filename).toList();
         String name;
         do {
             name = generateString();
-        } while (files.contains(name));
+        } while (fileNames.contains(name));
         return name;
     }
 
@@ -77,6 +79,11 @@ public final class Utils {
         return nextEntry;
     }
 
+    public static String readKeyFrom(RandomAccessFile raf, long pos) throws IOException {
+        raf.seek(pos + Byte.BYTES);
+        return raf.readUTF();
+    }
+
     public static Entry<String> readEntry(RandomAccessFile raf) throws IOException {
         byte tombstone = raf.readByte();
         String key = raf.readUTF();
@@ -90,6 +97,21 @@ public final class Utils {
             value = new String(valueBytes, StandardCharsets.UTF_8);
         }
         return new BaseEntry<>(key, value);
+    }
+
+    public static FileInfo getFileInfo(Path basePath, String file) throws IOException {
+        try (RandomAccessFile raf = new RandomAccessFile(basePath.resolve(file + InMemoryDao.DATA_EXT).toString(), "r");
+             RandomAccessFile index = new RandomAccessFile(basePath.resolve(file + InMemoryDao.INDEX_EXT).toString(), "r")) {
+            int size = raf.readInt();
+            long firstKeyPos = index.readLong();
+            index.seek((long) (size - 1) * Long.BYTES);
+            long lastKeyPos = index.readLong();
+
+            String firstKey = readKeyFrom(raf, firstKeyPos);
+            String lastKey = readKeyFrom(raf, lastKeyPos);
+
+            return new FileInfo(file, firstKey, lastKey);
+        }
     }
 
     public static void writeEntry(RandomAccessFile output, Entry<String> entry) throws IOException {
@@ -112,22 +134,22 @@ public final class Utils {
         }
     }
 
-    public static void removeOldFiles(Config config, Deque<String> filesListCopy) throws IOException {
-        for (String fileToDelete : filesListCopy) {
-            Files.deleteIfExists(config.basePath().resolve(fileToDelete + DATA_EXT));
-            Files.deleteIfExists(config.basePath().resolve(fileToDelete + INDEX_EXT));
+    public static void removeOldFiles(Config config, Deque<FileInfo> filesListCopy) throws IOException {
+        for (FileInfo fileToDelete : filesListCopy) {
+            Files.deleteIfExists(config.basePath().resolve(fileToDelete.filename() + DATA_EXT));
+            Files.deleteIfExists(config.basePath().resolve(fileToDelete.filename() + INDEX_EXT));
         }
     }
 
-    static void writeFileListToDisk(AtomicReference<Deque<String>> filesList,
+    static void writeFileListToDisk(AtomicReference<Deque<FileInfo>> filesList,
                                     RandomAccessFile allFilesOut) throws IOException {
         writeFileListLock.lock();
         try {
             // newer is at the end
             allFilesOut.setLength(0);
-            Iterator<String> filesListIterator = filesList.get().descendingIterator();
+            Iterator<FileInfo> filesListIterator = filesList.get().descendingIterator();
             while (filesListIterator.hasNext()) {
-                allFilesOut.writeUTF(filesListIterator.next());
+                allFilesOut.writeUTF(filesListIterator.next().filename());
             }
         } finally {
             writeFileListLock.unlock();

@@ -19,10 +19,14 @@ import one.nio.server.AcceptorConfig;
 import one.nio.util.Base64;
 import one.nio.util.Utf8;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 public class MyService implements Service {
+
+    private final Logger logger = LoggerFactory.getLogger(MyService.class);
     private static final long FLUSH_THRESHOLD = 1 << 20;
     private final ServiceConfig config;
     private HttpServer server;
@@ -107,6 +111,7 @@ public class MyService implements Service {
     }
 
     private Response errorResponse(Exception e) {
+        logger.error("Error while process request", e);
         return new Response(Response.INTERNAL_ERROR, Utf8.toBytes(e.toString()));
     }
 
