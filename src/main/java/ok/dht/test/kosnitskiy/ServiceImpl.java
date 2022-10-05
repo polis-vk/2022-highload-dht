@@ -22,14 +22,20 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class ServiceImpl implements Service {
 
     private static final int IN_MEMORY_SIZE = 8388608;
     private static final Logger LOG = LoggerFactory.getLogger(ServiceImpl.class);
+
+    private static final int CORE_POOL_SIZE = 8;
+    private static final int MAX_POOL_SIZE = 256;
+    private static final long KEEP_ALIVE_SECS = 60L;
+    private static final int MAX_QUEUE_SIZE = 2048;
 
     private final ServiceConfig config;
     private HttpServerImpl server;
@@ -43,7 +49,13 @@ public class ServiceImpl implements Service {
     public CompletableFuture<?> start() throws IOException {
         memorySegmentDao = new MemorySegmentDao(new Config(config.workingDir(), IN_MEMORY_SIZE));
         server = new HttpServerImpl(createConfigFromPort(config.selfPort()),
-                (ThreadPoolExecutor) Executors.newCachedThreadPool());
+                new ThreadPoolExecutor(
+                        CORE_POOL_SIZE,
+                        MAX_POOL_SIZE,
+                        KEEP_ALIVE_SECS,
+                        TimeUnit.SECONDS,
+                        new ArrayBlockingQueue<Runnable>(MAX_QUEUE_SIZE)
+                ));
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
