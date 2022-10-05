@@ -17,7 +17,7 @@ import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 public class DbService implements Service {
-    private final static int QUEUE_SIZE = 1000;
+    private static final int QUEUE_SIZE = 1000;
     private final ServiceConfig serviceConfig;
     private RocksDB dao;
     private HttpServer server;
@@ -27,7 +27,10 @@ public class DbService implements Service {
     }
 
     private static AsyncHttpServerConfig createConfigFromPort(int port) {
-        AsyncHttpServerConfig httpConfig = new AsyncHttpServerConfig(Runtime.getRuntime().availableProcessors(), QUEUE_SIZE);
+        AsyncHttpServerConfig httpConfig = new AsyncHttpServerConfig(
+            Runtime.getRuntime().availableProcessors(),
+            QUEUE_SIZE
+        );
         AcceptorConfig acceptor = new AcceptorConfig();
         acceptor.port = port;
         acceptor.reusePort = true;
