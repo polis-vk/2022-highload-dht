@@ -4,15 +4,11 @@ import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
-import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
@@ -21,6 +17,7 @@ import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 public class DbService implements Service {
+    private final static int QUEUE_SIZE = 1000;
     private final ServiceConfig serviceConfig;
     private RocksDB dao;
     private HttpServer server;
@@ -29,8 +26,8 @@ public class DbService implements Service {
         this.serviceConfig = serviceConfig;
     }
 
-    private static HttpServerConfig createConfigFromPort(int port) {
-        HttpServerConfig httpConfig = new HttpServerConfig();
+    private static AsyncHttpServerConfig createConfigFromPort(int port) {
+        AsyncHttpServerConfig httpConfig = new AsyncHttpServerConfig(Runtime.getRuntime().availableProcessors(), QUEUE_SIZE);
         AcceptorConfig acceptor = new AcceptorConfig();
         acceptor.port = port;
         acceptor.reusePort = true;
@@ -40,14 +37,14 @@ public class DbService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        server = new ClosingHttpServer(createConfigFromPort(serviceConfig.selfPort()));
+        server = new AsyncHttpServer(createConfigFromPort(serviceConfig.selfPort()));
         try {
             dao = RocksDB.open(serviceConfig.workingDir().toString());
         } catch (RocksDBException e) {
             throw new IOException(e);
         }
-        server.start();
         server.addRequestHandlers(this);
+        server.start();
         return CompletableFuture.completedFuture(null);
     }
 
@@ -64,8 +61,8 @@ public class DbService implements Service {
     }
 
     @Path("/v0/entity")
-    public Response manageRequest(@Param(value = "id", required = true) String id, Request request) {
-        if (id.isBlank()) {
+    public Response manageRequest(@Param(value = "id") String id, Request request) {
+        if (id == null || id.isBlank()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         try {
@@ -100,34 +97,11 @@ public class DbService implements Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
             return new DbService(config);
-        }
-    }
-
-    private static class ClosingHttpServer extends HttpServer {
-        public ClosingHttpServer(HttpServerConfig config, Object... routers) throws IOException {
-            super(config, routers);
-        }
-
-        @Override
-        public void handleDefault(Request request, HttpSession session) throws IOException {
-            Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-            session.sendResponse(response);
-        }
-
-        @Override
-        public synchronized void stop() {
-            for (SelectorThread thread : selectors) {
-                for (Session session : thread.selector) {
-                    session.socket().close();
-                }
-            }
-
-            super.stop();
         }
     }
 }
