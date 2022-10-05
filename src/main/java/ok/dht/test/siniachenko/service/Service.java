@@ -84,6 +84,7 @@ public class Service implements ok.dht.Service {
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
         levelDb.close();
+        executorService.shutdown();
         return CompletableFuture.completedFuture(null);
     }
 
