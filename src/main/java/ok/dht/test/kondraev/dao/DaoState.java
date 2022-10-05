@@ -4,7 +4,7 @@ package ok.dht.test.kondraev.dao;
  * Provides atomic access to MemoryTable + Storage state via
  * `final` guarantees + volatile variable State.
  */
-class DaoState {
+final class DaoState {
     final Storage storage;
     final MemoryTable memoryTable;
     final MemoryTable flushingTable;
