@@ -10,7 +10,6 @@ import one.nio.server.SelectorThread;
 
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -26,7 +25,6 @@ public class HighLoadHttpServer extends HttpServer {
         final int maximumPoolSize = Runtime.getRuntime().availableProcessors();
         final int corePoolSize = Math.max(1, maximumPoolSize / 2);
         final long keepAliveTime = 0;
-//        executors = Executors.newFixedThreadPool(corePoolSize);
         executors = new ThreadPoolExecutor(corePoolSize,
                 maximumPoolSize,
                 keepAliveTime,
