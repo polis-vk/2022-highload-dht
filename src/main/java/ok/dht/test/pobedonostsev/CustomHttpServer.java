@@ -13,7 +13,6 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -27,6 +26,15 @@ public class CustomHttpServer extends HttpServer {
         super(config, routers);
     }
 
+    private static void sendError(HttpSession session, Exception e) {
+        try {
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            LOG.error("Cannot handle", e);
+        } catch (IOException ex) {
+            LOG.error("Cannot send response", e);
+        }
+    }
+
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         es.execute(() -> {
@@ -36,15 +44,6 @@ public class CustomHttpServer extends HttpServer {
                 sendError(session, e);
             }
         });
-    }
-
-    private static void sendError(HttpSession session, Exception e) {
-        try {
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-            LOG.error("Cannot handle", e);
-        } catch (IOException ex) {
-            LOG.error("Cannot send response", e);
-        }
     }
 
     @Override
