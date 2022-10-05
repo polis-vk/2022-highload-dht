@@ -1,28 +1,19 @@
 package ok.dht.test.kuleshov;
 
-import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.net.Session;
-import one.nio.server.SelectorThread;
 
 import java.io.IOException;
-import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-public class CoolAsyncHttpServer extends HttpServer {
+public class CoolAsyncHttpServer extends CoolHttpServer {
     private static final int CORE_POOL_SIZE = 8;
     private static final int MAXIMUM_POOL_SIZE = 8;
-    private static final Set<Integer> SUPPORTED_METHODS = Set.of(
-            Request.METHOD_DELETE,
-            Request.METHOD_GET,
-            Request.METHOD_PUT
-    );
     private ExecutorService executorService;
 
     public CoolAsyncHttpServer(HttpServerConfig config, Object... routers) throws IOException {
@@ -42,15 +33,6 @@ public class CoolAsyncHttpServer extends HttpServer {
     }
 
     @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        if (!SUPPORTED_METHODS.contains(request.getMethod())) {
-            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        }
-        session.sendResponse(response);
-    }
-
-    @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         executorService.execute(() -> {
             try {
@@ -67,10 +49,6 @@ public class CoolAsyncHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        for (SelectorThread thread : selectors) {
-            thread.selector.forEach(Session::close);
-        }
-
         boolean isFinished;
         try {
             isFinished = executorService.awaitTermination(500, TimeUnit.MILLISECONDS);
