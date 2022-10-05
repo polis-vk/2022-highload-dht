@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 
 public class MyService implements Service {
 
+    public static final String PATH_V0_ENTITY = "/v0/entity";
     private final Logger logger = LoggerFactory.getLogger(MyService.class);
     private static final long FLUSH_THRESHOLD = 1 << 20;
     private static final int REQUESTS_MAX_QUEUE_SIZE = 1024;
@@ -72,8 +73,7 @@ public class MyService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-
-    @Path("/v0/entity")
+    @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_GET)
     public void handleGet(@Param(value = "id", required = true) String id, HttpSession session) {
         requestsExecutor.execute(() -> {
