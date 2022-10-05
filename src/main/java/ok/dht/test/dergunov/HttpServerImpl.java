@@ -1,9 +1,7 @@
 package ok.dht.test.dergunov;
 
 import jdk.incubator.foreign.MemorySegment;
-import ok.dht.ServiceConfig;
 import ok.dht.test.dergunov.database.BaseEntry;
-import ok.dht.test.dergunov.database.Config;
 import ok.dht.test.dergunov.database.Entry;
 import ok.dht.test.dergunov.database.MemorySegmentDao;
 import one.nio.http.HttpServer;
@@ -13,51 +11,44 @@ import one.nio.http.PathMapper;
 import one.nio.http.Request;
 import one.nio.http.RequestHandler;
 import one.nio.http.Response;
-import one.nio.server.AcceptorConfig;
+import one.nio.net.Session;
+import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
-import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class HttpServerImpl extends HttpServer {
 
-    private final ConcurrentLinkedDeque<Request> requestsQueue = new ConcurrentLinkedDeque<>();
+    private static final String PATH = "/v0/entity";
+    private static final String PARAMETER_KEY = "id=";
+
+    private static final int SIZE_QUEUE = 128;
+    private static final int COUNT_CORES = 6;
+    private static final Response BAD_RESPONSE = new Response(Response.BAD_REQUEST, Response.EMPTY);
+    private static final Response NOT_FOUND = new Response(Response.NOT_FOUND, Response.EMPTY);
     private final MemorySegmentDao database;
-    private final PathMapper defaultMapper = new PathMapper();
+    private final PathMapper handlerMapper = new PathMapper();
 
     private final ExecutorService poolExecutor = new ThreadPoolExecutor(
-            1,
-            1,
+            COUNT_CORES,
+            COUNT_CORES,
             0L,
             TimeUnit.MILLISECONDS,
-            new LinkedBlockingDeque<>()
+            new LinkedBlockingQueue<>(SIZE_QUEUE)
     );
 
 
-    public HttpServerImpl(HttpServerConfig config, ServiceConfig configs, long flushThresholdBytes, Object... routers) throws IOException {
+    public HttpServerImpl(HttpServerConfig config, MemorySegmentDao database, Object... routers) throws IOException {
         super(config, routers);
-        database = new MemorySegmentDao(new Config(configs.workingDir(), flushThresholdBytes));
-        defaultMapper.add("/v0/entity", new int[]{Request.METHOD_GET}, this::handleGet);
-        defaultMapper.add("/v0/entity", new int[]{Request.METHOD_PUT}, this::handlePut);
-        defaultMapper.add("/v0/entity", new int[]{Request.METHOD_DELETE}, this::handleDelete);
-    }
-
-    public static HttpServerConfig createConfigFromPort(int port) {
-        HttpServerConfig httpConfig = new HttpServerConfig();
-        AcceptorConfig acceptor = new AcceptorConfig();
-        acceptor.port = port;
-        acceptor.reusePort = true;
-        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
-        return httpConfig;
-    }
-
-    private static String toString(MemorySegment data) {
-        return data == null ? null : new String(data.toByteArray());
+        this.database = database;
+        handlerMapper.add(PATH, new int[]{Request.METHOD_GET}, this::handleGet);
+        handlerMapper.add(PATH, new int[]{Request.METHOD_PUT}, this::handlePut);
+        handlerMapper.add(PATH, new int[]{Request.METHOD_DELETE}, this::handleDelete);
     }
 
     private static byte[] toBytes(MemorySegment data) {
@@ -74,73 +65,62 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        session.sendResponse(response);
+        session.sendResponse(BAD_RESPONSE);
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
-        //super.handleRequest(request, session);
-        poolExecutor.submit(() -> {
+    public void handleRequest(Request request, HttpSession session) {
+        poolExecutor.execute(() -> {
             int methodName = request.getMethod();
             String path = request.getPath();
 
-            RequestHandler handler = defaultMapper.find(path, methodName);
-            if (handler != null) {
-                try {
-                    handler.handleRequest(request, session);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-                return;
-            }
-
+            RequestHandler handler = handlerMapper.find(path, methodName);
             try {
+                if (handler != null) {
+                    handler.handleRequest(request, session);
+                    return;
+                }
                 handleDefault(request, session);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
-//            if (request == null || !request.getPath().equals("/v0/entity")) {
-//                return new Response(Response.BAD_REQUEST, Response.EMPTY);
-//            }
-//            System.out.println("here switch");
-//            return switch (request.getMethodName()) {
-//                case "GET" -> handleGet(request, database);
-//                case "PUT"  -> handlePut(request, database);
-//                case "DELETE" -> handleDelete(request, database);
-//                default -> new Response(Response.BAD_REQUEST, Response.EMPTY);
-//            };
         });
     }
 
-    private void handleGet(@Nonnull Request request, HttpSession session) throws IOException {
-        System.out.println("here get");
-        String entityId = request.getParameter("id=", "");
-        System.out.println("entityId:" + entityId);
+    @Override
+    public synchronized void stop() {
+        for (SelectorThread thread : selectors) {
+            for (Session session : thread.selector) {
+                session.close();
+            }
+        }
+        super.stop();
+        poolExecutor.shutdown();
+    }
 
+//    private static String toString(MemorySegment data) {
+//        return data == null ? null : new String(data.toByteArray());
+//    }
+
+    private void handleGet(@Nonnull Request request, HttpSession session) throws IOException {
+        String entityId = request.getParameter(PARAMETER_KEY, "");
         if (entityId.isEmpty()) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            session.sendResponse(BAD_RESPONSE);
             return;
         }
 
         Entry<MemorySegment> result = database.get(fromString(entityId));
         if (result == null) {
-
-            session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
+            session.sendResponse(NOT_FOUND);
             return;
         }
-        System.out.println("key: " + toString(result.key()));
-        System.out.println("value: " + toString(result.value()));
         session.sendResponse(new Response(Response.OK, toBytes(result.value())));
     }
 
     private void handlePut(@Nonnull Request request, HttpSession session) throws IOException {
-        System.out.println("here put");
-
-        String entityId = request.getParameter("id", "");
-        System.out.println("entityId:" + entityId);
+        String entityId = request.getParameter(PARAMETER_KEY, "");
         if (entityId.isEmpty()) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            session.sendResponse(BAD_RESPONSE);
             return;
         }
 
@@ -149,13 +129,9 @@ public class HttpServerImpl extends HttpServer {
     }
 
     private void handleDelete(@Nonnull Request request, HttpSession session) throws IOException {
-        System.out.println("here delete");
-
-        String entityId = request.getParameter("id", "");
-        System.out.println("entityId:" + entityId);
-
+        String entityId = request.getParameter(PARAMETER_KEY, "");
         if (entityId.isEmpty()) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            session.sendResponse(BAD_RESPONSE);
             return;
         }
 

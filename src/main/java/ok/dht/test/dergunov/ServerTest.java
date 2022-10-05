@@ -6,9 +6,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Collections;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-
-import static ok.dht.test.dergunov.ServiceImpl.DEFAULT_FLUSH_THRESHOLD_BYTES;
 
 public final class ServerTest {
 
@@ -25,9 +24,6 @@ public final class ServerTest {
                 Collections.singletonList(url),
                 Files.createTempDirectory("server3")
         );
-        HttpServerImpl a = new HttpServerImpl(HttpServerImpl.createConfigFromPort(8084),
-                config, DEFAULT_FLUSH_THRESHOLD_BYTES);
-        a.start();
-        //new ServiceImpl(config).start().get(1, TimeUnit.SECONDS);
+        new ServiceImpl(config).start().get(1, TimeUnit.SECONDS);
     }
 }

@@ -1,38 +1,20 @@
 package ok.dht.test.dergunov;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.dergunov.database.BaseEntry;
 import ok.dht.test.dergunov.database.Config;
-import ok.dht.test.dergunov.database.Entry;
 import ok.dht.test.dergunov.database.MemorySegmentDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 public final class ServiceImpl implements Service {
 
     public static final long DEFAULT_FLUSH_THRESHOLD_BYTES = 4194304; // 4 MB
-    private static final ConcurrentLinkedDeque<Request> requests = new ConcurrentLinkedDeque<>();
-    //private static ExecutorService executorService = Executors.newFixedThreadPool(10);
-    private static final ExecutorService executorService = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
-            new LinkedBlockingQueue<Runnable>());
     private HttpServer server;
     private final ServiceConfig config;
     private MemorySegmentDao database;
@@ -48,41 +30,6 @@ public final class ServiceImpl implements Service {
         this(config, DEFAULT_FLUSH_THRESHOLD_BYTES);
     }
 
-    private static byte[] toBytes(MemorySegment data) {
-        return data == null ? null : data.toByteArray();
-    }
-
-    private static MemorySegment fromString(String data) {
-        return data == null ? null : MemorySegment.ofArray(data.toCharArray());
-    }
-
-    private static MemorySegment fromBytes(byte[] data) {
-        return data == null ? null : MemorySegment.ofArray(data);
-    }
-
-    @Override
-    public CompletableFuture<?> start() throws IOException {
-        database = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
-        server = new HttpServer(createConfigFromPort(config.selfPort())) {
-            @Override
-            public void handleDefault(Request request, HttpSession session) throws IOException {
-                Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-                session.sendResponse(response);
-            }
-        };
-        server.addRequestHandlers(this);
-        server.start();
-
-        return CompletableFuture.completedFuture(null);
-    }
-
-    @Override
-    public CompletableFuture<?> stop() throws IOException {
-        database.close();
-        server.stop();
-        return CompletableFuture.completedFuture(null);
-    }
-
     private static HttpServerConfig createConfigFromPort(int port) {
         HttpServerConfig httpConfig = new HttpServerConfig();
         AcceptorConfig acceptor = new AcceptorConfig();
@@ -92,37 +39,11 @@ public final class ServiceImpl implements Service {
         return httpConfig;
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String entityId) {
-        if (entityId.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-        Entry<MemorySegment> result = database.get(fromString(entityId));
-        if (result == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-        return new Response(Response.OK, toBytes(result.value()));
-    }
-
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(@Param(value = "id", required = true) String entityId, Request request) {
-        if (entityId.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-        database.upsert(new BaseEntry<>(fromString(entityId), fromBytes(request.getBody())));
-        return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) String entityId) {
-        if (entityId.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-        database.upsert(new BaseEntry<>(fromString(entityId), null));
-        return new Response(Response.ACCEPTED, Response.EMPTY);
+    @Override
+    public CompletableFuture<?> stop() throws IOException {
+        database.close();
+        server.stop();
+        return CompletableFuture.completedFuture(null);
     }
 
     @ServiceFactory(stage = 1, week = 1)
@@ -133,4 +54,13 @@ public final class ServiceImpl implements Service {
             return new ServiceImpl(config);
         }
     }
+
+    @Override
+    public CompletableFuture<?> start() throws IOException {
+        database = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
+        server = new HttpServerImpl(createConfigFromPort(config.selfPort()), database);
+        server.start();
+        return CompletableFuture.completedFuture(null);
+    }
+
 }
