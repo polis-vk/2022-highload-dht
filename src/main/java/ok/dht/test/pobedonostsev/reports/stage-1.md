@@ -613,13 +613,13 @@ Transfer/sec:     83.07KB
 
 ## Результаты профилирования
 ### GET
-[Server Get CPU](./html/server-get-cpu.html)
+[Server Get CPU](html/stage1/server-get-cpu.html)
 
-[Server get alloc](./html/server-get-alloc.html)
+[Server get alloc](html/stage1/server-get-alloc.html)
 ### PUT
-[Server Put CPU](./html/server-put-cpu.html)
+[Server Put CPU](html/stage1/server-put-cpu.html)
 
-[Server Put alloc](./html/server-put-alloc.html)
+[Server Put alloc](html/stage1/server-put-alloc.html)
 
 ## Анализ
 ### PUT
