@@ -17,6 +17,7 @@
 package ok.dht;
 
 import java.net.HttpURLConnection;
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.concurrent.TimeUnit;
 
@@ -43,6 +44,20 @@ class SingleNodeTest extends TestBase {
                 HttpURLConnection.HTTP_BAD_REQUEST,
                 client.send(
                         service.request("/v0/entity").GET().build(),
+                        HttpResponse.BodyHandlers.ofByteArray()
+                ).statusCode()
+        );
+        assertEquals(
+                HttpURLConnection.HTTP_BAD_REQUEST,
+                client.send(
+                        service.request("/v0/entity").PUT(HttpRequest.BodyPublishers.noBody()).build(),
+                        HttpResponse.BodyHandlers.ofByteArray()
+                ).statusCode()
+        );
+        assertEquals(
+                HttpURLConnection.HTTP_BAD_REQUEST,
+                client.send(
+                        service.request("/v0/entity").DELETE().build(),
                         HttpResponse.BodyHandlers.ofByteArray()
                 ).statusCode()
         );
