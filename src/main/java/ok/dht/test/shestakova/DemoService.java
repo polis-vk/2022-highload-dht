@@ -38,7 +38,21 @@ public class DemoService implements Service {
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
-                Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+                Response response;
+                int requestMethod = request.getMethod();
+                if (requestMethod == Request.METHOD_GET
+                        || requestMethod == Request.METHOD_PUT
+                        || requestMethod == Request.METHOD_DELETE) {
+                    response = new Response(
+                            Response.BAD_REQUEST,
+                            Response.EMPTY
+                    );
+                } else {
+                    response = new Response(
+                            Response.METHOD_NOT_ALLOWED,
+                            Response.EMPTY
+                    );
+                }
                 session.sendResponse(response);
             }
         };
