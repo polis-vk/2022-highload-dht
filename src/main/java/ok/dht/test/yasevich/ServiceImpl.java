@@ -19,6 +19,7 @@ import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -26,7 +27,9 @@ import java.util.concurrent.TimeUnit;
 
 public class ServiceImpl implements Service {
 
-    private static final int FLUSH_THRESHOLD = 10 * 1024 * 1024;
+    private static final int FLUSH_THRESHOLD = 5 * 1024 * 1024;
+    private static final int POOL_QUEUE_SIZE = 1000;
+    private static final int FIFO_RARENESS = 3;
 
     private final ServiceConfig config;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
@@ -39,7 +42,7 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD));
-        server = new CustomHttpServer(createConfigFromPort(config.selfPort()), dao);
+        server = new CustomHttpServer(createConfigFromPort(config.selfPort()), dao, true);
         server.start();
         server.addRequestHandlers(this);
         return CompletableFuture.completedFuture(null);
@@ -71,16 +74,16 @@ public class ServiceImpl implements Service {
 
     private static class CustomHttpServer extends HttpServer {
         private static final int CPUs = Runtime.getRuntime().availableProcessors();
-        private static final int QUEUE_SIZE = 10_000;
-        private static final int FIFO_RARENESS = 3;
 
+        private final boolean rejectWhenOverloaded;
         private final Dao<MemorySegment, Entry<MemorySegment>> dao;
-        private final AlmostLifoQueue queue = new AlmostLifoQueue(QUEUE_SIZE, FIFO_RARENESS);
+        private final BlockingQueue<Runnable> queue = new AlmostLifoQueue(POOL_QUEUE_SIZE, FIFO_RARENESS);
         private final ExecutorService pool = new ThreadPoolExecutor(CPUs, CPUs, 0L, TimeUnit.MILLISECONDS, queue);
 
 
-        public CustomHttpServer(HttpServerConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao, Object... routers) throws IOException {
+        public CustomHttpServer(HttpServerConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao, boolean rejectWhenOverloaded, Object... routers) throws IOException {
             super(config, routers);
+            this.rejectWhenOverloaded = rejectWhenOverloaded;
             this.dao = dao;
         }
 
@@ -96,7 +99,7 @@ public class ServiceImpl implements Service {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
-            if (this.isOverloaded()) {
+            if (rejectWhenOverloaded && this.isOverloaded()) {
                 session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
                 return;
             }
@@ -116,7 +119,7 @@ public class ServiceImpl implements Service {
         }
 
         private boolean isOverloaded() {
-            return queue.size() >= QUEUE_SIZE;
+            return queue.size() >= POOL_QUEUE_SIZE;
         }
 
         private Response handleGet(String id) {
@@ -155,7 +158,7 @@ public class ServiceImpl implements Service {
 
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
