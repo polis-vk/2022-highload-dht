@@ -68,7 +68,7 @@ public class ServiceImpl implements Service {
             case Request.METHOD_GET -> getEntity(id);
             case Request.METHOD_PUT -> putEntity(request, id);
             case Request.METHOD_DELETE -> deleteEntity(id);
-            default -> new Response(Response.BAD_REQUEST, "Unhandled method".getBytes(StandardCharsets.UTF_8));
+            default -> new Response(Response.METHOD_NOT_ALLOWED, "Unhandled method".getBytes(StandardCharsets.UTF_8));
         };
     }
 
