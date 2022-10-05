@@ -7,22 +7,13 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 
 public class KeyValueHttpServer extends HttpServer {
-    private static final Logger log = LoggerFactory.getLogger(KeyValueHttpServer.class);
 
     public KeyValueHttpServer(HttpServerConfig config, Object... routers) throws IOException {
         super(config, routers);
-    }
-
-    @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
-        log.info("{}", request);
-        super.handleRequest(request, session);
     }
 
     @Override
@@ -36,7 +27,7 @@ public class KeyValueHttpServer extends HttpServer {
         super.stop();
         for (SelectorThread selector : selectors) {
             for (Session session : selector.selector) {
-                session.scheduleClose();
+                session.close();
             }
         }
     }
