@@ -63,6 +63,12 @@ public class Server extends HttpServer {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
+    @RequestMethod(Request.METHOD_POST)
+    @Path(ENTITY_PATH)
+    public Response handlePost() {
+        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+    }
+
     private static Response badRequest() {
         return new Response(Response.BAD_REQUEST, Response.EMPTY);
     }
