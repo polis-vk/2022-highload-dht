@@ -21,12 +21,12 @@ public class MultiQueue<T> extends AbstractQueue<T> implements BlockingQueue<T> 
     private final int capacity;
 
     // capacity is capacity of single queue
-    public MultiQueue(int nQueues, int capacity) {
+    public MultiQueue(int queueNumber, int capacity) {
         queues = Stream.generate(() -> (Queue<T>) new ArrayDeque<T>(capacity))
-                .limit(nQueues)
+                .limit(queueNumber)
                 .collect(Collectors.toCollection(ArrayList::new));
         locks = Stream.generate(() -> (Lock) new ReentrantLock())
-                .limit(nQueues)
+                .limit(queueNumber)
                 .collect(Collectors.toCollection(ArrayList::new));
         this.capacity = capacity;
     }
@@ -113,15 +113,7 @@ public class MultiQueue<T> extends AbstractQueue<T> implements BlockingQueue<T> 
                         continue;
                     }
                     try {
-                        if (queues.get(pos1).peek() == null) {
-                            return queues.get(pos2).poll();
-                        } else if (queues.get(pos2).peek() == null) {
-                            return queues.get(pos1).poll();
-                        } else if (queues.get(pos1).size() > queues.get(pos2).size()) {
-                            return queues.get(pos1).poll();
-                        } else {
-                            return queues.get(pos2).poll();
-                        }
+                        return doPoll(pos1, pos2);
                     } finally {
                         locks.get(pos2).unlock();
                     }
@@ -129,6 +121,18 @@ public class MultiQueue<T> extends AbstractQueue<T> implements BlockingQueue<T> 
                     locks.get(pos1).unlock();
                 }
             }
+        }
+    }
+
+    private T doPoll(int pos1, int pos2) {
+        if (queues.get(pos1).peek() == null) {
+            return queues.get(pos2).poll();
+        } else if (queues.get(pos2).peek() == null) {
+            return queues.get(pos1).poll();
+        } else if (queues.get(pos1).size() > queues.get(pos2).size()) {
+            return queues.get(pos1).poll();
+        } else {
+            return queues.get(pos2).poll();
         }
     }
 
