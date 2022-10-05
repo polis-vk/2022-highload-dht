@@ -4,7 +4,7 @@ import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.gerasimov.exception.ServerException;
-
+import ok.dht.test.gerasimov.exception.ServiceException;
 import one.nio.http.HttpServer;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -91,7 +91,7 @@ public class ServiceImpl implements Service {
         try {
             return factory.open(new File(path.toString()), new Options());
         } catch (IOException e) {
-            throw e;
+            throw new ServiceException("Can not create DAO", e);
         }
     }
 

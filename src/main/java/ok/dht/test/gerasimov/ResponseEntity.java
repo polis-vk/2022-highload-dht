@@ -3,10 +3,11 @@ package ok.dht.test.gerasimov;
 import one.nio.http.Response;
 import one.nio.util.Utf8;
 
-/**
- * @author Michael Gerasimov
- */
 public class ResponseEntity {
+
+    private ResponseEntity() {
+    }
+
     public static Response notFound() {
         return new Response(Response.NOT_FOUND, Response.EMPTY);
     }
