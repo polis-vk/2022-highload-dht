@@ -53,8 +53,8 @@ public class MyService implements Service {
                 super.stop();
             }
         };
-        server.start();
         server.addRequestHandlers(this);
+        server.start();
         int flushThresholdBytes = 1024 * 1024;
         dao = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
         return CompletableFuture.completedFuture(null);
