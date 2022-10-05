@@ -35,7 +35,7 @@ public class ServiceImpl implements Service {
     public static final String PARAM_ID_NAME = "id=";
     private static final int CORE_POLL_SIZE = 8;
     private static final int MAXIMUM_POLL_SIZE = 64;
-    private static final int KEEP_ALIVE_TIME = 5;
+    private static final int KEEP_ALIVE_TIME = 0;
     private static final int QUEUE_CAPACITY = 128;
     private static final String BAD_ID = "Given id is bad.";
     private static final String NO_SUCH_METHOD = "No such method.";
@@ -114,8 +114,8 @@ public class ServiceImpl implements Service {
                                     try {
                                         session.sendError(Response.BAD_REQUEST, e.getMessage());
                                         LOGGER.error("Can't handle request", e);
-                                    } catch (IOException ex) {
-                                        LOGGER.error("Can't send error message to Bad Request", ex);
+                                    } catch (IOException exception) {
+                                        LOGGER.error("Can't send error message to Bad Request", exception);
                                     }
                                 }
                             }
@@ -174,13 +174,14 @@ public class ServiceImpl implements Service {
         return emptyResponse(Response.CREATED);
     }
 
-    void shutdownAndAwaitTermination(ExecutorService pool) {
+    void closeExecutorPool(ExecutorService pool) {
         pool.shutdown();
         try {
             if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
-                pool.shutdownNow(); // Cancel currently executing tasks
-                if (!pool.awaitTermination(1, TimeUnit.SECONDS))
-                    System.err.println("Pool didn't terminate");
+                pool.shutdownNow();
+                if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
+                    LOGGER.error("Pool didn't terminate");
+                }
             }
         } catch (InterruptedException ie) {
             pool.shutdownNow();
@@ -196,7 +197,7 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
-        shutdownAndAwaitTermination(requestService);
+        closeExecutorPool(requestService);
         dao.close();
         dao = null;
         return CompletableFuture.completedFuture(null);
