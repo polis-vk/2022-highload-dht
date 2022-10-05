@@ -24,6 +24,7 @@ import static ok.dht.test.nadutkin.impl.UtilsClass.getBytes;
 
 public class ServiceImpl implements Service {
 
+    private static final String PATH = "/v0/entity";
     private final ServiceConfig config;
     private HttpServer server;
     private MemorySegmentDao dao;
@@ -53,7 +54,7 @@ public class ServiceImpl implements Service {
         return MemorySegment.ofArray(getBytes(id));
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response get(@Param(value = "id", required = true) String id) {
         if (id == null || id.isEmpty()) {
@@ -79,14 +80,14 @@ public class ServiceImpl implements Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response put(@Param(value = "id", required = true) String id,
                         @Param(value = "request", required = true) Request request) {
         return upsert(id, MemorySegment.ofArray(request.getBody()), Response.CREATED);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod({Request.METHOD_CONNECT,
             Request.METHOD_HEAD,
             Request.METHOD_OPTIONS,
@@ -97,7 +98,7 @@ public class ServiceImpl implements Service {
         return new Response(Response.METHOD_NOT_ALLOWED, getBytes("Not implemented yet"));
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response delete(@Param(value = "id", required = true) String id) {
         return upsert(id, null, Response.ACCEPTED);
