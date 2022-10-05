@@ -411,33 +411,62 @@ Transfer/sec:     80.74KB
 #### **Профилирование (CPU, alloc, lock) с помощью async-profiler**
 ##### PUT-запросы
 **CPU**
-![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/put_cpu.jpg)
 
-- большая часть процессорного времени идёт на работу ядра (работа с сетевым протоколом, syscalls), запросами (one.nio);
-- ~3% затрачивается на работу с MemorySegment;
-- ~1% времени идёт на работу БД.
+
+| Sync | Async |
+|:--------------:|:----------------------------:|
+|       ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/put_cpu.jpg)      |              ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/put_cpu.jpg)              |
+
+
+
+Относительно синхронной версии помимо появившегося ThreadPoolExecutor-а, занимающего 67% (включая работу с юлокирующей очередью, в которой взятие задачи занимает 12%), также значительно увеличилось количество нативного кода и syscall-ов из-за локов, появившихся в связи с увеличением потоков, желающих работать с сервисом (присутствуют локи после вызова метода offer, вставляющего задачу в очередь, после метода take, берущего из очереди задачу. Виден механизм работы блокирующей очереди, он забирает около 20%, но увеличивает пропускную способность сервера, в связи с чем можно считать это не сильно критическим).  
+Менее 2% занимают локи, присутствующие в реализации upsert-метода dao, что не критично.
+
 
 **alloc**
-![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/put_alloc.jpg)
 
+| Sync | Async |
+|:--------------:|:----------------------------:|
+|       ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/put_alloc.jpg)      |              ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/put_alloc.jpg)              |
+
+По аллокациям сильных изменений помимо появления ThreadPoolExecutor не наблюдается: добавились аллокации на локи (менее 1% на лок в upsert).
 
 **lock**
-
+ * в процессе
+ 
 
 ##### GET-запросы
 **CPU**
-![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/get_cpu.jpg)
+
+| Sync | Async |
+|:--------------:|:----------------------------:|
+|       ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/get_cpu.jpg)      |              ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/get_cpu.jpg)              |
 
 
+Как и в put-запросах заметно, что ThreadPoolExecutor забрал у SelectorThread работу с БД, чем освободил его.  
+Заметно меньше стало видно на графике syscall-ов, они перешли на селектор, а 98% - работа с БД - висят уже на нашем пуле воркеров, где все еще более 80% занимаеет поиск ключа по диску.
 
 **alloc**
-![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/get_alloc.jpg)
 
+| Sync | Async |
+|:--------------:|:----------------------------:|
+|       ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/main/src/main/java/ok/dht/test/shestakova/report/jpg/get_alloc.jpg)      |              ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/get_alloc.jpg)              |
+
+В контексте аллокаций графики синхронного и асинхронного вариантов практически не различаются.
 
 
 **lock**
+ * в процессе
 
 
+Для оптимизации однозначно стоит рассмотреть поиск ключа на диске: подумать об увеличении размера файлов, фоновом компакшене, а также о других способах, которые позволили бы меньше "ходить" по диску.  
+Также неплохо было бы самим отправлять для передачи в сокет ответы на запросы в виде массива байт, а не в виде Response, который далее будет превращен обратно в массив байт. Также было бы здорово убрать работу со строками, в виде которых мы получаем id, а затем через массив байт превращаем в MemorySegment для работы с БД.  
+Для ускорения работы пула воркеров можно поискать более оптимальную структуру данных для очереди задач, которая бы затрачивала меньше времени на блокировки.  
+
+
+
+
+ * в процессе
 
 Стек на LinkedBlockedStack
 PUT
