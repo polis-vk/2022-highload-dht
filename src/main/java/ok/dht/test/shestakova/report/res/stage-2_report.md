@@ -432,6 +432,11 @@ Transfer/sec:     80.74KB
 По аллокациям сильных изменений помимо появления ThreadPoolExecutor не наблюдается: добавились аллокации на локи (менее 1% на лок в upsert).
 
 **lock**
+
+| Sync | Async |
+|:--------------:|:----------------------------:|
+|       ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/put_lock_sync.jpg)      |              ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/put_lock.jpg)              |
+
  * в процессе
  
 
@@ -456,7 +461,12 @@ Transfer/sec:     80.74KB
 
 
 **lock**
- * в процессе
+
+| Sync | Async |
+|:--------------:|:----------------------------:|
+|       ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/get_lock_sync.jpg)      |              ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/get_lock.jpg)              |
+
+* в процессе
 
 
 Для оптимизации однозначно стоит рассмотреть поиск ключа на диске: подумать об увеличении размера файлов, фоновом компакшене, а также о других способах, которые позволили бы меньше "ходить" по диску.  
