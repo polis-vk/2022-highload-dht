@@ -22,13 +22,18 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class Service implements ok.dht.Service {
     private static final Logger LOG = LoggerFactory.getLogger(Service.class);
+    private static final int EXECUTOR_THREADS = Runtime.getRuntime().availableProcessors();
 
     private final ServiceConfig config;
     private DB levelDb;
     private HttpServer server;
+    private ExecutorService executorService;
 
     public Service(ServiceConfig config) {
         this.config = config;
@@ -38,6 +43,7 @@ public class Service implements ok.dht.Service {
     public CompletableFuture<?> start() throws IOException {
         levelDb = new DbImpl(new Options(), config.workingDir().toFile());
         LOG.info("Started DB in directory {}", config.workingDir());
+
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
@@ -55,9 +61,11 @@ public class Service implements ok.dht.Service {
                 super.stop();
             }
         };
+
+        executorService = Executors.newFixedThreadPool(EXECUTOR_THREADS);
         server.addRequestHandlers(this);
         server.start();
-        LOG.info("Service started on {}", config.selfUrl());
+        LOG.info("Service started on {}, executor threads: {}", config.selfUrl(), EXECUTOR_THREADS);
         return CompletableFuture.completedFuture(null);
     }
 
@@ -67,6 +75,7 @@ public class Service implements ok.dht.Service {
         acceptorConfig.port = port;
         acceptorConfig.reusePort = true;
         httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
+        httpServerConfig.selectors = EXECUTOR_THREADS;
         return httpServerConfig;
     }
 
@@ -80,22 +89,32 @@ public class Service implements ok.dht.Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id", required = true) String id) {
-        if (id == null || id.isEmpty()) {
+        try {
+            return executorService.submit(() -> {
+                if (id == null || id.isEmpty()) {
+                    return new Response(
+                        Response.BAD_REQUEST,
+                        Response.EMPTY
+                    );
+                }
+                byte[] value = levelDb.get(Utf8.toBytes(id));
+                if (value == null) {
+                    return new Response(
+                        Response.NOT_FOUND,
+                        Response.EMPTY
+                    );
+                } else {
+                    return new Response(
+                        Response.OK,
+                        value
+                    );
+                }
+            }).get();
+        } catch (InterruptedException | ExecutionException e) {
+            LOG.error("Error while get (id {})", id, e);
             return new Response(
-                Response.BAD_REQUEST,
+                Response.INTERNAL_ERROR,
                 Response.EMPTY
-            );
-        }
-        byte[] value = levelDb.get(Utf8.toBytes(id));
-        if (value == null) {
-            return new Response(
-                Response.NOT_FOUND,
-                Response.EMPTY
-            );
-        } else {
-            return new Response(
-                Response.OK,
-                value
             );
         }
     }
@@ -106,17 +125,27 @@ public class Service implements ok.dht.Service {
         @Param(value = "id", required = true) String id,
         Request request
     ) {
-        if (id == null || id.isEmpty()) {
+        try {
+            return executorService.submit(() -> {
+                if (id == null || id.isEmpty()) {
+                    return new Response(
+                        Response.BAD_REQUEST,
+                        Response.EMPTY
+                    );
+                }
+                levelDb.put(Utf8.toBytes(id), request.getBody());
+                return new Response(
+                    Response.CREATED,
+                    Response.EMPTY
+                );
+            }).get();
+        } catch (InterruptedException | ExecutionException e) {
+            LOG.error("Error while upsert (id {})", id, e);
             return new Response(
-                Response.BAD_REQUEST,
+                Response.INTERNAL_ERROR,
                 Response.EMPTY
             );
         }
-        levelDb.put(Utf8.toBytes(id), request.getBody());
-        return new Response(
-            Response.CREATED,
-            Response.EMPTY
-        );
     }
 
     @Path("/v0/entity")
@@ -124,17 +153,27 @@ public class Service implements ok.dht.Service {
     public Response deleteEntity(
         @Param(value = "id", required = true) String id
     ) {
-        if (id == null || id.isEmpty()) {
+        try {
+            return executorService.submit(() -> {
+                if (id == null || id.isEmpty()) {
+                    return new Response(
+                        Response.BAD_REQUEST,
+                        Response.EMPTY
+                    );
+                }
+                levelDb.delete(Utf8.toBytes(id));
+                return new Response(
+                    Response.ACCEPTED,
+                    Response.EMPTY
+                );
+            }).get();
+        } catch (InterruptedException | ExecutionException e) {
+            LOG.error("Error while get (id {})", id, e);
             return new Response(
-                Response.BAD_REQUEST,
+                Response.INTERNAL_ERROR,
                 Response.EMPTY
             );
         }
-        levelDb.delete(Utf8.toBytes(id));
-        return new Response(
-            Response.ACCEPTED,
-            Response.EMPTY
-        );
     }
 
     @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
