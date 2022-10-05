@@ -23,19 +23,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class MyService implements Service {
 
     private final Logger logger = LoggerFactory.getLogger(MyService.class);
     private static final long FLUSH_THRESHOLD = 1 << 20;
+    private static final int REQUESTS_MAX_QUEUE_SIZE = 1024;
     private final ServiceConfig config;
     private HttpServer server;
     private InMemoryDao dao;
-
-    private final ExecutorService requestsExecutor = Executors.newCachedThreadPool();
+    private ThreadPoolExecutor requestsExecutor;
 
     public MyService(ServiceConfig config) {
         this.config = config;
@@ -48,15 +49,25 @@ public class MyService implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         dao = new InMemoryDao(createDaoConfig());
+        initExecutor();
         server = new MyHttpServer(createConfigFromPort(config.selfPort()));
         server.start();
         server.addRequestHandlers(this);
         return CompletableFuture.completedFuture(null);
     }
 
+    private void initExecutor() {
+        int nThreads = Runtime.getRuntime().availableProcessors();
+        requestsExecutor = new ThreadPoolExecutor(nThreads, nThreads,
+                0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(REQUESTS_MAX_QUEUE_SIZE),
+                new ThreadPoolExecutor.DiscardOldestPolicy());
+    }
+
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
+        requestsExecutor.shutdown();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
