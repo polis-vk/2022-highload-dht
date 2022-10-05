@@ -9,7 +9,6 @@ import one.nio.http.Request;
 import one.nio.http.RequestHandler;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.http.VirtualHost;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
 
@@ -25,7 +24,9 @@ public class CustomHttpServer extends HttpServer {
     private final ExecutorService executorService;
     private static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
 
-    public CustomHttpServer(HttpServerConfig config, ExecutorService executorService, Object... routers) throws IOException {
+    public CustomHttpServer(HttpServerConfig config,
+                            ExecutorService executorService,
+                            Object... routers) throws IOException {
         super(config, routers);
         this.executorService = executorService;
     }
@@ -93,13 +94,13 @@ public class CustomHttpServer extends HttpServer {
     public static class RunnableForRequestHandler implements Runnable {
         private final Request request;
         private final HttpSession session;
-        private final Method m;
+        private final Method handlerMethod;
         private final Object router;
 
-        public RunnableForRequestHandler(Request request, HttpSession session, Method m, Object router) {
+        public RunnableForRequestHandler(Request request, HttpSession session, Method handlerMethod, Object router) {
             this.request = request;
             this.session = session;
-            this.m = m;
+            this.handlerMethod = handlerMethod;
             this.router = router;
         }
 
@@ -108,21 +109,22 @@ public class CustomHttpServer extends HttpServer {
             try {
                 switch (request.getMethod()) {
                     case Request.METHOD_GET, Request.METHOD_DELETE -> session.sendResponse(
-                            (Response) m.invoke(router, request.getParameter("id="))
+                            (Response) handlerMethod.invoke(router, request.getParameter("id="))
                     );
                     case Request.METHOD_PUT -> session.sendResponse(
-                            (Response) m.invoke(router, request, request.getParameter("id="))
+                            (Response) handlerMethod.invoke(router, request, request.getParameter("id="))
                     );
+                    default -> session.sendError(Response.METHOD_NOT_ALLOWED, "Unknown method");
                 }
             } catch (IllegalAccessException e) {
-                throw new RuntimeException("Can not access method with name: " + m.getName(), e);
+                throw new RuntimeException("Can not access method with name: " + handlerMethod.getName(), e);
             } catch (InvocationTargetException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof IOException) {
                     throw new UncheckedIOException("Thread with name: " + Thread.currentThread().getName()
-                            + " produced IOException with name: " + m.getName(), (IOException) cause);
+                            + " produced IOException with name: " + handlerMethod.getName(), (IOException) cause);
                 } else {
-                    throw new RuntimeException("Method with name: " + m.getName() + " produced exception", e);
+                    throw new RuntimeException("Method with name: " + handlerMethod.getName() + " produced exception", e);
                 }
             } catch (IOException e) {
                 throw new UncheckedIOException("Too many answers. Can not write anything", e);

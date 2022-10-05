@@ -17,13 +17,10 @@ import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 public class DemoService implements Service {
-
 
     public static final int FLUSH_THRESHOLD_BYTES = 16777216; // 16MB
     protected SkipOldThreadExecutorFactory skipOldThreadExecutorFactory = new SkipOldThreadExecutorFactory();
