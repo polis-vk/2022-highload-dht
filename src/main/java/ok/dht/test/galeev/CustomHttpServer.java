@@ -124,7 +124,9 @@ public class CustomHttpServer extends HttpServer {
                     throw new UncheckedIOException("Thread with name: " + Thread.currentThread().getName()
                             + " produced IOException with name: " + handlerMethod.getName(), (IOException) cause);
                 } else {
-                    throw new RuntimeException("Method with name: " + handlerMethod.getName() + " produced exception", e);
+                    throw new RuntimeException(
+                            "Method with name: " + handlerMethod.getName() + " produced exception", e
+                    );
                 }
             } catch (IOException e) {
                 throw new UncheckedIOException("Too many answers. Can not write anything", e);
