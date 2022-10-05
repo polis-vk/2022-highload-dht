@@ -23,7 +23,7 @@ import static ok.dht.test.kuleshov.utils.ConfigUtils.createConfigFromPort;
 
 public class Service implements ok.dht.Service {
     private final ServiceConfig config;
-    private static final int DEFAULT_DAO_PORT = 3000;
+    private static final int DEFAULT_DAO_FLUSH_THRESHOLD = 8192;
     private Dao<MemorySegment, Entry<MemorySegment>> memorySegmentDao;
     private HttpServer server;
 
@@ -33,10 +33,10 @@ public class Service implements ok.dht.Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        server = new CoolHttpServer(createConfigFromPort(config.selfPort()));
+        server = new CoolAsyncHttpServer(createConfigFromPort(config.selfPort()));
         server.start();
         server.addRequestHandlers(this);
-        Config daoConfig = new Config(config.workingDir(), DEFAULT_DAO_PORT);
+        Config daoConfig = new Config(config.workingDir(), DEFAULT_DAO_FLUSH_THRESHOLD);
         memorySegmentDao = new MemorySegmentDao(daoConfig);
         return CompletableFuture.completedFuture(null);
     }
