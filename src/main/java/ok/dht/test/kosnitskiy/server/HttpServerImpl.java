@@ -49,8 +49,9 @@ public class HttpServerImpl extends HttpServer {
         } catch (InterruptedException e) {
             isTerminated = false;
             LOG.error("Waiting for tasks to finish timed out");
+            Thread.currentThread().interrupt();
         }
-        if(!isTerminated) {
+        if (!isTerminated) {
             executor.shutdownNow();
         }
         for (SelectorThread selectorThread : selectors) {
