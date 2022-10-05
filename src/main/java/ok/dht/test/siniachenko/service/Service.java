@@ -176,6 +176,17 @@ public class Service implements ok.dht.Service {
         }
     }
 
+    @Path("/v0/entity")
+    @RequestMethod(Request.METHOD_POST)
+    public Response post(
+        @Param(value = "id", required = true) String id
+    ) {
+        return new Response(
+            Response.METHOD_NOT_ALLOWED,
+            Response.EMPTY
+        );
+    }
+
     @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
