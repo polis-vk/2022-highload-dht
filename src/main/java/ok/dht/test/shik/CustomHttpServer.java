@@ -76,8 +76,8 @@ public class CustomHttpServer extends HttpServer {
                 session.socket().close();
             }
         }
-        workersService.stop();
         super.stop();
+        workersService.stop();
     }
 
 }
