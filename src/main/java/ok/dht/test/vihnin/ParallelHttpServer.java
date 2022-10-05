@@ -37,6 +37,11 @@ public class ParallelHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        if (request.getMethod() != Request.METHOD_GET
+                && request.getMethod() != Request.METHOD_DELETE
+                && request.getMethod() != Request.METHOD_PUT) {
+            session.sendResponse(emptyResponse(Response.METHOD_NOT_ALLOWED));
+        }
         try {
             executorService.submit(() -> {
                 requestTask(request, session);
