@@ -1,13 +1,8 @@
 package ok.dht.test.mikhaylov;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.mikhaylov.dao.BaseEntry;
-import ok.dht.test.mikhaylov.dao.Config;
-import ok.dht.test.mikhaylov.dao.Entry;
-import ok.dht.test.mikhaylov.dao.artyomdrozdov.MemorySegmentDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -19,6 +14,8 @@ import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
+import org.rocksdb.RocksDB;
+import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -26,10 +23,13 @@ import java.util.concurrent.CompletableFuture;
 
 public class MyService implements Service {
 
+    private static final byte[] EMPTY_ID_RESPONSE_BODY = strToBytes("Empty id");
+
     private final ServiceConfig config;
+
     private HttpServer server;
 
-    private MemorySegmentDao dao;
+    private RocksDB db;
 
     public MyService(ServiceConfig config) {
         this.config = config;
@@ -37,6 +37,11 @@ public class MyService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
+        try {
+            db = RocksDB.open(config.workingDir().toString());
+        } catch (RocksDBException e) {
+            throw new IOException(e);
+        }
         server = new HttpServer(createServerConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
@@ -55,8 +60,6 @@ public class MyService implements Service {
         };
         server.addRequestHandlers(this);
         server.start();
-        int flushThresholdBytes = 1024 * 1024;
-        dao = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
         return CompletableFuture.completedFuture(null);
     }
 
@@ -73,8 +76,12 @@ public class MyService implements Service {
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
         server = null;
-        dao.close();
-        dao = null;
+        try {
+            db.closeE();
+        } catch (RocksDBException e) {
+            throw new IOException(e);
+        }
+        db = null;
         return CompletableFuture.completedFuture(null);
     }
 
@@ -82,41 +89,50 @@ public class MyService implements Service {
         return s.getBytes(StandardCharsets.UTF_8);
     }
 
-    private static MemorySegment strToSegment(String s) {
-        return MemorySegment.ofArray(strToBytes(s));
-    }
-
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(@Param(value = "id", required = true) final String id) {
         if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, strToBytes("Empty id"));
+            return new Response(Response.BAD_REQUEST, EMPTY_ID_RESPONSE_BODY);
         }
-        Entry<MemorySegment> entry = dao.get(strToSegment(id));
-        if (entry == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
+        try {
+            byte[] value = db.get(strToBytes(id));
+            if (value == null) {
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
+            } else {
+                return new Response(Response.OK, value);
+            }
+        } catch (RocksDBException e) {
+            return new Response(Response.INTERNAL_ERROR, strToBytes(e.getMessage()));
         }
-        return new Response(Response.OK, entry.value().toByteArray());
-    }
-
-    private Response upsert(String id, MemorySegment newValue, Response onSuccess) {
-        if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, strToBytes("Empty id"));
-        }
-        dao.upsert(new BaseEntry<>(strToSegment(id), newValue));
-        return onSuccess;
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(@Param(value = "id", required = true) final String id, final Request request) {
-        return upsert(id, MemorySegment.ofArray(request.getBody()), new Response(Response.CREATED, Response.EMPTY));
+        if (id.isEmpty()) {
+            return new Response(Response.BAD_REQUEST, EMPTY_ID_RESPONSE_BODY);
+        }
+        try {
+            db.put(strToBytes(id), request.getBody());
+            return new Response(Response.CREATED, Response.EMPTY);
+        } catch (RocksDBException e) {
+            return new Response(Response.INTERNAL_ERROR, strToBytes(e.getMessage()));
+        }
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(@Param(value = "id", required = true) final String id) {
-        return upsert(id, null, new Response(Response.ACCEPTED, Response.EMPTY));
+        if (id.isEmpty()) {
+            return new Response(Response.BAD_REQUEST, EMPTY_ID_RESPONSE_BODY);
+        }
+        try {
+            db.delete(strToBytes(id));
+            return new Response(Response.ACCEPTED, Response.EMPTY);
+        } catch (RocksDBException e) {
+            return new Response(Response.INTERNAL_ERROR, strToBytes(e.getMessage()));
+        }
     }
 
     @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
