@@ -21,15 +21,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 public class Service implements ok.dht.Service {
     private static final Logger LOG = LoggerFactory.getLogger(Service.class);
-    private static final int EXECUTOR_THREADS = Runtime.getRuntime().availableProcessors();
+    private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
     public static final String REQUESTS_PATH = "/v0/entity";
+    public static final int THREAD_POOL_QUEUE_CAPACITY = (int) 1E20;
 
     private final ServiceConfig config;
     private DB levelDb;
@@ -63,10 +61,14 @@ public class Service implements ok.dht.Service {
             }
         };
 
-        executorService = Executors.newFixedThreadPool(EXECUTOR_THREADS);
+        executorService = new ThreadPoolExecutor(
+            AVAILABLE_PROCESSORS, AVAILABLE_PROCESSORS,
+            0L, TimeUnit.MILLISECONDS,
+            new LinkedBlockingQueue<>(THREAD_POOL_QUEUE_CAPACITY)
+        );
         server.addRequestHandlers(this);
         server.start();
-        LOG.info("Service started on {}, executor threads: {}", config.selfUrl(), EXECUTOR_THREADS);
+        LOG.info("Service started on {}, executor threads: {}", config.selfUrl(), AVAILABLE_PROCESSORS);
         return CompletableFuture.completedFuture(null);
     }
 
@@ -76,7 +78,7 @@ public class Service implements ok.dht.Service {
         acceptorConfig.port = port;
         acceptorConfig.reusePort = true;
         httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
-        httpServerConfig.selectors = EXECUTOR_THREADS;
+        httpServerConfig.selectors = AVAILABLE_PROCESSORS;
         return httpServerConfig;
     }
 
