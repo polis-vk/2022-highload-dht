@@ -49,7 +49,7 @@ public class CustomHttpServer extends HttpServer {
                         : Response.BAD_REQUEST;
                     session.sendError(response, e.getMessage());
                 } catch (IOException e1) {
-                    LOG.error("Error while sending message about error: ", e);
+                    LOG.error("Error while sending message about error: ", e1);
                 }
             }
         });
