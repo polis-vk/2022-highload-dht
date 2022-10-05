@@ -73,7 +73,7 @@ public class DbService implements Service {
                 case Request.METHOD_GET -> getEntity(id);
                 case Request.METHOD_PUT -> putEntity(id, request);
                 case Request.METHOD_DELETE -> deleteEntity(id);
-                default -> new Response(Response.METHOD_NOT_ALLOWED);
+                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             };
         } catch (RocksDBException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
