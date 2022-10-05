@@ -29,6 +29,7 @@ import java.util.concurrent.Executors;
 public class Service implements ok.dht.Service {
     private static final Logger LOG = LoggerFactory.getLogger(Service.class);
     private static final int EXECUTOR_THREADS = Runtime.getRuntime().availableProcessors();
+    public static final String REQUESTS_PATH = "/v0/entity";
 
     private final ServiceConfig config;
     private DB levelDb;
@@ -86,7 +87,7 @@ public class Service implements ok.dht.Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path("/v0/entity")
+    @Path(REQUESTS_PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id", required = true) String id) {
         try {
@@ -119,7 +120,7 @@ public class Service implements ok.dht.Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(REQUESTS_PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response upsertEntity(
         @Param(value = "id", required = true) String id,
@@ -148,7 +149,7 @@ public class Service implements ok.dht.Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(REQUESTS_PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntity(
         @Param(value = "id", required = true) String id
@@ -176,7 +177,7 @@ public class Service implements ok.dht.Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(REQUESTS_PATH)
     @RequestMethod(Request.METHOD_POST)
     public Response post(
         @Param(value = "id", required = true) String id
