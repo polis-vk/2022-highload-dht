@@ -38,4 +38,8 @@ public class ResponseEntity {
     public static Response serviceUnavailable() {
         return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
     }
+
+    public static Response methodNotAllowed() {
+        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+    }
 }

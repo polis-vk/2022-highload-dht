@@ -95,7 +95,7 @@ public final class Server extends HttpServer {
                     case Request.METHOD_GET -> service.handleGetRequest(id);
                     case Request.METHOD_PUT -> service.handlePutRequest(id, request);
                     case Request.METHOD_DELETE -> service.handleDeleteRequest(id);
-                    default -> ResponseEntity.badRequest("Unsupported method");
+                    default -> ResponseEntity.methodNotAllowed();
                 };
             }
             return ResponseEntity.badRequest("Unsupported path");
