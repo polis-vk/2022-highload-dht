@@ -46,6 +46,14 @@ public final class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
+    @Override
+    public CompletableFuture<?> start() throws IOException {
+        database = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
+        server = new HttpServerImpl(createConfigFromPort(config.selfPort()), database);
+        server.start();
+        return CompletableFuture.completedFuture(null);
+    }
+
     @ServiceFactory(stage = 1, week = 1)
     public static class ServiceFactoryImpl implements ServiceFactory.Factory {
 
@@ -53,14 +61,6 @@ public final class ServiceImpl implements Service {
         public Service create(ServiceConfig config) {
             return new ServiceImpl(config);
         }
-    }
-
-    @Override
-    public CompletableFuture<?> start() throws IOException {
-        database = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
-        server = new HttpServerImpl(createConfigFromPort(config.selfPort()), database);
-        server.start();
-        return CompletableFuture.completedFuture(null);
     }
 
 }

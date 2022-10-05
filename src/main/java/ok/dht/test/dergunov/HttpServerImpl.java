@@ -57,8 +57,8 @@ public class HttpServerImpl extends HttpServer {
         super(config, routers);
         this.database = database;
         handlerMapper.add(PATH, new int[]{METHOD_GET}, this::handleGet);
-        handlerMapper.add(PATH, new int[]{Request.METHOD_PUT}, this::handlePut);
-        handlerMapper.add(PATH, new int[]{Request.METHOD_DELETE}, this::handleDelete);
+        handlerMapper.add(PATH, new int[]{METHOD_PUT}, this::handlePut);
+        handlerMapper.add(PATH, new int[]{METHOD_DELETE}, this::handleDelete);
     }
 
     private static byte[] toBytes(MemorySegment data) {
