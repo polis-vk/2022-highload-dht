@@ -60,20 +60,19 @@ public class WebService implements Service {
                 TimeUnit.MILLISECONDS, new CustomLinkedBlockingDeque<>(DEQUE_CAPACITY));
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
-            public void handleRequest(Request request, HttpSession session) {
+            public void handleRequest(Request request, HttpSession session) throws IOException {
                 try {
                     Future<?> task = executorService.submit(() -> {
                         try {
                             super.handleRequest(request, session);
                         } catch (IOException e) {
                             LOGGER.error("Error handling request.", e);
-                            throw new RuntimeException(e);
                         }
                     });
                     tasks.add(task);
                 } catch (RejectedExecutionException e) {
                     LOGGER.error("Cannot execute task: ", e);
-                    throw new RejectedExecutionException(e);
+                    session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
                 }
             }
 
