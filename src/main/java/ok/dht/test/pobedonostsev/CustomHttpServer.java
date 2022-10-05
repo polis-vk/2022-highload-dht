@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 public class CustomHttpServer extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(CustomHttpServer.class);
     private static final int THREAD_COUNT = 64;
-    private static final int QUEUE_SIZE = 1;
+    private static final int QUEUE_SIZE = 256;
     private static ExecutorService es;
 
     public CustomHttpServer(HttpServerConfig config, Object... routers) throws IOException {
@@ -32,7 +32,7 @@ public class CustomHttpServer extends HttpServer {
         es.execute(() -> {
             try {
                 super.handleRequest(request, session);
-            } catch (IOException | RejectedExecutionException e) {
+            } catch (IOException e) {
                 sendError(session, e);
             }
         });
@@ -56,7 +56,7 @@ public class CustomHttpServer extends HttpServer {
     @Override
     public synchronized void start() {
         es = new ThreadPoolExecutor(THREAD_COUNT, THREAD_COUNT, 0L, TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(QUEUE_SIZE), new ThreadPoolExecutor.AbortPolicy());
+                new ArrayBlockingQueue<>(QUEUE_SIZE), new ThreadPoolExecutor.DiscardPolicy());
         super.start();
     }
 
