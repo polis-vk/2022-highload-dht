@@ -133,7 +133,7 @@ public class KeyValueService implements Service {
         return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class StorageServiceFactory implements ServiceFactory.Factory {
 
         @Override
