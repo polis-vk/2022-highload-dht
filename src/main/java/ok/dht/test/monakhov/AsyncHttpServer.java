@@ -43,7 +43,7 @@ public class AsyncHttpServer extends HttpServer {
             try {
                 session.sendError(Response.INTERNAL_ERROR, e.getMessage());
             } catch (IOException ex) {
-                log.error("Error while sending error response to client", ex);
+                log.error("Error while sending error response to client:", ex);
             }
         }
     }
