@@ -168,7 +168,7 @@ public class MyService implements Service {
             }
         }
 
-        public void handleRequestException(Exception e, HttpSession session) {
+        private static void handleRequestException(Exception e, HttpSession session) {
             try {
                 // missing required parameter
                 if (e instanceof HttpException && e.getCause() instanceof NoSuchElementException) {
