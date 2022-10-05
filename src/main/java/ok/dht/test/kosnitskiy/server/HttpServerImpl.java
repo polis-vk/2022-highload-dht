@@ -1,6 +1,5 @@
 package ok.dht.test.kosnitskiy.server;
 
-import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
