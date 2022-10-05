@@ -63,6 +63,7 @@ public class MyService implements Service {
                 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(REQUESTS_MAX_QUEUE_SIZE),
                 new ThreadPoolExecutor.DiscardOldestPolicy());
+        requestsExecutor.prestartAllCoreThreads();
     }
 
     @Override
