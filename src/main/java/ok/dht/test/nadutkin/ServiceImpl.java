@@ -34,7 +34,7 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        long flushThresholdBytes = 1 << 26;
+        long flushThresholdBytes = 1 << 18;
         dao = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
         server = new HighLoadHttpServer(createConfigFromPort(config.selfPort()));
         server.addRequestHandlers(this);

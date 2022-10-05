@@ -25,12 +25,12 @@ public class HighLoadHttpServer extends HttpServer {
         super(config, routers);
         final int maximumPoolSize = Runtime.getRuntime().availableProcessors();
         final int corePoolSize = Math.max(1, maximumPoolSize / 2);
-        final long keepAliveTime = 1L;
+        final long keepAliveTime = 0;
 //        executors = Executors.newFixedThreadPool(corePoolSize);
         executors = new ThreadPoolExecutor(corePoolSize,
                 maximumPoolSize,
                 keepAliveTime,
-                TimeUnit.SECONDS,
+                TimeUnit.MILLISECONDS,
                 new BlockingStack<>());
     }
 
