@@ -32,9 +32,9 @@ end
 1. `wrk2 -t 8 -c 64 -d 30s -R 100000 -L http://localhost:19234 -s reports/HW2/scripts/put.lua`
 2. `wrk2 -t 8 -c 64 -d 30s -R 100000 -L http://localhost:19234 -s reports/HW2/scripts/get.lua`
 
-# Без вспомогательных `workers`
+## Без вспомогательных `workers`
 
-## PUT
+### PUT
 
 ```
 Running 30s test @ http://localhost:19234
@@ -63,7 +63,7 @@ Transfer/sec:      5.93MB
 
 ![image](histograms/no_workers/put_no_default.png)
 
-## GET
+### GET
 
 ```
 Running 30s test @ http://localhost:19234
@@ -93,9 +93,9 @@ Transfer/sec:      6.58MB
 
 ![image](histograms/no_workers/get_no_default.png)
 
-# Обычный `ExecutorService`
+## Обычный `ExecutorService`
 
-## PUT
+### PUT
 
 ```
 Running 30s test @ http://localhost:19234
@@ -124,7 +124,7 @@ Transfer/sec:      5.20MB
 
 ![image](histograms/default_workers/put_default_default.png)
 
-## GET
+### GET
 
 ```
 Running 30s test @ http://localhost:19234
@@ -154,9 +154,9 @@ Transfer/sec:      5.74MB
 
 ![image](histograms/default_workers/get_default_default.png)
 
-# `LIFO`
+## `LIFO`
 
-## PUT
+### PUT
 
 ```
 Running 30s test @ http://localhost:19234
@@ -185,7 +185,7 @@ Transfer/sec:      5.03MB
 
 ![image](histograms/lifo_workers/put_lifo_default.png)
 
-## GET
+### GET
 
 ```
 Running 30s test @ http://localhost:19234
@@ -214,3 +214,89 @@ Transfer/sec:      5.63MB
 ```
 
 ![image](histograms/lifo_workers/get_lifo_default.png)
+
+# Меньший `flushThresholdBytes = 1 << 18`
+
+## Без вспомогательных `workers`
+
+### PUT
+
+```
+Running 30s test @ http://localhost:19234
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.62s   878.13ms   3.24s    59.84%
+    Req/Sec    10.61k   834.06    11.58k    82.14%
+  2684493 requests in 30.00s, 171.53MB read
+Requests/sec:  89487.31
+Transfer/sec:      5.72MB
+```
+
+### GET
+
+```
+Running 30s test @ http://localhost:19234
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     5.85s     2.09s   11.13s    62.76%
+    Req/Sec     8.71k   204.14     9.21k    66.67%
+  2109222 requests in 30.00s, 145.57MB read
+Requests/sec:  70309.97
+Transfer/sec:      4.85MB
+```
+
+## Обычный `ExecutorService`
+
+### PUT
+
+```
+Running 30s test @ http://localhost:19234
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     3.18s     1.34s    5.73s    57.46%
+    Req/Sec     9.71k   510.05    10.42k    56.94%
+  2415670 requests in 30.00s, 154.35MB read
+Requests/sec:  80525.34
+Transfer/sec:      5.15MB
+```
+
+### GET
+
+```
+Running 30s test @ http://localhost:19234
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     8.36s     1.77s   11.18s    59.57%
+    Req/Sec     8.47k   589.97     9.08k    68.75%
+  1897837 requests in 30.00s, 130.82MB read
+Requests/sec:  63263.79
+Transfer/sec:      4.36MB
+```
+
+## `LIFO`
+
+### PUT
+
+```
+Running 30s test @ http://localhost:19234
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     2.15s   753.08ms   3.49s    58.90%
+    Req/Sec    10.85k   240.81    11.28k    61.61%
+  2651827 requests in 30.00s, 169.44MB read
+  Requests/sec:  88397.86
+  Transfer/sec:      5.65MB
+```
+
+### GET
+
+```
+Running 30s test @ http://localhost:19234
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     5.28s     1.56s    8.19s    57.72%
+    Req/Sec     9.16k   406.19     9.90k    68.75%
+  2233604 requests in 30.00s, 154.23MB read
+  Requests/sec:  74456.07
+  Transfer/sec:      5.14MB
+```
