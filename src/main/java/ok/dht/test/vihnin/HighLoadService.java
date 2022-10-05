@@ -21,8 +21,10 @@ import org.rocksdb.RocksDBException;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
+import static ok.dht.test.vihnin.ServiceUtils.ENDPOINT;
+import static ok.dht.test.vihnin.ServiceUtils.emptyResponse;
+
 public class HighLoadService implements Service {
-    public static final String ENDPOINT = "/v0/entity";
     private final ServiceConfig config;
     private HttpServer server;
 
@@ -46,38 +48,24 @@ public class HighLoadService implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         storage = getDataStorage(this.config);
-        server = new HttpServer(createConfigFromPort(config.selfPort())) {
-            @Override
-            public void handleDefault(Request request, HttpSession session) throws IOException {
-                session.sendResponse(emptyResponse(Response.BAD_REQUEST));
-            }
-
-            private boolean isMethodAllowed(int method) {
-                return method == Request.METHOD_GET
-                        || method == Request.METHOD_DELETE
-                        || method == Request.METHOD_PUT;
-            }
-
-            @Override
-            public void handleRequest(Request request, HttpSession session) throws IOException {
-                if (isMethodAllowed(request.getMethod())) {
-                    super.handleRequest(request, session);
-                } else {
-                    session.sendResponse(emptyResponse(Response.METHOD_NOT_ALLOWED));
-                }
-            }
-
-            @Override
-            public synchronized void stop() {
-                for (SelectorThread selectorThread : selectors) {
-                    for (Session session : selectorThread.selector) {
-                        session.close();
-                    }
-                }
-                super.stop();
-            }
-
-        };
+//        server = new HttpServer(createConfigFromPort(config.selfPort())) {
+//            @Override
+//            public void handleDefault(Request request, HttpSession session) throws IOException {
+//                session.sendResponse(emptyResponse(Response.BAD_REQUEST));
+//            }
+//
+//            @Override
+//            public synchronized void stop() {
+//                for (SelectorThread selectorThread : selectors) {
+//                    for (Session session : selectorThread.selector) {
+//                        session.close();
+//                    }
+//                }
+//                super.stop();
+//            }
+//
+//        };
+        server = new ParallelHttpServer(createConfigFromPort(config.selfPort()));
         server.start();
         server.addRequestHandlers(this);
         return CompletableFuture.completedFuture(null);
@@ -142,17 +130,13 @@ public class HighLoadService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
         public Service create(ServiceConfig config) {
             return new HighLoadService(config);
         }
-    }
-
-    private static Response emptyResponse(String code) {
-        return new Response(code, Response.EMPTY);
     }
 
 }
