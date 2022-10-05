@@ -1,13 +1,10 @@
 package ok.dht.test.vihnin;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.vihnin.dao.MemorySegmentDao;
-import ok.dht.test.vihnin.dao.common.BaseEntry;
-import ok.dht.test.vihnin.dao.common.Config;
-import ok.dht.test.vihnin.dao.common.Entry;
+import ok.dht.test.vihnin.database.DataBase;
+import ok.dht.test.vihnin.database.DataBaseRocksDBImpl;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -19,9 +16,8 @@ import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
-import one.nio.util.Utf8;
+import org.rocksdb.RocksDBException;
 
-import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
@@ -30,20 +26,18 @@ public class HighLoadService implements Service {
     private final ServiceConfig config;
     private HttpServer server;
 
-    private DataStorage storage;
+    private DataBase<String, byte[]> storage;
 
     public HighLoadService(ServiceConfig config) {
         this.config = config;
-        this.storage = getDataStorage(config);
     }
 
-    private static DataStorage getDataStorage(ServiceConfig config) {
-        DataStorage storage;
+    private static DataBase<String, byte[]> getDataStorage(ServiceConfig config) {
+        DataBase<String, byte[]> storage;
         try {
-            storage = new DataStorage(
-                new Config(config.workingDir(), 1 << 21)
-            );
-        } catch (IOException e) {
+            storage = new DataBaseRocksDBImpl(config.workingDir());
+        } catch (RocksDBException e) {
+            e.printStackTrace();
             storage = null;
         }
         return storage;
@@ -51,7 +45,7 @@ public class HighLoadService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        this.storage = getDataStorage(this.config);
+        storage = getDataStorage(this.config);
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
@@ -92,60 +86,51 @@ public class HighLoadService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
-        storage.close();
+        if (storage != null) {
+            storage.close();
+        }
+        storage = null;
         return CompletableFuture.completedFuture(null);
     }
 
     @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param("id") String id) {
+    public Response handleGet(@Param(value = "id", required = true) String id) {
         if (storage == null) return emptyResponse(Response.NOT_FOUND);
         if (id == null || id.isEmpty()) return emptyResponse(Response.BAD_REQUEST);
 
-        var searchResult = storage.get(getKey(id));
+        var searchResult = storage.get(id);
 
         if (searchResult == null) return emptyResponse(Response.NOT_FOUND);
 
-        return Response.ok(getValue(searchResult));
+        return Response.ok(searchResult);
     }
 
     @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(@Param("id") String id, Request request) {
+    public Response handlePut(@Param(value = "id", required = true) String id, Request request) {
         if (storage == null) return emptyResponse(Response.NOT_FOUND);
 
         var requestBody = request.getBody();
+
         if (id == null || id.isEmpty()) return emptyResponse(Response.BAD_REQUEST);
 
-        storage.upsert(new BaseEntry<>(getKey(id), getSegment(requestBody)));
+        storage.put(id, requestBody);
 
         return emptyResponse(Response.CREATED);
     }
 
     @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param("id") String id) {
+    public Response handleDelete(@Param(value = "id", required = true) String id) {
         if (storage == null) return emptyResponse(Response.NOT_FOUND);
         if (id == null || id.isEmpty()) return emptyResponse(Response.BAD_REQUEST);
 
-        var key = getKey(id);
-        var value = storage.get(key);
+        var value = storage.get(id);
 
-        if (value != null) storage.upsert(new BaseEntry<>(key, null));
+        if (value != null) storage.delete(id);
 
         return emptyResponse(Response.ACCEPTED);
-    }
-
-    private static byte[] getValue(@Nonnull Entry<MemorySegment> searchResult) {
-        return searchResult.value().toByteArray();
-    }
-
-    private static MemorySegment getKey(String id) {
-        return getSegment(Utf8.toBytes(id));
-    }
-
-    private static MemorySegment getSegment(byte[] bytes) {
-        return MemorySegment.ofArray(bytes);
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -164,14 +149,6 @@ public class HighLoadService implements Service {
         public Service create(ServiceConfig config) {
             return new HighLoadService(config);
         }
-    }
-
-    private static class DataStorage extends MemorySegmentDao {
-
-        public DataStorage(Config config) throws IOException {
-            super(config);
-        }
-
     }
 
     private static Response emptyResponse(String code) {
