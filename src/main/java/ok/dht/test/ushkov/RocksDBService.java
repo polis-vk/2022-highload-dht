@@ -18,6 +18,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 public class RocksDBService implements Service {
+    public static final String V0_ENTITY = "/v0/entity";
     public static final int N_SELECTORS = 5;
     public static final int N_WORKERS = 5;
     public static final int QUEUE_CAP = 100;
@@ -79,7 +80,7 @@ public class RocksDBService implements Service {
         return future;
     }
 
-    @Path("/v0/entity")
+    @Path(V0_ENTITY)
     @RequestMethod(Request.METHOD_GET)
     public Response entityGet(@Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
@@ -97,7 +98,7 @@ public class RocksDBService implements Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(V0_ENTITY)
     @RequestMethod(Request.METHOD_PUT)
     public Response entityPut(@Param(value = "id", required = true) String id, Request request) {
         if (id.isEmpty()) {
@@ -111,7 +112,7 @@ public class RocksDBService implements Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(V0_ENTITY)
     @RequestMethod(Request.METHOD_DELETE)
     public Response entityDelete(@Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
@@ -125,7 +126,7 @@ public class RocksDBService implements Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(V0_ENTITY)
     @RequestMethod(Request.METHOD_POST)
     public Response entityPost() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
