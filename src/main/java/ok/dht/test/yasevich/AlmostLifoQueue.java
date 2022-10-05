@@ -46,8 +46,4 @@ public class AlmostLifoQueue extends LinkedBlockingDeque<Runnable> {
         return super.take();
     }
 
-    @Override
-    public Runnable takeFirst() throws InterruptedException {
-        return super.takeFirst();
-    }
 }

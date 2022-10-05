@@ -80,8 +80,12 @@ public class ServiceImpl implements Service {
         private final BlockingQueue<Runnable> queue = new AlmostLifoQueue(POOL_QUEUE_SIZE, FIFO_RARENESS);
         private final ExecutorService pool = new ThreadPoolExecutor(CPUs, CPUs, 0L, TimeUnit.MILLISECONDS, queue);
 
+        public CustomHttpServer(
+                HttpServerConfig config,
+                Dao<MemorySegment, Entry<MemorySegment>> dao,
+                boolean rejectWhenOverloaded,
+                Object... routers) throws IOException {
 
-        public CustomHttpServer(HttpServerConfig config, Dao<MemorySegment, Entry<MemorySegment>> dao, boolean rejectWhenOverloaded, Object... routers) throws IOException {
             super(config, routers);
             this.rejectWhenOverloaded = rejectWhenOverloaded;
             this.dao = dao;
