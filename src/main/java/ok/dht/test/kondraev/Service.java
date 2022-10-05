@@ -10,10 +10,14 @@ import one.nio.server.AcceptorConfig;
 import java.io.IOException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class Service implements ok.dht.Service {
-    private static final long FLUSH_THRESHOLD_BYTES = 1 << 20;
+    private static final long FLUSH_THRESHOLD_BYTES = 1 << 20; // 1 MB
     private final ServiceConfig config;
     private HttpServer server;
     private Dao dao;
@@ -48,6 +52,30 @@ public class Service implements ok.dht.Service {
         acceptor.reusePort = true;
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
         return httpConfig;
+    }
+
+    public static void main(String[] args)
+            throws IOException, ExecutionException, InterruptedException, TimeoutException {
+        String defaultUrl = "http://localhost:19234";
+        if (args.length != 1) {
+            System.out.printf("Usage: \n ./gradlew run --args=%s\n", defaultUrl);
+            return;
+        }
+        String url = args[0];
+        int port;
+        try {
+            port = Integer.parseInt(url.split(":(?=\\d+$)", 2)[1]);
+        } catch (IndexOutOfBoundsException ignored) {
+            System.err.printf("Url in wrong format. Try \"%s\"\n", defaultUrl);
+            return;
+        }
+        new Service(new ServiceConfig(
+                port,
+                url,
+                List.of(url),
+                Files.createTempDirectory("kondraev-server")
+        )).start().get(1, TimeUnit.SECONDS);
+        System.out.printf("Ready on %s\n", url);
     }
 
     @ServiceFactory(stage = 1, week = 2)
