@@ -38,14 +38,19 @@ public class ExpandableHttpServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        switch (request.getMethod()) {
+            case Request.METHOD_GET:
+            case Request.METHOD_PUT:
+            case Request.METHOD_DELETE:
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                break;
+            default:
+                session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        }
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (queue.size() >= config.queueCapacity) {
-            sendServiceUnavailable(session);
-        }
         try {
             executorService.execute(() -> {
                 try {
