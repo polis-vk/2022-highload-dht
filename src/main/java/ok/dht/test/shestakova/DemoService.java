@@ -68,9 +68,15 @@ public class DemoService implements Service {
                 if (requestMethod == Request.METHOD_GET
                         || requestMethod == Request.METHOD_PUT
                         || requestMethod == Request.METHOD_DELETE) {
-                    response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+                    response = new Response(
+                            Response.BAD_REQUEST,
+                            Response.EMPTY
+                    );
                 } else {
-                    response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                    response = new Response(
+                            Response.METHOD_NOT_ALLOWED,
+                            Response.EMPTY
+                    );
                 }
                 session.sendResponse(response);
             }
