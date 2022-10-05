@@ -22,7 +22,6 @@ wrk.method = "PUT"
 request = function()
     wrk.path = "/v0/entity?id=" .. math.random(0, 1000000)
     wrk.body = "№ " .. id
-    id = id + 1
     return wrk.format(nil)
 end
 ```
@@ -282,5 +281,154 @@ Transfer/sec:      5.63MB
 а после обходит эти файлы, тратит время на аллокацию загружая их к себе и ища в них данные.
 
 2. Метод `park` вызывается в том случае, если очередь запросов пуста.
-Cам `park` мы ускорить мы не можем. Возможным решением могло быть переопределение сценария,
+Cам `park` мы ускорить мы не можем. 
+Так как selector не справляется с большим количеством запросов 
+(что видно по тесту без `executors`, то увеличение нагрузки не приведёт к тому,
+что потоки не успеют разобрать задачи)
+Возможным решением могло быть переопределение сценария,
 когда поток уходит в сон, сидя некоторое время в активном ожидании (что выглядит достаточно заморочено).
+
+Попробуем увеличить `HttpServer.handleRequest` уменьшив количество информации, которое можно держать в памяти
+(сделать это можно и при помощи простого `Thread.sleep`, но не хочется специально портить нашу модель,
+а так получается возможный сценарий).
+
+
+# Меньший `flushThresholdBytes = 1 << 18`
+
+## Без вспомогательных `workers`
+
+### PUT
+
+```
+Running 30s test @ http://localhost:19234
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.62s   878.13ms   3.24s    59.84%
+    Req/Sec    10.61k   834.06    11.58k    82.14%
+  2684493 requests in 30.00s, 171.53MB read
+Requests/sec:  89487.31
+Transfer/sec:      5.72MB
+```
+
+### GET
+
+```
+Running 30s test @ http://localhost:19234
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     5.96s     3.48s   15.06s    64.56%
+    Req/Sec     9.11k   525.95    10.07k    62.50%
+  2100862 requests in 30.00s, 145.02MB read
+Requests/sec:  70030.84
+Transfer/sec:      4.83MB
+
+```
+
+## Обычный `ExecutorService`
+
+### PUT
+
+```
+Running 30s test @ http://localhost:19234
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     3.18s     1.34s    5.73s    57.46%
+    Req/Sec     9.71k   510.05    10.42k    56.94%
+  2415670 requests in 30.00s, 154.35MB read
+Requests/sec:  80525.34
+Transfer/sec:      5.15MB
+```
+
+### GET
+
+```
+Running 30s test @ http://localhost:19234
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     8.36s     1.77s   11.18s    59.57%
+    Req/Sec     8.47k   589.97     9.08k    68.75%
+  1897837 requests in 30.00s, 130.82MB read
+Requests/sec:  63263.79
+Transfer/sec:      4.36MB
+```
+
+## `LIFO`
+
+### PUT
+
+```
+Running 30s test @ http://localhost:19234
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     3.33s     1.31s    5.71s    58.21%
+    Req/Sec     9.67k   291.26    10.35k    80.00%
+  2429251 requests in 30.00s, 155.22MB read
+Requests/sec:  80980.55
+Transfer/sec:      5.17MB
+
+```
+
+### GET
+
+```
+Running 30s test @ http://localhost:19234
+  8 threads and 64 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     5.28s     1.56s    8.19s    57.72%
+    Req/Sec     9.16k   406.19     9.90k    68.75%
+  2233604 requests in 30.00s, 154.23MB read
+  Requests/sec:  74456.07
+  Transfer/sec:      5.14MB
+```
+
+## Выводы
+
+### PUT
+
+**Requests/sec:**
+1. 'Без `executors`': 89487
+2. 'Дефолтные `executors`': 80525 (Просадка на 10 %)
+3. '`executors` с `lifo`': 80980 (Просадка на 9.5 %)
+
+В целом результат повторяет тот,
+что был достигнут при `flushThresholdBytes = 1 << 26`,
+с незначительными погрешностями.
+
+Что достаточно логично, так как 'Сбрасывание на диск выполняется в отдельном потоке',
+а потому не сильно влияет на результат работы.
+
+### GET
+
+Отдельного внимания заслуживает `get` хоть и не сильно (74456 на 70030),
+но '`executors` с `lifo`' смог обогнать 'Без `executors`'.
+
+Возникает 2 вопроса:
+
+1. Почему так получилось?
+2. Почему 'Дефолтные `executors`' так сильно проигрывает,
+когда '`executors` с `lifo`' получил выигрыш?
+
+   
+1. Ответом на 1 вопрос может послужить реализация метода `get`.
+Не находя значения в базе, метод обходит все файлы и пытается найти в них,
+очевидно, что при этом происходит большое количество аллокаций, 
+что можно увидеть в [get_no_alloc](analysis/small%20size/no_workers/get_no_small_alloc.html),
+где `MemorySegmentDao.get` занимает 95,28% всех аллокаций.
+В следствии подобной реализации `HttpServer.handleRequest`,
+непосредственно работающий с базой, начинает съедать всё больше CPU (пример [get_no_cpu](analysis/small%20size/no_workers/get_no_small_cpu.html)).
+Как мы убедились выше `executors` ускоряет обработку запроса, а в связи с тем, что теперь это bottle neck нашей реализации,
+то передача работы на `ExecutorService` даёт оптимизацию в скорости.
+
+2. Причиной такого проигрыша можно назвать 2 вещи:
+    - newFixedThreadPool. Если потоки '`executors` с `lifo`' не справлялись со своей задачей,
+то `ThreadPool` увеличивал количество потоков в 2 раза.
+В 'Дефолтные `executors`' количество потоков всегда оставалось постоянным,
+поэтому `MemorySegmentDao.get` там занимает настолько больше места. (Мой косяк :-))
+      - К моменту когда очередь доходила до старых запросов, они уже становились не нужны.
+В связи с тем, что обработка теперь стала гораздо дольше, запросы, добавленные в конец, успевали протухнуть,
+поэтому отправка ответов становилась невозможной.
+
+# ИТОГИ:
+
+Технологию стоит применять только в тех случаях, когда `handleRequest` становится слабым местом вашего сервиса,
+в противном случае оркестрация ThreadPool будет съедать ресурс нивелирующий всю оптимизацию.
+
