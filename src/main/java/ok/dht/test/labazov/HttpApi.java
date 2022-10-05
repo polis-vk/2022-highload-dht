@@ -59,7 +59,12 @@ public final class HttpApi extends HttpServer {
 
     @Override
     public void handleDefault(final Request request, final HttpSession session) throws IOException {
-        session.sendResponse(getEmptyResponse(Response.BAD_REQUEST));
+        final String code;
+        switch (request.getMethod()) {
+            case Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE -> code = Response.BAD_REQUEST;
+            default -> code = Response.METHOD_NOT_ALLOWED;
+        }
+        session.sendResponse(getEmptyResponse(code));
     }
 
     @Path("/v0/entity")
