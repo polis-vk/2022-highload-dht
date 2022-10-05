@@ -76,7 +76,6 @@ public class MyServiceImpl implements Service {
             @Param(value = "id") String id
     ) {
         if (isBadId(id)) {
-            //LOG.error("wrong id");
             return MyServiceUtils.getResponseOnBadId();
         }
         

@@ -18,10 +18,10 @@ import java.util.concurrent.TimeUnit;
 import static ok.dht.test.skroba.MyServiceUtils.getEmptyResponse;
 
 public class MyConcurrentHttpServer extends HttpServer {
-    private final static int CAPACITY_OF_QUEUE = 1024;
-    private final static int CORE_POOL_SIZE = 4;
-    private final static int MAXIMUM_POOL_SIZE = CORE_POOL_SIZE * 2;
-    private final static Logger LOG = LoggerFactory.getLogger(MyConcurrentHttpServer.class);
+    private static final int CAPACITY_OF_QUEUE = 1024;
+    private static final int CORE_POOL_SIZE = 4;
+    private static final int MAXIMUM_POOL_SIZE = CORE_POOL_SIZE * 2;
+    private static final Logger LOG = LoggerFactory.getLogger(MyConcurrentHttpServer.class);
     
     private ExecutorService requestsWorkers;
     
