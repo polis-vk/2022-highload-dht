@@ -125,6 +125,12 @@ public class RocksDBService implements Service {
         }
     }
 
+    @Path("/v0/entity")
+    @RequestMethod(Request.METHOD_POST)
+    public Response entityPost() {
+        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+    }
+
     @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
