@@ -26,6 +26,7 @@ import java.util.concurrent.CompletableFuture;
 
 public class MyService implements Service {
 
+    public static final String PATH_V0_ENTITY = "/v0/entity";
     private final Logger logger = LoggerFactory.getLogger(MyService.class);
     private static final long FLUSH_THRESHOLD = 1 << 20;
     private final ServiceConfig config;
@@ -56,7 +57,7 @@ public class MyService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(@Param(value = "id", required = true) String id) throws IOException {
         if (id.isEmpty()) {
@@ -76,7 +77,7 @@ public class MyService implements Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(Request request, @Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
@@ -92,7 +93,7 @@ public class MyService implements Service {
         return emptyResponseFor(Response.CREATED);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(@Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
@@ -104,6 +105,12 @@ public class MyService implements Service {
             return errorResponse(e);
         }
         return emptyResponseFor(Response.ACCEPTED);
+    }
+
+    @Path(PATH_V0_ENTITY)
+    @RequestMethod(Request.METHOD_POST)
+    public Response handlePost() {
+        return emptyResponseFor(Response.METHOD_NOT_ALLOWED);
     }
 
     private Response emptyResponseFor(String status) {
