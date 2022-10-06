@@ -45,6 +45,7 @@ public class DaoHttpServer extends HttpServer {
 
     private final ExecutorService handlerExecutorService;
     private final Service service;
+    private final UnsupportedMethodRequestHandler unsupportedMethodRequestHandler;
 
     public static HttpServerConfig createConfigFromPort(final int port) {
         final HttpServerConfig httpConfig = new HttpServerConfig();
@@ -62,12 +63,14 @@ public class DaoHttpServer extends HttpServer {
         this.service = service;
         this.pathMapper = new PathMapper();
         this.handlerExecutorService = handlerExecutorService;
+        this.unsupportedMethodRequestHandler = new UnsupportedMethodRequestHandler();
     }
 
     public void addRequestHandler(@Nonnull final String path,
                                   final int method,
                                   @Nonnull final RequestHandler requestHandler) {
         pathMapper.add(path, new int[]{method}, new AsynchronousRequestHandler(requestHandler));
+        pathMapper.add(path, null, unsupportedMethodRequestHandler);
     }
 
     @Override
@@ -118,6 +121,14 @@ public class DaoHttpServer extends HttpServer {
             // stop at least http server
             stop();
             handlerExecutorService.shutdownNow();
+        }
+    }
+
+    private final static class UnsupportedMethodRequestHandler implements RequestHandler {
+        @Override
+        public void handleRequest(final Request request,
+                                  final HttpSession session) throws IOException {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
     }
 
