@@ -108,17 +108,6 @@ public final class FileUtils {
         return pairedFiles;
     }
 
-//    public static long numFilesOnDisk(ServiceConfig config) throws IOException {
-//        try (Stream<Path> paths = Files.list(config.workingDir())) {
-//            return paths.count();
-//        }
-//    }
-
-    public static void createFile(Path p, AtomicInteger filesCounter) throws IOException {
-        Files.createFile(p);
-        filesCounter.incrementAndGet();
-    }
-
     public static void deleteFile(Path p, AtomicLong filesCounter) throws IOException {
         if (Files.deleteIfExists(p)) {
             filesCounter.decrementAndGet();

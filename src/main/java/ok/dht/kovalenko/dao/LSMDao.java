@@ -111,7 +111,6 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
         if (this.memoryStorage.writeSSTables().isEmpty() || this.memoryStorage.writeSSTables().peek().isEmpty()) {
             return;
         }
-        //this.flushRunnable.run();
         this.service.submit(this.flushRunnable);
         this.curBytesForEntries.set(0);
     }

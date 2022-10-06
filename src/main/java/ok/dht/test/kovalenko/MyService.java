@@ -74,12 +74,6 @@ public class MyService implements Service {
     }
 
     @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_POST)
-    public Response handlePost() {
-        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-    }
-
-    @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(Request request, @Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {

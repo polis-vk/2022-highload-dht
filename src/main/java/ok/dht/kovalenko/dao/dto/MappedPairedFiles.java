@@ -16,7 +16,7 @@ public class MappedPairedFiles {
         this.dataFile = dataFile;
         this.indexesFile = indexesFile;
         ByteBuffer fromRange = serializer.readKey(this, 0);
-        ByteBuffer toRange = serializer.readKey(this, indexesLimit() - FileUtils.INDEX_SIZE);
+        ByteBuffer toRange = serializer.readKey(this, indexesFile.limit() - FileUtils.INDEX_SIZE);
         this.range = new ByteBufferRange(fromRange, toRange);
     }
 

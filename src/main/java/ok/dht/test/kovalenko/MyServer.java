@@ -44,7 +44,11 @@ public final class MyServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
+        String statusCode =
+                request.getMethod() == Request.METHOD_POST
+                        ? Response.METHOD_NOT_ALLOWED
+                        : Response.BAD_REQUEST;
+        Response response = new Response(statusCode, Response.EMPTY);
         session.sendResponse(response);
     }
 
