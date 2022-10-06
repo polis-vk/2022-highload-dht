@@ -6,6 +6,7 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.kurdyukov.server.HttpServerAsync;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
@@ -20,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -33,6 +35,12 @@ public class ServiceImpl implements Service {
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
     public static final int THREAD_POOL_SIZE = 32;
     public static final int SELECTOR_SIZE = AVAILABLE_PROCESSORS / 2;
+    public static final String ENDPOINT = "/v0/entity";
+    private static final Set<Integer> supportMethods = Set.of(
+            Request.METHOD_GET,
+            Request.METHOD_PUT,
+            Request.METHOD_DELETE
+    );
 
     private final ServiceConfig serviceConfig;
 
@@ -65,7 +73,7 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path("/v0/entity")
+    @Path(ENDPOINT)
     @RequestMethod({Request.METHOD_GET})
     public Response handleGet(
             @Param(value = "id") String id
@@ -91,7 +99,7 @@ public class ServiceImpl implements Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(
             @Param(value = "id") String id,
@@ -110,7 +118,7 @@ public class ServiceImpl implements Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(
             @Param(value = "id") String id
@@ -166,7 +174,19 @@ public class ServiceImpl implements Service {
                         TimeUnit.MILLISECONDS,
                         new ArrayBlockingQueue<>(THREAD_POOL_SIZE * 4)
                 )
-        );
+        ) {
+            @Override
+            public void handleDefault(
+                    Request request,
+                    HttpSession session
+            ) throws IOException {
+                if (request.getPath().equals(ENDPOINT) && !supportMethods.contains(request.getMethod())) {
+                    session.sendResponse(responseEmpty(Response.METHOD_NOT_ALLOWED));
+                } else {
+                    session.sendResponse(responseEmpty(Response.BAD_REQUEST));
+                }
+            }
+        };
     }
 
     private static HttpServerConfig httpServerConfig(

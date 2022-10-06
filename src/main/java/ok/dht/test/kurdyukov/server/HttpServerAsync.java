@@ -37,18 +37,6 @@ public class HttpServerAsync extends HttpServer {
     }
 
     @Override
-    public void handleDefault(
-            Request request,
-            HttpSession session
-    ) throws IOException {
-        if (request.getMethod() == Request.METHOD_POST) {
-            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-        } else {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-        }
-    }
-
-    @Override
     public synchronized void stop() {
         for (SelectorThread thread : selectors) {
             thread.selector.forEach(Session::close);
@@ -72,18 +60,14 @@ public class HttpServerAsync extends HttpServer {
             HttpSession session
     ) throws IOException {
         try {
-            executorService.execute(
-                    () -> {
-                        extracted(request, session);
-                    }
-            );
+            executorService.execute(() -> doExecute(request, session));
         } catch (RejectedExecutionException e) {
             logger.warn("Reject request", e);
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
     }
 
-    private void extracted(Request request, HttpSession session) {
+    private void doExecute(Request request, HttpSession session) {
         try {
             super.handleRequest(request, session);
         } catch (IOException e) {
