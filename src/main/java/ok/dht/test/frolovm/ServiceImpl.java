@@ -119,7 +119,7 @@ public class ServiceImpl implements Service {
             case Request.METHOD_DELETE:
                 return deleteHandler(id);
             default:
-                return new Response(Response.BAD_REQUEST, Utf8.toBytes(NO_SUCH_METHOD));
+                return new Response(Response.METHOD_NOT_ALLOWED, Utf8.toBytes(NO_SUCH_METHOD));
         }
     }
 
