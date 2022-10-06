@@ -175,6 +175,16 @@ Requests/sec:  49843.68
 Transfer/sec:      3.18MB
 ```
 
+CPU
+![img_2.png](img_2.png)
+
+ALLOC
+![img_3.png](img_3.png)
+
+LOCK
+![img_4.png](img_4.png)
+
+
 ### GET 
 ```
 Running 1m test @ http://localhost:42342
@@ -313,6 +323,14 @@ Running 1m test @ http://localhost:42342
 Requests/sec:  49979.88
 Transfer/sec:      3.19MB
 ```
+
+CPU
+![img_5.png](img_5.png)
+ALLOC
+![img_6.png](img_6.png)
+LOCK
+![img_7.png](img_7.png)
+
 
 Как мы видим в синхронной реализации запросы обрабатываются с использованием Selectors: \
 Handle request, send response и в целом обработка запроса занимают 67% CPU, при этом оставшиеся 33% CPU - 
@@ -493,6 +511,13 @@ Requests/sec:  49980.35
 Transfer/sec:      3.19MB
 ```
 
+CPU
+![img_9.png](img_9.png)
+ALLOC
+![img_8.png](img_8.png)
+LOCK
+![img_10.png](img_10.png)
+
 #GET Queue_size = 128
 
 ```
@@ -639,6 +664,14 @@ Requests/sec:  49979.38
 Transfer/sec:      3.19MB
 ```
 
+CPU
+![img_12.png](img_12.png)
+ALLOC
+![img_11.png](img_11.png)
+LOCK
+![img_13.png](img_13.png)
+
+
 Заметим, что у нас вырос Requests/sec для PUT \
 При синхронной реализации 49843.68 \
 При асинхронной реализации 49980.35
@@ -669,6 +702,9 @@ Max     =       78.400, \
 ThreadPollExecutor ArrayBlockingQueue.take приходится почти 66% lock и 22% CPU. Доля метода SelectorImpl.lockAndDoSelect 
 снизилась до 22% CPU по сравнению с 34% для синхронной реализации. При этом lock берется на ThreadPollExecutor ArrayBlockingQueue.offer
 и занимает 32% всего lock.
+
+В отличие от синхронной реализации heatmap для lock стала намного более насыщенной, что логично ведь добавив ThreadPoll,
+мы увеличили число переключений между потоками, а значит и блокировок.
 
 Попробуем уменьшить процент блокировок и повысить производительность за счет увеличения очереди увеличить размер очереди:
 
@@ -1518,7 +1554,8 @@ Transfer/sec:      4.06MB
 По сравнению с синхронной реализацией процент lock на SelectorThread уменьшился со 100% до 25%. \
 Однако ощутимого выигрыша в RPS и Latency в данной реализации получено не было. Во многом это связано с тем, что 
 основные ресурсы затрачиваются на работу со стандартными инструментами/библиотеками, а наш сервис тратит не так много CPU 
-и памяти.
+и памяти. Заметим также, что под капотом nio также использует ThreadPoll для асинхронной обработки запросов, во многом из-за этого
+мы и не увидели большого прироста в производительности, так как подобный poll для селекторов уже был реализован.
 
 Были подобраны наиболее удачные параметры Threadpoll, в частности был выбран CorePoolSize = Runtime.getRuntime().availableProcessors() * 2
 и подобран наиболее удачный размер очереди = 64-128, 
