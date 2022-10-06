@@ -170,7 +170,7 @@ class SingleNodeTest extends TestBase {
 
         // Remove data and recreate
         service.cleanUp();
-        service.service().start().get(10, TimeUnit.SECONDS);
+        service.start();
 
         // Check absent data
         assertEquals(HttpURLConnection.HTTP_NOT_FOUND, service.get(key).statusCode());
@@ -207,5 +207,15 @@ class SingleNodeTest extends TestBase {
 
         // Check
         assertEquals(HttpURLConnection.HTTP_NOT_FOUND, service.get(key).statusCode());
+    }
+
+    @ServiceTest(stage = 1)
+    void post(ServiceInfo service) throws Exception {
+        String key = randomId();
+        byte[] value = randomValue();
+        assertEquals(
+                HttpURLConnection.HTTP_BAD_METHOD,
+                service.post(key, value).statusCode()
+        );
     }
 }
