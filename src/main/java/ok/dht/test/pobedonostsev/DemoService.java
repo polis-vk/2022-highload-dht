@@ -25,6 +25,7 @@ import java.util.concurrent.CompletableFuture;
 public class DemoService implements Service {
 
     private static final long FLUSH_THRESHOLD_BYTES = 1 << 20;
+    private static final String PATH = "/v0/entity";
     private final ServiceConfig config;
     private HttpServer server;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
@@ -58,7 +59,7 @@ public class DemoService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response getEntry(@Param("id") String key) throws IOException {
         if (key == null || key.isEmpty()) {
@@ -71,7 +72,7 @@ public class DemoService implements Service {
         return new Response(Response.OK, entry.value().toByteArray());
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response upsertEntry(Request request, @Param("id") String key) {
         if (key == null || key.isEmpty()) {
@@ -82,7 +83,7 @@ public class DemoService implements Service {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntry(@Param("id") String key) {
         if (key == null || key.isEmpty()) {
@@ -90,6 +91,12 @@ public class DemoService implements Service {
         }
         dao.upsert(new BaseEntry<>(MemorySegment.ofArray(Utf8.toBytes(key)), null));
         return new Response(Response.ACCEPTED, Response.EMPTY);
+    }
+
+    @Path(PATH)
+    @RequestMethod(Request.METHOD_POST)
+    public Response handlePost() {
+        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
 
     @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
