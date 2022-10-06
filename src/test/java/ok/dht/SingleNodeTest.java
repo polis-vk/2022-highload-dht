@@ -185,7 +185,7 @@ class SingleNodeTest extends TestBase {
 
         // Remove data and recreate
         service.cleanUp();
-        service.service().start().get(10, TimeUnit.SECONDS);
+        service.start();
 
         // Check absent data
         assertEquals(HttpURLConnection.HTTP_NOT_FOUND, service.get(key).statusCode());
