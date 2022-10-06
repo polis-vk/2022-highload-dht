@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.bytes;
@@ -29,6 +30,12 @@ import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
 public class ServiceImpl implements Service {
     private static final Logger logger = LoggerFactory.getLogger(ServiceImpl.class);
+    private static final String PATH = "/v0/entity";
+    private static final Set<Integer> supportMethods = Set.of(
+            Request.METHOD_GET,
+            Request.METHOD_PUT,
+            Request.METHOD_DELETE
+    );
 
     private final ServiceConfig serviceConfig;
 
@@ -61,7 +68,7 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(
             @Param(value = "id", required = true) String id
@@ -87,7 +94,7 @@ public class ServiceImpl implements Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(
             @Param(value = "id", required = true) String id,
@@ -106,7 +113,7 @@ public class ServiceImpl implements Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(
             @Param(value = "id", required = true) String id
@@ -157,7 +164,11 @@ public class ServiceImpl implements Service {
                     Request request,
                     HttpSession session
             ) throws IOException {
-                session.sendResponse(responseEmpty(Response.BAD_REQUEST));
+                if (request.getPath().equals(PATH) && !supportMethods.contains(request.getMethod())) {
+                    session.sendResponse(responseEmpty(Response.METHOD_NOT_ALLOWED));
+                } else {
+                    session.sendResponse(responseEmpty(Response.BAD_REQUEST));
+                }
             }
 
             @Override
