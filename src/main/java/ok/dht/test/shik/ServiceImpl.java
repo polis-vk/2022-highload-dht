@@ -43,8 +43,8 @@ public class ServiceImpl implements Service {
             throw e;
         }
         server = new CustomHttpServer(createHttpConfig(config));
-        server.start();
         server.addRequestHandlers(this);
+        server.start();
         return CompletableFuture.completedFuture(null);
     }
 
