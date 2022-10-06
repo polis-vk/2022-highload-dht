@@ -2,7 +2,6 @@ package ok.dht.test.kovalenko;
 
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
-import ok.dht.kovalenko.dao.DaoFiller;
 import ok.dht.kovalenko.dao.LSMDao;
 import ok.dht.kovalenko.dao.aliases.TypedBaseEntry;
 import ok.dht.kovalenko.dao.aliases.TypedEntry;
@@ -18,7 +17,6 @@ import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 
 public class MyService implements Service {
@@ -45,7 +43,6 @@ public class MyService implements Service {
     public CompletableFuture<?> start() throws IOException {
         try {
             this.dao = new LSMDao(this.config);
-            //DaoFiller.fillDao(dao, daoFactory, 100_000_000);
             this.server = new MyServer(createConfigFromPort(this.config.selfPort()));
             this.server.addRequestHandlers(this);
             this.server.start();
@@ -58,14 +55,14 @@ public class MyService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         this.dao.close();
-        this.server.registerShutdownHook();
+        this.server.stop();
         return CompletableFuture.completedFuture(null);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id) throws IOException {
-        if (id.isEmpty()) {
+    public Response handleGet(@Param(value = "id") String id) throws IOException {
+        if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         ByteBuffer key = daoFactory.fromString(id);
@@ -73,7 +70,13 @@ public class MyService implements Service {
         if (res == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
-        return Response.ok(daoFactory.toString(res.value()).getBytes(StandardCharsets.UTF_8));
+        return Response.ok(res.value().array());
+    }
+
+    @Path("/v0/entity")
+    @RequestMethod(Request.METHOD_POST)
+    public Response handlePost() {
+        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
 
     @Path("/v0/entity")

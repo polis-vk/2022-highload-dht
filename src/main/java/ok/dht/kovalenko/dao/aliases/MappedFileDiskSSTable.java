@@ -7,7 +7,6 @@ import ok.dht.kovalenko.dao.utils.DaoUtils;
 import ok.dht.kovalenko.dao.utils.FileUtils;
 
 import java.nio.ByteBuffer;
-import java.util.Map;
 
 public class MappedFileDiskSSTable
         extends DiskSSTable<MappedPairedFiles> {

@@ -9,7 +9,6 @@ import ok.dht.kovalenko.dao.utils.FileUtils;
 
 import java.io.IOException;
 import java.util.ConcurrentModificationException;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class FlushRunnable implements Runnable {

@@ -23,7 +23,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
@@ -61,7 +60,7 @@ public class LSMDao implements Dao<ByteBuffer, TypedEntry> {
                     = new FlushRunnable(this.config, this.serializer, this.memoryStorage, this.filesCounter);
             this.compactRunnable
                     = new CompactRunnable(this.config, this.serializer, this.diskStorage, this.wasCompacted,
-                                          this.filesCounter);
+                    this.filesCounter);
         } catch (ReflectiveOperationException ex) {
             throw new RuntimeException(ex);
         }
