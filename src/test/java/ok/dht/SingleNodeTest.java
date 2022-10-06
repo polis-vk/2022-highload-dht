@@ -17,6 +17,7 @@
 package ok.dht;
 
 import java.net.HttpURLConnection;
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.concurrent.TimeUnit;
 
@@ -43,6 +44,20 @@ class SingleNodeTest extends TestBase {
                 HttpURLConnection.HTTP_BAD_REQUEST,
                 client.send(
                         service.request("/v0/entity").GET().build(),
+                        HttpResponse.BodyHandlers.ofByteArray()
+                ).statusCode()
+        );
+        assertEquals(
+                HttpURLConnection.HTTP_BAD_REQUEST,
+                client.send(
+                        service.request("/v0/entity").PUT(HttpRequest.BodyPublishers.noBody()).build(),
+                        HttpResponse.BodyHandlers.ofByteArray()
+                ).statusCode()
+        );
+        assertEquals(
+                HttpURLConnection.HTTP_BAD_REQUEST,
+                client.send(
+                        service.request("/v0/entity").DELETE().build(),
                         HttpResponse.BodyHandlers.ofByteArray()
                 ).statusCode()
         );
@@ -170,7 +185,7 @@ class SingleNodeTest extends TestBase {
 
         // Remove data and recreate
         service.cleanUp();
-        service.service().start().get(10, TimeUnit.SECONDS);
+        service.start();
 
         // Check absent data
         assertEquals(HttpURLConnection.HTTP_NOT_FOUND, service.get(key).statusCode());
@@ -207,5 +222,15 @@ class SingleNodeTest extends TestBase {
 
         // Check
         assertEquals(HttpURLConnection.HTTP_NOT_FOUND, service.get(key).statusCode());
+    }
+
+    @ServiceTest(stage = 1)
+    void post(ServiceInfo service) throws Exception {
+        String key = randomId();
+        byte[] value = randomValue();
+        assertEquals(
+                HttpURLConnection.HTTP_BAD_METHOD,
+                service.post(key, value).statusCode()
+        );
     }
 }
