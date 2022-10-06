@@ -15,10 +15,13 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -41,6 +44,10 @@ public class DemoService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
+        if (Files.notExists(config.workingDir())) {
+            Files.createDirectory(config.workingDir());
+        }
+
         dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD));
         workersPool = new ThreadPoolExecutor(
                 POOL_SIZE,
@@ -79,6 +86,16 @@ public class DemoService implements Service {
                     );
                 }
                 session.sendResponse(response);
+            }
+
+            @Override
+            public synchronized void stop() {
+                for (SelectorThread selectorThread : selectors) {
+                    for (Session session : selectorThread.selector) {
+                        session.close();
+                    }
+                }
+                super.stop();
             }
         };
         server.addRequestHandlers(this);
@@ -181,7 +198,7 @@ public class DemoService implements Service {
         return data == null ? null : MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 
-    @ServiceFactory(stage = 1, week = 1)
+    @ServiceFactory(stage = 2, week = 1)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
