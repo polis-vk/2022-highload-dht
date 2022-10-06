@@ -124,7 +124,7 @@ public class DaoHttpServer extends HttpServer {
         }
     }
 
-    private final static class UnsupportedMethodRequestHandler implements RequestHandler {
+    private static final class UnsupportedMethodRequestHandler implements RequestHandler {
         @Override
         public void handleRequest(final Request request,
                                   final HttpSession session) throws IOException {
