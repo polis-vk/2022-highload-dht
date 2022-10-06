@@ -45,7 +45,10 @@ public class WebService implements Service {
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
-                Response defaultResponse = new Response(Response.BAD_REQUEST, Response.EMPTY);
+                String resultCode = request.getMethod() == Request.METHOD_GET
+                        || request.getMethod() == Request.METHOD_PUT
+                        ? Response.BAD_REQUEST : Response.METHOD_NOT_ALLOWED;
+                Response defaultResponse = new Response(resultCode, Response.EMPTY);
                 session.sendResponse(defaultResponse);
             }
 
