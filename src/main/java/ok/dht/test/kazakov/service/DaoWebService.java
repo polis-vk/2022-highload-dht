@@ -113,8 +113,18 @@ public class DaoWebService implements Service {
     }
 
     @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Nonnull @Param("id") final String id) {
+    public Response handleRequest(@Nonnull final Request request) {
+        final String id = request.getParameter("id=");
+
+        return switch (request.getMethod()) {
+            case Request.METHOD_GET -> handleGet(id);
+            case Request.METHOD_PUT -> handlePut(id, request);
+            case Request.METHOD_DELETE -> handleDelete(id);
+            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+        };
+    }
+
+    public Response handleGet(@Nonnull final String id) {
         final DaoRequestsValidatorBuilder.Validator validator = daoRequestsValidatorBuilder.validate()
                 .validateId(id);
         if (validator.isInvalid()) {
@@ -136,9 +146,7 @@ public class DaoWebService implements Service {
         }
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(@Nullable @Param("id") final String id,
+    public Response handlePut(@Nullable final String id,
                               @Nonnull final Request request) {
         final byte[] value = request.getBody();
 
@@ -153,9 +161,7 @@ public class DaoWebService implements Service {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Nullable @Param("id") final String id) {
+    public Response handleDelete(@Nullable final String id) {
         final DaoRequestsValidatorBuilder.Validator validator = daoRequestsValidatorBuilder.validate()
                 .validateId(id);
         if (validator.isInvalid()) {
