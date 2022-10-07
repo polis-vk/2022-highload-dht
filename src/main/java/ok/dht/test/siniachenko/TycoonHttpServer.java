@@ -12,6 +12,7 @@ public class TycoonHttpServer extends HttpServer {
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
 
     private final TycoonService service;
+    private boolean closed = true;
 
     public TycoonHttpServer(TycoonService service, int port) throws IOException {
         super(createHttpConfigFromPort(port));
@@ -40,6 +41,16 @@ public class TycoonHttpServer extends HttpServer {
         session.sendResponse(response);
     }
 
+    public boolean isClosed() {
+        return closed;
+    }
+
+    @Override
+    public synchronized void start() {
+        closed = false;
+        super.start();
+    }
+
     @Override
     public synchronized void stop() {
         for (SelectorThread selectorThread : selectors) {
@@ -47,6 +58,7 @@ public class TycoonHttpServer extends HttpServer {
                 session.close();
             }
         }
+        closed = true;
         super.stop();
     }
 }

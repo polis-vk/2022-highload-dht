@@ -38,7 +38,7 @@ public class TycoonService implements ok.dht.Service {
     private final ServiceConfig config;
     private final NodeMapper nodeMapper;
     private DB levelDb;
-    private HttpServer server;
+    private TycoonHttpServer server;
     private ExecutorService executorService;
     private HttpClient httpClient;
 
@@ -74,7 +74,7 @@ public class TycoonService implements ok.dht.Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        if (server != null) {
+        if (server != null && !server.isClosed()) {
             server.stop();
         }
         if (executorService != null) {
