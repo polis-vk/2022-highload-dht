@@ -64,11 +64,11 @@ public final class MyServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        super.stop();
         for (SelectorThread selectorThread : selectors) {
             for (Session session : selectorThread.selector) {
                 session.close();
             }
         }
+        super.stop();
     }
 }
