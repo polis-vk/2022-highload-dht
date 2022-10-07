@@ -109,7 +109,7 @@ public class TycoonService implements ok.dht.Service {
         try {
             value = levelDb.get(Utf8.toBytes(id));
         } catch (DBException e) {
-            LOG.error("Error in DB");
+            LOG.error("Error in DB", e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
 
@@ -130,7 +130,7 @@ public class TycoonService implements ok.dht.Service {
         try {
             levelDb.put(Utf8.toBytes(id), request.getBody());
         } catch (DBException e) {
-            LOG.error("Error in DB");
+            LOG.error("Error in DB", e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
 
@@ -144,7 +144,7 @@ public class TycoonService implements ok.dht.Service {
         try {
             levelDb.delete(Utf8.toBytes(id));
         } catch (DBException e) {
-            LOG.error("Error in DB");
+            LOG.error("Error in DB", e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
 
