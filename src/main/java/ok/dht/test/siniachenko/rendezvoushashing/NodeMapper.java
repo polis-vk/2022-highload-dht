@@ -24,6 +24,7 @@ public class NodeMapper {
     }
 
     private static int hash(byte[] key, String node) {
+        // TODO: THIS HASH IS MONOTONIC BY NODE NO
         return Arrays.hashCode(key) * 1009 + node.hashCode();
     }
 }
