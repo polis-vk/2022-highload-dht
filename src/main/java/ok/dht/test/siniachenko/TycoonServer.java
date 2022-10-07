@@ -1,7 +1,7 @@
 package ok.dht.test.siniachenko;
 
 import ok.dht.ServiceConfig;
-import ok.dht.test.siniachenko.service.Service;
+import ok.dht.test.siniachenko.service.TycoonService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,10 +12,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-public final class Server {
-    private static final Logger LOG = LoggerFactory.getLogger(Server.class);
+public final class TycoonServer {
+    private static final Logger LOG = LoggerFactory.getLogger(TycoonServer.class);
 
-    private Server() {
+    private TycoonServer() {
     }
 
     public static void main(String[] args)
@@ -34,7 +34,7 @@ public final class Server {
             LOG.error("Cannot create server directory \"server\"");
             throw e;
         }
-        new Service(config).start().get(1, TimeUnit.SECONDS);
+        new TycoonService(config).start().get(1, TimeUnit.SECONDS);
         LOG.info("Started Server on {}", url);
     }
 }
