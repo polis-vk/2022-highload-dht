@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -34,7 +35,6 @@ public class TycoonService implements ok.dht.Service {
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
     public static final String REQUESTS_PATH = "/v0/entity";
     public static final int THREAD_POOL_QUEUE_CAPACITY = (int) 1E20;
-
     private final ServiceConfig config;
     private final NodeMapper nodeMapper;
     private DB levelDb;
@@ -131,7 +131,7 @@ public class TycoonService implements ok.dht.Service {
     }
 
     private Response get(String id, Request request) {
-        byte[] value = Response.EMPTY;
+        byte[] value = null;
 
         String nodeUrlByKey = nodeMapper.getNodeUrlByKey(Utf8.toBytes(id));
         if (config.selfUrl().equals(nodeUrlByKey)) {
@@ -150,7 +150,9 @@ public class TycoonService implements ok.dht.Service {
                         .build(),
                     HttpResponse.BodyHandlers.ofByteArray()
                 );
-                value = response.body();
+                if (response.statusCode() == HttpURLConnection.HTTP_OK) {
+                    value = response.body();
+                }
             } catch (IOException | InterruptedException e) {
                 LOG.error("Error while requesting node {}", nodeUrlByKey, e);
                 return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
