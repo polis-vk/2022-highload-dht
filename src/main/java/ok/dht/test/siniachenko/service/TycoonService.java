@@ -50,7 +50,6 @@ public class TycoonService implements ok.dht.Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         // DB
-        System.out.println("DIRECTORY ___________ " + config.workingDir().toString());
         levelDb = new DbImpl(new Options(), config.workingDir().toFile());
         LOG.info("Started DB in directory {}", config.workingDir());
 
