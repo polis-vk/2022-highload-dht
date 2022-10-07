@@ -75,8 +75,8 @@ public class MyService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(Request request, @Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
+    public Response handlePut(Request request, @Param(value = "id") String id) {
+        if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         ByteBuffer key = daoFactory.fromString(id);
@@ -87,8 +87,8 @@ public class MyService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
+    public Response handleDelete(@Param(value = "id") String id) {
+        if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         ByteBuffer key = daoFactory.fromString(id);
