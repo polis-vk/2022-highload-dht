@@ -47,8 +47,12 @@ public class RocksDBService implements Service {
         return new HttpServer(config) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
-                Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-                session.sendResponse(response);
+                if (request.getMethod() != Request.METHOD_GET
+                        && request.getMethod() != Request.METHOD_PUT
+                        && request.getMethod() != Request.METHOD_DELETE) {
+                    session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+                }
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             }
 
             @Override
