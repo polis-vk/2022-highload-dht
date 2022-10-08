@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -42,9 +43,9 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD));
-        server = new CustomHttpServer(createConfigFromPort(config.selfPort()), dao, true);
-        server.start();
+        server = new CustomHttpServer(createConfigFromPort(config.selfPort()), dao);
         server.addRequestHandlers(this);
+        server.start();
         return CompletableFuture.completedFuture(null);
     }
 
@@ -75,7 +76,6 @@ public class ServiceImpl implements Service {
     private static class CustomHttpServer extends HttpServer {
         private static final int CPUs = Runtime.getRuntime().availableProcessors();
 
-        private final boolean rejectWhenOverloaded;
         private final Dao<MemorySegment, Entry<MemorySegment>> dao;
         private final BlockingQueue<Runnable> queue = new AlmostLifoQueue(POOL_QUEUE_SIZE, FIFO_RARENESS);
         private final ExecutorService pool = new ThreadPoolExecutor(CPUs, CPUs, 0L, TimeUnit.MILLISECONDS, queue);
@@ -83,11 +83,9 @@ public class ServiceImpl implements Service {
         public CustomHttpServer(
                 HttpServerConfig config,
                 Dao<MemorySegment, Entry<MemorySegment>> dao,
-                boolean rejectWhenOverloaded,
                 Object... routers) throws IOException {
 
             super(config, routers);
-            this.rejectWhenOverloaded = rejectWhenOverloaded;
             this.dao = dao;
         }
 
@@ -98,41 +96,44 @@ public class ServiceImpl implements Service {
 
         @Override
         public void handleRequest(Request request, HttpSession session) throws IOException {
-            String id = request.getParameter("id");
-            if (id == null || id.isEmpty() || id.equals("=")) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            String id = request.getParameter("id=");
+            if (id == null || id.isEmpty()) {
+                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
-            if (rejectWhenOverloaded && this.isOverloaded()) {
-                session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
-                return;
-            }
-            pool.execute(() -> {
-                Response response = switch (request.getMethod()) {
-                    case Request.METHOD_GET -> handleGet(id);
-                    case Request.METHOD_PUT -> handlePost(id, request);
-                    case Request.METHOD_DELETE -> handleDelete(id);
-                    default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-                };
-                try {
-                    session.sendResponse(response);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            });
-        }
-
-        private boolean isOverloaded() {
-            return queue.size() >= POOL_QUEUE_SIZE;
-        }
-
-        private Response handleGet(String id) {
-            Entry<MemorySegment> entry;
             try {
-                entry = dao.get(fromString(id));
-            } catch (IOException e) {
-                throw new RuntimeException(e);
+                pool.execute(() -> {
+                    try {
+                        Response response = handleRequest(request, id);
+                        sendResponse(session, response);
+                    } catch (Exception e) {
+                        sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                    }
+                });
+            } catch (RejectedExecutionException e) {
+                session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
             }
+        }
+
+        private static void sendResponse(HttpSession session, Response response) {
+            try {
+                session.sendResponse(response);
+            } catch (IOException e) {
+                session.close();
+            }
+        }
+
+        private Response handleRequest(Request request, String id) throws IOException {
+            return switch (request.getMethod()) {
+                case Request.METHOD_GET -> handleGet(id);
+                case Request.METHOD_PUT -> handlePut(id, request);
+                case Request.METHOD_DELETE -> handleDelete(id);
+                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            };
+        }
+
+        private Response handleGet(String id) throws IOException {
+            Entry<MemorySegment> entry = dao.get(fromString(id));
             if (entry == null) {
                 return new Response(Response.NOT_FOUND, Response.EMPTY);
             }
@@ -144,7 +145,7 @@ public class ServiceImpl implements Service {
             return new Response(Response.ACCEPTED, Response.EMPTY);
         }
 
-        private Response handlePost(String id, Request request) {
+        private Response handlePut(String id, Request request) {
             dao.upsert(new BaseEntry<>(fromString(id), MemorySegment.ofArray(request.getBody())));
             return new Response(Response.CREATED, Response.EMPTY);
         }
