@@ -11,39 +11,45 @@ public class AlmostLifoQueue extends LinkedBlockingDeque<Runnable> {
 
     public AlmostLifoQueue(int capacity, int fifoRareness) {
         super(capacity);
+        if (fifoRareness <= 0) {
+            throw new IllegalArgumentException();
+        }
         this.fifoRareness = fifoRareness;
     }
 
     @Override
     public Runnable remove() {
-        if (retrievedElements.incrementAndGet() % fifoRareness != 0) {
-            return super.removeLast();
+        if (itsTimeToFifo()) {
+            return super.remove();
         }
-        return super.remove();
+        return super.removeLast();
     }
 
     @Override
     public Runnable poll() {
-        if (retrievedElements.incrementAndGet() % fifoRareness != 0) {
-            return super.pollLast();
+        if (itsTimeToFifo()) {
+            return super.poll();
         }
-        return super.poll();
+        return super.pollLast();
     }
 
     @Override
     public Runnable poll(long timeout, TimeUnit unit) throws InterruptedException {
-        if (retrievedElements.incrementAndGet() % fifoRareness != 0) {
-            return super.pollLast(timeout, unit);
+        if (itsTimeToFifo()) {
+            return super.poll(timeout, unit);
         }
-        return super.poll(timeout, unit);
+        return super.pollLast(timeout, unit);
     }
 
     @Override
     public Runnable take() throws InterruptedException {
-        if (retrievedElements.incrementAndGet() % fifoRareness != 0) {
-            return takeLast();
+        if (itsTimeToFifo()) {
+            return super.take();
         }
-        return super.take();
+        return takeLast();
     }
 
+    private boolean itsTimeToFifo() {
+        return retrievedElements.incrementAndGet() % fifoRareness == 0;
+    }
 }
