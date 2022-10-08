@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -31,8 +32,11 @@ import java.util.concurrent.TimeUnit;
 public class Service implements ok.dht.Service {
     private static final Logger LOG = LoggerFactory.getLogger(Service.class);
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
-    public static final String REQUESTS_PATH = "/v0/entity";
-    public static final int THREAD_POOL_QUEUE_CAPACITY = 1024 * 1024;
+    private static final String REQUESTS_PATH = "/v0/entity";
+    private static final Set<Integer> ALLOWED_METHODS = Set.of(
+        Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
+    );
+    private static final int THREAD_POOL_QUEUE_CAPACITY = 1024 * 1024;
 
     private final ServiceConfig config;
     private DB levelDb;
@@ -51,8 +55,11 @@ public class Service implements ok.dht.Service {
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
-                Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-                session.sendResponse(response);
+                if (REQUESTS_PATH.equals(request.getPath()) && !ALLOWED_METHODS.contains(request.getMethod())) {
+                    session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+                } else {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                }
             }
 
             @Override
@@ -183,17 +190,6 @@ public class Service implements ok.dht.Service {
                 Response.EMPTY
             );
         }
-    }
-
-    @Path(REQUESTS_PATH)
-    @RequestMethod(Request.METHOD_POST)
-    public Response post(
-        @Param(value = "id", required = true) String id
-    ) {
-        return new Response(
-            Response.METHOD_NOT_ALLOWED,
-            Response.EMPTY
-        );
     }
 
     @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
