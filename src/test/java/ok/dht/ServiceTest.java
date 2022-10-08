@@ -162,8 +162,6 @@ public @interface ServiceTest {
         }
 
         private List<ServiceInfo> createServices(ExtensionContext context, Class<?> clazz) throws IOException, InstantiationException, IllegalAccessException, InvocationTargetException, NoSuchMethodException {
-            Path workingDir = Files.createTempDirectory("service");
-
             ServiceTest annotation = context.getRequiredTestMethod().getAnnotation(ServiceTest.class);
             ServiceFactory.Factory f = (ServiceFactory.Factory) clazz.getDeclaredConstructor().newInstance();
 
@@ -180,6 +178,8 @@ public @interface ServiceTest {
 
             List<ServiceInfo> services = new ArrayList<>(annotation.clusterSize());
             for (int i = 0; i < annotation.clusterSize(); i++) {
+                Path workingDir = Files.createTempDirectory("service" + i);
+
                 ServiceConfig config = new ServiceConfig(ports[i], cluster.get(i), cluster, workingDir);
                 Service service = f.create(config);
 
