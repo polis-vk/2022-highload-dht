@@ -21,10 +21,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class Service implements ok.dht.Service {
     private static final Logger LOG = LoggerFactory.getLogger(Service.class);
+    private static final String PATH = "/v0/entity";
+    private static final Set<Integer> ALLOWED_METHODS = Set.of(
+        Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
+    );
 
     private final ServiceConfig config;
     private DB levelDb;
@@ -41,8 +46,11 @@ public class Service implements ok.dht.Service {
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
-                Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-                session.sendResponse(response);
+                if (PATH.equals(request.getPath()) && !ALLOWED_METHODS.contains(request.getMethod())) {
+                    session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+                } else {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                }
             }
 
             @Override
@@ -77,7 +85,7 @@ public class Service implements ok.dht.Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id", required = true) String id) {
         if (id == null || id.isEmpty()) {
@@ -100,7 +108,7 @@ public class Service implements ok.dht.Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response upsertEntity(
         @Param(value = "id", required = true) String id,
@@ -119,7 +127,7 @@ public class Service implements ok.dht.Service {
         );
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntity(
         @Param(value = "id", required = true) String id
@@ -137,7 +145,7 @@ public class Service implements ok.dht.Service {
         );
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 1, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public ok.dht.Service create(ServiceConfig config) {
