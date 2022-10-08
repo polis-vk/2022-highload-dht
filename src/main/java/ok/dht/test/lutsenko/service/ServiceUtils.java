@@ -2,35 +2,35 @@ package ok.dht.test.lutsenko.service;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Response;
-
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class ServiceUtils {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ServiceUtils.class);
 
     private ServiceUtils() {
     }
 
-    public static void uncheckedSendResponse(HttpSession session, Response response) {
+    public static void sendResponse(HttpSession session, Response response) {
         try {
             session.sendResponse(response);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+        } catch (Exception e) {
+            LOG.error("Service unavailable", e);
+            try {
+                session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+            } catch (Exception e1) {
+                LOG.error("Failed send SERVICE_UNAVAILABLE response", e1);
+                closeSession(session);
+            }
         }
     }
 
-    public static void shutdownAndAwaitTermination(ThreadPoolExecutor executorService) {
-        executorService.shutdown();
+    public static void closeSession(HttpSession session) {
         try {
-            if (!executorService.awaitTermination(Integer.MAX_VALUE, TimeUnit.MILLISECONDS)) {
-                executorService.shutdownNow();
-                throw new RuntimeException("Await termination too long");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Await termination interrupted", e);
+            session.close();
+        } catch (Exception e) {
+            LOG.error("Failed close session", e);
         }
     }
 }
