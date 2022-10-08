@@ -16,10 +16,11 @@ public final class RequestExecutorService {
 
     public static final int QUEUE_CAPACITY = 5;
     public static final int AWAIT_TERMINATION_SECONDS = 60;
-    public static final int THREADS_NUMBER = Runtime.getRuntime().availableProcessors() - 2;
+    public static final int THREADS_NUMBER = calculateThreadNumber();
     private static final Logger LOG = LoggerFactory.getLogger(RequestExecutorService.class);
 
     private RequestExecutorService() {
+
     }
 
     public static ThreadPoolExecutor requestExecutorDiscard() {
@@ -82,4 +83,13 @@ public final class RequestExecutorService {
             e.execute(r);
         }
     };
+
+    private static int calculateThreadNumber() {
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        if (availableProcessors >= 4) {
+             return availableProcessors - 2;
+        } else {
+            return availableProcessors;
+        }
+    }
 }
