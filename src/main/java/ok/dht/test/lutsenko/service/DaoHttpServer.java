@@ -10,15 +10,19 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Base64;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeoutException;
 
 public class DaoHttpServer extends HttpServer {
 
     private final PersistenceRangeDao dao = new PersistenceRangeDao(DaoConfig.defaultConfig());
     private final ExecutorService requestExecutor = RequestExecutorService.requestExecutorDiscard();
+    private static final Logger LOG = LoggerFactory.getLogger(DaoHttpServer.class);
 
     public DaoHttpServer(HttpServerConfig config, Object... routers) throws IOException {
         super(config, routers);
@@ -40,7 +44,11 @@ public class DaoHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        RequestExecutorService.shutdownAndAwaitTermination(requestExecutor);
+        try {
+            RequestExecutorService.shutdownAndAwaitTermination(requestExecutor);
+        } catch (TimeoutException e) {
+            LOG.warn("Request executor await termination too long");
+        }
         for (SelectorThread thread : selectors) {
             for (Session session : thread.selector) {
                 session.close();

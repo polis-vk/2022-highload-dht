@@ -10,12 +10,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public final class RequestExecutorService {
 
-    public static final int QUEUE_CAPACITY = 500;
+    public static final int QUEUE_CAPACITY = 5;
     public static final int AWAIT_TERMINATION_SECONDS = 60;
-    public static final int THREADS_NUMBER = 10;
+    public static final int THREADS_NUMBER = Runtime.getRuntime().availableProcessors() - 2;
     private static final Logger LOG = LoggerFactory.getLogger(RequestExecutorService.class);
 
     private RequestExecutorService() {
@@ -33,13 +34,13 @@ public final class RequestExecutorService {
         return requestExecutorOf(new ArrayBlockingQueue<>(QUEUE_CAPACITY), DISCARD_OLDEST_POLICY);
     }
 
-    public static void shutdownAndAwaitTermination(ExecutorService executorService) {
+    public static void shutdownAndAwaitTermination(ExecutorService executorService) throws TimeoutException {
         executorService.shutdown();
         try {
             if (!executorService.awaitTermination(AWAIT_TERMINATION_SECONDS, TimeUnit.SECONDS)) {
                 executorService.shutdownNow();
                 if (!executorService.awaitTermination(AWAIT_TERMINATION_SECONDS, TimeUnit.SECONDS)) {
-                    LOG.warn("Request executor await termination too long");
+                    throw new TimeoutException("Request executor await termination too long");
                 }
             }
         } catch (InterruptedException e) {
