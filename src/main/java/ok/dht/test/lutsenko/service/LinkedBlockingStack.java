@@ -12,11 +12,6 @@ public class LinkedBlockingStack<E> extends LinkedBlockingDeque<E> {
     }
 
     @Override
-    public boolean add(@Nonnull E e) {
-        return super.add(e);
-    }
-
-    @Override
     public boolean offer(@Nonnull E e) {
         return super.offerLast(e);
     }
