@@ -32,7 +32,7 @@ public class Service implements ok.dht.Service {
     private static final Logger LOG = LoggerFactory.getLogger(Service.class);
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
     public static final String REQUESTS_PATH = "/v0/entity";
-    public static final int THREAD_POOL_QUEUE_CAPACITY = (int) 1E20;
+    public static final int THREAD_POOL_QUEUE_CAPACITY = 1024 * 1024;
 
     private final ServiceConfig config;
     private DB levelDb;
