@@ -3,6 +3,7 @@ package ok.dht.test.trofimov;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.trofimov.HttpClient.MyHttpClient;
 import ok.dht.test.trofimov.dao.BaseEntry;
 import ok.dht.test.trofimov.dao.Config;
 import ok.dht.test.trofimov.dao.Entry;
@@ -23,10 +24,34 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import static java.net.HttpURLConnection.HTTP_ACCEPTED;
+import static java.net.HttpURLConnection.HTTP_BAD_GATEWAY;
+import static java.net.HttpURLConnection.HTTP_BAD_METHOD;
+import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
+import static java.net.HttpURLConnection.HTTP_CLIENT_TIMEOUT;
+import static java.net.HttpURLConnection.HTTP_CREATED;
+import static java.net.HttpURLConnection.HTTP_FORBIDDEN;
+import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
+import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
+import static java.net.HttpURLConnection.HTTP_MOVED_PERM;
+import static java.net.HttpURLConnection.HTTP_MULT_CHOICE;
+import static java.net.HttpURLConnection.HTTP_NOT_ACCEPTABLE;
+import static java.net.HttpURLConnection.HTTP_NOT_AUTHORITATIVE;
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static java.net.HttpURLConnection.HTTP_NOT_IMPLEMENTED;
+import static java.net.HttpURLConnection.HTTP_NO_CONTENT;
+import static java.net.HttpURLConnection.HTTP_OK;
+import static java.net.HttpURLConnection.HTTP_PARTIAL;
+import static java.net.HttpURLConnection.HTTP_RESET;
+import static java.net.HttpURLConnection.HTTP_UNAUTHORIZED;
+import static java.net.HttpURLConnection.HTTP_UNAVAILABLE;
+import static java.net.HttpURLConnection.HTTP_VERSION;
 
 public class MyService implements Service {
 
@@ -38,6 +63,7 @@ public class MyService implements Service {
     private HttpServer server;
     private InMemoryDao dao;
     private ThreadPoolExecutor requestsExecutor;
+    private MyHttpClient client = new MyHttpClient();
 
     public MyService(ServiceConfig config) {
         this.config = config;
@@ -69,7 +95,7 @@ public class MyService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
-        requestsExecutor.shutdown();
+        requestsExecutor.shutdownNow();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
@@ -79,24 +105,59 @@ public class MyService implements Service {
     public void handleGet(@Param(value = "id", required = true) String id, HttpSession session) {
         requestsExecutor.execute(() -> {
             Response response;
-            if (id.isEmpty()) {
-                response = emptyResponseFor(Response.BAD_REQUEST);
-            } else {
-                try {
-                    Entry<String> entry = dao.get(id);
-                    if (entry == null) {
-                        response = emptyResponseFor(Response.NOT_FOUND);
+            try {
+                String node = getNodeOf(config.clusterUrls(), id);
+                if (node.isEmpty() || node.equals(config.selfUrl())) {
+                    if (id.isEmpty()) {
+                        response = emptyResponseFor(Response.BAD_REQUEST);
                     } else {
-                        String value = entry.value();
-                        char[] chars = value.toCharArray();
-                        response = new Response(Response.OK, Base64.decodeFromChars(chars));
+                        Entry<String> entry = dao.get(id);
+                        if (entry == null) {
+                            response = emptyResponseFor(Response.NOT_FOUND);
+                        } else {
+                            String value = entry.value();
+                            char[] chars = value.toCharArray();
+                            response = new Response(Response.OK, Base64.decodeFromChars(chars));
+                        }
                     }
-                } catch (Exception e) {
-                    response = errorResponse(e);
+                } else {
+                    HttpResponse<byte[]> httpResponse = client.get(node, id);
+                    response = new Response(getResponseStatusCode(httpResponse.statusCode()), httpResponse.body());
                 }
+            } catch (Exception e) {
+                logger.error("Error while process request with key " + id, e);
+                response = errorResponse(e);
             }
             sendResponse(session, response);
         });
+    }
+
+    public static String getResponseStatusCode(int statusCode) {
+        return statusCode + switch (statusCode) {
+            case HTTP_OK -> " OK";
+            case HTTP_CREATED -> " Created";
+            case HTTP_ACCEPTED -> " Accepted";
+            case HTTP_NOT_AUTHORITATIVE -> " Non-Authoritative Information";
+            case HTTP_NO_CONTENT -> " No Content";
+            case HTTP_RESET -> " Reset Content";
+            case HTTP_PARTIAL -> " Partial Content";
+            case HTTP_MULT_CHOICE -> " Multiple Choices";
+            case HTTP_MOVED_PERM -> " Moved Permanently";
+            case HTTP_BAD_REQUEST -> " Bad Request";
+            case HTTP_UNAUTHORIZED -> " Unauthorized";
+            case HTTP_FORBIDDEN -> " Forbidden";
+            case HTTP_NOT_FOUND -> " Not Found";
+            case HTTP_BAD_METHOD -> " Method Not Allowed";
+            case HTTP_NOT_ACCEPTABLE -> " Not Acceptable";
+            case HTTP_CLIENT_TIMEOUT -> " Request Time-Out";
+            case HTTP_INTERNAL_ERROR -> " Internal Server Error";
+            case HTTP_NOT_IMPLEMENTED -> " Not Implemented";
+            case HTTP_BAD_GATEWAY -> " Bad Gateway";
+            case HTTP_UNAVAILABLE -> " Service Unavailable";
+            case HTTP_GATEWAY_TIMEOUT -> " Gateway Timeout";
+            case HTTP_VERSION -> " HTTP Version Not Supported";
+            default -> " ";
+        };
     }
 
     private static void sendResponse(HttpSession session, Response response) {
@@ -107,21 +168,45 @@ public class MyService implements Service {
         }
     }
 
+    private static String getNodeOf(List<String> clusterUrls, String key) {
+        if (clusterUrls.isEmpty()) {
+            return "";
+        }
+        int maxHash = Integer.MIN_VALUE;
+        String node = "";
+        for (String url : clusterUrls) {
+            int hash = url.hashCode() + key.hashCode();
+            if (hash > maxHash) {
+                maxHash = hash;
+                node = url;
+            }
+        }
+        return node;
+    }
+
     @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_PUT)
     public void handlePut(Request request, @Param(value = "id", required = true) String id, HttpSession session) {
         requestsExecutor.execute(() -> {
             Response response;
-            if (id.isEmpty()) {
-                response = emptyResponseFor(Response.BAD_REQUEST);
-            } else {
-                byte[] value = request.getBody();
-                try {
-                    dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
-                    response = emptyResponseFor(Response.CREATED);
-                } catch (Exception e) {
-                    response = errorResponse(e);
+            try {
+                String node = getNodeOf(config.clusterUrls(), id);
+                if (node.isEmpty() || node.equals(config.selfUrl())) {
+
+                    if (id.isEmpty()) {
+                        response = emptyResponseFor(Response.BAD_REQUEST);
+                    } else {
+                        byte[] value = request.getBody();
+                        dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
+                        response = emptyResponseFor(Response.CREATED);
+                    }
+                } else {
+                    HttpResponse<byte[]> httpResponse = client.upsert(node, id, request.getBody());
+                    response = new Response(getResponseStatusCode(httpResponse.statusCode()), httpResponse.body());
                 }
+            } catch (Exception e) {
+                logger.error("Error while process request with key " + id, e);
+                response = errorResponse(e);
             }
             sendResponse(session, response);
         });
@@ -132,15 +217,22 @@ public class MyService implements Service {
     public void handleDelete(@Param(value = "id", required = true) String id, HttpSession session) {
         requestsExecutor.execute(() -> {
             Response response;
-            if (id.isEmpty()) {
-                response = emptyResponseFor(Response.BAD_REQUEST);
-            } else {
-                try {
-                    dao.upsert(new BaseEntry<>(id, null));
-                    response = emptyResponseFor(Response.ACCEPTED);
-                } catch (Exception e) {
-                    response = errorResponse(e);
+            try {
+                String node = getNodeOf(config.clusterUrls(), id);
+                if (node.isEmpty() || node.equals(config.selfUrl())) {
+                    if (id.isEmpty()) {
+                        response = emptyResponseFor(Response.BAD_REQUEST);
+                    } else {
+                        dao.upsert(new BaseEntry<>(id, null));
+                        response = emptyResponseFor(Response.ACCEPTED);
+                    }
+                } else {
+                    HttpResponse<byte[]> httpResponse = client.delete(node, id);
+                    response = new Response(getResponseStatusCode(httpResponse.statusCode()), httpResponse.body());
                 }
+            } catch (Exception e) {
+                logger.error("Error while process request with key " + id, e);
+                response = errorResponse(e);
             }
             sendResponse(session, response);
         });
@@ -158,7 +250,6 @@ public class MyService implements Service {
     }
 
     private Response errorResponse(Exception e) {
-        logger.error("Error while process request", e);
         return new Response(Response.INTERNAL_ERROR, Utf8.toBytes(e.toString()));
     }
 
@@ -171,7 +262,7 @@ public class MyService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
