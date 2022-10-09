@@ -1,4 +1,4 @@
-package ok.dht.test.ushkov;
+package ok.dht.test.ushkov.http;
 
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
@@ -16,13 +16,11 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-public class RocksDBHttpServer extends HttpServer {
-    public static final long STOP_TIMEOUT_MINUTES = 1;
+public abstract class AsyncHttpServer extends HttpServer {
+    private final ExecutorService executor;
+    protected static final Logger LOG = LoggerFactory.getLogger(AsyncHttpServer.class);
 
-    private ExecutorService executor;
-    private static final Logger LOG = LoggerFactory.getLogger(RocksDBHttpServer.class);
-
-    public RocksDBHttpServer(RocksDBHttpServerConfig config, Object... routers) throws IOException {
+    public AsyncHttpServer(AsyncHttpServerConfig config, Object... routers) throws IOException {
         super(config, routers);
         int processors = Runtime.getRuntime().availableProcessors();
         int workers = config.workers >= 0 ? config.workers : processors;
@@ -35,30 +33,16 @@ public class RocksDBHttpServer extends HttpServer {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
+    public final void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            executor.execute(() -> {
-                try {
-                    super.handleRequest(request, session);
-                } catch (Exception e) {
-                    try {
-                        session.sendError(Response.BAD_REQUEST, e.getMessage());
-                    } catch (IOException e1) {
-                        // Do nothing
-                    }
-                }
-            });
+            executor.execute(() -> handleRequestAsync(request, session));
         } catch (RejectedExecutionException e) {
             LOG.info("drop request, queue is full");
             session.sendError(Response.SERVICE_UNAVAILABLE, e.getMessage());
         }
     }
 
-    @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        session.sendResponse(response);
-    }
+    protected abstract void handleRequestAsync(Request request, HttpSession session);
 
     @Override
     public synchronized void stop() {
