@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -37,13 +38,19 @@ public class CustomHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        es.execute(() -> {
-            try {
-                super.handleRequest(request, session);
-            } catch (IOException e) {
-                sendError(session, e);
-            }
-        });
+        try {
+            es.execute(() -> handle(request, session));
+        } catch (RejectedExecutionException e) {
+            sendError(session, e);
+        }
+    }
+
+    private void handle(Request request, HttpSession session) {
+        try {
+            super.handleRequest(request, session);
+        } catch (Exception e) {
+            sendError(session, e);
+        }
     }
 
     @Override
@@ -55,7 +62,7 @@ public class CustomHttpServer extends HttpServer {
     @Override
     public synchronized void start() {
         es = new ThreadPoolExecutor(THREAD_COUNT, THREAD_COUNT, 0L, TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(QUEUE_SIZE), new ThreadPoolExecutor.DiscardPolicy());
+                new ArrayBlockingQueue<>(QUEUE_SIZE));
         super.start();
     }
 
@@ -74,7 +81,7 @@ public class CustomHttpServer extends HttpServer {
                 LOG.error("Termination timeout");
             }
         } catch (InterruptedException e) {
-            LOG.error("Cannot terminate workers", e);
+            LOG.error("Interrupted while terminating", e);
             Thread.currentThread().interrupt();
         }
     }
