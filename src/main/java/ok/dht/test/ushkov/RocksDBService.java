@@ -2,11 +2,10 @@ package ok.dht.test.ushkov;
 
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
-import ok.dht.test.ServiceFactory;
-import one.nio.http.Param;
-import one.nio.http.Path;
+import ok.dht.test.ushkov.http.AsyncHttpServer;
+import ok.dht.test.ushkov.http.AsyncHttpServerConfig;
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
@@ -22,12 +21,11 @@ public class RocksDBService implements Service {
     public static final int N_SELECTORS = 5;
     public static final int N_WORKERS = 5;
     public static final int QUEUE_CAP = 100;
-
     public static final long STOP_TIMEOUT_MINUTES = 1;
 
     private final ServiceConfig config;
     public RocksDB db;
-    private RocksDBHttpServer server;
+    private AsyncHttpServer server;
 
     public RocksDBService(ServiceConfig config) {
         this.config = config;
@@ -40,13 +38,17 @@ public class RocksDBService implements Service {
         } catch (RocksDBException e) {
             throw new IOException(e);
         }
-        server = new RocksDBHttpServer(createHttpServerConfigFromPort(config.selfPort()));
-        server.addRequestHandlers(this);
+        
+        AsyncHttpServerConfig httpServerConfig =
+                createHttpServerConfigFromPort(config.selfPort());
+        server = createHttpServer(httpServerConfig);
         server.start();
+        
         return CompletableFuture.completedFuture(null);
     }
-    private static RocksDBHttpServerConfig createHttpServerConfigFromPort(int port) {
-        RocksDBHttpServerConfig httpConfig = new RocksDBHttpServerConfig();
+
+    private static AsyncHttpServerConfig createHttpServerConfigFromPort(int port) {
+        AsyncHttpServerConfig httpConfig = new AsyncHttpServerConfig();
         AcceptorConfig acceptor = new AcceptorConfig();
         acceptor.port = port;
         acceptor.reusePort = true;
@@ -55,6 +57,95 @@ public class RocksDBService implements Service {
         httpConfig.workers = N_WORKERS;
         httpConfig.queueCapacity = QUEUE_CAP;
         return httpConfig;
+    }
+    
+    private AsyncHttpServer createHttpServer(AsyncHttpServerConfig config) throws IOException {
+        return new AsyncHttpServer(config) {
+            @Override
+            protected void handleRequestAsync(Request request, HttpSession session) {
+                try {
+                    processRequest(request, session);
+                } catch (Exception e) {
+                    try {
+                        session.sendError(Response.INTERNAL_ERROR, "");
+                    } catch (IOException e1) {
+                        LOG.error("Could not send '500 Internal Server Error' to client", e1);
+                    }
+                }
+            }
+
+            private void processRequest(Request request, HttpSession session) throws IOException, RocksDBException {
+                try {
+                    switch (request.getMethod()) {
+                        case Request.METHOD_GET -> {
+                            switch (request.getPath()) {
+                                case V0_ENTITY -> {
+                                    String id = requireNotEmpty(request.getParameter("id="));
+                                    Response response = getEntity(id);
+                                    session.sendResponse(response);
+                                }
+                                default -> throw new BadPathException();
+                            }
+                        }
+                        case Request.METHOD_PUT -> {
+                            switch (request.getPath()) {
+                                case V0_ENTITY -> {
+                                    String id = requireNotEmpty(request.getParameter("id="));
+                                    byte[] body = request.getBody();
+                                    Response response = putEntity(id, body);
+                                    session.sendResponse(response);
+                                }
+                                default -> throw new BadPathException();
+                            }
+                        }
+                        case Request.METHOD_DELETE -> {
+                            switch (request.getPath()) {
+                                case V0_ENTITY -> {
+                                    String id = requireNotEmpty(request.getParameter("id="));
+                                    Response response = deleteEntity(id);
+                                    session.sendResponse(response);
+                                }
+                                default -> throw new BadPathException();
+                            }
+                        }
+                        default -> throw new MethodNotAllowedException();
+                    }
+                } catch (MethodNotAllowedException e) {
+                    sendEmptyResponse(session, Response.METHOD_NOT_ALLOWED);
+                } catch (EmptyIdException | BadPathException e) {
+                    sendEmptyResponse(session, Response.BAD_REQUEST);
+                }
+            }
+        };
+    }
+
+    private static String requireNotEmpty(String id) throws EmptyIdException {
+        if (id.isEmpty()) {
+            throw new EmptyIdException();
+        }
+        return id;
+    }
+
+    private static void sendEmptyResponse(HttpSession session, String code) throws IOException {
+        Response response = new Response(code, Response.EMPTY);
+        session.sendResponse(response);
+    }
+
+    private Response getEntity(String id) throws RocksDBException {
+        byte[] value = db.get(Utf8.toBytes(id));
+        return value == null
+                ? new Response(Response.NOT_FOUND, Response.EMPTY)
+                : new Response(Response.OK, value);
+    }
+
+    public Response putEntity(String id, byte[] body) throws RocksDBException {
+        db.put(Utf8.toBytes(id), body);
+        return new Response(Response.CREATED, Response.EMPTY);
+    }
+
+    public Response deleteEntity(String id) throws RocksDBException {
+        db.delete(Utf8.toBytes(id));
+        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     @Override
@@ -79,63 +170,11 @@ public class RocksDBService implements Service {
         return future;
     }
 
-    @Path(V0_ENTITY)
-    @RequestMethod(Request.METHOD_GET)
-    public Response entityGet(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-        try {
-            byte[] value = db.get(Utf8.toBytes(id));
-            if (value == null) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
-            } else {
-                return new Response(Response.OK, value);
-            }
-        } catch (RocksDBException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-    }
+    private static class FlowControlException extends Exception {}
 
-    @Path(V0_ENTITY)
-    @RequestMethod(Request.METHOD_PUT)
-    public Response entityPut(@Param(value = "id", required = true) String id, Request request) {
-        if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-        try {
-            db.put(Utf8.toBytes(id), request.getBody());
-            return new Response(Response.CREATED, Response.EMPTY);
-        } catch (RocksDBException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-    }
+    private static class MethodNotAllowedException extends FlowControlException {}
 
-    @Path(V0_ENTITY)
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response entityDelete(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-        try {
-            db.delete(Utf8.toBytes(id));
-            return new Response(Response.ACCEPTED, Response.EMPTY);
-        } catch (RocksDBException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-    }
+    private static class BadPathException extends FlowControlException {}
 
-    @Path(V0_ENTITY)
-    @RequestMethod(Request.METHOD_POST)
-    public Response entityPost() {
-        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-    }
-
-    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
-    public static class Factory implements ServiceFactory.Factory {
-        @Override
-        public Service create(ServiceConfig config) {
-            return new RocksDBService(config);
-        }
-    }
+    private static class EmptyIdException extends FlowControlException {}
 }
