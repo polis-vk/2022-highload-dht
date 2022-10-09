@@ -18,7 +18,6 @@ import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Base64;
-import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,7 +30,7 @@ import java.util.concurrent.TimeUnit;
 public class MyService implements Service {
 
     public static final String PATH_V0_ENTITY = "/v0/entity";
-    private final Logger logger = LoggerFactory.getLogger(MyService.class);
+    private static final Logger logger = LoggerFactory.getLogger(MyService.class);
     private static final long FLUSH_THRESHOLD = 1 << 20;
     private static final int REQUESTS_MAX_QUEUE_SIZE = 1024;
     private final ServiceConfig config;
@@ -69,7 +68,7 @@ public class MyService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
-        requestsExecutor.shutdown();
+        requestsExecutor.shutdownNow();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
@@ -92,19 +91,12 @@ public class MyService implements Service {
                         response = new Response(Response.OK, Base64.decodeFromChars(chars));
                     }
                 } catch (Exception e) {
-                    response = errorResponse(e);
+                    logger.error("error get request" + id, e);
+                    response = errorResponse();
                 }
             }
             sendResponse(session, response);
         });
-    }
-
-    private static void sendResponse(HttpSession session, Response response) {
-        try {
-            session.sendResponse(response);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
     }
 
     @Path(PATH_V0_ENTITY)
@@ -115,12 +107,17 @@ public class MyService implements Service {
             if (id.isEmpty()) {
                 response = emptyResponseFor(Response.BAD_REQUEST);
             } else {
+                int size = requestsExecutor.getQueue().size();
+                if (size == 0) {
+                    System.out.println(size);
+                }
                 byte[] value = request.getBody();
                 try {
                     dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
                     response = emptyResponseFor(Response.CREATED);
                 } catch (Exception e) {
-                    response = errorResponse(e);
+                    logger.error("error put request" + id, e);
+                    response = errorResponse();
                 }
             }
             sendResponse(session, response);
@@ -139,12 +136,30 @@ public class MyService implements Service {
                     dao.upsert(new BaseEntry<>(id, null));
                     response = emptyResponseFor(Response.ACCEPTED);
                 } catch (Exception e) {
-                    response = errorResponse(e);
+                    logger.error("error delete request" + id, e);
+                    response = errorResponse();
                 }
             }
             sendResponse(session, response);
         });
 
+    }
+
+    private static void sendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            logger.error("Error send response", e);
+            closeSession(session);
+        }
+    }
+
+    private static void closeSession(HttpSession session) {
+        try {
+            session.close();
+        } catch (Exception e) {
+            logger.error("Error in closing session", e);
+        }
     }
 
     @Path(PATH_V0_ENTITY)
@@ -157,9 +172,8 @@ public class MyService implements Service {
         return new Response(status, Response.EMPTY);
     }
 
-    private Response errorResponse(Exception e) {
-        logger.error("Error while process request", e);
-        return new Response(Response.INTERNAL_ERROR, Utf8.toBytes(e.toString()));
+    private Response errorResponse() {
+        return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
