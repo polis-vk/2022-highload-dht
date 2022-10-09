@@ -107,10 +107,6 @@ public class MyService implements Service {
             if (id.isEmpty()) {
                 response = emptyResponseFor(Response.BAD_REQUEST);
             } else {
-                int size = requestsExecutor.getQueue().size();
-                if (size == 0) {
-                    System.out.println(size);
-                }
                 byte[] value = request.getBody();
                 try {
                     dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
