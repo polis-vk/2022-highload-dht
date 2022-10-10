@@ -14,14 +14,15 @@ import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -31,16 +32,17 @@ import static one.nio.http.Request.METHOD_PUT;
 
 public class HttpServerImpl extends HttpServer {
 
+    private static final Log LOGGER = LogFactory.getLog(HttpServerImpl.class);
     private static final String PATH = "/v0/entity";
     private static final String PARAMETER_KEY = "id=";
 
     private static final int SIZE_QUEUE = 128;
     private static final int COUNT_CORES = 6;
 
-    private static final Set<Integer> SUPPORTED_METHODS = new HashSet<>(Arrays.asList(METHOD_GET, METHOD_PUT,
-            METHOD_DELETE));
+    private static final Set<Integer> SUPPORTED_METHODS = Set.of(METHOD_GET, METHOD_PUT, METHOD_DELETE);
     private static final Response BAD_RESPONSE = new Response(Response.BAD_REQUEST, Response.EMPTY);
     private static final Response METHOD_NOT_ALLOWED = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+    private static final Response SERVICE_UNAVAILABLE = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
     private static final Response NOT_FOUND = new Response(Response.NOT_FOUND, Response.EMPTY);
     private final MemorySegmentDao database;
     private final PathMapper handlerMapper = new PathMapper();
@@ -78,28 +80,51 @@ public class HttpServerImpl extends HttpServer {
         session.sendResponse(BAD_RESPONSE);
     }
 
+    private static void handleUnavailable(HttpSession session) {
+        try {
+            session.sendResponse(SERVICE_UNAVAILABLE);
+        } catch (IOException ioException) {
+            try {
+                LOGGER.error("Error when send SERVICE_UNAVAILABLE response", ioException);
+                session.close();
+            } catch (Exception exception) {
+                LOGGER.error("Error when close connection", exception);
+            }
+        }
+    }
+
     @Override
     public void handleRequest(Request request, HttpSession session) {
-        poolExecutor.execute(() -> {
-            try {
-                int methodName = request.getMethod();
-                if (!SUPPORTED_METHODS.contains(methodName)) {
-                    session.sendResponse(METHOD_NOT_ALLOWED);
-                    return;
-                }
-                String path = request.getPath();
+        try {
+            poolExecutor.execute(() -> {
+                try {
+                    String path = request.getPath();
+                    if (!path.equals(PATH)) {
+                        session.sendResponse(BAD_RESPONSE);
+                        return;
+                    }
 
-                RequestHandler handler = handlerMapper.find(path, methodName);
+                    int methodName = request.getMethod();
+                    if (!SUPPORTED_METHODS.contains(methodName)) {
+                        session.sendResponse(METHOD_NOT_ALLOWED);
+                        return;
+                    }
+                    RequestHandler handler = handlerMapper.find(path, methodName);
 
-                if (handler != null) {
-                    handler.handleRequest(request, session);
-                    return;
+                    if (handler != null) {
+                        handler.handleRequest(request, session);
+                        return;
+                    }
+                    handleDefault(request, session);
+                } catch (IOException e) {
+                    LOGGER.error("Error when send response", e);
+                    handleUnavailable(session);
                 }
-                handleDefault(request, session);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        });
+            });
+        } catch (RejectedExecutionException rejectedExecutionException) {
+            LOGGER.error("Reject request", rejectedExecutionException);
+            handleUnavailable(session);
+        }
     }
 
     @Override
