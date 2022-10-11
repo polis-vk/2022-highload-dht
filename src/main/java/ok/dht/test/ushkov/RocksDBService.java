@@ -2,11 +2,14 @@ package ok.dht.test.ushkov;
 
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
+import ok.dht.test.ServiceFactory;
 import ok.dht.test.ushkov.http.AsyncHttpServer;
 import ok.dht.test.ushkov.http.AsyncHttpServerConfig;
+import one.nio.http.HttpClient;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.ConnectionString;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
 import org.rocksdb.RocksDB;
@@ -22,13 +25,18 @@ public class RocksDBService implements Service {
     public static final int N_WORKERS = 5;
     public static final int QUEUE_CAP = 100;
     public static final long STOP_TIMEOUT_MINUTES = 1;
+    public static final boolean IS_HTTP_11 = false;
 
     private final ServiceConfig config;
     public RocksDB db;
     private AsyncHttpServer server;
+    private final KeyManager keyManager = new ConsistentHashing();
 
     public RocksDBService(ServiceConfig config) {
         this.config = config;
+        for (String url : this.config.clusterUrls()) {
+            keyManager.addNode(url);
+        }
     }
 
     @Override
@@ -38,12 +46,12 @@ public class RocksDBService implements Service {
         } catch (RocksDBException e) {
             throw new IOException(e);
         }
-        
+
         AsyncHttpServerConfig httpServerConfig =
                 createHttpServerConfigFromPort(config.selfPort());
         server = createHttpServer(httpServerConfig);
         server.start();
-        
+
         return CompletableFuture.completedFuture(null);
     }
 
@@ -58,7 +66,7 @@ public class RocksDBService implements Service {
         httpConfig.queueCapacity = QUEUE_CAP;
         return httpConfig;
     }
-    
+
     private AsyncHttpServer createHttpServer(AsyncHttpServerConfig config) throws IOException {
         return new AsyncHttpServer(config) {
             @Override
@@ -80,7 +88,9 @@ public class RocksDBService implements Service {
                         case Request.METHOD_GET -> {
                             switch (request.getPath()) {
                                 case V0_ENTITY -> {
-                                    String id = requireNotEmpty(request.getParameter("id="));
+                                    String id = request.getParameter("id=");
+                                    requireNotEmpty(id);
+                                    requireKeyOwnership(id);
                                     Response response = getEntity(id);
                                     session.sendResponse(response);
                                 }
@@ -90,7 +100,9 @@ public class RocksDBService implements Service {
                         case Request.METHOD_PUT -> {
                             switch (request.getPath()) {
                                 case V0_ENTITY -> {
-                                    String id = requireNotEmpty(request.getParameter("id="));
+                                    String id = request.getParameter("id=");
+                                    requireNotEmpty(id);
+                                    requireKeyOwnership(id);
                                     byte[] body = request.getBody();
                                     Response response = putEntity(id, body);
                                     session.sendResponse(response);
@@ -101,7 +113,9 @@ public class RocksDBService implements Service {
                         case Request.METHOD_DELETE -> {
                             switch (request.getPath()) {
                                 case V0_ENTITY -> {
-                                    String id = requireNotEmpty(request.getParameter("id="));
+                                    String id = request.getParameter("id=");
+                                    requireNotEmpty(id);
+                                    requireKeyOwnership(id);
                                     Response response = deleteEntity(id);
                                     session.sendResponse(response);
                                 }
@@ -112,23 +126,44 @@ public class RocksDBService implements Service {
                     }
                 } catch (MethodNotAllowedException e) {
                     sendEmptyResponse(session, Response.METHOD_NOT_ALLOWED);
-                } catch (EmptyIdException | BadPathException e) {
+                } catch (BadPathException | EmptyIdException e) {
                     sendEmptyResponse(session, Response.BAD_REQUEST);
+                } catch (KeyOwnershipException e) {
+                    String url = keyManager.getNodeIdByKey(e.key);
+                    Response response = redirectRequest(url, request);
+                    String statusCode = response.getHeaders()[0];
+                    session.sendResponse(new Response(statusCode, response.getBody()));
                 }
             }
         };
     }
 
-    private static String requireNotEmpty(String id) throws EmptyIdException {
-        if (id.isEmpty()) {
+    private static void requireNotEmpty(String id) throws EmptyIdException {
+        if (id == null || id.isEmpty()) {
             throw new EmptyIdException();
         }
-        return id;
+    }
+
+    private void requireKeyOwnership(String id) throws KeyOwnershipException {
+        String nodeId = keyManager.getNodeIdByKey(id);
+        if (!nodeId.equals(config.selfUrl())) {
+            throw new KeyOwnershipException(id);
+        }
     }
 
     private static void sendEmptyResponse(HttpSession session, String code) throws IOException {
         Response response = new Response(code, Response.EMPTY);
         session.sendResponse(response);
+    }
+
+    private Response redirectRequest(String url, Request request) {
+        ConnectionString conn = new ConnectionString(url+request.getURI());
+        Request redirectedRequest = new Request(request);
+        try (HttpClient client = new HttpClient(conn)) {
+            return client.invoke(redirectedRequest);
+        } catch (Exception e1) {
+            return new Response(Response.BAD_GATEWAY, Response.EMPTY);
+        }
     }
 
     private Response getEntity(String id) throws RocksDBException {
@@ -150,6 +185,10 @@ public class RocksDBService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
+        if (server == null && db == null) {
+            return CompletableFuture.completedFuture(null);
+        }
+
         CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
             server.stop();
             try {
@@ -170,11 +209,32 @@ public class RocksDBService implements Service {
         return future;
     }
 
-    private static class FlowControlException extends Exception {}
+    private static class FlowControlException extends Exception {
+    }
 
-    private static class MethodNotAllowedException extends FlowControlException {}
+    private static class MethodNotAllowedException extends FlowControlException {
+    }
 
-    private static class BadPathException extends FlowControlException {}
+    private static class BadPathException extends FlowControlException {
+    }
 
-    private static class EmptyIdException extends FlowControlException {}
+    private static class EmptyIdException extends FlowControlException {
+    }
+
+    private static class KeyOwnershipException extends FlowControlException {
+        private final String key;
+
+        public KeyOwnershipException(String key) {
+            this.key = key;
+        }
+    }
+
+    @ServiceFactory(stage = 3, week = 1)
+    public static class Factory implements ServiceFactory.Factory {
+
+        @Override
+        public Service create(ServiceConfig config) {
+            return new RocksDBService(config);
+        }
+    }
 }
