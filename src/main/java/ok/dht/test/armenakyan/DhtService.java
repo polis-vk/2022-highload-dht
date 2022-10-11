@@ -15,15 +15,19 @@ import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ForkJoinPool;
 
 public class DhtService implements Service {
     private static final String DB_NAME = "rocks";
     private static final String ID_PARAM = "id=";
+
+    private final static Set<Integer> ALLOWED_METHODS = Set.of(
+            Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
+    );
+
     private final ServiceConfig serviceConfig;
     private HttpServer httpServer;
-    private ForkJoinPool workerPool;
     private RocksDB rocksDB;
 
     static {
@@ -36,7 +40,9 @@ public class DhtService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        httpServer = new DhtHttpServer(ServiceUtils.createConfigFromPort(serviceConfig.selfPort()), this);
+        httpServer = new DhtHttpServer(Runtime.getRuntime().availableProcessors(),
+                ServiceUtils.createConfigFromPort(serviceConfig.selfPort()),
+                this);
 
         Files.createDirectories(serviceConfig.workingDir());
         try {
@@ -45,12 +51,6 @@ public class DhtService implements Service {
             throw new IOException(e);
         }
 
-        workerPool = new ForkJoinPool(
-                Runtime.getRuntime().availableProcessors(),
-                ForkJoinPool.defaultForkJoinWorkerThreadFactory,
-                null,
-                true
-        );
         httpServer.start();
 
         return CompletableFuture.completedFuture(null);
@@ -59,7 +59,6 @@ public class DhtService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         httpServer.stop();
-        workerPool.shutdownNow();
         try {
             rocksDB.closeE();
         } catch (RocksDBException e) {
@@ -68,36 +67,34 @@ public class DhtService implements Service {
 
         httpServer = null;
         rocksDB = null;
-        workerPool = null;
         return CompletableFuture.completedFuture(null);
     }
 
     @Path("/v0/entity")
-    public void handle(Request request, HttpSession session) {
-        workerPool.execute(() -> {
-            try {
-                try {
-                    String id = request.getParameter(ID_PARAM);
-                    if (id == null || id.isBlank()) {
-                        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                        return;
-                    }
+    public void handle(Request request, HttpSession session) throws IOException {
+        if (!ALLOWED_METHODS.contains(request.getMethod())) {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            return;
+        }
 
-                    session.sendResponse(
-                            switch (request.getMethod()) {
-                                case Request.METHOD_GET -> get(id);
-                                case Request.METHOD_PUT -> put(id, request.getBody());
-                                case Request.METHOD_DELETE -> delete(id);
-                                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-                            }
-                    );
-                } catch (RocksDBException e) {
-                    session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                }
-            } catch (IOException e) {
-                session.handleException(e);
-            }
-        });
+        String id = request.getParameter(ID_PARAM);
+        if (id == null || id.isBlank()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        try {
+            session.sendResponse(
+                    switch (request.getMethod()) {
+                        case Request.METHOD_GET -> get(id);
+                        case Request.METHOD_PUT -> put(id, request.getBody());
+                        case Request.METHOD_DELETE -> delete(id);
+                        default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                    }
+            );
+        } catch (RocksDBException e) {
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        }
     }
 
     public Response get(String id) throws RocksDBException {

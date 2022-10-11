@@ -7,10 +7,31 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 
 import java.io.IOException;
+import java.util.concurrent.ForkJoinPool;
 
 public class DhtHttpServer extends HttpServer {
-    public DhtHttpServer(HttpServerConfig config, Object... routers) throws IOException {
+    private final ForkJoinPool workerPool;
+
+    public DhtHttpServer(int poolSize, HttpServerConfig config, Object... routers) throws IOException {
         super(config, routers);
+
+        workerPool = new ForkJoinPool(
+                poolSize,
+                ForkJoinPool.defaultForkJoinWorkerThreadFactory,
+                null,
+                true
+        );
+    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) {
+        workerPool.execute(() -> {
+            try {
+                super.handleRequest(request, session);
+            } catch (Exception e) {
+                session.close();
+            }
+        });
     }
 
     @Override
@@ -20,11 +41,13 @@ public class DhtHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        for (var selectorThread: selectors) {
-            for (var session: selectorThread.selector) {
+        for (var selectorThread : selectors) {
+            for (var session : selectorThread.selector) {
                 session.close(); // close selectors sessions
             }
         }
         super.stop();
+
+        workerPool.shutdownNow();
     }
 }
