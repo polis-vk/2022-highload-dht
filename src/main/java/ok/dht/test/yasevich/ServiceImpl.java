@@ -17,6 +17,8 @@ import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
 import java.util.concurrent.BlockingQueue;
@@ -31,6 +33,7 @@ public class ServiceImpl implements Service {
     private static final int FLUSH_THRESHOLD = 5 * 1024 * 1024;
     private static final int POOL_QUEUE_SIZE = 1000;
     private static final int FIFO_RARENESS = 3;
+    private static final Log LOGGER = LogFactory.getLog(ServiceImpl.class);
 
     private final ServiceConfig config;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
@@ -107,6 +110,7 @@ public class ServiceImpl implements Service {
                         Response response = handleRequest(request, id);
                         sendResponse(session, response);
                     } catch (Exception e) {
+                        LOGGER.error("Error when making response to " + request);
                         sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
                     }
                 });
@@ -119,6 +123,7 @@ public class ServiceImpl implements Service {
             try {
                 session.sendResponse(response);
             } catch (IOException e) {
+                LOGGER.error("Error when sending " + response.getStatus());
                 session.close();
             }
         }
