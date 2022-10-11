@@ -7,6 +7,9 @@ import ok.dht.test.kiselyov.dao.BaseEntry;
 import ok.dht.test.kiselyov.dao.Config;
 import ok.dht.test.kiselyov.dao.impl.PersistentDao;
 import ok.dht.test.kiselyov.util.CustomLinkedBlockingDeque;
+import ok.dht.test.kiselyov.util.InternalClient;
+import ok.dht.test.kiselyov.util.ClusterNode;
+import ok.dht.test.kiselyov.util.NodeDeterminer;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -18,9 +21,12 @@ import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -43,7 +49,9 @@ public class WebService implements Service {
     private static final int MAXIMUM_POOL_SIZE = 64;
     private static final int DEQUE_CAPACITY = 64;
     private List<Future<?>> tasks;
-    private static final Logger LOGGER = Logger.getLogger(WebService.class);
+    private NodeDeterminer nodeDeterminer;
+    private InternalClient internalClient;
+    private static final Logger LOGGER = LoggerFactory.getLogger(WebService.class);
 
     public WebService(ServiceConfig config) {
         this.config = config;
@@ -55,6 +63,12 @@ public class WebService implements Service {
             Files.createDirectory(config.workingDir());
         }
         dao = new PersistentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+        List<ClusterNode> clusterNodes = new ArrayList<>();
+        for (String nodeUrl : config.clusterUrls()) {
+            clusterNodes.add(new ClusterNode(nodeUrl, nodeUrl.equals(config.selfUrl())));
+        }
+        nodeDeterminer = new NodeDeterminer(clusterNodes);
+        internalClient = new InternalClient();
         tasks = new ArrayList<>();
         executorService = new ThreadPoolExecutor(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, 0L,
                 TimeUnit.MILLISECONDS, new CustomLinkedBlockingDeque<>(DEQUE_CAPACITY));
@@ -90,9 +104,36 @@ public class WebService implements Service {
 
             private void tryHandleRequest(Request request, HttpSession session) {
                 try {
-                    super.handleRequest(request, session);
+                    String id = request.getParameter("id=");
+                    if (id == null || id.isBlank()) {
+                        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                        return;
+                    }
+                    ClusterNode targetClusterNode = nodeDeterminer.getNodeUrl(id);
+                    if (targetClusterNode.getIsCurrent()) {
+                        super.handleRequest(request, session);
+                        return;
+                    }
+                    CompletableFuture<HttpResponse<byte[]>> answerAwait =
+                            internalClient.sendRequestToNode(request, targetClusterNode, id);
+                    answerAwait.handleAsync((httpResponse, throwable) -> {
+                        try {
+                            if (throwable == null) {
+                                session.sendResponse(new Response(String.valueOf(httpResponse.statusCode()),
+                                        httpResponse.body()));
+                            } else {
+                                LOGGER.error("Unexpected throwable.", throwable);
+                                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                            }
+                        } catch (IOException e) {
+                            LOGGER.error("Error sending response.", e);
+                        }
+                        return null;
+                    });
                 } catch (IOException e) {
                     LOGGER.error("Error handling request.", e);
+                } catch (URISyntaxException e) {
+                    LOGGER.error("URI error.", e);
                 }
             }
         };
@@ -117,14 +158,11 @@ public class WebService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(@Param(value = "id") String id) {
-        if (id == null || id.isBlank()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         BaseEntry<byte[]> result;
         try {
             result = dao.get(id.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
-            LOGGER.error(String.format("GET operation with id %s from GET request failed.", id), e);
+            LOGGER.error("GET operation with id {} from GET request failed.", id, e);
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         if (result == null) {
@@ -136,13 +174,10 @@ public class WebService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(@Param(value = "id") String id, Request putRequest) {
-        if (id == null || id.isBlank()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         try {
             dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), putRequest.getBody()));
         } catch (Exception e) {
-            LOGGER.error(String.format("UPSERT operation with id %s from PUT request failed.", id), e);
+            LOGGER.error("UPSERT operation with id {} from PUT request failed.", id, e);
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         return new Response(Response.CREATED, Response.EMPTY);
@@ -151,13 +186,10 @@ public class WebService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(@Param(value = "id") String id) {
-        if (id == null || id.isBlank()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         try {
             dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), null));
         } catch (Exception e) {
-            LOGGER.error(String.format("UPSERT operation with id %s from DELETE request failed.", id), e);
+            LOGGER.error("UPSERT operation with id {} from DELETE request failed.", id, e);
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         return new Response(Response.ACCEPTED, Response.EMPTY);
@@ -172,7 +204,7 @@ public class WebService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
