@@ -23,11 +23,18 @@ import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 
 import java.io.IOException;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
+    private static final String PATH = "/v0/entity";
     private static final String INVALID_ID_MESSAGE = "Invalid id";
     private static final int FLUSH_THRESHOLD_BYTES = 4096;
+    private static final Set<Integer> SUPPORTED_METHODS_TYPE = Set.of(
+            Request.METHOD_GET,
+            Request.METHOD_PUT,
+            Request.METHOD_DELETE
+    );
 
     private HttpServer httpServer;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
@@ -42,8 +49,11 @@ public class ServiceImpl implements Service {
         this.httpServer = new HttpServer(createServerConfig(serviceConfig)) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
-                Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-                session.sendResponse(response);
+                if (PATH.equals(request.getPath()) && !SUPPORTED_METHODS_TYPE.contains(request.getMethod())) {
+                    session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+                } else {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                }
             }
 
             @Override
@@ -72,7 +82,7 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response handleGetRequest(@Param(value = "id", required = true) String id) {
         if (!checkId(id)) {
@@ -94,7 +104,7 @@ public class ServiceImpl implements Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePutRequest(@Param(value = "id", required = true) String id, Request request) {
         if (!checkId(id)) {
@@ -109,7 +119,7 @@ public class ServiceImpl implements Service {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
+    @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDeleteRequest(@Param(value = "id", required = true) String id) {
         if (!checkId(id)) {
