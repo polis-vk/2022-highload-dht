@@ -111,6 +111,9 @@ public class FileOperations {
         if (sortedPairs == null) {
             return;
         }
+        if (!Files.exists(basePath)) {
+            Files.createDirectory(basePath);
+        }
         Path newFilePath = basePath.resolve(FILE_NAME + filesCount + FILE_EXTENSION);
         Path newIndexPath = basePath.resolve(FILE_INDEX_NAME + filesCount + FILE_INDEX_EXTENSION);
         if (!Files.exists(newFilePath)) {

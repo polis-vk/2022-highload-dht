@@ -25,18 +25,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class WebService implements Service {
 
@@ -65,7 +61,7 @@ public class WebService implements Service {
         dao = new PersistentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         List<ClusterNode> clusterNodes = new ArrayList<>();
         for (String nodeUrl : config.clusterUrls()) {
-            clusterNodes.add(new ClusterNode(nodeUrl, nodeUrl.equals(config.selfUrl())));
+            clusterNodes.add(new ClusterNode(nodeUrl));
         }
         nodeDeterminer = new NodeDeterminer(clusterNodes);
         internalClient = new InternalClient();
@@ -110,13 +106,12 @@ public class WebService implements Service {
                         return;
                     }
                     ClusterNode targetClusterNode = nodeDeterminer.getNodeUrl(id);
-                    if (targetClusterNode.getIsCurrent()) {
+                    if (targetClusterNode.getUrl().equals(config.selfUrl())) {
                         super.handleRequest(request, session);
                         return;
                     }
-                    CompletableFuture<HttpResponse<byte[]>> answerAwait =
-                            internalClient.sendRequestToNode(request, targetClusterNode, id);
-                    answerAwait.handleAsync((httpResponse, throwable) -> {
+                    sendResponse(request, session, id, targetClusterNode);
+                    /*answerAwait.handleAsync((httpResponse, throwable) -> {
                         try {
                             if (throwable == null) {
                                 session.sendResponse(new Response(String.valueOf(httpResponse.statusCode()),
@@ -129,11 +124,52 @@ public class WebService implements Service {
                             LOGGER.error("Error sending response.", e);
                         }
                         return null;
-                    });
+                    });*/
                 } catch (IOException e) {
                     LOGGER.error("Error handling request.", e);
+                }
+            }
+
+            private void sendResponse(Request request, HttpSession session, String id, ClusterNode targetClusterNode) {
+                HttpResponse<byte[]> getResponse;
+                try {
+                    getResponse = internalClient.sendRequestToNode(request, targetClusterNode, id).get();
+                    switch (request.getMethod()) {
+                        case Request.METHOD_GET -> {
+                            switch (getResponse.statusCode()) {
+                                case HttpURLConnection.HTTP_OK ->
+                                        session.sendResponse(new Response(Response.OK, getResponse.body()));
+                                case HttpURLConnection.HTTP_NOT_FOUND ->
+                                        session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
+                                default -> session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
+                                        Response.EMPTY));
+                            }
+                        }
+                        case Request.METHOD_PUT -> {
+                            if (getResponse.statusCode() == HttpURLConnection.HTTP_CREATED) {
+                                session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
+                            }
+                            session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
+                                    Response.EMPTY));
+                        }
+                        case Request.METHOD_DELETE -> {
+                            if (getResponse.statusCode() == HttpURLConnection.HTTP_ACCEPTED) {
+                                session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
+                            }
+                            session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
+                                    Response.EMPTY));
+                        }
+                        default -> {
+                            LOGGER.error("Unsupported request method: {}", request.getMethodName());
+                            throw new InternalError("Unsupported request method: " + request.getMethodName());
+                        }
+                    }
                 } catch (URISyntaxException e) {
                     LOGGER.error("URI error.", e);
+                } catch (InterruptedException | ExecutionException e) {
+                    LOGGER.error("Error while getting response.");
+                } catch (IOException e) {
+                    LOGGER.error("Error handling request.", e);
                 }
             }
         };
