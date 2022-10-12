@@ -4,6 +4,7 @@ import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.kurdyukov.server.HttpServerDao;
+import ok.dht.test.kurdyukov.sharding.ConsistentHashingSharding;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.server.ServerConfig;
@@ -12,6 +13,7 @@ import org.iq80.leveldb.Options;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -20,8 +22,8 @@ import java.util.concurrent.TimeUnit;
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
 public class ServiceImpl implements Service {
-    public static final int THREAD_POOL_SIZE = 3;
-    public static final int SELECTOR_SIZE = 3;
+    public static final int THREAD_POOL_SIZE = 7;
+    public static final int SELECTOR_SIZE = 4;
 
     private final ServiceConfig serviceConfig;
 
@@ -36,6 +38,7 @@ public class ServiceImpl implements Service {
         httpServer = createHttpServer(
                 serviceConfig.selfPort(),
                 serviceConfig.selfUrl(),
+                serviceConfig.clusterUrls(),
                 createDao(serviceConfig.workingDir())
         );
 
@@ -62,6 +65,7 @@ public class ServiceImpl implements Service {
     private static HttpServer createHttpServer(
             int port,
             String url,
+            List<String> urls,
             DB levelDB
     ) throws IOException {
         return new HttpServerDao(
@@ -76,7 +80,9 @@ public class ServiceImpl implements Service {
                         0,
                         TimeUnit.MILLISECONDS,
                         new ArrayBlockingQueue<>(THREAD_POOL_SIZE * 4)
-                )
+                ),
+                new ConsistentHashingSharding(urls, 5),
+                url
         );
     }
 
@@ -99,7 +105,7 @@ public class ServiceImpl implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

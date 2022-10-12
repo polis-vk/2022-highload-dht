@@ -1,5 +1,7 @@
 package ok.dht.test.kurdyukov.server;
 
+import ok.dht.test.kurdyukov.client.HttpClientDao;
+import ok.dht.test.kurdyukov.sharding.Sharding;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -14,6 +16,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.URISyntaxException;
+import java.nio.channels.ClosedSelectorException;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -33,16 +37,22 @@ public class HttpServerDao extends HttpServer {
 
     private final DB levelDB;
     private final ExecutorService executorService;
+    private final Sharding sharding;
+    private final String selfUrl;
 
     public HttpServerDao(
             HttpServerConfig config,
             DB levelDB,
             ExecutorService executorService,
+            Sharding sharding,
+            String selfUrl,
             Object... routers
     ) throws IOException {
         super(config, routers);
         this.levelDB = levelDB;
         this.executorService = executorService;
+        this.sharding = sharding;
+        this.selfUrl = selfUrl;
     }
 
     @Override
@@ -69,9 +79,42 @@ public class HttpServerDao extends HttpServer {
         try {
             executorService.execute(() -> {
                         try {
-                            session.sendResponse(handle(request, method, id));
+                            final String urlNode = sharding.getShardUrlByKey(id);
+
+                            if (urlNode.equals(selfUrl)) {
+                                session.sendResponse(handle(request, method, id));
+                            } else {
+                                HttpClientDao
+                                        .requestNode(
+                                                String.format("%s%s%s", urlNode, ENDPOINT, "?id=" + id),
+                                                method,
+                                                request
+                                        )
+                                        .handleAsync(
+                                                (httpResponse, throwable) -> {
+                                                    try {
+                                                        if (throwable != null) {
+                                                            logger.error("Fail send to other node", throwable);
+                                                            session.sendResponse(responseEmpty(Response.INTERNAL_ERROR));
+                                                        } else {
+                                                            Response response = new Response(
+                                                                    String.valueOf(httpResponse.statusCode()),
+                                                                    httpResponse.body()
+                                                            );
+                                                            session.sendResponse(response);
+                                                        }
+                                                    } catch (IOException e) {
+                                                        logger.error("Fail send response", e);
+                                                        throw new UncheckedIOException(e);
+                                                    }
+                                                    return null;
+                                                }
+                                        );
+                            }
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);
+                        } catch (URISyntaxException e) {
+                            logger.error("");
                         }
                     }
             );
@@ -83,8 +126,12 @@ public class HttpServerDao extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        for (SelectorThread thread : selectors) {
-            thread.selector.forEach(Session::close);
+        try {
+            for (SelectorThread thread : selectors) {
+                thread.selector.forEach(Session::close);
+            }
+        } catch (ClosedSelectorException e) {
+            logger.error("Sockets were closed.", e);
         }
 
         super.stop();

@@ -1,5 +1,7 @@
 package ok.dht.test.kurdyukov.sharding;
 
+import one.nio.util.Hash;
+
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -20,7 +22,7 @@ public class ConsistentHashingSharding implements Sharding {
                                 .range(0, countPointsForNode)
                                 .mapToObj(pointIndex ->
                                         new Point(
-                                                String.format(url + "_node_%d", pointIndex).hashCode(),
+                                                Hash.murmur3(url) * (pointIndex + 1),
                                                 url
                                         )
                                 )
@@ -35,7 +37,7 @@ public class ConsistentHashingSharding implements Sharding {
         int l = -1;
         int r = size;
 
-        int hashKey = key.hashCode();
+        int hashKey = Hash.murmur3(key);
 
         while (r - l > 1) {
             int m = (r + l) / 2;

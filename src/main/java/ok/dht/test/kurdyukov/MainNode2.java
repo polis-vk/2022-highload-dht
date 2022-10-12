@@ -9,24 +9,21 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
-public final class Main {
-
-    private Main() {
-
-    }
-
+public class MainNode2 {
     public static void main(String[] args) throws IOException {
-        Service service = new ServiceImpl.Factory().create(
+
+        Service service1 = new ServiceImpl.Factory().create(
                 new ServiceConfig(
-                        4242,
-                        "http://localhost",
-                        List.of("http://localhost"),
-                        Path.of("/Users/kurdyukov-kir/data")
+                        4243,
+                        "http://localhost:4243",
+                        List.of("http://localhost:4242", "http://localhost:4243"),
+                        Path.of("/Users/kurdyukov-kir/data2")
                 )
         );
 
+
         try {
-            service.start().get();
+            service1.start().get();
         } catch (InterruptedException | ExecutionException e) {
             e.printStackTrace();
         }
