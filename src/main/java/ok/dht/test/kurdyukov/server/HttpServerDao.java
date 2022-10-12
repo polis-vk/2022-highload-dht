@@ -35,6 +35,8 @@ public class HttpServerDao extends HttpServer {
             Request.METHOD_DELETE
     );
 
+    private final HttpClientDao httpClientDao = new HttpClientDao();
+
     private final DB levelDB;
     private final ExecutorService executorService;
     private final Sharding sharding;
@@ -84,7 +86,7 @@ public class HttpServerDao extends HttpServer {
                             if (urlNode.equals(selfUrl)) {
                                 session.sendResponse(handle(request, method, id));
                             } else {
-                                HttpClientDao
+                                httpClientDao
                                         .requestNode(
                                                 String.format("%s%s%s", urlNode, ENDPOINT, "?id=" + id),
                                                 method,
@@ -110,13 +112,12 @@ public class HttpServerDao extends HttpServer {
                                                         throw new UncheckedIOException(e);
                                                     }
                                                     return null;
-                                                }
-                                        );
+                                                },
+                                                httpClientDao.executorAsync);
                             }
+                        } catch (URISyntaxException ignored) {
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);
-                        } catch (URISyntaxException e) {
-                            logger.error("");
                         }
                     }
             );
@@ -137,6 +138,7 @@ public class HttpServerDao extends HttpServer {
         }
 
         super.stop();
+        httpClientDao.executorAsync.shutdown();
         executorService.shutdown();
 
         try {

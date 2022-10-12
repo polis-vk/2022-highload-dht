@@ -52,7 +52,7 @@ public class ConsistentHashingSharding implements Sharding {
         return r == size ? circleHashes.get(0).url : circleHashes.get(r).url;
     }
 
-    private class Point {
+    private static class Point {
         final int hash;
         final String url;
 
