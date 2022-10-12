@@ -6,8 +6,8 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.kiselyov.dao.BaseEntry;
 import ok.dht.test.kiselyov.dao.Config;
 import ok.dht.test.kiselyov.dao.impl.PersistentDao;
-import ok.dht.test.kiselyov.util.CustomLinkedBlockingDeque;
 import ok.dht.test.kiselyov.util.ClusterNode;
+import ok.dht.test.kiselyov.util.CustomLinkedBlockingDeque;
 import ok.dht.test.kiselyov.util.InternalClient;
 import ok.dht.test.kiselyov.util.NodeDeterminer;
 import one.nio.http.HttpServer;
@@ -38,8 +38,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class WebService implements Service {
 
