@@ -151,6 +151,9 @@ public class TycoonService implements ok.dht.Service {
                 );
                 if (response.statusCode() == HttpURLConnection.HTTP_OK) {
                     value = response.body();
+                } else if (response.statusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
+                    LOG.error("Unexpected status {} code requesting node {}", response.statusCode(), nodeUrlByKey);
+                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
                 }
             } catch (IOException | InterruptedException e) {
                 LOG.error("Error while requesting node {}", nodeUrlByKey, e);
@@ -185,7 +188,12 @@ public class TycoonService implements ok.dht.Service {
                         .build(),
                     HttpResponse.BodyHandlers.ofByteArray()
                 );
-                value = response.body();
+                if (response.statusCode() == HttpURLConnection.HTTP_CREATED) {
+                    value = response.body();
+                } else {
+                    LOG.error("Unexpected status {} code requesting node {}", response.statusCode(), nodeUrlByKey);
+                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                }
             } catch (IOException | InterruptedException e) {
                 LOG.error("Error while requesting node {}", nodeUrlByKey, e);
                 return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
@@ -215,7 +223,12 @@ public class TycoonService implements ok.dht.Service {
                         .build(),
                     HttpResponse.BodyHandlers.ofByteArray()
                 );
-                value = response.body();
+                if (response.statusCode() == HttpURLConnection.HTTP_ACCEPTED) {
+                    value = response.body();
+                } else {
+                    LOG.error("Unexpected status {} code requesting node {}", response.statusCode(), nodeUrlByKey);
+                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                }
             } catch (IOException | InterruptedException e) {
                 LOG.error("Error while requesting node {}", nodeUrlByKey, e);
                 return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
