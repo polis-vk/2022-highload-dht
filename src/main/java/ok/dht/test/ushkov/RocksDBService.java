@@ -16,6 +16,8 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -25,11 +27,11 @@ public class RocksDBService implements Service {
     public static final int N_WORKERS = 5;
     public static final int QUEUE_CAP = 100;
     public static final long STOP_TIMEOUT_MINUTES = 1;
-    public static final boolean IS_HTTP_11 = false;
 
     private final ServiceConfig config;
     public RocksDB db;
     private AsyncHttpServer server;
+    private final Map<String, HttpClient> clientPool = new HashMap<>();
     private final KeyManager keyManager = new ConsistentHashing();
 
     public RocksDBService(ServiceConfig config) {
@@ -52,6 +54,12 @@ public class RocksDBService implements Service {
         server = createHttpServer(httpServerConfig);
         server.start();
 
+        for (String url : config.clusterUrls()) {
+            ConnectionString conn = new ConnectionString(url);
+            HttpClient client = new HttpClient(conn);
+            clientPool.put(url, client);
+        }
+
         return CompletableFuture.completedFuture(null);
     }
 
@@ -67,8 +75,8 @@ public class RocksDBService implements Service {
         return httpConfig;
     }
 
-    private AsyncHttpServer createHttpServer(AsyncHttpServerConfig config) throws IOException {
-        return new AsyncHttpServer(config) {
+    private AsyncHttpServer createHttpServer(AsyncHttpServerConfig httpConfig) throws IOException {
+        return new AsyncHttpServer(httpConfig) {
             @Override
             protected void handleRequestAsync(Request request, HttpSession session) {
                 try {
@@ -157,10 +165,9 @@ public class RocksDBService implements Service {
     }
 
     private Response redirectRequest(String url, Request request) {
-        ConnectionString conn = new ConnectionString(url + request.getURI());
         Request redirectedRequest = new Request(request);
-        try (HttpClient client = new HttpClient(conn)) {
-            return client.invoke(redirectedRequest);
+        try {
+            return clientPool.get(url).invoke(redirectedRequest);
         } catch (Exception e1) {
             return new Response(Response.BAD_GATEWAY, Response.EMPTY);
         }
@@ -188,6 +195,9 @@ public class RocksDBService implements Service {
         if (server == null && db == null) {
             return CompletableFuture.completedFuture(null);
         }
+
+        clientPool.forEach((url, client) -> client.close());
+        clientPool.clear();
 
         CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
             server.stop();
