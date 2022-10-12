@@ -4,7 +4,6 @@ import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.siniachenko.TycoonHttpServer;
 import ok.dht.test.siniachenko.rendezvoushashing.NodeMapper;
-import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -33,7 +32,7 @@ import java.util.function.Supplier;
 public class TycoonService implements ok.dht.Service {
     private static final Logger LOG = LoggerFactory.getLogger(TycoonService.class);
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
-    public static final String REQUESTS_PATH = "/v0/entity";
+    public static final String PATH = "/v0/entity";
     public static final int THREAD_POOL_QUEUE_CAPACITY = (int) 1E20;
     private final ServiceConfig config;
     private final NodeMapper nodeMapper;
@@ -88,7 +87,7 @@ public class TycoonService implements ok.dht.Service {
     }
 
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (!REQUESTS_PATH.equals(request.getPath())) {
+        if (!PATH.equals(request.getPath())) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
@@ -146,7 +145,7 @@ public class TycoonService implements ok.dht.Service {
                 HttpResponse<byte[]> response = httpClient.send(
                     HttpRequest.newBuilder()
                         .GET()
-                        .uri(URI.create(nodeUrlByKey + REQUESTS_PATH + "?id=" + id))
+                        .uri(URI.create(nodeUrlByKey + PATH + "?id=" + id))
                         .build(),
                     HttpResponse.BodyHandlers.ofByteArray()
                 );
@@ -182,7 +181,7 @@ public class TycoonService implements ok.dht.Service {
                 HttpResponse<byte[]> response = httpClient.send(
                     HttpRequest.newBuilder()
                         .PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                        .uri(URI.create(nodeUrlByKey + REQUESTS_PATH + "?id=" + id))
+                        .uri(URI.create(nodeUrlByKey + PATH + "?id=" + id))
                         .build(),
                     HttpResponse.BodyHandlers.ofByteArray()
                 );
@@ -212,7 +211,7 @@ public class TycoonService implements ok.dht.Service {
                 HttpResponse<byte[]> response = httpClient.send(
                     HttpRequest.newBuilder()
                         .DELETE()
-                        .uri(URI.create(nodeUrlByKey + REQUESTS_PATH + "?id=" + id))
+                        .uri(URI.create(nodeUrlByKey + PATH + "?id=" + id))
                         .build(),
                     HttpResponse.BodyHandlers.ofByteArray()
                 );
