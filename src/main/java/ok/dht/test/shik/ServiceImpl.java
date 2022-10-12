@@ -30,12 +30,18 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 public class ServiceImpl implements Service {
 
     private static final Log LOG = LogFactory.getLog(ServiceImpl.class);
     private static final String URL_INFIX = "/v0/entity?id=";
+    private static final int TIMEOUT_MILLIS = 1000;
+    private static final int SERVICE_UNAVAILABLE_CODE = 503;
+    private static final int SERVER_ERROR_CODE = 500;
+    private static final int NOT_FOUND_CODE = 404;
 
     private final ServiceConfig config;
     private final WorkersConfig workersConfig;
@@ -154,14 +160,14 @@ public class ServiceImpl implements Service {
     }
 
     private Response checkProxyResponse(HttpRequest httpRequest, HttpResponse<byte[]> httpResponse) {
-        if (httpResponse == null || httpResponse.statusCode() == 503) {
+        if (httpResponse == null || httpResponse.statusCode() == SERVICE_UNAVAILABLE_CODE) {
             LOG.error("Cannot proxy query, request " + httpRequest.uri().toString());
             return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
-        if (httpResponse.statusCode() == 500) {
+        if (httpResponse.statusCode() == SERVER_ERROR_CODE) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-        if (httpResponse.statusCode() == 404) {
+        if (httpResponse.statusCode() == NOT_FOUND_CODE) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
         return null;
@@ -171,12 +177,14 @@ public class ServiceImpl implements Service {
         CompletableFuture<HttpResponse<byte[]>> future =
             client.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
         try {
-            return future.thenApply(processResponse).get();
+            return future.thenApply(processResponse).get(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.warn("Interrupted while processing async query ", e);
         } catch (ExecutionException e) {
             LOG.warn("Exception while processing async query ", e);
+        } catch (TimeoutException e) {
+            LOG.info("Timeout while processing async query ", e);
         }
         return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
     }

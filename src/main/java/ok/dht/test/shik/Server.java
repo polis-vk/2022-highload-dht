@@ -49,6 +49,7 @@ public final class Server {
         .build();
     private static final int V_NODES_NUMBER = 3000;
     private static final ShardingConfig SHARDING_CONFIG = new ShardingConfig(V_NODES_NUMBER);
+    private static final int TIMEOUT_SECONDS = 10;
 
     private Server() {
         // Only main method
@@ -56,7 +57,7 @@ public final class Server {
 
     public static void main(String[] args) throws IOException,
         ExecutionException, InterruptedException, TimeoutException {
-        new ServiceImpl(DEFAULT_CONFIG1, WORKERS_CONFIG, SHARDING_CONFIG).start().get(10, TimeUnit.SECONDS);
+        new ServiceImpl(DEFAULT_CONFIG1, WORKERS_CONFIG, SHARDING_CONFIG).start().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         LOG.info("Socket is ready: " + DEFAULT_URL1);
     }
 }
