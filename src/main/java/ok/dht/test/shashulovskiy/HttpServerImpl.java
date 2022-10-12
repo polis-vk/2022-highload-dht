@@ -1,8 +1,10 @@
 package ok.dht.test.shashulovskiy;
 
-import ok.dht.test.shashulovskiy.sharding.Shard;
-import ok.dht.test.shashulovskiy.sharding.ShardingManager;
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Request;
+import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
 import org.slf4j.Logger;
@@ -24,7 +26,7 @@ public class HttpServerImpl extends HttpServer {
 
     private final ExecutorService requestHandlerPool;
 
-    public HttpServerImpl(HttpServerConfig config, int shardsCount, Object... routers) throws IOException {
+    public HttpServerImpl(HttpServerConfig config, Object... routers) throws IOException {
         super(config, routers);
 
         this.requestHandlerPool = new ThreadPoolExecutor(
@@ -43,14 +45,19 @@ public class HttpServerImpl extends HttpServer {
                 try {
                     super.handleRequest(request, session);
                 } catch (IOException e) {
-                    // TODO HANDLE RESPONSE
-                    System.out.println(e.getMessage());
                     LOG.error("IO Exception occurred while processing request: " + e.getMessage(), e);
+                    try {
+                        session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                    } catch (IOException sendResponseException) {
+                        LOG.error(
+                                "Unable to respond on server unavailability: " + sendResponseException.getMessage(),
+                                sendResponseException
+                        );
+                    }
                 }
             });
         } catch (RejectedExecutionException e) {
             LOG.warn("Request rejected", e);
-            System.out.println(e.getMessage());
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
     }

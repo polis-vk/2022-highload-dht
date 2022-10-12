@@ -10,7 +10,6 @@ import java.util.concurrent.ConcurrentSkipListMap;
 
 public class ConsistentHashingShardingManager implements ShardingManager {
 
-
     private final long[] virtualShards;
     private final HashMap<Long, Shard> hashToShard;
     private long handledKeys;
@@ -29,11 +28,13 @@ public class ConsistentHashingShardingManager implements ShardingManager {
     }
 
     @Override
-    public Shard getShard(String key) {
-        var shardInd = Arrays.binarySearch(virtualShards, hasher.getHash(Utf8.toBytes(key)));
+    public Shard getShard(byte[] key) {
+        var shardInd = Arrays.binarySearch(virtualShards, hasher.getHash(key));
+
         if (shardInd < 0) {
             shardInd = (-shardInd - 1) % virtualShards.length;
         }
+
         var shard = hashToShard.get(virtualShards[shardInd]);
         if (thisShardUrl.equals(shard.getShardUrl())) {
             handledKeys++;
