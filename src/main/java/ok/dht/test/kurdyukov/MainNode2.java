@@ -9,7 +9,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
-public class MainNode2 {
+public final class MainNode2 {
 
     private MainNode2() {
 
@@ -25,8 +25,6 @@ public class MainNode2 {
                         Path.of("/Users/kurdyukov-kir/data2")
                 )
         );
-
-
         try {
             service1.start().get();
         } catch (InterruptedException | ExecutionException e) {

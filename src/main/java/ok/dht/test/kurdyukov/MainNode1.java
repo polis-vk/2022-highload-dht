@@ -24,8 +24,6 @@ public final class MainNode1 {
                         Path.of("/Users/kurdyukov-kir/data1")
                 )
         );
-
-
         try {
             service.start().get();
             service.stop().get();

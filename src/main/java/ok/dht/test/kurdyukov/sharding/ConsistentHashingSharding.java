@@ -8,8 +8,6 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class ConsistentHashingSharding implements Sharding {
-    private static final int SALT = 7619;
-
     private final List<Point> circleHashes;
     private final int size;
 
@@ -29,7 +27,7 @@ public class ConsistentHashingSharding implements Sharding {
                                         )
                                 )
                 )
-                .sorted(Comparator.comparingInt(Point::hash))
+                .sorted(Comparator.comparingInt(Point::getHash))
                 .collect(Collectors.toList());
         size = circleHashes.size();
     }
@@ -54,6 +52,17 @@ public class ConsistentHashingSharding implements Sharding {
         return r == size ? circleHashes.get(0).url : circleHashes.get(r).url;
     }
 
-    private record Point(int hash, String url) {
+    private class Point {
+        final int hash;
+        final String url;
+
+        Point(int hash, String url) {
+            this.hash = hash;
+            this.url = url;
+        }
+
+        public int getHash() {
+            return hash;
+        }
     }
 }

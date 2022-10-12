@@ -95,7 +95,9 @@ public class HttpServerDao extends HttpServer {
                                                     try {
                                                         if (throwable != null) {
                                                             logger.error("Fail send to other node", throwable);
-                                                            session.sendResponse(responseEmpty(Response.INTERNAL_ERROR));
+                                                            session.sendResponse(
+                                                                    responseEmpty(Response.INTERNAL_ERROR)
+                                                            );
                                                         } else {
                                                             Response response = new Response(
                                                                     String.valueOf(httpResponse.statusCode()),
