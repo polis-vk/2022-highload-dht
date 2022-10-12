@@ -44,6 +44,7 @@ public class DemoService implements Service {
     private static final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
     private static final int POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private static final int QUEUE_CAPACITY = 256;
+    private static final String PATH = "/v0/entity?id=";
     private ExecutorService workersPool;
     private HttpClient httpClient;
 
@@ -71,7 +72,7 @@ public class DemoService implements Service {
             @Override
             public void handleRequest(Request request, HttpSession session) {
                 String key = request.getParameter("id=");
-                if (key == null) {
+                if (key == null || key.isEmpty()) {
                     try {
                         handleDefault(request, session);
                         return;
@@ -150,7 +151,7 @@ public class DemoService implements Service {
             }
 
             private HttpRequest.Builder requestForKey(String key, String clusterUrl) {
-                return request("/v0/entity?id=" + key, clusterUrl);
+                return request(PATH + key, clusterUrl);
             }
 
             private HttpRequest buildHttpRequest(String key, String targetCluster, Request request) {
@@ -191,13 +192,6 @@ public class DemoService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(@Param(value = "id") String id) {
-        if (id == null || id.isEmpty()) {
-            return new Response(
-                    Response.BAD_REQUEST,
-                    Response.EMPTY
-            );
-        }
-
         BaseEntry<MemorySegment> entry = dao.get(fromString(id));
 
         if (entry == null) {
@@ -216,13 +210,6 @@ public class DemoService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(Request request, @Param(value = "id") String id) {
-        if (id == null || id.isEmpty()) {
-            return new Response(
-                    Response.BAD_REQUEST,
-                    Response.EMPTY
-            );
-        }
-
         dao.upsert(new BaseEntry<>(
                 fromString(id),
                 MemorySegment.ofArray(request.getBody())
@@ -237,13 +224,6 @@ public class DemoService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(@Param(value = "id") String id) {
-        if (id == null || id.isEmpty()) {
-            return new Response(
-                    Response.BAD_REQUEST,
-                    Response.EMPTY
-            );
-        }
-
         dao.upsert(new BaseEntry<>(
                 fromString(id),
                 null
@@ -273,7 +253,7 @@ public class DemoService implements Service {
     private int getHashCodeForTwoElements(int hash, String s) {
         int h = hash;
         for (char v : s.toCharArray()) {
-            h = 31 * h + v; //
+            h = 31 * h + v;
         }
         return h;
     }
