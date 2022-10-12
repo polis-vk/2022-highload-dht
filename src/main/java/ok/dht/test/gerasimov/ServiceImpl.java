@@ -1,162 +1,156 @@
 package ok.dht.test.gerasimov;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.gerasimov.lsm.BaseEntry;
-import ok.dht.test.gerasimov.lsm.Config;
-import ok.dht.test.gerasimov.lsm.Dao;
-import ok.dht.test.gerasimov.lsm.Entry;
-import ok.dht.test.gerasimov.lsm.artyomdrozdov.MemorySegmentDao;
+import ok.dht.test.gerasimov.exception.ServerException;
+import ok.dht.test.gerasimov.exception.ServiceException;
+import ok.dht.test.gerasimov.sharding.ConsistentHash;
+import ok.dht.test.gerasimov.sharding.ConsistentHashImpl;
+import ok.dht.test.gerasimov.sharding.Shard;
+import ok.dht.test.gerasimov.sharding.VNode;
 import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.net.Session;
-import one.nio.server.AcceptorConfig;
-import one.nio.server.SelectorThread;
-import one.nio.util.Utf8;
+import one.nio.util.Hash;
+import org.iq80.leveldb.DB;
+import org.iq80.leveldb.DBIterator;
+import org.iq80.leveldb.Options;
 
+import java.io.File;
 import java.io.IOException;
-import java.util.Set;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
-public class ServiceImpl implements Service {
-    private static final String PATH = "/v0/entity";
-    private static final String INVALID_ID_MESSAGE = "Invalid id";
-    private static final int FLUSH_THRESHOLD_BYTES = 4096;
-    private static final Set<Integer> SUPPORTED_METHODS_TYPE = Set.of(
-            Request.METHOD_GET,
-            Request.METHOD_PUT,
-            Request.METHOD_DELETE
-    );
+import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
-    private HttpServer httpServer;
-    private Dao<MemorySegment, Entry<MemorySegment>> dao;
+public class ServiceImpl implements Service {
+    private static final String INVALID_ID_MESSAGE = "Invalid id";
+    private static final int NUMBER_VIRTUAL_NODES_PER_SHARD = 3;
+
     private final ServiceConfig serviceConfig;
+
+    private boolean isClosed = true;
+    private HttpServer httpServer;
+    private DB dao;
 
     public ServiceImpl(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
+
     }
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        this.httpServer = new HttpServer(createServerConfig(serviceConfig)) {
-            @Override
-            public void handleDefault(Request request, HttpSession session) throws IOException {
-                if (PATH.equals(request.getPath()) && !SUPPORTED_METHODS_TYPE.contains(request.getMethod())) {
-                    session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-                } else {
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                }
-            }
+        try {
+            this.httpServer = new Server(serviceConfig.selfPort(), this, createConsistentHash(serviceConfig));
+            this.dao = createDao(serviceConfig.workingDir());
+            httpServer.start();
+            isClosed = false;
+        } catch (IOException e) {
+            throw new ServerException("DAO can not be created", e);
+        }
 
-            @Override
-            public synchronized void stop() {
-                for (SelectorThread thread : selectors) {
-                    for (Session session : thread.selector) {
-                        session.socket().close();
-                    }
-                }
-
-                super.stop();
-            }
-        };
-        this.dao = new MemorySegmentDao(
-                new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES)
-        );
-        httpServer.addRequestHandlers(this);
-        httpServer.start();
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
-    public CompletableFuture<?> stop() throws IOException {
-        httpServer.stop();
-        dao.close();
+    public CompletableFuture<?> stop() {
+        if (!isClosed) {
+            try {
+                httpServer.stop();
+                dao.close();
+                isClosed = true;
+            } catch (IOException e) {
+                throw new ServerException("Error during DAO close", e);
+            }
+        }
+
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_GET)
-    public Response handleGetRequest(@Param(value = "id", required = true) String id) {
+    public Response handleGetRequest(String id) {
         if (!checkId(id)) {
-            return createBadRequest(INVALID_ID_MESSAGE);
+            return ResponseEntity.badRequest(INVALID_ID_MESSAGE);
         }
 
+        byte[] entry = dao.get(id.getBytes(StandardCharsets.UTF_8));
+        if (entry == null) {
+            return ResponseEntity.notFound();
+        }
+
+        return ResponseEntity.ok(entry);
+    }
+
+    public Response handlePutRequest(String id, Request request) {
+        if (!checkId(id)) {
+            return ResponseEntity.badRequest(INVALID_ID_MESSAGE);
+        }
+
+        dao.put(id.getBytes(StandardCharsets.UTF_8), request.getBody());
+        return ResponseEntity.created();
+    }
+
+    public Response handleDeleteRequest(String id) {
+        if (!checkId(id)) {
+            return ResponseEntity.badRequest(INVALID_ID_MESSAGE);
+        }
+
+        dao.delete(id.getBytes(StandardCharsets.UTF_8));
+        return ResponseEntity.accepted();
+    }
+
+    public Response handleAdminRequest() {
         try {
-            MemorySegment memorySegmentId = MemorySegment.ofArray(id.getBytes());
-            Entry<MemorySegment> entry = dao.get(memorySegmentId);
-
-            if (entry == null) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
+            DBIterator iterator = dao.iterator();
+            iterator.seekToFirst();
+            int count = 0;
+            while (iterator.hasNext()) {
+                count++;
+                iterator.next();
             }
-
-            byte[] data = entry.value().toByteArray();
-            return new Response(Response.OK, data);
+            iterator.close();
+            return ResponseEntity.ok(
+                    String.format(
+                            "Server name: %s%s. Count: %d",
+                            serviceConfig.selfUrl(),
+                            serviceConfig.selfPort(),
+                            count
+                    )
+            );
         } catch (IOException e) {
-            return createServerError("IOException");
+            return ResponseEntity.internalError("Can not create iterator");
         }
-    }
-
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_PUT)
-    public Response handlePutRequest(@Param(value = "id", required = true) String id, Request request) {
-        if (!checkId(id)) {
-            return createBadRequest(INVALID_ID_MESSAGE);
-        }
-
-        MemorySegment memorySegmentId = MemorySegment.ofArray(id.getBytes());
-        MemorySegment memorySegmentValue = MemorySegment.ofArray(request.getBody());
-        Entry<MemorySegment> entry = new BaseEntry<>(memorySegmentId, memorySegmentValue);
-        dao.upsert(entry);
-
-        return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDeleteRequest(@Param(value = "id", required = true) String id) {
-        if (!checkId(id)) {
-            return createBadRequest(INVALID_ID_MESSAGE);
-        }
-
-        MemorySegment memorySegmentId = MemorySegment.ofArray(id.getBytes());
-        Entry<MemorySegment> entry = new BaseEntry<>(memorySegmentId, null);
-        dao.upsert(entry);
-
-        return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    private static HttpServerConfig createServerConfig(ServiceConfig serviceConfig) {
-        HttpServerConfig httpServerConfig = new HttpServerConfig();
-        AcceptorConfig acceptor = new AcceptorConfig();
-
-        acceptor.port = serviceConfig.selfPort();
-        acceptor.reusePort = true;
-        httpServerConfig.acceptors = new AcceptorConfig[]{acceptor};
-
-        return httpServerConfig;
-    }
-
-    private static Response createBadRequest(String message) {
-        return new Response(Response.BAD_REQUEST, Utf8.toBytes(message));
-    }
-
-    private static Response createServerError(String message) {
-        return new Response(Response.INTERNAL_ERROR, Utf8.toBytes(message));
     }
 
     private static boolean checkId(String id) {
         return !id.isBlank() && id.chars().noneMatch(Character::isWhitespace);
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    private static DB createDao(Path path) throws IOException {
+        try {
+            return factory.open(new File(path.toString()), new Options());
+        } catch (IOException e) {
+            throw new ServiceException("Can not create DAO", e);
+        }
+    }
+
+    private static ConsistentHash<String> createConsistentHash(ServiceConfig serviceConfig) {
+        List<Shard> shards = serviceConfig.clusterUrls().stream().map(Shard::new).toList();
+        List<VNode> vnodes = new ArrayList<>();
+        for (Shard shard : shards) {
+            for (int i = 0; i < NUMBER_VIRTUAL_NODES_PER_SHARD; i++) {
+                int hashcode = Hash.murmur3(shard.getHost() + shard.getPort() + i);
+                vnodes.add(new VNode(shard, hashcode));
+            }
+        }
+        vnodes.sort(VNode::compareTo);
+        return new ConsistentHashImpl<>(vnodes, shards);
+    }
+
+    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
