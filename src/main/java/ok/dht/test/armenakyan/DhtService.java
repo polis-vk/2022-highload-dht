@@ -3,36 +3,32 @@ package ok.dht.test.armenakyan;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.armenakyan.sharding.ClusterCoordinatorShardHandler;
+import ok.dht.test.armenakyan.sharding.SelfShardHandler;
+import ok.dht.test.armenakyan.sharding.ShardRequestHandler;
+import ok.dht.test.armenakyan.sharding.hashing.MD5KeyHasher;
 import ok.dht.test.armenakyan.util.ServiceUtils;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.util.Utf8;
-import org.rocksdb.RocksDB;
-import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
-import java.nio.file.Files;
+import java.security.NoSuchAlgorithmException;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class DhtService implements Service {
-    private static final String DB_NAME = "rocks";
     private static final String ID_PARAM = "id=";
 
-    private final static Set<Integer> ALLOWED_METHODS = Set.of(
+    private static final Set<Integer> ALLOWED_METHODS = Set.of(
             Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
     );
 
     private final ServiceConfig serviceConfig;
     private HttpServer httpServer;
-    private RocksDB rocksDB;
-
-    static {
-        RocksDB.loadLibrary();
-    }
+    private ShardRequestHandler requestHandler;
 
     public DhtService(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
@@ -44,12 +40,21 @@ public class DhtService implements Service {
                 ServiceUtils.createConfigFromPort(serviceConfig.selfPort()),
                 this);
 
-        Files.createDirectories(serviceConfig.workingDir());
+        SelfShardHandler daoHandler = new SelfShardHandler(serviceConfig.workingDir());
+
+        MD5KeyHasher keyHasher;
         try {
-            rocksDB = RocksDB.open(serviceConfig.workingDir().resolve(DB_NAME).toString());
-        } catch (RocksDBException e) {
-            throw new IOException(e);
+            keyHasher = new MD5KeyHasher();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
         }
+
+        requestHandler = new ClusterCoordinatorShardHandler(
+                serviceConfig.selfUrl(),
+                daoHandler,
+                serviceConfig.clusterUrls(),
+                keyHasher
+        );
 
         httpServer.start();
 
@@ -59,19 +64,13 @@ public class DhtService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         httpServer.stop();
-        try {
-            rocksDB.closeE();
-        } catch (RocksDBException e) {
-            throw new IOException(e);
-        }
+        requestHandler.close();
 
-        httpServer = null;
-        rocksDB = null;
         return CompletableFuture.completedFuture(null);
     }
 
     @Path("/v0/entity")
-    public void handle(Request request, HttpSession session) throws IOException {
+    public void handleRequest(Request request, HttpSession session) throws IOException {
         if (!ALLOWED_METHODS.contains(request.getMethod())) {
             session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
             return;
@@ -83,42 +82,10 @@ public class DhtService implements Service {
             return;
         }
 
-        try {
-            session.sendResponse(
-                    switch (request.getMethod()) {
-                        case Request.METHOD_GET -> get(id);
-                        case Request.METHOD_PUT -> put(id, request.getBody());
-                        case Request.METHOD_DELETE -> delete(id);
-                        default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-                    }
-            );
-        } catch (RocksDBException e) {
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-        }
+        session.sendResponse(requestHandler.handleForKey(id, request));
     }
 
-    public Response get(String id) throws RocksDBException {
-        byte[] bytes = rocksDB.get(Utf8.toBytes(id));
-        if (bytes == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-
-        return Response.ok(bytes);
-    }
-
-    public Response put(String id, byte[] body) throws RocksDBException {
-        rocksDB.put(Utf8.toBytes(id), body);
-
-        return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    public Response delete(String id) throws RocksDBException {
-        rocksDB.delete(Utf8.toBytes(id));
-
-        return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig serviceConfig) {
