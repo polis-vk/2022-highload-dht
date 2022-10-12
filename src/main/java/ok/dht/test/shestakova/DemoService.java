@@ -58,7 +58,7 @@ public class DemoService implements Service {
                 new ArrayBlockingQueue<>(QUEUE_CAPACITY)
         );
         httpClient = newHttpClient();
-        server = new DemoHttpServer(createConfigFromPort(config.selfPort()), httpClient, workersPool, config) ;
+        server = new DemoHttpServer(createConfigFromPort(config.selfPort()), httpClient, workersPool, config);
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
