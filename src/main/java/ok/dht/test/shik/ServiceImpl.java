@@ -3,6 +3,8 @@ package ok.dht.test.shik;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.shik.sharding.ConsistentHash;
+import ok.dht.test.shik.sharding.ShardingConfig;
 import ok.dht.test.shik.workers.WorkersConfig;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.Param;
@@ -19,27 +21,38 @@ import org.iq80.leveldb.Options;
 import org.iq80.leveldb.impl.Iq80DBFactory;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.function.Function;
 
 public class ServiceImpl implements Service {
 
     private static final Log LOG = LogFactory.getLog(ServiceImpl.class);
+    private static final String URL_INFIX = "/v0/entity?id=";
 
     private final ServiceConfig config;
     private final WorkersConfig workersConfig;
+    private final ConsistentHash consistentHash;
+
     private CustomHttpServer server;
+    private HttpClient client;
     private DB levelDB;
 
     public ServiceImpl(ServiceConfig config) {
-        this.config = config;
-        workersConfig = new WorkersConfig();
+        this(config, new WorkersConfig(), new ShardingConfig());
     }
 
-    public ServiceImpl(ServiceConfig config, WorkersConfig workersConfig) {
+    public ServiceImpl(ServiceConfig config, WorkersConfig workersConfig, ShardingConfig shardingConfig) {
         this.config = config;
         this.workersConfig = workersConfig;
+        consistentHash = new ConsistentHash(shardingConfig.getVNodesNumber(), config.clusterUrls());
     }
 
     @Override
@@ -50,6 +63,7 @@ public class ServiceImpl implements Service {
             LOG.error("Error while starting database: ", e);
             throw e;
         }
+        client = HttpClient.newHttpClient();
         server = new CustomHttpServer(createHttpConfig(config), workersConfig);
         server.addRequestHandlers(this);
         server.start();
@@ -73,8 +87,27 @@ public class ServiceImpl implements Service {
         if (notValidId(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        byte[] value = levelDB.get(id.getBytes(StandardCharsets.UTF_8));
-        return value == null ? new Response(Response.NOT_FOUND, Response.EMPTY) : Response.ok(value);
+
+        byte[] key = id.getBytes(StandardCharsets.UTF_8);
+        String shardUrl = consistentHash.getShardUrlByKey(key);
+
+        if (config.selfUrl().equals(shardUrl)) {
+            byte[] value = levelDB.get(key);
+            return value == null ? new Response(Response.NOT_FOUND, Response.EMPTY) : Response.ok(value);
+        } else {
+            HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(shardUrl + URL_INFIX + id)).GET().build();
+            return proxyRequest(httpRequest, httpResponse -> {
+                Response proxyResponse = checkProxyResponse(httpRequest, httpResponse);
+                if (proxyResponse != null) {
+                    return proxyResponse;
+                }
+                byte[] value = null;
+                if (httpResponse != null) {
+                    value = httpResponse.body();
+                }
+                return value == null ? new Response(Response.NOT_FOUND, Response.EMPTY) : Response.ok(value);
+            });
+        }
     }
 
     @Path("/v0/entity")
@@ -84,7 +117,18 @@ public class ServiceImpl implements Service {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         byte[] value = request.getBody();
-        levelDB.put(id.getBytes(StandardCharsets.UTF_8), value);
+        byte[] key = id.getBytes(StandardCharsets.UTF_8);
+        String shardUrl = consistentHash.getShardUrlByKey(key);
+        if (config.selfUrl().equals(shardUrl)) {
+            levelDB.put(key, value);
+        } else {
+            HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(shardUrl + URL_INFIX + id))
+                .PUT(HttpRequest.BodyPublishers.ofByteArray(value)).build();
+            return proxyRequest(httpRequest, httpResponse ->
+                Objects.requireNonNullElseGet(checkProxyResponse(httpRequest, httpResponse),
+                    () -> new Response(Response.CREATED, Response.EMPTY)));
+        }
+
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
@@ -94,8 +138,47 @@ public class ServiceImpl implements Service {
         if (notValidId(id)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        levelDB.delete(id.getBytes(StandardCharsets.UTF_8));
+
+        byte[] key = id.getBytes(StandardCharsets.UTF_8);
+        String shardUrl = consistentHash.getShardUrlByKey(key);
+        if (config.selfUrl().equals(shardUrl)) {
+            levelDB.delete(key);
+        } else {
+            HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(shardUrl + URL_INFIX + id)).DELETE().build();
+            return proxyRequest(httpRequest, httpResponse ->
+                Objects.requireNonNullElseGet(checkProxyResponse(httpRequest, httpResponse),
+                    () -> new Response(Response.ACCEPTED, Response.EMPTY)));
+        }
+
         return new Response(Response.ACCEPTED, Response.EMPTY);
+    }
+
+    private Response checkProxyResponse(HttpRequest httpRequest, HttpResponse<byte[]> httpResponse) {
+        if (httpResponse == null || httpResponse.statusCode() == 503) {
+            LOG.error("Cannot proxy query, request " + httpRequest.uri().toString());
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+        }
+        if (httpResponse.statusCode() == 500) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
+        if (httpResponse.statusCode() == 404) {
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
+        }
+        return null;
+    }
+
+    private Response proxyRequest(HttpRequest request, Function<HttpResponse<byte[]>, Response> processResponse) {
+        CompletableFuture<HttpResponse<byte[]>> future =
+            client.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+        try {
+            return future.thenApply(processResponse).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("Interrupted while processing async query ", e);
+        } catch (ExecutionException e) {
+            LOG.warn("Exception while processing async query ", e);
+        }
+        return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
     }
 
     private static boolean notValidId(String id) {
@@ -108,14 +191,14 @@ public class ServiceImpl implements Service {
 
     private static HttpServerConfig createHttpConfig(ServiceConfig config) {
         ServerConfig serverConfig = ServerConfig.from(new ConnectionString(config.selfUrl()));
-        HttpServerConfig httpConfig = new HttpServerConfig();
-        httpConfig.acceptors = serverConfig.acceptors;
-        Arrays.stream(httpConfig.acceptors).forEach(x -> x.reusePort = true);
-        httpConfig.schedulingPolicy = serverConfig.schedulingPolicy;
-        return httpConfig;
+        HttpServerConfig httpServerConfig = new HttpServerConfig();
+        httpServerConfig.acceptors = serverConfig.acceptors;
+        Arrays.stream(httpServerConfig.acceptors).forEach(x -> x.reusePort = true);
+        httpServerConfig.schedulingPolicy = serverConfig.schedulingPolicy;
+        return httpServerConfig;
     }
 
-    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

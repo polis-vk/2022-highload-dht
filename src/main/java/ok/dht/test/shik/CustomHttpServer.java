@@ -83,16 +83,18 @@ public class CustomHttpServer extends HttpServer {
     @Override
     public synchronized void stop() {
         for (SelectorThread selector : selectors) {
-            for (Session session : selector.selector) {
-                Response response = new Response(Response.OK, Response.EMPTY);
-                response.addHeader(CLOSE_CONNECTION_HEADER);
-                byte[] responseBytes = response.toBytes(false);
-                try {
-                    session.write(responseBytes, 0, responseBytes.length);
-                } catch (IOException e) {
-                    LOG.error("Error while sending client info about closing socket", e);
+            if (selector.isAlive()) {
+                for (Session session : selector.selector) {
+                    Response response = new Response(Response.OK, Response.EMPTY);
+                    response.addHeader(CLOSE_CONNECTION_HEADER);
+                    byte[] responseBytes = response.toBytes(false);
+                    try {
+                        session.write(responseBytes, 0, responseBytes.length);
+                    } catch (IOException e) {
+                        LOG.error("Error while sending client info about closing socket", e);
+                    }
+                    session.socket().close();
                 }
-                session.socket().close();
             }
         }
         super.stop();
