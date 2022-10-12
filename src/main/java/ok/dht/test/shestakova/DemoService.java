@@ -91,20 +91,28 @@ public class DemoService implements Service {
                             return;
                         }
 
-                        HttpResponse<byte[]> response = httpClient
+                        CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture = httpClient
                                 .sendAsync(
                                         httpRequest,
                                         HttpResponse.BodyHandlers.ofByteArray()
-                                )
-                                .get(1, TimeUnit.SECONDS);
-                        session.sendResponse(new Response(
-                                String.valueOf(response.statusCode()),
-                                response.body()
-                        ));
-                    } catch (IOException | InterruptedException | ExecutionException | TimeoutException e) {
+                                );
+                        try {
+                            HttpResponse<byte[]> response = responseCompletableFuture.get(10, TimeUnit.SECONDS);
+                            session.sendResponse(new Response(
+                                    String.valueOf(response.statusCode()),
+                                    response.body()
+                            ));
+                        } catch (ExecutionException e) {
+                            session.sendResponse(new Response(
+                                    Response.SERVICE_UNAVAILABLE,
+                                    Response.EMPTY
+                            ));
+                            return;
+                        }
+                        return;
+                    } catch (InterruptedException | TimeoutException | IOException e) {
                         throw new RuntimeException(e);
                     }
-                    return;
                 }
 
                 workersPool.execute(() -> {
@@ -139,6 +147,9 @@ public class DemoService implements Service {
             @Override
             public synchronized void stop() {
                 for (SelectorThread selectorThread : selectors) {
+                    if (!selectorThread.isAlive()) {
+                        continue;
+                    }
                     for (Session session : selectorThread.selector) {
                         session.close();
                     }
@@ -177,14 +188,7 @@ public class DemoService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
-        workersPool.shutdown();
-        try {
-            if (!workersPool.awaitTermination(10, TimeUnit.SECONDS)) {
-                throw new RuntimeException("Error during termination");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        workersPool.shutdownNow();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
@@ -252,8 +256,8 @@ public class DemoService implements Service {
 
     private int getHashCodeForTwoElements(int hash, String s) {
         int h = hash;
-        for (char v : s.toCharArray()) {
-            h = 31 * h + v;
+        for (int i = 0; i < s.length(); i++) {
+            h = 31 * h + s.charAt(i);
         }
         return h;
     }
