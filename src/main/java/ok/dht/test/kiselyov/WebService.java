@@ -91,8 +91,10 @@ public class WebService implements Service {
             @Override
             public synchronized void stop() {
                 for (SelectorThread selectorThread : selectors) {
-                    for (Session session : selectorThread.selector) {
-                        session.socket().close();
+                    if (selectorThread.isAlive()) {
+                        for (Session session : selectorThread.selector) {
+                            session.socket().close();
+                        }
                     }
                 }
                 super.stop();
@@ -119,41 +121,47 @@ public class WebService implements Service {
             private void sendResponse(Request request, HttpSession session, String id, ClusterNode targetClusterNode) {
                 HttpResponse<byte[]> getResponse;
                 try {
-                    getResponse = internalClient.sendRequestToNode(request, targetClusterNode, id)
-                            .get(100, TimeUnit.MILLISECONDS);
-                    switch (request.getMethod()) {
-                        case Request.METHOD_GET -> {
-                            switch (getResponse.statusCode()) {
-                                case HttpURLConnection.HTTP_OK ->
-                                        session.sendResponse(new Response(Response.OK, getResponse.body()));
-                                case HttpURLConnection.HTTP_NOT_FOUND ->
-                                        session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
-                                default -> session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
+                    try {
+                        getResponse = internalClient.sendRequestToNode(request, targetClusterNode, id)
+                                .get(100, TimeUnit.MILLISECONDS);
+                        switch (request.getMethod()) {
+                            case Request.METHOD_GET -> {
+                                switch (getResponse.statusCode()) {
+                                    case HttpURLConnection.HTTP_OK ->
+                                            session.sendResponse(new Response(Response.OK, getResponse.body()));
+                                    case HttpURLConnection.HTTP_NOT_FOUND ->
+                                            session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
+                                    default ->
+                                            session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
+                                                    Response.EMPTY));
+                                }
+                            }
+                            case Request.METHOD_PUT -> {
+                                if (getResponse.statusCode() == HttpURLConnection.HTTP_CREATED) {
+                                    session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
+                                }
+                                session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
                                         Response.EMPTY));
                             }
-                        }
-                        case Request.METHOD_PUT -> {
-                            if (getResponse.statusCode() == HttpURLConnection.HTTP_CREATED) {
-                                session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
+                            case Request.METHOD_DELETE -> {
+                                if (getResponse.statusCode() == HttpURLConnection.HTTP_ACCEPTED) {
+                                    session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
+                                }
+                                session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
+                                        Response.EMPTY));
                             }
-                            session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
-                                    Response.EMPTY));
-                        }
-                        case Request.METHOD_DELETE -> {
-                            if (getResponse.statusCode() == HttpURLConnection.HTTP_ACCEPTED) {
-                                session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
+                            default -> {
+                                LOGGER.error("Unsupported request method: {}", request.getMethodName());
+                                throw new InternalError("Unsupported request method: " + request.getMethodName());
                             }
-                            session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
-                                    Response.EMPTY));
                         }
-                        default -> {
-                            LOGGER.error("Unsupported request method: {}", request.getMethodName());
-                            throw new InternalError("Unsupported request method: " + request.getMethodName());
-                        }
+                    } catch (ExecutionException e) {
+                        LOGGER.warn("Cluster node is unavailable.", e);
+                        session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
                     }
                 } catch (URISyntaxException e) {
                     LOGGER.error("URI error.", e);
-                } catch (InterruptedException | ExecutionException e) {
+                } catch (InterruptedException e) {
                     LOGGER.error("Error while getting response.");
                 } catch (IOException e) {
                     LOGGER.error("Error handling request.", e);
