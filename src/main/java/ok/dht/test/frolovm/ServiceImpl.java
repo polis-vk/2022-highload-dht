@@ -241,15 +241,11 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         closeServer();
-        closeDao();
-        return CompletableFuture.completedFuture(null);
-    }
-
-    private void closeDao() throws IOException {
         if (dao != null) {
             dao.close();
         }
         dao = null;
+        return CompletableFuture.completedFuture(null);
     }
 
     private void closeServer() {
@@ -258,6 +254,7 @@ public class ServiceImpl implements Service {
             closeExecutorPool(requestService);
         }
         server = null;
+
     }
 
     @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")

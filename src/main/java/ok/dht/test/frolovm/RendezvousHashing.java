@@ -12,10 +12,6 @@ public class RendezvousHashing implements ShardingAlgorithm {
 
     private final Hasher hasher;
 
-    public Map<String, Integer> getStatistic() {
-        return statistic;
-    }
-
     private final Map<String, Integer> statistic;
 
     public RendezvousHashing(List<String> shards, Hasher hasher) {
@@ -25,6 +21,10 @@ public class RendezvousHashing implements ShardingAlgorithm {
         for (String shard : shards) {
             statistic.put(shard, 0);
         }
+    }
+
+    public Map<String, Integer> getStatistic() {
+        return statistic;
     }
 
     @Override
@@ -40,6 +40,9 @@ public class RendezvousHashing implements ShardingAlgorithm {
                 answer = shard;
                 maxHash = hash;
             }
+        }
+        if (answer == null) {
+            throw new IllegalArgumentException("Can't find node for key");
         }
         statistic.put(answer.getName(), statistic.getOrDefault(answer.getName(), 0) + 1);
         return answer;
