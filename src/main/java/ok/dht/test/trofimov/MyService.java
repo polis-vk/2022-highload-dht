@@ -19,7 +19,6 @@ import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Base64;
-import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,7 +55,7 @@ import static java.net.HttpURLConnection.HTTP_VERSION;
 public class MyService implements Service {
 
     public static final String PATH_V0_ENTITY = "/v0/entity";
-    private final Logger logger = LoggerFactory.getLogger(MyService.class);
+    private static final Logger logger = LoggerFactory.getLogger(MyService.class);
     private static final long FLUSH_THRESHOLD = 1 << 20;
     private static final int REQUESTS_MAX_QUEUE_SIZE = 1024;
     private final ServiceConfig config;
@@ -160,14 +159,6 @@ public class MyService implements Service {
         };
     }
 
-    private static void sendResponse(HttpSession session, Response response) {
-        try {
-            session.sendResponse(response);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
     private static String getNodeOf(List<String> clusterUrls, String key) {
         if (clusterUrls.isEmpty()) {
             return "";
@@ -239,6 +230,23 @@ public class MyService implements Service {
 
     }
 
+    private static void sendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            logger.error("Error send response", e);
+            closeSession(session);
+        }
+    }
+
+    private static void closeSession(HttpSession session) {
+        try {
+            session.close();
+        } catch (Exception e) {
+            logger.error("Error in closing session", e);
+        }
+    }
+
     @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_POST)
     public Response handlePost() {
@@ -249,8 +257,8 @@ public class MyService implements Service {
         return new Response(status, Response.EMPTY);
     }
 
-    private Response errorResponse(Exception e) {
-        return new Response(Response.INTERNAL_ERROR, Utf8.toBytes(e.toString()));
+    private Response errorResponse() {
+        return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
