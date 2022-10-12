@@ -16,8 +16,6 @@ public class ConsistentHashing implements KeyManager {
 
     private final List<Entry> entries = new ArrayList<>();
 
-    public ConsistentHashing() {}
-
     @Override
     public void addNode(String nodeId) {
         List<Entry> newEntries = Arrays.stream(SEEDS)
@@ -36,7 +34,7 @@ public class ConsistentHashing implements KeyManager {
     public String getNodeIdByKey(String key) {
         int hash = hash(key, KEY_SEED);
         int i = 0;
-        while (i < entries.size() && hash > entries.get(i).getHash()){
+        while (i < entries.size() && hash > entries.get(i).getHash()) {
             i++;
         }
         return entries.get(i % entries.size()).getNodeId();
