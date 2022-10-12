@@ -2,13 +2,8 @@ package ok.dht.test.kiselyov.util;
 
 import java.util.List;
 
-/**
- *
- * Rendezvous hashing with Skeleton-based weight variation
- *
- */
 public class NodeDeterminer {
-    private List<ClusterNode> clusterNodes;
+    private final List<ClusterNode> clusterNodes;
 
     public NodeDeterminer(List<ClusterNode> clusterNodes) {
         this.clusterNodes = clusterNodes;
