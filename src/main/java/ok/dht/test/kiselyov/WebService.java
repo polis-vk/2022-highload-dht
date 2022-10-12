@@ -111,20 +111,6 @@ public class WebService implements Service {
                         return;
                     }
                     sendResponse(request, session, id, targetClusterNode);
-                    /*answerAwait.handleAsync((httpResponse, throwable) -> {
-                        try {
-                            if (throwable == null) {
-                                session.sendResponse(new Response(String.valueOf(httpResponse.statusCode()),
-                                        httpResponse.body()));
-                            } else {
-                                LOGGER.error("Unexpected throwable.", throwable);
-                                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                            }
-                        } catch (IOException e) {
-                            LOGGER.error("Error sending response.", e);
-                        }
-                        return null;
-                    });*/
                 } catch (IOException e) {
                     LOGGER.error("Error handling request.", e);
                 }
@@ -133,7 +119,8 @@ public class WebService implements Service {
             private void sendResponse(Request request, HttpSession session, String id, ClusterNode targetClusterNode) {
                 HttpResponse<byte[]> getResponse;
                 try {
-                    getResponse = internalClient.sendRequestToNode(request, targetClusterNode, id).get();
+                    getResponse = internalClient.sendRequestToNode(request, targetClusterNode, id)
+                            .get(100, TimeUnit.MILLISECONDS);
                     switch (request.getMethod()) {
                         case Request.METHOD_GET -> {
                             switch (getResponse.statusCode()) {
@@ -170,6 +157,8 @@ public class WebService implements Service {
                     LOGGER.error("Error while getting response.");
                 } catch (IOException e) {
                     LOGGER.error("Error handling request.", e);
+                } catch (TimeoutException e) {
+                    LOGGER.error("No response from cluster node.", e);
                 }
             }
         };
