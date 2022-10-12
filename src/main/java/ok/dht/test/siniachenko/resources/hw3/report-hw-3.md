@@ -45,3 +45,42 @@ Transfer/sec:      4.02MB
 ```
 
 Примерно такой же latency, то есть тоже около точки разлада.
+
+# wrk тестирование 3 шардов
+
+PUT запросами вышло всего 22000 rps:
+```
+Running 2m test @ http://localhost:12345
+  6 threads and 64 connections
+  Thread calibration: mean lat.: 2.013ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 2.018ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 2.012ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 2.025ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 2.035ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 2.020ms, rate sampling interval: 10ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    61.61ms   66.56ms 254.34ms   78.42%
+    Req/Sec     3.86k   366.89     5.33k    72.83%
+  2639315 requests in 2.00m, 168.64MB read
+Requests/sec:  21994.53
+Transfer/sec:      1.41MB
+```
+
+GET запросами 24000:
+```
+Running 2m test @ http://localhost:12345
+  6 threads and 64 connections
+  Thread calibration: mean lat.: 1.446ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.464ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.482ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.490ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.444ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.455ms, rate sampling interval: 10ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency   117.96ms  101.02ms 396.54ms   58.65%
+    Req/Sec     4.22k   383.88     6.67k    70.73%
+  2879411 requests in 2.00m, 200.43MB read
+  Non-2xx or 3xx responses: 928889
+Requests/sec:  23995.22
+Transfer/sec:      1.67MB
+```
