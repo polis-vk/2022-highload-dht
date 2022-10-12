@@ -12,13 +12,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
-public class Cluster {
-    private final static Set<Integer> PORTS = Set.of(14454, 25565, 36676, 47787);
-    private final static String LOCAL_HOST = "http://localhost:";
-    private final static List<String> TOPOLOGY = PORTS.stream()
+public final class Cluster {
+    private static final Set<Integer> PORTS = Set.of(14454, 25565, 36676, 47787);
+    private static final String LOCAL_HOST = "http://localhost:";
+    private static final List<String> TOPOLOGY = PORTS.stream()
             .map(port -> LOCAL_HOST + port)
             .collect(Collectors.toList());
-    private final static String PREFIX_TEMP_DIRECTORY = "TempDir-%s";
+    private static final String PREFIX_TEMP_DIRECTORY = "TempDir-%s";
 
     private Cluster() {
     }
