@@ -111,10 +111,7 @@ public class WebService implements Service {
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleRequest(Request request, HttpSession session) throws IOException {
-                String id = request.getParameter("id=");
-                if (id == null || id.isBlank()) {
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                }
+                checkInvalidId(request, session);
                 try {
                     executorService.submit(() -> tryHandleRequest(request, session));
                 } catch (RejectedExecutionException e) {
@@ -150,6 +147,13 @@ public class WebService implements Service {
                 }
             }
         };
+    }
+
+    private void checkInvalidId(Request request, HttpSession session) throws IOException {
+        String id = request.getParameter("id=");
+        if (id == null || id.isBlank()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        }
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
