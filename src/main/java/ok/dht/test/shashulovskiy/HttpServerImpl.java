@@ -20,10 +20,11 @@ public class HttpServerImpl extends HttpServer {
 
     private static final int MAXIMUM_POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private static final int CORE_POOL_SIZE = Math.max(1, MAXIMUM_POOL_SIZE / 4);
+    private static final int QUEUE_SIZE = 1024;
 
     private final ExecutorService requestHandlerPool;
 
-    public HttpServerImpl(HttpServerConfig config, Object... routers) throws IOException {
+    public HttpServerImpl(HttpServerConfig config, int shardsCount, Object... routers) throws IOException {
         super(config, routers);
 
         this.requestHandlerPool = new ThreadPoolExecutor(
@@ -31,7 +32,7 @@ public class HttpServerImpl extends HttpServer {
                 MAXIMUM_POOL_SIZE,
                 0L,
                 TimeUnit.MILLISECONDS,
-                new LinkedBlockingStack<>()
+                new LinkedBlockingStack<>(QUEUE_SIZE)
         );
     }
 
@@ -43,15 +44,14 @@ public class HttpServerImpl extends HttpServer {
                     super.handleRequest(request, session);
                 } catch (IOException e) {
                     // TODO HANDLE RESPONSE
+                    System.out.println(e.getMessage());
                     LOG.error("IO Exception occurred while processing request: " + e.getMessage(), e);
                 }
             });
         } catch (RejectedExecutionException e) {
             LOG.warn("Request rejected", e);
+            System.out.println(e.getMessage());
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
-        } catch (Throwable e) {
-            // TODO REMOVE
-            System.out.println("Error!" + e.getMessage());
         }
     }
 
@@ -64,7 +64,9 @@ public class HttpServerImpl extends HttpServer {
     @Override
     public synchronized void stop() {
         for (SelectorThread selector : selectors) {
-            selector.selector.forEach(Session::close);
+            if (selector.selector.isOpen()) {
+                selector.selector.forEach(Session::close);
+            }
         }
 
         super.stop();

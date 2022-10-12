@@ -1,38 +1,54 @@
 package ok.dht.test.shashulovskiy.sharding;
 
+import ok.dht.test.shashulovskiy.hashing.Hasher;
+import one.nio.util.Hash;
+import one.nio.util.Utf8;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 public class ConsistentHashingShardingManager implements ShardingManager {
 
-    private final ConcurrentNavigableMap<Integer, Shard> virtualShards;
+
+    private final long[] virtualShards;
+    private final HashMap<Long, Shard> hashToShard;
+    private long handledKeys;
     private final String thisShardUrl;
 
-    public ConsistentHashingShardingManager(List<String> shardUrls, String thisUrl, int vnodes) {
-        this.virtualShards = buildVirtualShards(shardUrls, thisUrl, vnodes);
+    private final Hasher hasher;
+
+    public ConsistentHashingShardingManager(List<String> shardUrls, String thisUrl, int vnodes, Hasher hasher) {
+        this.virtualShards = new long[shardUrls.size() * vnodes];
+        this.hashToShard = new HashMap<>();
+        this.handledKeys = 0L;
         this.thisShardUrl = thisUrl;
+        this.hasher = hasher;
+
+        buildVirtualShards(shardUrls, vnodes);
     }
 
+    @Override
     public Shard getShard(String key) {
-        // TODO GOOD HASH
-        var shard1 = virtualShards.ceilingEntry(key.hashCode());
-        var shard = shard1.getValue();
-
-        if (shard == null) {
-            shard = virtualShards.firstEntry().getValue();
+        var shardInd = Arrays.binarySearch(virtualShards, hasher.getHash(Utf8.toBytes(key)));
+        if (shardInd < 0) {
+            shardInd = (-shardInd - 1) % virtualShards.length;
         }
-
+        var shard = hashToShard.get(virtualShards[shardInd]);
         if (thisShardUrl.equals(shard.getShardUrl())) {
+            handledKeys++;
             return null;
         } else {
             return shard;
         }
     }
 
-    private ConcurrentNavigableMap<Integer, Shard> buildVirtualShards(List<String> shardUrls, String thisUrl, int vnodes) {
-        ConcurrentNavigableMap<Integer, Shard> result = new ConcurrentSkipListMap<>();
+    @Override
+    public long getHandledKeys() {
+        return handledKeys;
+    }
 
+    private void buildVirtualShards(List<String> shardUrls, int vnodes) {
         for (int shardInd = 0; shardInd < shardUrls.size(); ++shardInd) {
             for (int vnode = 0; vnode < vnodes; vnode++) {
                 Shard shard = new Shard(
@@ -40,10 +56,13 @@ public class ConsistentHashingShardingManager implements ShardingManager {
                         String.format("shard-%d-%d", shardInd, vnode)
                 );
 
-                result.put(shard.hashCode(), shard);
+                var shardHash = hasher.getHash(Utf8.toBytes(shard.getShardName() + shard.getShardUrl()));
+
+                virtualShards[shardInd * vnodes + vnode] = shardHash;
+                hashToShard.put(shardHash, shard);
             }
         }
 
-        return result;
+        Arrays.sort(virtualShards);
     }
 }

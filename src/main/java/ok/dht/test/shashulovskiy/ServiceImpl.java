@@ -4,15 +4,12 @@ import com.google.common.base.Throwables;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.shashulovskiy.hashing.MD5Hasher;
 import ok.dht.test.shashulovskiy.sharding.ConsistentHashingShardingManager;
+import ok.dht.test.shashulovskiy.sharding.JumpHashShardingManager;
 import ok.dht.test.shashulovskiy.sharding.Shard;
 import ok.dht.test.shashulovskiy.sharding.ShardingManager;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.Response;
+import one.nio.http.*;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
@@ -29,6 +26,7 @@ import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -40,12 +38,10 @@ import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 public class ServiceImpl implements Service {
 
     private static final Logger LOG = LoggerFactory.getLogger(ServiceImpl.class);
-
-    private static final int SHARD_VNODES = 5;
+    private static final int VNODES_COUNT = 5;
 
     private final ServiceConfig config;
-    // TODO Use HttpServer
-    private HttpServerImpl server;
+    private HttpServer server;
     private final HttpClient client = HttpClient.newHttpClient();
 
     private DB dao;
@@ -57,7 +53,8 @@ public class ServiceImpl implements Service {
         this.shardingManager = new ConsistentHashingShardingManager(
                 config.clusterUrls(),
                 config.selfUrl(),
-                SHARD_VNODES
+                VNODES_COUNT,
+                new MD5Hasher()
         );
     }
 
@@ -68,7 +65,7 @@ public class ServiceImpl implements Service {
 
         this.dao = factory.open(config.workingDir().toFile(), options);
 
-        server = new HttpServerImpl(createConfigFromPort(config.selfPort()));
+        server = new HttpServerImpl(createConfigFromPort(config.selfPort()), config.clusterUrls().size());
         server.addRequestHandlers(this);
         server.start();
 
@@ -105,7 +102,6 @@ public class ServiceImpl implements Service {
                 try {
                     switch (request.getMethod()) {
                         case Request.METHOD_GET -> {
-                            System.out.printf("Getting %s from %s\n", id, config.selfUrl());
                             byte[] result = dao.get(Utf8.toBytes(id));
                             if (result == null) {
                                 return new Response(Response.NOT_FOUND, Response.EMPTY);
@@ -114,7 +110,6 @@ public class ServiceImpl implements Service {
                             }
                         }
                         case Request.METHOD_PUT -> {
-                            System.out.printf("Saving %s:%s to %s\n", id, Utf8.toString(request.getBody()), config.selfUrl());
                             dao.put(Utf8.toBytes(id), request.getBody());
 
                             return new Response(Response.CREATED, Response.EMPTY);
@@ -130,24 +125,25 @@ public class ServiceImpl implements Service {
                     }
                 } catch (DBException exception) {
                     LOG.error("Internal dao exception occurred on " + request.getPath(), exception);
+                    System.out.println(exception.getMessage());
                     return new Response(
                             Response.INTERNAL_ERROR,
                             Utf8.toBytes("An error occurred when accessing database.")
                     );
                 }
             } else {
-                System.out.printf("Redirecting %s to %s\n", config.selfUrl(), shard.getShardUrl());
                 try {
                     HttpResponse<byte[]> response = client.send(
                             HttpRequest
                                     .newBuilder()
-                                    .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                                    .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody() == null ? Response.EMPTY : request.getBody()))
                                     .uri(URI.create(shard.getShardUrl() + request.getURI())).build(),
                             HttpResponse.BodyHandlers.ofByteArray()
                     );
 
                     return new Response(Integer.toString(response.statusCode()), response.body());
                 } catch (IOException e) {
+                    System.err.println(Arrays.toString(e.getStackTrace()));
                     return new Response(
                             Response.SERVICE_UNAVAILABLE,
                             Utf8.toBytes("Internal shard error")
@@ -157,10 +153,15 @@ public class ServiceImpl implements Service {
                 }
             }
         } catch (Throwable e) {
-            System.err.println("Error!" + Throwables.getStackTraceAsString(e));
-            System.err.println("Error!" + e.getCause().getMessage());
-            return null;
+            System.out.println("ERROR!" + e.getMessage());
         }
+        return null;
+    }
+
+    @Path("/stats/handledKeys")
+    @RequestMethod(Request.METHOD_GET)
+    public Response handleKeyStats() {
+        return new Response(Response.OK, Utf8.toBytes(Long.toString(shardingManager.getHandledKeys())));
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {

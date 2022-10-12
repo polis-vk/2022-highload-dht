@@ -1,6 +1,6 @@
 package ok.dht.test.shashulovskiy.sharding;
 
-import java.util.Objects;
+import com.google.common.base.Objects;
 
 public class Shard {
     private final String shardUrl;
@@ -21,6 +21,6 @@ public class Shard {
 
     @Override
     public int hashCode() {
-        return (shardName + shardUrl).hashCode();
+        return 11 * shardUrl.hashCode() + 727 * shardName.hashCode();
     }
 }
