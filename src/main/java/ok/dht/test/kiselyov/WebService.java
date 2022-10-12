@@ -53,48 +53,7 @@ public class WebService implements Service {
         dao = new PersistentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         executorService = new ThreadPoolExecutor(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, 0L,
                 TimeUnit.MILLISECONDS, new CustomLinkedBlockingDeque<>(DEQUE_CAPACITY));
-        server = new HttpServer(createConfigFromPort(config.selfPort())) {
-            @Override
-            public void handleRequest(Request request, HttpSession session) throws IOException {
-                String id = request.getParameter("id=");
-                if (id == null || id.isBlank()) {
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                }
-                try {
-                    executorService.submit(() -> tryHandleRequest(request, session));
-                } catch (RejectedExecutionException e) {
-                    LOGGER.error("Cannot execute task: ", e);
-                    session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
-                }
-            }
-
-            @Override
-            public void handleDefault(Request request, HttpSession session) throws IOException {
-                String resultCode = request.getMethod() == Request.METHOD_GET
-                        || request.getMethod() == Request.METHOD_PUT
-                        ? Response.BAD_REQUEST : Response.METHOD_NOT_ALLOWED;
-                Response defaultResponse = new Response(resultCode, Response.EMPTY);
-                session.sendResponse(defaultResponse);
-            }
-
-            @Override
-            public synchronized void stop() {
-                for (SelectorThread selectorThread : selectors) {
-                    for (Session session : selectorThread.selector) {
-                        session.socket().close();
-                    }
-                }
-                super.stop();
-            }
-
-            private void tryHandleRequest(Request request, HttpSession session) {
-                try {
-                    super.handleRequest(request, session);
-                } catch (IOException e) {
-                    LOGGER.error("Error handling request.", e);
-                }
-            }
-        };
+        configureService();
         server.start();
         server.addRequestHandlers(this);
         return CompletableFuture.completedFuture(null);
@@ -146,6 +105,51 @@ public class WebService implements Service {
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         return new Response(Response.ACCEPTED, Response.EMPTY);
+    }
+
+    private void configureService() throws IOException {
+        server = new HttpServer(createConfigFromPort(config.selfPort())) {
+            @Override
+            public void handleRequest(Request request, HttpSession session) throws IOException {
+                String id = request.getParameter("id=");
+                if (id == null || id.isBlank()) {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                }
+                try {
+                    executorService.submit(() -> tryHandleRequest(request, session));
+                } catch (RejectedExecutionException e) {
+                    LOGGER.error("Cannot execute task: ", e);
+                    session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                }
+            }
+
+            @Override
+            public void handleDefault(Request request, HttpSession session) throws IOException {
+                String resultCode = request.getMethod() == Request.METHOD_GET
+                        || request.getMethod() == Request.METHOD_PUT
+                        ? Response.BAD_REQUEST : Response.METHOD_NOT_ALLOWED;
+                Response defaultResponse = new Response(resultCode, Response.EMPTY);
+                session.sendResponse(defaultResponse);
+            }
+
+            @Override
+            public synchronized void stop() {
+                for (SelectorThread selectorThread : selectors) {
+                    for (Session session : selectorThread.selector) {
+                        session.socket().close();
+                    }
+                }
+                super.stop();
+            }
+
+            private void tryHandleRequest(Request request, HttpSession session) {
+                try {
+                    super.handleRequest(request, session);
+                } catch (IOException e) {
+                    LOGGER.error("Error handling request.", e);
+                }
+            }
+        };
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
