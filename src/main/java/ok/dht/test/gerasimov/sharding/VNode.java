@@ -24,9 +24,11 @@ public class VNode implements Comparable<VNode> {
 
     @Override
     public String toString() {
-        return "VNode{" +
-                "shard=" + shard.getHost() + shard.getPort() +
-                ", hashcode=" + hashcode +
-                '}';
+        return String.format(
+                "VNode{shard=%s%s, hashcode=%d}",
+                shard.getHost(),
+                shard.getPort(),
+                hashcode
+        );
     }
 }
