@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -96,35 +97,39 @@ public class HttpServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) {
         try {
-            poolExecutor.execute(() -> {
-                try {
-                    String path = request.getPath();
-                    if (!path.equals(PATH)) {
-                        session.sendResponse(BAD_RESPONSE);
-                        return;
-                    }
-
-                    int methodName = request.getMethod();
-                    if (!SUPPORTED_METHODS.contains(methodName)) {
-                        session.sendResponse(METHOD_NOT_ALLOWED);
-                        return;
-                    }
-                    RequestHandler handler = handlerMapper.find(path, methodName);
-
-                    if (handler != null) {
-                        handler.handleRequest(request, session);
-                        return;
-                    }
-                    handleDefault(request, session);
-                } catch (IOException e) {
-                    LOGGER.error("Error when send response", e);
-                    handleUnavailable(session);
-                }
-            });
+            runHandleRequest(request, session);
         } catch (RejectedExecutionException rejectedExecutionException) {
             LOGGER.error("Reject request", rejectedExecutionException);
             handleUnavailable(session);
         }
+    }
+
+    private void runHandleRequest(Request request, HttpSession session) {
+        poolExecutor.execute(() -> {
+            try {
+                String path = request.getPath();
+                if (!path.equals(PATH)) {
+                    session.sendResponse(BAD_RESPONSE);
+                    return;
+                }
+
+                int methodName = request.getMethod();
+                if (!SUPPORTED_METHODS.contains(methodName)) {
+                    session.sendResponse(METHOD_NOT_ALLOWED);
+                    return;
+                }
+                RequestHandler handler = handlerMapper.find(path, methodName);
+
+                if (handler != null) {
+                    handler.handleRequest(request, session);
+                    return;
+                }
+                handleDefault(request, session);
+            } catch (IOException e) {
+                LOGGER.error("Error when send response", e);
+                handleUnavailable(session);
+            }
+        });
     }
 
     @Override
