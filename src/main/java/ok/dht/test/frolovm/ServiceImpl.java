@@ -7,6 +7,7 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.drozdov.dao.Config;
 import ok.dht.test.drozdov.dao.Entry;
 import ok.dht.test.drozdov.dao.MemorySegmentDao;
+import ok.dht.test.frolovm.hasher.Hasher;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -14,13 +15,19 @@ import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.ConnectionString;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
+import one.nio.util.Hash;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -30,9 +37,10 @@ import java.util.concurrent.TimeUnit;
 
 public class ServiceImpl implements Service {
 
-    public static final int FLUSH_THRESHOLD_BYTES = 1_048_576;
-    public static final String PATH_ENTITY = "/v0/entity";
-    public static final String PARAM_ID_NAME = "id=";
+    private static final int FLUSH_THRESHOLD_BYTES = 1_048_576;
+    private static final String PATH_ENTITY = "/v0/entity";
+    private static final String PARAM_ID_NAME = "id=";
+    private static final int TIMEOUT = 200;
     private static final int CORE_POLL_SIZE = Runtime.getRuntime().availableProcessors() * 2;
     private static final int KEEP_ALIVE_TIME = 0;
     private static final int QUEUE_CAPACITY = 128;
@@ -40,28 +48,32 @@ public class ServiceImpl implements Service {
     private static final String NO_SUCH_METHOD = "No such method.";
     private static final Logger LOGGER = LoggerFactory.getLogger(ServiceImpl.class);
     private final ServiceConfig config;
+    private final ShardingAlgorithm algorithm;
     private ExecutorService requestService;
     private MemorySegmentDao dao;
     private HttpServer server;
 
+    private final HttpClient client = HttpClient.newHttpClient();
+
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
+        this.algorithm = new RendezvousHashing(config.clusterUrls(), Hash::murmur3);
     }
 
-    public ServiceImpl(ServiceConfig config, MemorySegmentDao dao) {
+    public ServiceImpl(ServiceConfig config, Hasher hasher) {
         this.config = config;
-        this.dao = dao;
+        this.algorithm = new RendezvousHashing(config.clusterUrls(), hasher);
     }
 
-    private static boolean checkId(String id) {
+    private static boolean checkId(final String id) {
         return id != null && !id.isBlank();
     }
 
-    private static MemorySegment stringToSegment(String value) {
+    private static MemorySegment stringToSegment(final String value) {
         return MemorySegment.ofArray(Utf8.toBytes(value));
     }
 
-    private static Response emptyResponse(String responseCode) {
+    private static Response emptyResponse(final String responseCode) {
         return new Response(responseCode, Response.EMPTY);
     }
 
@@ -81,6 +93,15 @@ public class ServiceImpl implements Service {
 
     private void createDao() throws IOException {
         this.dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+    }
+
+    private void sessionSendError(HttpSession session, Exception e) {
+        try {
+            session.sendError(Response.BAD_REQUEST, e.getMessage());
+            LOGGER.error("Can't handle request", e);
+        } catch (IOException exception) {
+            LOGGER.error("Can't send error message to Bad Request", exception);
+        }
     }
 
     @Override
@@ -118,15 +139,6 @@ public class ServiceImpl implements Service {
                 }
             }
 
-            private void sessionSendError(HttpSession session, IOException e) {
-                try {
-                    session.sendError(Response.BAD_REQUEST, e.getMessage());
-                    LOGGER.error("Can't handle request", e);
-                } catch (IOException exception) {
-                    LOGGER.error("Can't send error message to Bad Request", exception);
-                }
-            }
-
             @Override
             public synchronized void stop() {
                 closeSessions();
@@ -154,7 +166,39 @@ public class ServiceImpl implements Service {
     }
 
     @Path(PATH_ENTITY)
-    public Response entityHandler(@Param(PARAM_ID_NAME) String id, Request request) {
+    public Response entityHandler(@Param(PARAM_ID_NAME) String id, Request request, HttpSession session) {
+        if (!checkId(id)) {
+            return new Response(Response.BAD_REQUEST, Utf8.toBytes(BAD_ID));
+        }
+        switch (request.getMethod()) {
+            case Request.METHOD_PUT:
+            case Request.METHOD_GET:
+            case Request.METHOD_DELETE:
+                Shard shard = algorithm.chooseShard(id);
+                if (shard.getName().equals(config.selfUrl())) {
+                    return entityHandlerSelf(id, request);
+                } else {
+                    try {
+                        HttpResponse<byte[]> response = client.send(
+                                HttpRequest.newBuilder().uri(URI.create(shard.getName() + request.getURI())).method(
+                                        request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody())).build(),
+                                        HttpResponse.BodyHandlers.ofByteArray()
+                        );
+                        String responseStatus = Integer.toString(response.statusCode());
+                        byte[] answer = response.body();
+                        return new Response(responseStatus, answer);
+                    } catch (Exception e) {
+                        LOGGER.error("Something bad happens when client answer", e);
+                        return emptyResponse(Response.BAD_REQUEST);
+                    }
+                }
+
+            default:
+                return new Response(Response.METHOD_NOT_ALLOWED, Utf8.toBytes(NO_SUCH_METHOD));
+        }
+    }
+
+    private Response entityHandlerSelf(String id, Request request) {
         if (!checkId(id)) {
             return new Response(Response.BAD_REQUEST, Utf8.toBytes(BAD_ID));
         }
@@ -198,14 +242,27 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        server.stop();
-        closeExecutorPool(requestService);
-        dao.close();
-        dao = null;
+        closeServer();
+        closeDao();
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 2, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
+    private void closeDao() throws IOException {
+        if (dao != null) {
+            dao.close();
+        }
+        dao = null;
+    }
+
+    private void closeServer() {
+        if (server != null) {
+            server.stop();
+            closeExecutorPool(requestService);
+        }
+        server = null;
+    }
+
+    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
