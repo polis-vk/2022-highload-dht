@@ -12,7 +12,7 @@ public class MD5Hasher implements Hasher {
                 return MessageDigest.getInstance("MD5");
             } catch (NoSuchAlgorithmException e) {
                 // Should be unreachable
-                throw new RuntimeException("MD5 Hash not found?");
+                throw new RuntimeException("MD5 Hash not found?", e);
             }
         });
 

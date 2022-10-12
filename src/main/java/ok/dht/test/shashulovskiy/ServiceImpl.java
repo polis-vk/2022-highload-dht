@@ -132,7 +132,9 @@ public class ServiceImpl implements Service {
                 HttpResponse<byte[]> response = client.send(
                         HttpRequest
                                 .newBuilder()
-                                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody() == null ? Response.EMPTY : request.getBody()))
+                                .method(request.getMethodName(),
+                                        HttpRequest.BodyPublishers.ofByteArray(request.getBody() == null
+                                                ? Response.EMPTY : request.getBody()))
                                 .uri(URI.create(shard.getShardUrl() + request.getURI())).build(),
                         HttpResponse.BodyHandlers.ofByteArray()
                 );

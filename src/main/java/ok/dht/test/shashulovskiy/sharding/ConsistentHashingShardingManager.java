@@ -6,11 +6,12 @@ import one.nio.util.Utf8;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class ConsistentHashingShardingManager implements ShardingManager {
 
     private final long[] virtualShards;
-    private final HashMap<Long, Shard> hashToShard;
+    private final Map<Long, Shard> hashToShard;
     private long handledKeys;
     private final String thisShardUrl;
 

@@ -1,5 +1,7 @@
 package ok.dht.test.shashulovskiy.sharding;
 
+import com.google.common.base.Objects;
+
 public class Shard {
     private final String shardUrl;
     private final String shardName;
@@ -20,5 +22,13 @@ public class Shard {
     @Override
     public int hashCode() {
         throw new UnsupportedOperationException("Use Hasher instead");
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Shard shard = (Shard) o;
+        return Objects.equal(shardUrl, shard.shardUrl) && Objects.equal(shardName, shard.shardName);
     }
 }
