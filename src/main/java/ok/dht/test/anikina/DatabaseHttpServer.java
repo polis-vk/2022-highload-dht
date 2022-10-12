@@ -120,7 +120,7 @@ public class DatabaseHttpServer extends HttpServer {
                 return new Response(Response.ACCEPTED, Response.EMPTY);
             }
             default -> {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             }
         }
     }
