@@ -6,7 +6,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -34,7 +33,7 @@ public final class ServerImpl {
             new ServiceImpl(cfg).start().get(1, TimeUnit.SECONDS);
             LOG.info("Socket is ready: " + url);
             LOG.info("Volumes mounted on " + cfg.workingDir());
-            System.out.println("Volumes mounted on " + cfg.workingDir());
+            LOG.info("Volumes mounted on " + cfg.workingDir());
         } catch (IOException | InterruptedException | ExecutionException | TimeoutException e) {
             LOG.error("Unable to start server: " + e.getMessage());
         }

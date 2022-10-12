@@ -21,6 +21,7 @@ public class MD5Hasher implements Hasher {
     public long getHash(byte[] bytes) {
         byte[] digest = md.get().digest(bytes);
 
+        // Take first 8 bytes to get 64-bit long
         return ((digest[0] & 0xFFL) << 56)
                 | ((digest[1] & 0xFFL) << 48)
                 | ((digest[2] & 0xFFL) << 40)

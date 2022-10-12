@@ -1,12 +1,11 @@
 package ok.dht.test.shashulovskiy.sharding;
 
 import ok.dht.test.shashulovskiy.hashing.Hasher;
-import one.nio.util.Hash;
 import one.nio.util.Utf8;
 
-import java.util.*;
-import java.util.concurrent.ConcurrentNavigableMap;
-import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
 
 public class ConsistentHashingShardingManager implements ShardingManager {
 

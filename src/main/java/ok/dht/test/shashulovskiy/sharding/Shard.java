@@ -1,7 +1,5 @@
 package ok.dht.test.shashulovskiy.sharding;
 
-import com.google.common.base.Objects;
-
 public class Shard {
     private final String shardUrl;
     private final String shardName;
@@ -21,6 +19,6 @@ public class Shard {
 
     @Override
     public int hashCode() {
-        return 11 * shardUrl.hashCode() + 727 * shardName.hashCode();
+        throw new UnsupportedOperationException("Use Hasher instead");
     }
 }

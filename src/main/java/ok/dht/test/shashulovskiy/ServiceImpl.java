@@ -7,7 +7,12 @@ import ok.dht.test.shashulovskiy.hashing.MD5Hasher;
 import ok.dht.test.shashulovskiy.sharding.ConsistentHashingShardingManager;
 import ok.dht.test.shashulovskiy.sharding.Shard;
 import ok.dht.test.shashulovskiy.sharding.ShardingManager;
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
 import org.iq80.leveldb.DB;
@@ -117,7 +122,6 @@ public class ServiceImpl implements Service {
                 }
             } catch (DBException exception) {
                 LOG.error("Internal dao exception occurred on " + request.getPath(), exception);
-                System.out.println(exception.getMessage());
                 return new Response(
                         Response.INTERNAL_ERROR,
                         Utf8.toBytes("An error occurred when accessing database.")
@@ -135,7 +139,6 @@ public class ServiceImpl implements Service {
 
                 return new Response(Integer.toString(response.statusCode()), response.body());
             } catch (IOException e) {
-                System.err.println(Arrays.toString(e.getStackTrace()));
                 return new Response(
                         Response.SERVICE_UNAVAILABLE,
                         Utf8.toBytes("Internal shard error")
