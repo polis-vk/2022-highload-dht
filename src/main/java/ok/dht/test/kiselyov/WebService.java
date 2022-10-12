@@ -23,11 +23,8 @@ import org.apache.log4j.Logger;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -42,7 +39,6 @@ public class WebService implements Service {
     private static final int CORE_POOL_SIZE = 64;
     private static final int MAXIMUM_POOL_SIZE = 64;
     private static final int DEQUE_CAPACITY = 64;
-    private List<Future<?>> tasks;
     private static final Logger LOGGER = Logger.getLogger(WebService.class);
 
     public WebService(ServiceConfig config) {
@@ -55,14 +51,17 @@ public class WebService implements Service {
             Files.createDirectory(config.workingDir());
         }
         dao = new PersistentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
-        tasks = new ArrayList<>();
         executorService = new ThreadPoolExecutor(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, 0L,
                 TimeUnit.MILLISECONDS, new CustomLinkedBlockingDeque<>(DEQUE_CAPACITY));
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleRequest(Request request, HttpSession session) throws IOException {
+                String id = request.getParameter("id=");
+                if (id == null || id.isBlank()) {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                }
                 try {
-                    tasks.add(executorService.submit(() -> tryHandleRequest(request, session)));
+                    executorService.submit(() -> tryHandleRequest(request, session));
                 } catch (RejectedExecutionException e) {
                     LOGGER.error("Cannot execute task: ", e);
                     session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
@@ -104,12 +103,7 @@ public class WebService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
-        for (Future<?> task : tasks) {
-            if (!task.isCancelled()) {
-                task.cancel(true);
-            }
-        }
-        executorService.shutdown();
+        executorService.shutdownNow();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
@@ -117,9 +111,6 @@ public class WebService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(@Param(value = "id") String id) {
-        if (id == null || id.isBlank()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         BaseEntry<byte[]> result;
         try {
             result = dao.get(id.getBytes(StandardCharsets.UTF_8));
@@ -136,9 +127,6 @@ public class WebService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(@Param(value = "id") String id, Request putRequest) {
-        if (id == null || id.isBlank()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         try {
             dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), putRequest.getBody()));
         } catch (Exception e) {
@@ -151,9 +139,6 @@ public class WebService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(@Param(value = "id") String id) {
-        if (id == null || id.isBlank()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
         try {
             dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), null));
         } catch (Exception e) {
