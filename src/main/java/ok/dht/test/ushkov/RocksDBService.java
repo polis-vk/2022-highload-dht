@@ -157,7 +157,7 @@ public class RocksDBService implements Service {
     }
 
     private Response redirectRequest(String url, Request request) {
-        ConnectionString conn = new ConnectionString(url+request.getURI());
+        ConnectionString conn = new ConnectionString(url + request.getURI());
         Request redirectedRequest = new Request(request);
         try (HttpClient client = new HttpClient(conn)) {
             return client.invoke(redirectedRequest);
