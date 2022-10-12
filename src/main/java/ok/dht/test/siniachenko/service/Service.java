@@ -21,20 +21,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 public class Service implements ok.dht.Service {
     private static final Logger LOG = LoggerFactory.getLogger(Service.class);
     private static final String PATH = "/v0/entity";
-    private static final Set<Integer> ALLOWED_METHODS = Set.of(
-        Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
-    );
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
     private static final int THREAD_POOL_QUEUE_CAPACITY = 1024 * 1024;
 
@@ -54,11 +51,23 @@ public class Service implements ok.dht.Service {
 
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
-            public void handleDefault(Request request, HttpSession session) throws IOException {
-                if (PATH.equals(request.getPath()) && !ALLOWED_METHODS.contains(request.getMethod())) {
-                    session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-                } else {
+            public void handleRequest(Request request, HttpSession session) throws IOException {
+                if (!PATH.equals(request.getPath())) {
                     session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
+                }
+
+                String idParameter = request.getParameter("id=");
+                if (idParameter == null || idParameter.isEmpty()) {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
+                }
+
+                switch (request.getMethod()) {
+                    case Request.METHOD_GET -> execute(session, () -> getEntity(idParameter));
+                    case Request.METHOD_PUT -> execute(session, () -> upsertEntity(idParameter, request));
+                    case Request.METHOD_DELETE -> execute(session, () -> deleteEntity(idParameter));
+                    default -> execute(session, () -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
                 }
             }
 
@@ -84,6 +93,29 @@ public class Service implements ok.dht.Service {
         return CompletableFuture.completedFuture(null);
     }
 
+    private void execute(HttpSession session, Supplier<Response> supplier) {
+        try {
+            executorService.execute(() -> sendResponse(session, supplier.get()));
+        } catch (RejectedExecutionException e) {
+            LOG.error("Cannot execute task", e);
+            sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        }
+    }
+
+    private void sendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e1) {
+            LOG.error("I/O error while sending response", e1);
+            try {
+                session.close();
+            } catch (Exception e2) {
+                e2.addSuppressed(e1);
+                LOG.error("Exception while closing session", e2);
+            }
+        }
+    }
+
     private static HttpServerConfig createConfigFromPort(int port) {
         HttpServerConfig httpServerConfig = new HttpServerConfig();
         AcceptorConfig acceptorConfig = new AcceptorConfig();
@@ -105,32 +137,22 @@ public class Service implements ok.dht.Service {
     @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id", required = true) String id) {
-        try {
-            return executorService.submit(() -> {
-                if (id == null || id.isEmpty()) {
-                    return new Response(
-                        Response.BAD_REQUEST,
-                        Response.EMPTY
-                    );
-                }
-                byte[] value = levelDb.get(Utf8.toBytes(id));
-                if (value == null) {
-                    return new Response(
-                        Response.NOT_FOUND,
-                        Response.EMPTY
-                    );
-                } else {
-                    return new Response(
-                        Response.OK,
-                        value
-                    );
-                }
-            }).get();
-        } catch (InterruptedException | ExecutionException e) {
-            LOG.error("Error while get (id {})", id, e);
+        if (id == null || id.isEmpty()) {
             return new Response(
-                Response.INTERNAL_ERROR,
+                Response.BAD_REQUEST,
                 Response.EMPTY
+            );
+        }
+        byte[] value = levelDb.get(Utf8.toBytes(id));
+        if (value == null) {
+            return new Response(
+                Response.NOT_FOUND,
+                Response.EMPTY
+            );
+        } else {
+            return new Response(
+                Response.OK,
+                value
             );
         }
     }
@@ -141,27 +163,17 @@ public class Service implements ok.dht.Service {
         @Param(value = "id", required = true) String id,
         Request request
     ) {
-        try {
-            return executorService.submit(() -> {
-                if (id == null || id.isEmpty()) {
-                    return new Response(
-                        Response.BAD_REQUEST,
-                        Response.EMPTY
-                    );
-                }
-                levelDb.put(Utf8.toBytes(id), request.getBody());
-                return new Response(
-                    Response.CREATED,
-                    Response.EMPTY
-                );
-            }).get();
-        } catch (InterruptedException | ExecutionException e) {
-            LOG.error("Error while upsert (id {})", id, e);
+        if (id == null || id.isEmpty()) {
             return new Response(
-                Response.INTERNAL_ERROR,
+                Response.BAD_REQUEST,
                 Response.EMPTY
             );
         }
+        levelDb.put(Utf8.toBytes(id), request.getBody());
+        return new Response(
+            Response.CREATED,
+            Response.EMPTY
+        );
     }
 
     @Path(PATH)
@@ -169,27 +181,17 @@ public class Service implements ok.dht.Service {
     public Response deleteEntity(
         @Param(value = "id", required = true) String id
     ) {
-        try {
-            return executorService.submit(() -> {
-                if (id == null || id.isEmpty()) {
-                    return new Response(
-                        Response.BAD_REQUEST,
-                        Response.EMPTY
-                    );
-                }
-                levelDb.delete(Utf8.toBytes(id));
-                return new Response(
-                    Response.ACCEPTED,
-                    Response.EMPTY
-                );
-            }).get();
-        } catch (InterruptedException | ExecutionException e) {
-            LOG.error("Error while get (id {})", id, e);
+        if (id == null || id.isEmpty()) {
             return new Response(
-                Response.INTERNAL_ERROR,
+                Response.BAD_REQUEST,
                 Response.EMPTY
             );
         }
+        levelDb.delete(Utf8.toBytes(id));
+        return new Response(
+            Response.ACCEPTED,
+            Response.EMPTY
+        );
     }
 
     @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
