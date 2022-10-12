@@ -20,13 +20,21 @@ import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+import static java.net.http.HttpClient.newHttpClient;
 
 public class DemoService implements Service {
 
@@ -37,6 +45,7 @@ public class DemoService implements Service {
     private static final int POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private static final int QUEUE_CAPACITY = 256;
     private ExecutorService workersPool;
+    private HttpClient httpClient;
 
     public DemoService(ServiceConfig config) {
         this.config = config;
@@ -56,9 +65,47 @@ public class DemoService implements Service {
                 TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(QUEUE_CAPACITY)
         );
+        httpClient = newHttpClient();
+
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleRequest(Request request, HttpSession session) {
+                String key = request.getParameter("id=");
+                if (key == null) {
+                    try {
+                        handleDefault(request, session);
+                        return;
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+
+                String targetCluster = getClusterByRendezvousHashing(key);
+                if (!targetCluster.equals(config.selfUrl())) {
+                    try {
+                        HttpRequest httpRequest = buildHttpRequest(key, targetCluster, request);
+
+                        if (httpRequest == null) {
+                            handleDefault(request, session);
+                            return;
+                        }
+
+                        HttpResponse<byte[]> response = httpClient
+                                .sendAsync(
+                                        httpRequest,
+                                        HttpResponse.BodyHandlers.ofByteArray()
+                                )
+                                .get(1, TimeUnit.SECONDS);
+                        session.sendResponse(new Response(
+                                String.valueOf(response.statusCode()),
+                                response.body()
+                        ));
+                    } catch (IOException | InterruptedException | ExecutionException | TimeoutException e) {
+                        throw new RuntimeException(e);
+                    }
+                    return;
+                }
+
                 workersPool.execute(() -> {
                     try {
                         super.handleRequest(request, session);
@@ -96,6 +143,29 @@ public class DemoService implements Service {
                     }
                 }
                 super.stop();
+            }
+
+            private HttpRequest.Builder request(String path, String clusterUrl) {
+                return HttpRequest.newBuilder(URI.create(clusterUrl + path));
+            }
+
+            private HttpRequest.Builder requestForKey(String key, String clusterUrl) {
+                return request("/v0/entity?id=" + key, clusterUrl);
+            }
+
+            private HttpRequest buildHttpRequest(String key, String targetCluster, Request request) {
+                HttpRequest.Builder httpRequest = requestForKey(key, targetCluster);
+                int requestMethod = request.getMethod();
+                if (requestMethod == Request.METHOD_GET) {
+                    httpRequest.GET();
+                } else if (requestMethod == Request.METHOD_PUT) {
+                    httpRequest.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
+                } else if (requestMethod == Request.METHOD_DELETE) {
+                    httpRequest.DELETE();
+                } else {
+                    return null;
+                }
+                return httpRequest.build();
             }
         };
         server.addRequestHandlers(this);
@@ -185,6 +255,29 @@ public class DemoService implements Service {
         );
     }
 
+    private String getClusterByRendezvousHashing(String key) {
+        int hashVal = Integer.MIN_VALUE;
+        String cluster = null;
+        final int keyHash = key.hashCode();
+
+        for (String clusterUrl : config.clusterUrls()) {
+            int tmpHash = getHashCodeForTwoElements(keyHash, clusterUrl);
+            if (tmpHash > hashVal) {
+                hashVal = tmpHash;
+                cluster = clusterUrl;
+            }
+        }
+        return cluster;
+    }
+
+    private int getHashCodeForTwoElements(int hash, String s) {
+        int h = hash;
+        for (char v : s.toCharArray()) {
+            h = 31 * h + v; //
+        }
+        return h;
+    }
+
     private static HttpServerConfig createConfigFromPort(int port) {
         HttpServerConfig httpConfig = new HttpServerConfig();
         AcceptorConfig acceptor = new AcceptorConfig();
@@ -198,7 +291,7 @@ public class DemoService implements Service {
         return data == null ? null : MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 
-    @ServiceFactory(stage = 2, week = 1)
+    @ServiceFactory(stage = 3, week = 1)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
