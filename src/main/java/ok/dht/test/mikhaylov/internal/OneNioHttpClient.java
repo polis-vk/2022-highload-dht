@@ -18,6 +18,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import static ok.dht.test.mikhaylov.MyService.makeError;
+
 public class OneNioHttpClient extends InternalHttpClient {
     private final ThreadLocal<Map<String, HttpClient>> clients;
 
@@ -35,35 +37,27 @@ public class OneNioHttpClient extends InternalHttpClient {
     }
 
     @Override
-    public Response proxyRequest(Request request, String shard) {
-        try {
-            return getExecutor().submit(() -> {
-                try {
-                    Request internalRequest = new Request(request.getMethod(),
-                            request.getURI().replaceFirst(MyService.ENTITY_PATH, MyService.ENTITY_INTERNAL_PATH),
-                            true);
-                    internalRequest.setBody(request.getBody());
-                    for (String header : request.getHeaders()) {
-                        if (header != null) {
-                            internalRequest.addHeader(header);
-                        }
+    public Response proxyRequest(Request request, String shard) throws ExecutionException, InterruptedException,
+            TimeoutException {
+        return getExecutor().submit(() -> {
+            try {
+                Request internalRequest = new Request(request.getMethod(),
+                        request.getURI().replaceFirst(MyService.ENTITY_PATH, MyService.ENTITY_INTERNAL_PATH),
+                        true);
+                internalRequest.setBody(request.getBody());
+                for (String header : request.getHeaders()) {
+                    if (header != null) {
+                        internalRequest.addHeader(header);
                     }
-                    return clients.get().get(shard).invoke(internalRequest);
-                } catch (InterruptedException | PoolException | IOException | HttpException e) {
-                    if (e instanceof InterruptedException) {
-                        Thread.currentThread().interrupt();
-                    }
-                    logger.error("Could not proxy request to {}", shard, e);
-                    return new Response(Response.INTERNAL_ERROR, new byte[0]);
                 }
-            }).get(1, TimeUnit.SECONDS);
-        } catch (InterruptedException | ExecutionException | TimeoutException e) {
-            if (e instanceof InterruptedException) {
+                return clients.get().get(shard).invoke(internalRequest);
+            } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                return makeError(logger, shard, e);
+            } catch (PoolException | IOException | HttpException e) {
+                return makeError(logger, shard, e);
             }
-            logger.error("Could not proxy request to {}", shard, e);
-            return new Response(Response.INTERNAL_ERROR, new byte[0]);
-        }
+        }).get(1, TimeUnit.SECONDS);
     }
 
     @Override

@@ -24,6 +24,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 public class MyService implements Service {
 
@@ -53,9 +55,13 @@ public class MyService implements Service {
         this.shardResolver = shardResolver;
     }
 
+    public static Response makeError(Logger logger, String shard, Exception e) {
+        logger.error("Could not proxy request to {}", shard, e);
+        return new Response(Response.INTERNAL_ERROR, new byte[0]);
+    }
+
     @Override
     public CompletableFuture<?> start() throws IOException {
-//        internalHttpClient = new JavaHttpClient();
         internalHttpClient = new OneNioHttpClient(config.clusterUrls());
         try {
             db = RocksDB.open(config.workingDir().toString());
@@ -147,7 +153,14 @@ public class MyService implements Service {
     }
 
     private Response proxyRequest(Request request, String shard) {
-        return internalHttpClient.proxyRequest(request, shard);
+        try {
+            return internalHttpClient.proxyRequest(request, shard);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return makeError(logger, shard, e);
+        } catch (ExecutionException | TimeoutException e) {
+            return makeError(logger, shard, e);
+        }
     }
 
     private Response dbGet(final String id) throws RocksDBException {

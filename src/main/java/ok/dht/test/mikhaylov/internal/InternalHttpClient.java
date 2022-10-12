@@ -5,10 +5,12 @@ import one.nio.http.Response;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public abstract class InternalHttpClient implements Closeable {
 
@@ -28,7 +30,8 @@ public abstract class InternalHttpClient implements Closeable {
         );
     }
 
-    public abstract Response proxyRequest(Request request, String shard);
+    public abstract Response proxyRequest(Request request, String shard) throws InterruptedException,
+            ExecutionException, TimeoutException;
 
     protected ExecutorService getExecutor() {
         return executor;

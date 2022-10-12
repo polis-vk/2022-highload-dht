@@ -43,32 +43,26 @@ public class JavaHttpClient extends InternalHttpClient {
     }
 
     @Override
-    public Response proxyRequest(Request request, String shard) {
-        try {
-            return client.sendAsync(
-                            HttpRequest.newBuilder()
-                                    .uri(URI.create(shard + request.getURI().replaceFirst(MyService.ENTITY_PATH,
-                                            MyService.ENTITY_INTERNAL_PATH)))
-                                    .method(METHODS[request.getMethod()],
-                                            HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                                    .build(),
-                            HttpResponse.BodyHandlers.ofByteArray()
-                    )
-                    .handleAsync((response, throwable) -> {
-                        if (throwable != null) {
-                            logger.error("Could not proxy request to {}", shard, throwable);
-                            return new Response(Response.INTERNAL_ERROR, new byte[0]);
-                        }
-                        return new Response(
-                                Integer.toString(response.statusCode()), // status text isn't necessary
-                                response.body()
-                        );
-                    }).get();
-        } catch (InterruptedException | ExecutionException e) {
-            Thread.currentThread().interrupt();
-            logger.error("Could not proxy request to {}", shard, e);
-            return new Response(Response.INTERNAL_ERROR, new byte[0]);
-        }
+    public Response proxyRequest(Request request, String shard) throws ExecutionException, InterruptedException {
+        return client.sendAsync(
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(shard + request.getURI().replaceFirst(MyService.ENTITY_PATH,
+                                        MyService.ENTITY_INTERNAL_PATH)))
+                                .method(METHODS[request.getMethod()],
+                                        HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                                .build(),
+                        HttpResponse.BodyHandlers.ofByteArray()
+                )
+                .handleAsync((response, throwable) -> {
+                    if (throwable != null) {
+                        logger.error("Could not proxy request to {}", shard, throwable);
+                        return new Response(Response.INTERNAL_ERROR, new byte[0]);
+                    }
+                    return new Response(
+                            Integer.toString(response.statusCode()), // status text isn't necessary
+                            response.body()
+                    );
+                }).get();
     }
 
     @Override
