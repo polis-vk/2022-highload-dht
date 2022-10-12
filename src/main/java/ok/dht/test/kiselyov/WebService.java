@@ -53,7 +53,7 @@ public class WebService implements Service {
         dao = new PersistentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         executorService = new ThreadPoolExecutor(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, 0L,
                 TimeUnit.MILLISECONDS, new CustomLinkedBlockingDeque<>(DEQUE_CAPACITY));
-        configureService();
+        configureServer();
         server.start();
         server.addRequestHandlers(this);
         return CompletableFuture.completedFuture(null);
@@ -107,7 +107,7 @@ public class WebService implements Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    private void configureService() throws IOException {
+    private void configureServer() throws IOException {
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleRequest(Request request, HttpSession session) throws IOException {
