@@ -29,7 +29,7 @@ public class RocksDBService implements Service {
     public static final long STOP_TIMEOUT_MINUTES = 1;
 
     private final ServiceConfig config;
-    public RocksDB db;
+    private RocksDB db;
     private AsyncHttpServer server;
     private final Map<String, HttpClient> clientPool = new HashMap<>();
     private final KeyManager keyManager = new ConsistentHashing();
