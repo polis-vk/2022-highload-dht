@@ -3,6 +3,9 @@ package ok.dht.test.mikhaylov;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.mikhaylov.internal.InternalHttpClient;
+import ok.dht.test.mikhaylov.internal.JavaHttpClient;
+import ok.dht.test.mikhaylov.internal.OneNioHttpClient;
 import ok.dht.test.mikhaylov.resolver.ConsistentHashingResolver;
 import ok.dht.test.mikhaylov.resolver.ShardResolver;
 import one.nio.http.HttpServer;
@@ -21,7 +24,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 
 public class MyService implements Service {
 
@@ -33,7 +35,7 @@ public class MyService implements Service {
 
     private final ShardResolver shardResolver;
 
-    private MyInternalHttpClient internalHttpClient;
+    private InternalHttpClient internalHttpClient;
 
     private static final Logger logger = LoggerFactory.getLogger(MyService.class);
 
@@ -42,9 +44,9 @@ public class MyService implements Service {
     private static final Set<Integer> ALLOWED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT,
             Request.METHOD_DELETE);
 
-    static final String ENTITY_PATH = "/v0/entity";
+    public static final String ENTITY_PATH = "/v0/entity";
 
-    static final String ENTITY_INTERNAL_PATH = "/v0/internal/entity";
+    public static final String ENTITY_INTERNAL_PATH = "/v0/internal/entity";
 
     public MyService(ServiceConfig config, ShardResolver shardResolver) {
         this.config = config;
@@ -53,7 +55,8 @@ public class MyService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        internalHttpClient = new MyInternalHttpClient();
+//        internalHttpClient = new JavaHttpClient();
+        internalHttpClient = new OneNioHttpClient(config.clusterUrls());
         try {
             db = RocksDB.open(config.workingDir().toString());
         } catch (RocksDBException e) {
@@ -120,7 +123,7 @@ public class MyService implements Service {
         return handleValidated(request, id, null);
     }
 
-    // shard is null if the request is coming from this node
+    // shard is null if the shard is this node
     private Response handleValidated(Request request, String id, @Nullable String shard) {
         if (shard != null) {
             return proxyRequest(request, shard);
@@ -144,23 +147,7 @@ public class MyService implements Service {
     }
 
     private Response proxyRequest(Request request, String shard) {
-        try {
-            return internalHttpClient.proxyRequest(request, shard)
-                    .handleAsync((response, throwable) -> {
-                        if (throwable != null) {
-                            logger.error("Could not proxy request to {}", shard, throwable);
-                            return new Response(Response.INTERNAL_ERROR, strToBytes("Could not proxy request"));
-                        }
-                        return new Response(
-                                Integer.toString(response.statusCode()), // status text isn't necessary
-                                response.body()
-                        );
-                    }).get();
-        } catch (InterruptedException | ExecutionException e) {
-            Thread.currentThread().interrupt();
-            logger.error("Could not proxy request to {}", shard, e);
-            return new Response(Response.INTERNAL_ERROR, strToBytes("Could not proxy request"));
-        }
+        return internalHttpClient.proxyRequest(request, shard);
     }
 
     private Response dbGet(final String id) throws RocksDBException {
