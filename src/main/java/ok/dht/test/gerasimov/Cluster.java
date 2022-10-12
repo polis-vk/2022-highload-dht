@@ -43,19 +43,19 @@ public final class Cluster {
                 Service service = new ServiceImpl(serviceConfig);
                 service.start().get(1, TimeUnit.SECONDS);
                 Runtime.getRuntime().addShutdownHook(
-                        new Thread(
-                                () -> {
-                                    try {
-                                        service.stop();
-                                    } catch (IOException e) {
-                                        throw new RuntimeException(e);
-                                    }
-                                }
-                        )
+                        new Thread(() -> stop(service))
                 );
             } catch (InterruptedException | ExecutionException | TimeoutException | IOException e) {
                 throw new RuntimeException(e);
             }
         });
+    }
+
+    private static void stop(Service service) {
+        try {
+            service.stop();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
