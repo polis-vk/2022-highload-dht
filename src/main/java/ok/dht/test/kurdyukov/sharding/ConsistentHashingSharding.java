@@ -8,6 +8,8 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class ConsistentHashingSharding implements Sharding {
+    private static final int SALT = 7619;
+
     private final List<Point> circleHashes;
     private final int size;
 
@@ -22,7 +24,7 @@ public class ConsistentHashingSharding implements Sharding {
                                 .range(0, countPointsForNode)
                                 .mapToObj(pointIndex ->
                                         new Point(
-                                                Hash.murmur3(url) * (pointIndex + 1),
+                                                Hash.murmur3(String.format("%s_node_%d", url, pointIndex)),
                                                 url
                                         )
                                 )

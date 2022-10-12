@@ -9,9 +9,9 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
-public class MainNode2 {
+public class MainNode3 {
 
-    private MainNode2() {
+    private MainNode3() {
 
     }
 
@@ -19,10 +19,10 @@ public class MainNode2 {
 
         Service service1 = new ServiceImpl.Factory().create(
                 new ServiceConfig(
-                        4243,
-                        "http://localhost:4243",
+                        4244,
+                        "http://localhost:4244",
                         List.of("http://localhost:4242", "http://localhost:4243", "http://localhost:4244"),
-                        Path.of("/Users/kurdyukov-kir/data2")
+                        Path.of("/Users/kurdyukov-kir/data3")
                 )
         );
 

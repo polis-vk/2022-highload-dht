@@ -20,8 +20,8 @@ public final class MainNode1 {
                 new ServiceConfig(
                         4242,
                         "http://localhost:4242",
-                        List.of("http://localhost:4242", "http://localhost:4243"),
-                        Path.of("/Users/kurdyukov-kir/data")
+                        List.of("http://localhost:4242", "http://localhost:4243", "http://localhost:4244"),
+                        Path.of("/Users/kurdyukov-kir/data1")
                 )
         );
 
