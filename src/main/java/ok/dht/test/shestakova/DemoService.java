@@ -82,33 +82,20 @@ public class DemoService implements Service {
                 }
 
                 String targetCluster = getClusterByRendezvousHashing(key);
+                assert targetCluster != null;
                 if (!targetCluster.equals(config.selfUrl())) {
                     try {
                         HttpRequest httpRequest = buildHttpRequest(key, targetCluster, request);
-
                         if (httpRequest == null) {
                             handleDefault(request, session);
                             return;
                         }
-
                         CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture = httpClient
                                 .sendAsync(
                                         httpRequest,
                                         HttpResponse.BodyHandlers.ofByteArray()
                                 );
-                        try {
-                            HttpResponse<byte[]> response = responseCompletableFuture.get(10, TimeUnit.SECONDS);
-                            session.sendResponse(new Response(
-                                    String.valueOf(response.statusCode()),
-                                    response.body()
-                            ));
-                        } catch (ExecutionException e) {
-                            session.sendResponse(new Response(
-                                    Response.SERVICE_UNAVAILABLE,
-                                    Response.EMPTY
-                            ));
-                            return;
-                        }
+                        getResponse(responseCompletableFuture, session);
                         return;
                     } catch (InterruptedException | TimeoutException | IOException e) {
                         throw new RuntimeException(e);
@@ -156,33 +143,49 @@ public class DemoService implements Service {
                 }
                 super.stop();
             }
-
-            private HttpRequest.Builder request(String path, String clusterUrl) {
-                return HttpRequest.newBuilder(URI.create(clusterUrl + path));
-            }
-
-            private HttpRequest.Builder requestForKey(String key, String clusterUrl) {
-                return request(PATH + key, clusterUrl);
-            }
-
-            private HttpRequest buildHttpRequest(String key, String targetCluster, Request request) {
-                HttpRequest.Builder httpRequest = requestForKey(key, targetCluster);
-                int requestMethod = request.getMethod();
-                if (requestMethod == Request.METHOD_GET) {
-                    httpRequest.GET();
-                } else if (requestMethod == Request.METHOD_PUT) {
-                    httpRequest.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
-                } else if (requestMethod == Request.METHOD_DELETE) {
-                    httpRequest.DELETE();
-                } else {
-                    return null;
-                }
-                return httpRequest.build();
-            }
         };
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
+    }
+
+    private HttpRequest.Builder request(String path, String clusterUrl) {
+        return HttpRequest.newBuilder(URI.create(clusterUrl + path));
+    }
+
+    private HttpRequest.Builder requestForKey(String key, String clusterUrl) {
+        return request(PATH + key, clusterUrl);
+    }
+
+    private HttpRequest buildHttpRequest(String key, String targetCluster, Request request) {
+        HttpRequest.Builder httpRequest = requestForKey(key, targetCluster);
+        int requestMethod = request.getMethod();
+        if (requestMethod == Request.METHOD_GET) {
+            httpRequest.GET();
+        } else if (requestMethod == Request.METHOD_PUT) {
+            httpRequest.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
+        } else if (requestMethod == Request.METHOD_DELETE) {
+            httpRequest.DELETE();
+        } else {
+            return null;
+        }
+        return httpRequest.build();
+    }
+
+    private void getResponse(CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture, HttpSession session)
+            throws TimeoutException, InterruptedException, IOException {
+        try {
+            HttpResponse<byte[]> response = responseCompletableFuture.get(10, TimeUnit.SECONDS);
+            session.sendResponse(new Response(
+                    String.valueOf(response.statusCode()),
+                    response.body()
+            ));
+        } catch (ExecutionException e) {
+            session.sendResponse(new Response(
+                    Response.SERVICE_UNAVAILABLE,
+                    Response.EMPTY
+            ));
+        }
     }
 
     @Override
@@ -197,14 +200,12 @@ public class DemoService implements Service {
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(@Param(value = "id") String id) {
         BaseEntry<MemorySegment> entry = dao.get(fromString(id));
-
         if (entry == null) {
             return new Response(
                     Response.NOT_FOUND,
                     Response.EMPTY
             );
         }
-
         return new Response(
                 Response.OK,
                 entry.value().toByteArray()
@@ -218,7 +219,6 @@ public class DemoService implements Service {
                 fromString(id),
                 MemorySegment.ofArray(request.getBody())
         ));
-
         return new Response(
                 Response.CREATED,
                 Response.EMPTY
@@ -232,7 +232,6 @@ public class DemoService implements Service {
                 fromString(id),
                 null
         ));
-
         return new Response(
                 Response.ACCEPTED,
                 Response.EMPTY
