@@ -31,11 +31,11 @@ import java.util.concurrent.TimeUnit;
 
 public class Service implements ok.dht.Service {
     private static final Logger LOG = LoggerFactory.getLogger(Service.class);
-    private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
-    private static final String REQUESTS_PATH = "/v0/entity";
+    private static final String PATH = "/v0/entity";
     private static final Set<Integer> ALLOWED_METHODS = Set.of(
         Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
     );
+    private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
     private static final int THREAD_POOL_QUEUE_CAPACITY = 1024 * 1024;
 
     private final ServiceConfig config;
@@ -55,7 +55,7 @@ public class Service implements ok.dht.Service {
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
-                if (REQUESTS_PATH.equals(request.getPath()) && !ALLOWED_METHODS.contains(request.getMethod())) {
+                if (PATH.equals(request.getPath()) && !ALLOWED_METHODS.contains(request.getMethod())) {
                     session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
                 } else {
                     session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
@@ -102,7 +102,7 @@ public class Service implements ok.dht.Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path(REQUESTS_PATH)
+    @Path(PATH)
     @RequestMethod(Request.METHOD_GET)
     public Response getEntity(@Param(value = "id", required = true) String id) {
         try {
@@ -135,7 +135,7 @@ public class Service implements ok.dht.Service {
         }
     }
 
-    @Path(REQUESTS_PATH)
+    @Path(PATH)
     @RequestMethod(Request.METHOD_PUT)
     public Response upsertEntity(
         @Param(value = "id", required = true) String id,
@@ -164,7 +164,7 @@ public class Service implements ok.dht.Service {
         }
     }
 
-    @Path(REQUESTS_PATH)
+    @Path(PATH)
     @RequestMethod(Request.METHOD_DELETE)
     public Response deleteEntity(
         @Param(value = "id", required = true) String id
