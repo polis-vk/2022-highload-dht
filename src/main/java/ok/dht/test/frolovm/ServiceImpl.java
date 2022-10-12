@@ -15,7 +15,6 @@ import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.net.ConnectionString;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
@@ -40,7 +39,6 @@ public class ServiceImpl implements Service {
     private static final int FLUSH_THRESHOLD_BYTES = 1_048_576;
     private static final String PATH_ENTITY = "/v0/entity";
     private static final String PARAM_ID_NAME = "id=";
-    private static final int TIMEOUT = 200;
     private static final int CORE_POLL_SIZE = Runtime.getRuntime().availableProcessors() * 2;
     private static final int KEEP_ALIVE_TIME = 0;
     private static final int QUEUE_CAPACITY = 128;
@@ -49,11 +47,10 @@ public class ServiceImpl implements Service {
     private static final Logger LOGGER = LoggerFactory.getLogger(ServiceImpl.class);
     private final ServiceConfig config;
     private final ShardingAlgorithm algorithm;
+    private final HttpClient client = HttpClient.newHttpClient();
     private ExecutorService requestService;
     private MemorySegmentDao dao;
     private HttpServer server;
-
-    private final HttpClient client = HttpClient.newHttpClient();
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -181,8 +178,9 @@ public class ServiceImpl implements Service {
                     try {
                         HttpResponse<byte[]> response = client.send(
                                 HttpRequest.newBuilder().uri(URI.create(shard.getName() + request.getURI())).method(
-                                        request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody())).build(),
-                                        HttpResponse.BodyHandlers.ofByteArray()
+                                        request.getMethodName(),
+                                        HttpRequest.BodyPublishers.ofByteArray(request.getBody())).build(),
+                                HttpResponse.BodyHandlers.ofByteArray()
                         );
                         String responseStatus = Integer.toString(response.statusCode());
                         byte[] answer = response.body();
