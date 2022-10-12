@@ -5,9 +5,6 @@ import one.nio.util.Hash;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * @author Michael Gerasimov
- */
 public class ConsistentHashImpl<K> implements ConsistentHash<K> {
     private final List<VNode> vnodes;
     private final List<Shard> shards;

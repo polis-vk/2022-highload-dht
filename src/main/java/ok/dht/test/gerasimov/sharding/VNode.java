@@ -1,8 +1,5 @@
 package ok.dht.test.gerasimov.sharding;
 
-/**
- * @author Michael Gerasimov
- */
 public class VNode implements Comparable<VNode> {
     private final Shard shard;
     private final int hashcode;
@@ -14,7 +11,7 @@ public class VNode implements Comparable<VNode> {
 
     @Override
     public int compareTo(VNode other) {
-        return Integer.compare(this.hashcode, (other.hashcode));
+        return Integer.compare(this.hashcode, (other.getHashcode()));
     }
 
     public Shard getShard() {

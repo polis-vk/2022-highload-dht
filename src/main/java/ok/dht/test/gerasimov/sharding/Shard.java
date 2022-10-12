@@ -3,13 +3,9 @@ package ok.dht.test.gerasimov.sharding;
 import one.nio.http.HttpClient;
 import one.nio.net.ConnectionString;
 
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * @author Michael Gerasimov
- */
 public class Shard {
     private static final Pattern URL_PATTERN = Pattern.compile("(^.+://.+):([0-9]+).*");
     private static final String CONNECTION_STRING_PATTERN = "%s:%s?timeout=%d";
@@ -18,7 +14,6 @@ public class Shard {
     private final HttpClient httpClient;
     private final String host;
     private final int port;
-    private AtomicInteger countEntries = new AtomicInteger(0);
 
     public Shard(String url) {
         Matcher matcher = URL_PATTERN.matcher(url);
@@ -40,21 +35,6 @@ public class Shard {
         }
     }
 
-    public Shard(String host, int port) {
-        this.httpClient = new HttpClient(
-                new ConnectionString(
-                        String.format(
-                                CONNECTION_STRING_PATTERN,
-                                host,
-                                port,
-                                READ_TIMEOUT_MS
-                        )
-                )
-        );
-        this.host = host;
-        this.port = port;
-    }
-
     public HttpClient getHttpClient() {
         return httpClient;
     }
@@ -65,17 +45,5 @@ public class Shard {
 
     public int getPort() {
         return port;
-    }
-
-    public void increment() {
-        countEntries.incrementAndGet();
-    }
-
-    public void decrement() {
-        countEntries.decrementAndGet();
-    }
-
-    public AtomicInteger getCountEntries() {
-        return countEntries;
     }
 }
