@@ -2,6 +2,9 @@ package ok.dht.test.pashchenko;
 
 import java.io.IOException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
 import ok.dht.test.pashchenko.dao.Config;
@@ -18,6 +21,7 @@ import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 
 public class MyServer extends HttpServer {
+    private static final Logger LOG = LoggerFactory.getLogger(MyServer.class);
 
     private MemorySegmentDao dao;
 
@@ -48,8 +52,31 @@ public class MyServer extends HttpServer {
             return;
         }
 
-        session.sendResponse(handleRequest(request, id));
+        try {
+            session.sendResponse(handleRequest(request, id));
+        } catch (Exception e) {
+            LOG.error("error handle request", e);
+            sendError(session);
+        }
     }
+
+    private static void sendError(HttpSession session) {
+        try {
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        } catch (Exception ex) {
+            LOG.error("error send response", ex);
+            sessionClose(session);
+        }
+    }
+
+    private static void sessionClose(HttpSession session) {
+        try {
+            session.close();
+        } catch (Exception e) {
+            LOG.error("error close session", e);
+        }
+    }
+
 
     private Response handleRequest(Request request, String id) {
         switch (request.getMethod()) {
