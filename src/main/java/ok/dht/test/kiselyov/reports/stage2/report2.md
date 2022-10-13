@@ -1314,28 +1314,14 @@ Thread calibration: mean lat.: 0.940ms, rate sampling interval: 10ms
     Thread Stats   Avg      Stdev      Max   +/- Stdev
     Latency   956.11us   295.61us   3.84ms      58.80%
     Req/Sec     328.65      37.54   444.00      83.00%
-***
-    Latency Distribution (HdrHistogram - Recorded Latency)
-    50.000%  956.00us
-    75.000%    0.99ms
-    90.000%    1.06ms
-    99.000%    1.17ms
-    99.900%    1.23ms
-    99.990%    2.87ms
-    99.999%    3.49ms
-    100.000%   3.84ms
-***
-    #[Mean    =        0.956, StdDeviation   =        0.296]
-    #[Max     =        3.838, Total count    =       999745]
-    #[Buckets =           27, SubBuckets     =         2048]
-----------------------------------------------------------
+
 1199936 requests in 1.00m, 76.67MB read
 
 Requests/sec:  20002.15
 
 Transfer/sec:      1.28MB
 
-> wrk -t 64 -c 64 -R 15000 -d 1m -s get.lua -L http://localhost:19234
+> wrk -t 64 -c 64 -R 15000 -d 1m -s get.lua http://localhost:19234
 
 Running 1m test @ http://localhost:19234
 
@@ -1350,21 +1336,7 @@ Thread calibration: mean lat.: 0.941ms, rate sampling interval: 10ms
     Thread Stats   Avg      Stdev     Max   +/- Stdev
     Latency   954.74us  299.72us   5.20ms   59.55%
     Req/Sec   243.33     49.04   333.00     64.36%
-***
-    Latency Distribution (HdrHistogram - Recorded Latency)
-    50.000%  953.00us
-    75.000%    0.99ms
-    90.000%    1.06ms
-    99.000%    1.18ms
-    99.900%    1.83ms
-    99.990%    2.45ms
-    99.999%    2.98ms
-    100.000%    5.20ms
-***
-    #[Mean    =        0.955, StdDeviation   =        0.300]
-    #[Max     =        5.196, Total count    =       749766]
-    #[Buckets =           27, SubBuckets     =         2048]
-----------------------------------------------------------
+
 899910 requests in 1.00m, 58.26MB read
 
 Requests/sec:  15004.44
