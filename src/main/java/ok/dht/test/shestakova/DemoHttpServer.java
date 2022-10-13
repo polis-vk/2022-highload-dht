@@ -36,36 +36,34 @@ public class DemoHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) {
-        if (serviceConfig.clusterUrls().size() > 1) {
-            String key = request.getParameter("id=");
-            if (key == null || key.isEmpty()) {
-                try {
+        String key = request.getParameter("id=");
+        if (key == null || key.isEmpty()) {
+            try {
+                handleDefault(request, session);
+                return;
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        String targetCluster = getClusterByRendezvousHashing(key);
+        assert targetCluster != null;
+        if (!targetCluster.equals(serviceConfig.selfUrl())) {
+            try {
+                HttpRequest httpRequest = buildHttpRequest(key, targetCluster, request);
+                if (httpRequest == null) {
                     handleDefault(request, session);
                     return;
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
                 }
-            }
-
-            String targetCluster = getClusterByRendezvousHashing(key);
-            assert targetCluster != null;
-            if (!targetCluster.equals(serviceConfig.selfUrl())) {
-                try {
-                    HttpRequest httpRequest = buildHttpRequest(key, targetCluster, request);
-                    if (httpRequest == null) {
-                        handleDefault(request, session);
-                        return;
-                    }
-                    CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture = httpClient
-                            .sendAsync(
-                                    httpRequest,
-                                    HttpResponse.BodyHandlers.ofByteArray()
-                            );
-                    getResponse(responseCompletableFuture, session);
-                    return;
-                } catch (InterruptedException | TimeoutException | IOException e) {
-                    throw new RuntimeException(e);
-                }
+                CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture = httpClient
+                        .sendAsync(
+                                httpRequest,
+                                HttpResponse.BodyHandlers.ofByteArray()
+                        );
+                getResponse(responseCompletableFuture, session);
+                return;
+            } catch (InterruptedException | TimeoutException | IOException e) {
+                throw new RuntimeException(e);
             }
         }
 
