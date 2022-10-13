@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 10px; background-color: #ffffff}
+	h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {margin: 5px 0 5px 0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {overflow: hidden; white-space: nowrap}
+	#match {overflow: hidden; white-space: nowrap; display: none; float: right; text-align: right}
+	#reset {cursor: pointer}
+	#canvas {width: 100%; height: 464px}
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+<h1>Allocation profile</h1>
+<header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
+<header style='text-align: right'>Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a></header>
+<canvas id='canvas'></canvas>
+<div id='hl'><span></span></div>
+<p id='match'>Matched: <span id='matchval'></span> <span id='reset' title='Clear'>&#x274c;</span></p>
+<p id='status'>&nbsp;</p>
+<script>
+	// Copyright 2020 Andrei Pangin
+	// Licensed under the Apache License, Version 2.0.
+	'use strict';
+	var root, rootLevel, px, pattern;
+	var reverse = false;
+	const levels = Array(29);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	const c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	const canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+	const palette = [
+		[0xb2e1b2, 20, 20, 20],
+		[0x50e150, 30, 30, 30],
+		[0x50cccc, 30, 30, 30],
+		[0xe15a5a, 30, 40, 40],
+		[0xc8c83c, 30, 30, 10],
+		[0xe17d00, 30, 30,  0],
+		[0xcce880, 20, 20, 20],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(level, left, width, type, title, inln, c1, int) {
+		levels[level].push({left: left, width: width, color: getColor(palette[type]), title: title,
+			details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
+		});
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+	function search(r) {
+		if (r === true && (r = prompt('Enter regexp to search:', '')) === null) {
+			return;
+		}
+
+		pattern = r ? RegExp(r) : undefined;
+		const matched = render(root, rootLevel);
+		document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+		document.getElementById('match').style.display = r ? 'inherit' : 'none';
+	}
+
+	function render(newRoot, newLevel) {
+		if (root) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+		const marked = [];
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+				c.fillStyle = pattern && f.title.match(pattern) && mark(f) ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+
+				if (f.width * px >= 21) {
+					const chars = Math.floor(f.width * px / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, f.width * px - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+				}
+			}
+		}
+
+		for (let h = 0; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				if (f != root) getSelection().removeAllRanges();
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				canvas.title = f.title + '\n(' + samples(f.width) + f.details + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f != root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.textContent = '\xa0';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = '';
+	}
+
+	canvas.ondblclick = function() {
+		getSelection().selectAllChildren(hl);
+	}
+
+	document.getElementById('reverse').onclick = function() {
+		reverse = !reverse;
+		render();
+	}
+
+	document.getElementById('search').onclick = function() {
+		search(true);
+	}
+
+	document.getElementById('reset').onclick = function() {
+		search(false);
+	}
+
+	window.onkeydown = function() {
+		if (event.ctrlKey && event.keyCode === 70) {
+			event.preventDefault();
+			search(true);
+		} else if (event.keyCode === 27) {
+			search(false);
+		}
+	}
+
+f(0,0,24975,3,'all')
+f(1,0,24975,1,'one/nio/server/SelectorThread.run')
+f(2,0,90,1,'one/nio/net/JavaSelector.select')
+f(3,0,47,1,'one/nio/net/JavaSelector.iteratorFor')
+f(4,0,13,2,'one.nio.net.JavaSelector$1')
+f(4,13,10,2,'one.nio.net.Session[]')
+f(4,23,24,1,'sun/nio/ch/Util$2.iterator')
+f(5,23,24,1,'java/util/HashSet.iterator')
+f(6,23,24,1,'java/util/HashMap$KeySet.iterator')
+f(7,23,24,2,'java.util.HashMap$KeyIterator')
+f(3,47,43,1,'sun/nio/ch/SelectorImpl.select')
+f(4,47,43,1,'sun/nio/ch/SelectorImpl.lockAndDoSelect')
+f(5,47,43,1,'sun/nio/ch/KQueueSelectorImpl.doSelect')
+f(6,47,43,1,'sun/nio/ch/KQueueSelectorImpl.processEvents')
+f(7,47,43,1,'sun/nio/ch/SelectorImpl.processReadyEvents')
+f(8,47,43,1,'java/util/HashSet.add')
+f(9,47,43,1,'java/util/HashMap.put')
+f(10,47,43,1,'java/util/HashMap.putVal')
+f(11,47,43,1,'java/util/HashMap.newNode')
+f(12,47,43,2,'java.util.HashMap$Node')
+f(2,90,24885,1,'one/nio/net/Session.process')
+f(3,90,24885,1,'one/nio/http/HttpSession.processRead')
+f(4,90,24860,1,'one/nio/http/HttpSession.processHttpBuffer')
+f(5,90,24415,1,'one/nio/http/HttpSession.handleParsedRequest')
+f(6,90,24415,1,'one/nio/http/HttpServer.handleRequest')
+f(7,90,24359,1,'RequestHandler0_handleGet.handleRequest')
+f(8,90,24042,1,'ok/dht/test/shik/ServiceImpl.handleGet')
+f(9,90,56,1,'java/lang/String.getBytes')
+f(10,90,56,1,'java/lang/String.encode')
+f(11,90,56,1,'java/lang/String.encodeUTF8')
+f(12,90,56,1,'java/util/Arrays.copyOf')
+f(13,90,56,2,'byte[]')
+f(9,146,128,1,'one/nio/http/Response.ok')
+f(10,146,13,2,'one.nio.http.Response')
+f(10,159,115,1,'one/nio/http/Response.<init>')
+f(11,159,23,2,'byte[]')
+f(11,182,85,2,'java.lang.String[]')
+f(11,267,7,2,'java.lang.String')
+f(9,274,23858,1,'org/iq80/leveldb/impl/DbImpl.get')
+f(10,274,23858,1,'org/iq80/leveldb/impl/DbImpl.get')
+f(11,274,10,2,'org.iq80.leveldb.impl.LookupKey')
+f(11,284,16,1,'org/iq80/leveldb/impl/DbImpl.getSnapshot')
+f(12,284,16,1,'org/iq80/leveldb/impl/SnapshotImpl.<init>')
+f(13,284,16,2,'java.util.concurrent.atomic.AtomicBoolean')
+f(11,300,28,1,'org/iq80/leveldb/impl/LookupKey.<init>')
+f(12,300,28,2,'org.iq80.leveldb.impl.InternalKey')
+f(11,328,23681,1,'org/iq80/leveldb/impl/VersionSet.get')
+f(12,328,23681,1,'org/iq80/leveldb/impl/Version.get')
+f(13,328,51,2,'org.iq80.leveldb.impl.ReadStats')
+f(13,379,23577,1,'org/iq80/leveldb/impl/Level.get')
+f(14,379,112,2,'java.util.ArrayList')
+f(14,491,13474,1,'java/util/ArrayList.<init>')
+f(15,491,7741,2,'java.lang.Object[]')
+f(15,8232,5733,5,'java.lang.Object[]')
+f(14,13965,9,1,'org/iq80/leveldb/impl/LookupResult.ok')
+f(15,13965,9,2,'org.iq80.leveldb.impl.LookupResult')
+f(14,13974,5821,1,'org/iq80/leveldb/impl/TableCache.newIterator')
+f(15,13974,5821,1,'org/iq80/leveldb/impl/TableCache.newIterator')
+f(16,13974,5749,2,'org.iq80.leveldb.util.InternalTableIterator')
+f(16,19723,18,1,'org/iq80/leveldb/impl/TableCache.getTable')
+f(17,19723,14,1,'com/google/common/cache/LocalCache$LocalLoadingCache.get')
+f(18,19723,14,1,'com/google/common/cache/LocalCache.getOrLoad')
+f(19,19723,14,1,'com/google/common/cache/LocalCache.get')
+f(20,19723,14,1,'com/google/common/cache/LocalCache$Segment.get')
+f(21,19723,14,1,'com/google/common/cache/LocalCache$Segment.recordRead')
+f(22,19723,14,1,'java/util/concurrent/ConcurrentLinkedQueue.add')
+f(23,19723,14,1,'java/util/concurrent/ConcurrentLinkedQueue.offer')
+f(24,19723,14,2,'java.util.concurrent.ConcurrentLinkedQueue$Node')
+f(17,19737,4,1,'java/lang/Long.valueOf')
+f(18,19737,4,2,'java.lang.Long')
+f(16,19741,54,1,'org/iq80/leveldb/table/Table.iterator')
+f(17,19741,2,2,'org.iq80.leveldb.util.TableIterator')
+f(17,19743,52,1,'org/iq80/leveldb/table/Block.iterator')
+f(18,19743,19,2,'org.iq80.leveldb.table.BlockIterator')
+f(18,19762,33,1,'org/iq80/leveldb/table/BlockIterator.<init>')
+f(19,19762,21,1,'org/iq80/leveldb/table/BlockIterator.seekToFirst')
+f(20,19762,21,1,'org/iq80/leveldb/table/BlockIterator.seekToRestartPosition')
+f(21,19762,21,1,'org/iq80/leveldb/table/BlockIterator.readEntry')
+f(22,19762,4,2,'org.iq80.leveldb.table.BlockEntry')
+f(22,19766,17,1,'org/iq80/leveldb/util/SliceInput.readSlice')
+f(23,19766,17,1,'org/iq80/leveldb/util/Slice.slice')
+f(24,19766,17,2,'org.iq80.leveldb.util.Slice')
+f(19,19783,12,1,'org/iq80/leveldb/util/Slice.input')
+f(20,19783,12,2,'org.iq80.leveldb.util.SliceInput')
+f(14,19795,126,1,'org/iq80/leveldb/util/AbstractSeekingIterator.hasNext')
+f(15,19795,126,1,'org/iq80/leveldb/util/InternalTableIterator.getNextElement')
+f(16,19795,5,1,'com/google/common/collect/Maps.immutableEntry')
+f(17,19795,5,2,'com.google.common.collect.ImmutableEntry')
+f(16,19800,6,2,'org.iq80.leveldb.impl.InternalKey')
+f(16,19806,25,1,'org/iq80/leveldb/impl/InternalKey.<init>')
+f(17,19806,25,1,'org/iq80/leveldb/impl/InternalKey.getUserKey')
+f(18,19806,25,1,'org/iq80/leveldb/util/Slice.slice')
+f(19,19806,25,2,'org.iq80.leveldb.util.Slice')
+f(16,19831,90,1,'org/iq80/leveldb/util/AbstractSeekingIterator.hasNext')
+f(17,19831,90,1,'org/iq80/leveldb/util/TableIterator.getNextElement')
+f(18,19831,90,1,'org/iq80/leveldb/table/BlockIterator.next')
+f(19,19831,90,1,'org/iq80/leveldb/table/BlockIterator.readEntry')
+f(20,19831,15,2,'org.iq80.leveldb.table.BlockEntry')
+f(20,19846,12,1,'org/iq80/leveldb/util/BasicSliceOutput.writeBytes')
+f(21,19846,12,1,'org/iq80/leveldb/util/SliceInput.readBytes')
+f(22,19846,12,1,'org/iq80/leveldb/util/Slice.slice')
+f(23,19846,12,2,'org.iq80.leveldb.util.Slice')
+f(20,19858,10,1,'org/iq80/leveldb/util/SliceInput.readSlice')
+f(21,19858,10,1,'org/iq80/leveldb/util/Slice.slice')
+f(22,19858,10,2,'org.iq80.leveldb.util.Slice')
+f(20,19868,53,1,'org/iq80/leveldb/util/Slices.allocate')
+f(21,19868,10,2,'org.iq80.leveldb.util.Slice')
+f(21,19878,43,1,'org/iq80/leveldb/util/Slice.<init>')
+f(22,19878,43,2,'byte[]')
+f(14,19921,3858,1,'org/iq80/leveldb/util/AbstractSeekingIterator.seek')
+f(15,19921,3858,1,'org/iq80/leveldb/util/InternalTableIterator.seekInternal')
+f(16,19921,3858,1,'org/iq80/leveldb/util/InternalTableIterator.seekInternal')
+f(17,19921,33,1,'org/iq80/leveldb/impl/InternalKey.encode')
+f(18,19921,33,1,'org/iq80/leveldb/util/Slices.allocate')
+f(19,19921,13,2,'org.iq80.leveldb.util.Slice')
+f(19,19934,20,1,'org/iq80/leveldb/util/Slice.<init>')
+f(20,19934,20,2,'byte[]')
+f(17,19954,3825,1,'org/iq80/leveldb/util/AbstractSeekingIterator.seek')
+f(18,19954,3825,1,'org/iq80/leveldb/util/TableIterator.seekInternal')
+f(19,19954,3825,1,'org/iq80/leveldb/util/TableIterator.seekInternal')
+f(20,19954,1632,1,'org/iq80/leveldb/table/BlockIterator.seek')
+f(21,19954,606,1,'org/iq80/leveldb/impl/InternalUserComparator.compare')
+f(22,19954,606,1,'org/iq80/leveldb/impl/InternalUserComparator.compare')
+f(23,19954,606,1,'org/iq80/leveldb/impl/InternalKey.<init>')
+f(24,19954,606,1,'org/iq80/leveldb/impl/InternalKey.getUserKey')
+f(25,19954,606,1,'org/iq80/leveldb/util/Slice.slice')
+f(26,19954,606,2,'org.iq80.leveldb.util.Slice')
+f(21,20560,556,1,'org/iq80/leveldb/table/BlockIterator.next')
+f(22,20560,556,1,'org/iq80/leveldb/table/BlockIterator.readEntry')
+f(23,20560,121,2,'org.iq80.leveldb.table.BlockEntry')
+f(23,20681,92,1,'org/iq80/leveldb/util/BasicSliceOutput.writeBytes')
+f(24,20681,92,1,'org/iq80/leveldb/util/SliceInput.readBytes')
+f(25,20681,92,1,'org/iq80/leveldb/util/Slice.slice')
+f(26,20681,92,2,'org.iq80.leveldb.util.Slice')
+f(23,20773,134,1,'org/iq80/leveldb/util/SliceInput.readSlice')
+f(24,20773,134,1,'org/iq80/leveldb/util/Slice.slice')
+f(25,20773,134,2,'org.iq80.leveldb.util.Slice')
+f(23,20907,209,1,'org/iq80/leveldb/util/Slices.allocate')
+f(24,20907,74,2,'org.iq80.leveldb.util.Slice')
+f(24,20981,135,1,'org/iq80/leveldb/util/Slice.<init>')
+f(25,20981,135,2,'byte[]')
+f(21,21116,470,1,'org/iq80/leveldb/table/BlockIterator.seekToRestartPosition')
+f(22,21116,470,1,'org/iq80/leveldb/table/BlockIterator.readEntry')
+f(23,21116,138,2,'org.iq80.leveldb.table.BlockEntry')
+f(23,21254,332,1,'org/iq80/leveldb/util/SliceInput.readSlice')
+f(24,21254,332,1,'org/iq80/leveldb/util/Slice.slice')
+f(25,21254,332,2,'org.iq80.leveldb.util.Slice')
+f(20,21586,2193,1,'org/iq80/leveldb/util/TableIterator.getNextBlock')
+f(21,21586,32,1,'org/iq80/leveldb/table/Block.iterator')
+f(22,21586,15,2,'org.iq80.leveldb.table.BlockIterator')
+f(22,21601,17,1,'org/iq80/leveldb/table/BlockIterator.<init>')
+f(23,21601,11,1,'org/iq80/leveldb/table/BlockIterator.seekToFirst')
+f(24,21601,11,1,'org/iq80/leveldb/table/BlockIterator.seekToRestartPosition')
+f(25,21601,11,1,'org/iq80/leveldb/table/BlockIterator.readEntry')
+f(26,21601,1,2,'org.iq80.leveldb.table.BlockEntry')
+f(26,21602,10,1,'org/iq80/leveldb/util/SliceInput.readSlice')
+f(27,21602,10,1,'org/iq80/leveldb/util/Slice.slice')
+f(28,21602,10,2,'org.iq80.leveldb.util.Slice')
+f(23,21612,6,1,'org/iq80/leveldb/util/Slice.input')
+f(24,21612,6,2,'org.iq80.leveldb.util.SliceInput')
+f(21,21618,62,1,'org/iq80/leveldb/table/BlockIterator.next')
+f(22,21618,62,1,'org/iq80/leveldb/table/BlockIterator.readEntry')
+f(23,21618,17,2,'org.iq80.leveldb.table.BlockEntry')
+f(23,21635,45,1,'org/iq80/leveldb/util/SliceInput.readSlice')
+f(24,21635,45,1,'org/iq80/leveldb/util/Slice.slice')
+f(25,21635,45,2,'org.iq80.leveldb.util.Slice')
+f(21,21680,2099,1,'org/iq80/leveldb/table/Table.openBlock')
+f(22,21680,2099,1,'org/iq80/leveldb/table/MMapTable.readBlock')
+f(23,21680,452,2,'org.iq80.leveldb.table.Block')
+f(23,22132,5,1,'org/iq80/leveldb/table/Block.<init>')
+f(24,22132,5,1,'org/iq80/leveldb/util/Slice.slice')
+f(25,22132,5,2,'org.iq80.leveldb.util.Slice')
+f(23,22137,33,1,'org/iq80/leveldb/table/MMapTable.read')
+f(24,22137,33,1,'java/nio/DirectByteBufferR.duplicate')
+f(25,22137,33,1,'java/nio/DirectByteBufferR.duplicate')
+f(26,22137,33,2,'java.nio.DirectByteBufferR')
+f(23,22170,1609,1,'org/iq80/leveldb/util/Slices.copiedBuffer')
+f(24,22170,27,1,'java/nio/DirectByteBufferR.duplicate')
+f(25,22170,27,1,'java/nio/DirectByteBufferR.duplicate')
+f(26,22170,27,2,'java.nio.DirectByteBufferR')
+f(24,22197,1565,1,'org/iq80/leveldb/util/Slices.allocate')
+f(25,22197,16,2,'org.iq80.leveldb.util.Slice')
+f(25,22213,1549,1,'org/iq80/leveldb/util/Slice.<init>')
+f(26,22213,1105,2,'byte[]')
+f(26,23318,444,5,'byte[]')
+f(24,23762,17,1,'org/iq80/leveldb/util/Slices.copiedBuffer')
+f(25,23762,17,1,'org/iq80/leveldb/util/Slices.allocate')
+f(26,23762,12,2,'org.iq80.leveldb.util.Slice')
+f(26,23774,5,1,'org/iq80/leveldb/util/Slice.<init>')
+f(27,23774,5,2,'byte[]')
+f(14,23779,177,1,'org/iq80/leveldb/util/Slice.toString')
+f(15,23779,177,1,'org/iq80/leveldb/util/Slice.toString')
+f(16,23779,34,1,'org/iq80/leveldb/util/Slice.toByteBuffer')
+f(17,23779,34,1,'java/nio/ByteBuffer.wrap')
+f(18,23779,34,2,'java.nio.HeapByteBuffer')
+f(16,23813,143,1,'org/iq80/leveldb/util/Slices.decodeString')
+f(17,23813,99,1,'java/nio/CharBuffer.allocate')
+f(18,23813,44,2,'java.nio.HeapCharBuffer')
+f(18,23857,55,1,'java/nio/HeapCharBuffer.<init>')
+f(19,23857,55,2,'char[]')
+f(17,23912,44,1,'java/nio/CharBuffer.toString')
+f(18,23912,44,1,'java/nio/HeapCharBuffer.toString')
+f(19,23912,17,2,'java.lang.String')
+f(19,23929,27,1,'java/lang/String.<init>')
+f(20,23929,27,1,'java/lang/String.<init>')
+f(21,23929,27,1,'java/lang/StringUTF16.compress')
+f(22,23929,27,2,'byte[]')
+f(13,23956,53,1,'org/iq80/leveldb/impl/Level0.get')
+f(14,23956,15,2,'java.util.ArrayList')
+f(14,23971,38,1,'java/util/ArrayList.<init>')
+f(15,23971,38,2,'java.lang.Object[]')
+f(11,24009,81,1,'org/iq80/leveldb/util/Slice.getBytes')
+f(12,24009,81,1,'org/iq80/leveldb/util/Slice.getBytes')
+f(13,24009,81,2,'byte[]')
+f(11,24090,42,1,'org/iq80/leveldb/util/Slices.wrappedBuffer')
+f(12,24090,42,2,'org.iq80.leveldb.util.Slice')
+f(8,24132,283,1,'one/nio/http/HttpSession.sendResponse')
+f(9,24132,231,1,'one/nio/http/HttpSession.writeResponse')
+f(10,24132,174,1,'one/nio/http/Response.toBytes')
+f(11,24132,174,1,'one/nio/util/ByteArrayBuilder.<init>')
+f(12,24132,174,2,'byte[]')
+f(10,24306,57,1,'one/nio/net/Session.write')
+f(11,24306,57,2,'one.nio.net.Session$ArrayQueueItem')
+f(9,24363,52,1,'one/nio/http/Request.getHeader')
+f(10,24363,52,1,'one/nio/http/Request.trim')
+f(11,24363,52,1,'java/lang/String.substring')
+f(12,24363,52,1,'java/lang/StringLatin1.newString')
+f(13,24363,20,2,'java.lang.String')
+f(13,24383,32,1,'java/util/Arrays.copyOfRange')
+f(14,24383,32,2,'byte[]')
+f(8,24415,34,1,'one/nio/http/Request.getRequiredParameter')
+f(9,24415,34,1,'one/nio/http/Request.getParameter')
+f(10,24415,34,1,'java/lang/String.substring')
+f(11,24415,34,1,'java/lang/String.substring')
+f(12,24415,34,1,'java/lang/StringLatin1.newString')
+f(13,24415,16,2,'java.lang.String')
+f(13,24431,18,1,'java/util/Arrays.copyOfRange')
+f(14,24431,18,2,'byte[]')
+f(7,24449,56,1,'one/nio/http/Request.getPath')
+f(8,24449,56,1,'java/lang/String.substring')
+f(9,24449,56,1,'java/lang/StringLatin1.newString')
+f(10,24449,35,2,'java.lang.String')
+f(10,24484,21,1,'java/util/Arrays.copyOfRange')
+f(11,24484,21,2,'byte[]')
+f(5,24505,177,1,'one/nio/http/HttpSession.parseRequest')
+f(6,24505,38,2,'one.nio.http.Request')
+f(6,24543,85,1,'one/nio/http/Request.<init>')
+f(7,24543,85,2,'java.lang.String[]')
+f(6,24628,54,1,'one/nio/util/Utf8.read')
+f(7,24628,54,1,'one/nio/util/Utf8.read')
+f(8,24628,54,1,'one/nio/util/Utf8.toAsciiString')
+f(9,24628,48,2,'byte[]')
+f(9,24676,6,1,'java/lang/invoke/LambdaForm$MH.0x0000000800c9cc00.invokeExact_MT')
+f(10,24676,6,1,'java/lang/invoke/LambdaForm$DMH.0x0000000800ca8000.newInvokeSpecial')
+f(11,24676,6,1,'java/lang/invoke/DirectMethodHandle.allocateInstance')
+f(12,24676,6,2,'java.lang.String')
+f(5,24682,6,1,'one/nio/http/HttpSession.startParsingRequestBody')
+f(6,24682,6,2,'byte[]')
+f(5,24688,54,1,'one/nio/http/Request.getHeader')
+f(6,24688,54,1,'one/nio/http/Request.trim')
+f(7,24688,54,1,'java/lang/String.substring')
+f(8,24688,54,1,'java/lang/StringLatin1.newString')
+f(9,24688,8,2,'java.lang.String')
+f(9,24696,46,1,'java/util/Arrays.copyOfRange')
+f(10,24696,46,2,'byte[]')
+f(5,24742,208,1,'one/nio/util/Utf8.read')
+f(6,24742,208,1,'one/nio/util/Utf8.read')
+f(7,24742,208,1,'one/nio/util/Utf8.toAsciiString')
+f(8,24742,137,2,'byte[]')
+f(8,24879,71,1,'java/lang/invoke/LambdaForm$MH.0x0000000800c9cc00.invokeExact_MT')
+f(9,24879,71,1,'java/lang/invoke/LambdaForm$DMH.0x0000000800ca8000.newInvokeSpecial')
+f(10,24879,71,1,'java/lang/invoke/DirectMethodHandle.allocateInstance')
+f(11,24879,71,2,'java.lang.String')
+f(4,24950,25,1,'one/nio/net/Session.read')
+f(5,24950,25,1,'one/nio/net/JavaSocket.read')
+f(6,24950,25,1,'java/nio/ByteBuffer.wrap')
+f(7,24950,25,2,'java.nio.HeapByteBuffer')
+
+search();
+</script></body></html>
