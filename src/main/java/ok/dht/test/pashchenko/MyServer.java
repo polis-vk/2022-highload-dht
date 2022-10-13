@@ -1,6 +1,8 @@
 package ok.dht.test.pashchenko;
 
 import java.io.IOException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,11 +25,13 @@ import one.nio.util.Utf8;
 public class MyServer extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(MyServer.class);
 
-    private MemorySegmentDao dao;
+    private final MemorySegmentDao dao;
+    private final Executor executor;
 
     public MyServer(ServiceConfig config) throws IOException {
         super(createConfigFromPort(config.selfPort()));
         dao = new MemorySegmentDao(new Config(config.workingDir(), 1048576L));
+        executor = Executors.newFixedThreadPool(16);
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -52,12 +56,14 @@ public class MyServer extends HttpServer {
             return;
         }
 
-        try {
-            session.sendResponse(handleRequest(request, id));
-        } catch (Exception e) {
-            LOG.error("error handle request", e);
-            sendError(session);
-        }
+        executor.execute(() -> {
+            try {
+                session.sendResponse(handleRequest(request, id));
+            } catch (Exception e) {
+                LOG.error("error handle request", e);
+                sendError(session);
+            }
+        });
     }
 
     private static void sendError(HttpSession session) {
