@@ -1,4 +1,4 @@
-package ok.dht.test.drozdov.dao;
+package ok.dht.test.pashchenko.dao;
 
 import java.nio.file.Path;
 
