@@ -5,6 +5,7 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.kondraev.dao.Dao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
+import one.nio.os.SchedulingPolicy;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +55,11 @@ public class Service implements ok.dht.Service {
         acceptor.port = port;
         acceptor.reusePort = true;
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+        httpConfig.affinity = true; // assign each thread a processor
+        httpConfig.schedulingPolicy = SchedulingPolicy.BATCH;
+        httpConfig.minWorkers = 4;
+        httpConfig.maxWorkers = 8;
+        httpConfig.queueTime = 900; // ms, max time for one request
         return httpConfig;
     }
 
@@ -81,7 +87,7 @@ public class Service implements ok.dht.Service {
         LOG.info("Ready on {}", url);
     }
 
-    @ServiceFactory(stage = 1, week = 2)
+    @ServiceFactory(stage = 2, week = 1)
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
