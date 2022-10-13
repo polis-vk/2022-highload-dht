@@ -22,12 +22,16 @@ public class ServiceInfo {
         return config.selfUrl();
     }
 
-    public Service service() {
-        return service;
+    public void start() throws Exception {
+        service.start().get(10, TimeUnit.SECONDS);
+    }
+
+    public void stop() throws Exception {
+        service.stop().get(10, TimeUnit.SECONDS);
     }
 
     public void cleanUp() throws Exception {
-        service.stop().get(10, TimeUnit.SECONDS);
+        stop();
         FileUtils.delete(config.workingDir());
     }
 
@@ -64,6 +68,10 @@ public class ServiceInfo {
     }
 
     private HttpRequest.Builder requestForKey(String key) {
+        return request("/v0/entity?id=" + key);
+    }
+
+    private HttpRequest.Builder requestForRange(String key) {
         return request("/v0/entity?id=" + key);
     }
 }
