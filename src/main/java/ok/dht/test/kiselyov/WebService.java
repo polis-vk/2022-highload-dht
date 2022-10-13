@@ -35,7 +35,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -51,7 +50,6 @@ public class WebService implements Service {
     private static final int CORE_POOL_SIZE = 64;
     private static final int MAXIMUM_POOL_SIZE = 64;
     private static final int DEQUE_CAPACITY = 64;
-    private List<Future<?>> tasks;
     private NodeDeterminer nodeDeterminer;
     private InternalClient internalClient;
     private static final Logger LOGGER = LoggerFactory.getLogger(WebService.class);
@@ -72,14 +70,13 @@ public class WebService implements Service {
         }
         nodeDeterminer = new NodeDeterminer(clusterNodes);
         internalClient = new InternalClient();
-        tasks = new ArrayList<>();
         executorService = new ThreadPoolExecutor(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, 0L,
                 TimeUnit.MILLISECONDS, new CustomLinkedBlockingDeque<>(DEQUE_CAPACITY));
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleRequest(Request request, HttpSession session) throws IOException {
                 try {
-                    tasks.add(executorService.submit(() -> tryHandleRequest(request, session)));
+                    executorService.submit(() -> tryHandleRequest(request, session));
                 } catch (RejectedExecutionException e) {
                     LOGGER.error("Cannot execute task: ", e);
                     session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
@@ -185,12 +182,7 @@ public class WebService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
-        for (Future<?> task : tasks) {
-            if (!task.isCancelled()) {
-                task.cancel(true);
-            }
-        }
-        executorService.shutdown();
+        executorService.shutdownNow();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
