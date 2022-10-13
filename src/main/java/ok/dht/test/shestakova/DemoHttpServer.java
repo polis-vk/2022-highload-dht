@@ -8,6 +8,7 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
+import one.nio.util.Hash;
 
 import java.io.IOException;
 import java.net.URI;
@@ -151,23 +152,14 @@ public class DemoHttpServer extends HttpServer {
     private String getClusterByRendezvousHashing(String key) {
         int hashVal = Integer.MIN_VALUE;
         String cluster = null;
-        final int keyHash = key.hashCode();
 
         for (String clusterUrl : serviceConfig.clusterUrls()) {
-            int tmpHash = getHashCodeForTwoElements(keyHash, clusterUrl);
+            int tmpHash = Hash.murmur3(clusterUrl + key);
             if (tmpHash > hashVal) {
                 hashVal = tmpHash;
                 cluster = clusterUrl;
             }
         }
         return cluster;
-    }
-
-    private int getHashCodeForTwoElements(int hash, String s) {
-        int h = hash;
-        for (int i = 0; i < s.length(); i++) {
-            h = 31 * h + s.charAt(i);
-        }
-        return h;
     }
 }
