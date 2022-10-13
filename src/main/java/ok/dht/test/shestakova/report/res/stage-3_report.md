@@ -446,7 +446,7 @@ Transfer/sec:     77.85KB
 
 |                                                                       cluster size = 3                                                                        |                                                                cluster size = 1 (stage 2)                                                                |
 |:-------------------------------------------------------------------------------------------------------------------------------------------------------------:|:--------------------------------------------------------------------------------------------------------------------------------------------------------:|
-| ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage3/src/main/java/ok/dht/test/shestakova/report/jpg/stage3/put_lock_sync.jpg) | ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/put_lock.jpg) |
+| ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage3/src/main/java/ok/dht/test/shestakova/report/jpg/stage3/put_lock.jpg) | ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/put_lock.jpg) |
 
 В отличие от сервиса с прошлого стейджа на SelectorThread-е теперь практически нет лока при вызове метода Session.process.  
 Добавились локи на клиенте - SelectorManager (Selector.select, работа с пулом соединений, обеспечение асинхронного обмена запросами и ответами).  
@@ -481,7 +481,7 @@ Transfer/sec:     77.85KB
 
 |                                                                       cluster size = 3                                                                        |                                                                cluster size = 1 (stage 2)                                                                |
 |:-------------------------------------------------------------------------------------------------------------------------------------------------------------:|:--------------------------------------------------------------------------------------------------------------------------------------------------------:|
-| ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage3/src/main/java/ok/dht/test/shestakova/report/jpg/stage3/get_lock_sync.jpg) | ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/get_lock.jpg) |
+| ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage3/src/main/java/ok/dht/test/shestakova/report/jpg/stage3/get_lock.jpg) | ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht/blob/stage2/src/main/java/ok/dht/test/shestakova/report/jpg/stage2/get_lock.jpg) |
 
 ThreadPoolExecutor (80% локов):  
 22% занимают локи на обработке CompletableFuture, регистрацию событий SelectorManager-ом клиента.  
