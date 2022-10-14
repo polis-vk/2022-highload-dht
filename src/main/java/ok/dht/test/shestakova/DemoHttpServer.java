@@ -15,17 +15,28 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class DemoHttpServer extends HttpServer {
 
     private final HttpClient httpClient;
     private final ServiceConfig serviceConfig;
     private final ExecutorService workersPool;
+    private final AtomicLong fallenRequestCount = new AtomicLong();
+    private final Timer timer = new Timer();
+    private final Map<String, Boolean> nodesIllness;
+    private int illPeriodsCounter;
+
+    private boolean isIll;
 
     public DemoHttpServer(HttpServerConfig config, HttpClient httpClient, ExecutorService workersPool,
                           ServiceConfig serviceConfig, Object... routers) throws IOException {
@@ -33,6 +44,15 @@ public class DemoHttpServer extends HttpServer {
         this.httpClient = httpClient;
         this.serviceConfig = serviceConfig;
         this.workersPool = workersPool;
+        this.timer.schedule(
+                new BreakerTimerTask(),
+                0L,
+                5000L
+        );
+        this.nodesIllness = new HashMap<>();
+        for (String clusterUrl : this.serviceConfig.clusterUrls()) {
+            nodesIllness.put(clusterUrl, false);
+        }
     }
 
     @Override
@@ -47,8 +67,11 @@ public class DemoHttpServer extends HttpServer {
             }
         }
 
-        String targetCluster = getClusterByRendezvousHashing(key);
-        assert targetCluster != null;
+        String targetCluster = serviceConfig.clusterUrls().size() > 1 ? getClusterByRendezvousHashing(key)
+                : serviceConfig.selfUrl();
+        if (targetCluster == null) {
+            throw new RuntimeException("There are no available nodes in the cluster!");
+        }
         if (!targetCluster.equals(serviceConfig.selfUrl())) {
             try {
                 HttpRequest httpRequest = buildHttpRequest(key, targetCluster, request);
@@ -63,7 +86,7 @@ public class DemoHttpServer extends HttpServer {
                         );
                 getResponse(responseCompletableFuture, session);
                 return;
-            } catch (InterruptedException | TimeoutException | IOException e) {
+            } catch (InterruptedException | IOException e) {
                 throw new RuntimeException(e);
             }
         }
@@ -110,6 +133,14 @@ public class DemoHttpServer extends HttpServer {
         super.stop();
     }
 
+    public boolean isIll() {
+        return isIll;
+    }
+
+    public void putNodesIllnessInfo(String node, boolean isIll) {
+        nodesIllness.put(node, isIll);
+    }
+
     private HttpRequest.Builder request(String path, String clusterUrl) {
         return HttpRequest.newBuilder(URI.create(clusterUrl + path));
     }
@@ -134,14 +165,15 @@ public class DemoHttpServer extends HttpServer {
     }
 
     private void getResponse(CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture, HttpSession session)
-            throws TimeoutException, InterruptedException, IOException {
+            throws InterruptedException, IOException {
         try {
-            HttpResponse<byte[]> response = responseCompletableFuture.get(10, TimeUnit.SECONDS);
+            HttpResponse<byte[]> response = responseCompletableFuture.get(1, TimeUnit.SECONDS);
             session.sendResponse(new Response(
                     String.valueOf(response.statusCode()),
                     response.body()
             ));
-        } catch (ExecutionException e) {
+        } catch (ExecutionException | TimeoutException e) {
+            fallenRequestCount.incrementAndGet();
             session.sendResponse(new Response(
                     Response.SERVICE_UNAVAILABLE,
                     Response.EMPTY
@@ -154,6 +186,9 @@ public class DemoHttpServer extends HttpServer {
         String cluster = null;
 
         for (String clusterUrl : serviceConfig.clusterUrls()) {
+            if (nodesIllness.get(clusterUrl)) {
+                continue;
+            }
             int tmpHash = Hash.murmur3(clusterUrl + key);
             if (tmpHash > hashVal) {
                 hashVal = tmpHash;
@@ -161,5 +196,40 @@ public class DemoHttpServer extends HttpServer {
             }
         }
         return cluster;
+    }
+
+    // Пока что проверка здоровья ноды не придумана, и мы просто даём ноде 10 периодов по 5 секунд на восстановление
+    // и снова начинаем с ней работать (если она все еще больна, мы это поймём через 1 период - 5 секунд)
+    private boolean isStillIll() {
+        return illPeriodsCounter > 10;
+    }
+
+    private class BreakerTimerTask extends TimerTask {
+        @Override
+        public void run() {
+            if (fallenRequestCount.get() > 1000) {
+                isIll = true;
+                nodesIllness.put(serviceConfig.selfUrl(), true);
+                for (String clusterUrl : serviceConfig.clusterUrls()) {
+                    try {
+                        httpClient.send(
+                                request("/service/message", clusterUrl)
+                                        .PUT(HttpRequest.BodyPublishers.ofString(clusterUrl))
+                                        .build(),
+                                HttpResponse.BodyHandlers.ofByteArray()
+                        );
+                    } catch (IOException | InterruptedException e) {
+                       throw new RuntimeException(e);
+                    }
+                }
+            }
+            fallenRequestCount.getAndSet(0);
+            illPeriodsCounter++;
+            if (isIll && !isStillIll()) {
+                isIll = false;
+                nodesIllness.put(serviceConfig.selfUrl(), false);
+                illPeriodsCounter = 0;
+            }
+        }
     }
 }

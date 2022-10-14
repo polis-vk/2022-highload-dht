@@ -7,7 +7,6 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.shestakova.dao.MemorySegmentDao;
 import ok.dht.test.shestakova.dao.base.BaseEntry;
 import ok.dht.test.shestakova.dao.base.Config;
-import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.Param;
 import one.nio.http.Path;
@@ -20,6 +19,7 @@ import java.io.IOException;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.Arrays;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -31,7 +31,7 @@ import static java.net.http.HttpClient.newHttpClient;
 public class DemoService implements Service {
 
     private final ServiceConfig config;
-    private HttpServer server;
+    private DemoHttpServer server;
     private MemorySegmentDao dao;
     private static final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
     private static final int POOL_SIZE = Runtime.getRuntime().availableProcessors();
@@ -112,6 +112,18 @@ public class DemoService implements Service {
                 Response.ACCEPTED,
                 Response.EMPTY
         );
+    }
+
+    @Path("/service/message/ill")
+    @RequestMethod(Request.METHOD_PUT)
+    public void handleIllnessMessage(Request request) {
+        server.putNodesIllnessInfo(Arrays.toString(request.getBody()), true);
+    }
+
+    @Path("/service/message/healthy")
+    @RequestMethod(Request.METHOD_PUT)
+    public void handleHealthMessage(Request request) {
+        server.putNodesIllnessInfo(Arrays.toString(request.getBody()), false);
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
