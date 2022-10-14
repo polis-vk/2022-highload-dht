@@ -1,6 +1,5 @@
 package ok.dht.test.kiselyov.util;
 
-import ok.dht.test.kiselyov.WebService;
 import one.nio.http.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
