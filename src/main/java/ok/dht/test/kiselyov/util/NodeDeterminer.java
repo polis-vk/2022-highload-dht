@@ -2,6 +2,8 @@ package ok.dht.test.kiselyov.util;
 
 import java.util.List;
 
+import static one.nio.util.Hash.murmur3;
+
 public class NodeDeterminer {
     private final List<ClusterNode> clusterNodes;
 
@@ -23,6 +25,6 @@ public class NodeDeterminer {
     }
 
     private int hash(String key, Integer clusterNodeNum) {
-        return 31 * (key.hashCode() % 101) + clusterNodeNum * 13;
+        return 31 * (murmur3(key) % 101) + clusterNodeNum * 13;
     }
 }

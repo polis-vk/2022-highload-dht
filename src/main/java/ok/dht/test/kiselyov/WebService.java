@@ -47,9 +47,9 @@ public class WebService implements Service {
     private PersistentDao dao;
     private static final int FLUSH_THRESHOLD_BYTES = 1 << 20;
     private ExecutorService executorService;
-    private static final int CORE_POOL_SIZE = 64;
-    private static final int MAXIMUM_POOL_SIZE = 64;
-    private static final int DEQUE_CAPACITY = 64;
+    private static final int MAXIMUM_POOL_SIZE = Runtime.getRuntime().availableProcessors();
+    private static final int CORE_POOL_SIZE = MAXIMUM_POOL_SIZE > 2 ? MAXIMUM_POOL_SIZE - 2 : MAXIMUM_POOL_SIZE;
+    private static final int DEQUE_CAPACITY = 256;
     private NodeDeterminer nodeDeterminer;
     private InternalClient internalClient;
     private static final Logger LOGGER = LoggerFactory.getLogger(WebService.class);
