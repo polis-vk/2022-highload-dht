@@ -14,9 +14,9 @@ import java.util.concurrent.TimeoutException;
  *
  * @author incubos
  */
-public final class Server {
+public final class DemoServer {
 
-    private Server() {
+    private DemoServer() {
         // Only main method
     }
 

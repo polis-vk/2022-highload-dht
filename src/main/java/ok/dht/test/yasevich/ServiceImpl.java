@@ -19,6 +19,10 @@ import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -73,9 +77,10 @@ public class ServiceImpl implements Service {
         return MemorySegment.ofArray(data.toCharArray());
     }
 
-    private static class CustomHttpServer extends HttpServer {
+    private class CustomHttpServer extends HttpServer {
         private static final int CPUs = Runtime.getRuntime().availableProcessors();
 
+        private final HttpClient client = HttpClient.newHttpClient();
         private final Dao<MemorySegment, Entry<MemorySegment>> dao;
         private final BlockingQueue<Runnable> queue = new AlmostLifoQueue(POOL_QUEUE_SIZE, FIFO_RARENESS);
         private final ExecutorService pool = new ThreadPoolExecutor(CPUs, CPUs, 0L, TimeUnit.MILLISECONDS, queue);
@@ -90,21 +95,25 @@ public class ServiceImpl implements Service {
         }
 
         @Override
-        public void handleDefault(Request request, HttpSession session) throws IOException {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-        }
-
-        @Override
         public void handleRequest(Request request, HttpSession session) throws IOException {
             String id = request.getParameter("id=");
             if (id == null || id.isEmpty()) {
                 sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
+            String url = config.clusterUrls().get(id.hashCode() % config.clusterUrls().size());
             try {
                 pool.execute(() -> {
                     try {
-                        Response response = handleRequest(request, id);
+                        Response response;
+                        if (url.equals(config.selfUrl())) {
+                            response = handleRequest(request, id);
+                        } else {
+                            CompletableFuture<HttpResponse<byte[]>> httpResponseFuture =
+                                    client.sendAsync(routedRequest(id, url, request), HttpResponse.BodyHandlers.ofByteArray());
+                            HttpResponse<byte[]> httpResponse = httpResponseFuture.get(30, TimeUnit.DAYS);
+                            response = response(httpResponse);
+                        }
                         sendResponse(session, response);
                     } catch (Exception e) {
                         sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
@@ -150,9 +159,29 @@ public class ServiceImpl implements Service {
             return new Response(Response.CREATED, Response.EMPTY);
         }
 
+        private HttpRequest routedRequest(String key, String targetUrl, Request request) {
+            HttpRequest.Builder requestBuilder = HttpRequest
+                    .newBuilder(URI.create(targetUrl + "/v0/entity?id=" + key));
+            switch (request.getMethod()) {
+                case Request.METHOD_GET -> requestBuilder.GET();
+                case Request.METHOD_PUT ->
+                        requestBuilder.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
+                case Request.METHOD_DELETE -> requestBuilder.DELETE();
+                default -> throw new IllegalArgumentException();
+            }
+            return requestBuilder.build();
+        }
+
+        private Response response(HttpResponse<byte[]> httpResponse) {
+            return new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
+        }
+
         @Override
         public synchronized void stop() {
             for (SelectorThread thread : selectors) {
+                if (!thread.selector.isOpen()) {
+                    continue;
+                }
                 for (Session session : thread.selector) {
                     session.socket().close();
                 }
@@ -163,7 +192,7 @@ public class ServiceImpl implements Service {
 
     }
 
-    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
