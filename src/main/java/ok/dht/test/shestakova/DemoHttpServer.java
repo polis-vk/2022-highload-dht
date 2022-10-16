@@ -42,7 +42,6 @@ public class DemoHttpServer extends HttpServer {
     private final ScheduledThreadPoolExecutor timer = new ScheduledThreadPoolExecutor(1);
     private final Map<String, Boolean> nodesIllness;
     private int illPeriodsCounter;
-
     private final AtomicBoolean isIll = new AtomicBoolean();
 
     public DemoHttpServer(HttpServerConfig config, HttpClient httpClient, ExecutorService workersPool,
@@ -79,19 +78,23 @@ public class DemoHttpServer extends HttpServer {
             return;
         }
         if (!targetNode.equals(serviceConfig.selfUrl())) {
+            HttpRequest httpRequest;
             try {
-                HttpRequest httpRequest;
+                httpRequest = buildHttpRequest(key, targetNode, request);
+            } catch (MethodNotAllowedException e) {
+                LOGGER.error("Method not allowed " + serviceConfig.selfUrl() + " method: " + request.getMethod());
+                Response response = new Response(
+                        Response.METHOD_NOT_ALLOWED,
+                        Response.EMPTY
+                );
                 try {
-                    httpRequest = buildHttpRequest(key, targetNode, request);
-                } catch (MethodNotAllowedException e) {
-                    LOGGER.error("Method not allowed " + serviceConfig.selfUrl() + " method: " + request.getMethod());
-                    Response response = new Response(
-                            Response.METHOD_NOT_ALLOWED,
-                            Response.EMPTY
-                    );
                     session.sendResponse(response);
-                    return;
+                } catch (IOException ex) {
+                    LOGGER.error("Error while sending response in server " + serviceConfig.selfUrl());
                 }
+                return;
+            }
+            try {
                 CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture = httpClient
                         .sendAsync(
                                 httpRequest,
@@ -128,12 +131,13 @@ public class DemoHttpServer extends HttpServer {
                     Response.METHOD_NOT_ALLOWED,
                     Response.EMPTY
             );
-        } else {
-            response = new Response(
-                    Response.SERVICE_UNAVAILABLE,
-                    Response.EMPTY
-            );
+            session.sendResponse(response);
+            return;
         }
+        response = new Response(
+                Response.SERVICE_UNAVAILABLE,
+                Response.EMPTY
+        );
         session.sendResponse(response);
     }
 
