@@ -25,8 +25,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -115,18 +115,22 @@ public class DemoHttpServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
+        try {
+            getKeyFromRequest(request, session);
+        } catch (NullKeyException e) {
+            return;
+        }
         Response response;
         int requestMethod = request.getMethod();
-        if (requestMethod == Request.METHOD_GET
-                || requestMethod == Request.METHOD_PUT
-                || requestMethod == Request.METHOD_DELETE) {
+        if (requestMethod != Request.METHOD_GET && requestMethod != Request.METHOD_PUT
+                && requestMethod != Request.METHOD_DELETE) {
             response = new Response(
-                    Response.BAD_REQUEST,
+                    Response.METHOD_NOT_ALLOWED,
                     Response.EMPTY
             );
         } else {
             response = new Response(
-                    Response.METHOD_NOT_ALLOWED,
+                    Response.SERVICE_UNAVAILABLE,
                     Response.EMPTY
             );
         }
