@@ -1,7 +1,5 @@
 package ok.dht.test.kurdyukov.sharding;
 
-import one.nio.util.Hash;
-
 import java.util.List;
 
 public class SimpleSharding implements Sharding {
@@ -13,7 +11,7 @@ public class SimpleSharding implements Sharding {
 
     @Override
     public String getShardUrlByKey(String key) {
-        int index = Math.abs(Hash.murmur3(key)) % urls.size();
+        int index = Math.abs(key.hashCode()) % urls.size();
         return urls.get(index);
     }
 }

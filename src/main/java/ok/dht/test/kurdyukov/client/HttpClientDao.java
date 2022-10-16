@@ -8,26 +8,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 public class HttpClientDao {
-    private static final int THREAD_POOL_SIZE = 10;
-    public final ExecutorService executorAsync = new ThreadPoolExecutor(
-            THREAD_POOL_SIZE,
-            THREAD_POOL_SIZE,
-            0,
-            TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<>(THREAD_POOL_SIZE * 10)
-    );
-
     private final HttpClient httpClient = HttpClient
             .newBuilder()
             .connectTimeout(Duration.ofSeconds(1))
-            .executor(executorAsync)
             .build();
 
     public CompletableFuture<HttpResponse<byte[]>> requestNode(

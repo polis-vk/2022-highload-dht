@@ -26,8 +26,6 @@ public final class MainNode1 {
         );
         try {
             service.start().get();
-            service.stop().get();
-            service.start().get();
         } catch (InterruptedException | ExecutionException e) {
             e.printStackTrace();
         }

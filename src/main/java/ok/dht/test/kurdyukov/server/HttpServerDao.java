@@ -112,8 +112,8 @@ public class HttpServerDao extends HttpServer {
                                                         throw new UncheckedIOException(e);
                                                     }
                                                     return null;
-                                                },
-                                                httpClientDao.executorAsync);
+                                                }
+                                        );
                             }
                         } catch (URISyntaxException ignored) {
                         } catch (IOException e) {
@@ -138,7 +138,6 @@ public class HttpServerDao extends HttpServer {
         }
 
         super.stop();
-        httpClientDao.executorAsync.shutdown();
         executorService.shutdown();
 
         try {
