@@ -115,7 +115,9 @@ public class HttpServerDao extends HttpServer {
                                                 }
                                         );
                             }
-                        } catch (URISyntaxException ignored) {
+                        } catch (URISyntaxException e) {
+                            logger.error("Fail invalid uri! Unreal case.", e);
+                            throw new RuntimeException(e);
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);
                         }
