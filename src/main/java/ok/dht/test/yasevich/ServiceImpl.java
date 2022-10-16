@@ -21,10 +21,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -83,10 +79,10 @@ public class ServiceImpl implements Service {
     private class CustomHttpServer extends HttpServer {
         private static final int CPUs = Runtime.getRuntime().availableProcessors();
 
-        private final HttpClient client = HttpClient.newHttpClient();
         private final Dao<MemorySegment, Entry<MemorySegment>> dao;
         private final BlockingQueue<Runnable> queue = new AlmostLifoQueue(POOL_QUEUE_SIZE, FIFO_RARENESS);
         private final ExecutorService pool = new ThreadPoolExecutor(CPUs, CPUs, 0L, TimeUnit.MILLISECONDS, queue);
+        private final ShardingRouter shardingRouter = new ShardingRouter(config.clusterUrls());
 
         public CustomHttpServer(
                 HttpServerConfig config,
@@ -100,27 +96,19 @@ public class ServiceImpl implements Service {
         @Override
         public void handleRequest(Request request, HttpSession session) throws IOException {
             String id = request.getParameter("id=");
-            if (id == null || id.isEmpty()) {
-                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
-            String url = config.clusterUrls().get(id.hashCode() % config.clusterUrls().size());
             try {
                 pool.execute(() -> {
+                    if (id == null || id.isEmpty()) {
+                        sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                        return;
+                    }
                     try {
-                        Response response;
-                        if (url.equals(config.selfUrl())) {
-                            response = handleRequest(request, id);
-                        } else {
-                            CompletableFuture<HttpResponse<byte[]>> httpResponseFuture =
-                                    client.sendAsync(routedRequest(id, url, request), HttpResponse.BodyHandlers.ofByteArray());
-                            HttpResponse<byte[]> httpResponse = httpResponseFuture.get(30, TimeUnit.DAYS);
-                            response = response(httpResponse);
-                        }
+                        Response response = shardingRouter.isSelfResponsible(id, config.selfUrl()) ?
+                                handleRequest(request, id) : shardingRouter.routeRequest(id, request);
                         sendResponse(session, response);
                     } catch (Exception e) {
                         LOGGER.error("Error when making response to " + request);
-                        sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                        sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                     }
                 });
             } catch (RejectedExecutionException e) {
@@ -162,23 +150,6 @@ public class ServiceImpl implements Service {
         private Response handlePut(String id, Request request) {
             dao.upsert(new BaseEntry<>(fromString(id), MemorySegment.ofArray(request.getBody())));
             return new Response(Response.CREATED, Response.EMPTY);
-        }
-
-        private HttpRequest routedRequest(String key, String targetUrl, Request request) {
-            HttpRequest.Builder requestBuilder = HttpRequest
-                    .newBuilder(URI.create(targetUrl + "/v0/entity?id=" + key));
-            switch (request.getMethod()) {
-                case Request.METHOD_GET -> requestBuilder.GET();
-                case Request.METHOD_PUT ->
-                        requestBuilder.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
-                case Request.METHOD_DELETE -> requestBuilder.DELETE();
-                default -> throw new IllegalArgumentException();
-            }
-            return requestBuilder.build();
-        }
-
-        private Response response(HttpResponse<byte[]> httpResponse) {
-            return new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
         }
 
         @Override
