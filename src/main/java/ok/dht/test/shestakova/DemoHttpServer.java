@@ -21,7 +21,12 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -173,7 +178,7 @@ public class DemoHttpServer extends HttpServer {
 
     private HttpRequest buildHttpRequest(String key, String targetCluster, Request request)
             throws MethodNotAllowedException {
-        if (request.getMethod() != Request.METHOD_GET &&request.getMethod() != Request.METHOD_PUT
+        if (request.getMethod() != Request.METHOD_GET && request.getMethod() != Request.METHOD_PUT
                 && request.getMethod() != Request.METHOD_DELETE) {
             throw new MethodNotAllowedException();
         }
