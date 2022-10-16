@@ -1,6 +1,8 @@
 package ok.dht.test.shestakova;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.shestakova.exceptions.MethodNotAllowedException;
+import ok.dht.test.shestakova.exceptions.NullKeyException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
