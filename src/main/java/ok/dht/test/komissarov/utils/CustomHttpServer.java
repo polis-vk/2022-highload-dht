@@ -63,7 +63,7 @@ public class CustomHttpServer extends HttpServer {
             }
             dao.close();
         } catch (IOException e) {
-            LOGGER.error(e.getMessage());
+            LOGGER.error("Stop error", e);
         }
     }
 
@@ -97,8 +97,14 @@ public class CustomHttpServer extends HttpServer {
             try {
                 Response response = getResponse(request, id);
                 session.sendResponse(response);
-            } catch (IOException e) {
-                LOGGER.error(e.getMessage());
+            } catch (Exception e) {
+                LOGGER.error("Unavailable error", e);
+                try {
+                    session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                } catch (IOException ex) {
+                    LOGGER.error("Send response error", e);
+                    session.close();
+                }
             }
         });
     }
