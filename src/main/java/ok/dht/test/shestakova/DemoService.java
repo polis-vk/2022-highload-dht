@@ -36,6 +36,7 @@ public class DemoService implements Service {
     private static final long FLUSH_THRESHOLD = 1 << 20; // 1 MB
     private static final int POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private static final int QUEUE_CAPACITY = 256;
+    private static final long KEEP_ALIVE_TIME = 0L;
     private ExecutorService workersPool;
     private HttpClient httpClient;
 
@@ -53,7 +54,7 @@ public class DemoService implements Service {
         workersPool = new ThreadPoolExecutor(
                 POOL_SIZE,
                 POOL_SIZE,
-                0L,
+                KEEP_ALIVE_TIME,
                 TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(QUEUE_CAPACITY)
         );

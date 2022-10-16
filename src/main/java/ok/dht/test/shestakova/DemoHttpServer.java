@@ -9,6 +9,8 @@ import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
 import one.nio.util.Hash;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
@@ -17,26 +19,24 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class DemoHttpServer extends HttpServer {
 
+    private static final long DELAY = 0L;
+    private static final long PERIOD = 5L;
+    private static final Logger LOGGER = LoggerFactory.getLogger(DemoHttpServer.class);
     private final HttpClient httpClient;
     private final ServiceConfig serviceConfig;
     private final ExecutorService workersPool;
     private final AtomicLong fallenRequestCount = new AtomicLong();
-    private final Timer timer = new Timer();
+    private final ScheduledThreadPoolExecutor timer = new ScheduledThreadPoolExecutor(1);
     private final Map<String, Boolean> nodesIllness;
     private int illPeriodsCounter;
 
-    private boolean isIll;
+    private final AtomicBoolean isIll = new AtomicBoolean();
 
     public DemoHttpServer(HttpServerConfig config, HttpClient httpClient, ExecutorService workersPool,
                           ServiceConfig serviceConfig, Object... routers) throws IOException {
@@ -44,39 +44,45 @@ public class DemoHttpServer extends HttpServer {
         this.httpClient = httpClient;
         this.serviceConfig = serviceConfig;
         this.workersPool = workersPool;
-        this.timer.schedule(
+        this.timer.scheduleAtFixedRate(
                 new BreakerTimerTask(),
-                0L,
-                5000L
+                DELAY,
+                PERIOD,
+                TimeUnit.SECONDS
         );
         this.nodesIllness = new HashMap<>();
-        for (String clusterUrl : this.serviceConfig.clusterUrls()) {
-            nodesIllness.put(clusterUrl, false);
+        for (String nodeUrl : this.serviceConfig.clusterUrls()) {
+            nodesIllness.put(nodeUrl, false);
         }
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) {
-        String key = request.getParameter("id=");
-        if (key == null || key.isEmpty()) {
-            try {
-                handleDefault(request, session);
-                return;
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+        String key;
+        try {
+            key = getKeyFromRequest(request, session);
+        } catch (NullKeyException e) {
+            return;
         }
 
-        String targetCluster = serviceConfig.clusterUrls().size() > 1 ? getClusterByRendezvousHashing(key)
+        String targetNode = serviceConfig.clusterUrls().size() > 1 ? getClusterByRendezvousHashing(key)
                 : serviceConfig.selfUrl();
-        if (targetCluster == null) {
-            throw new RuntimeException("There are no available nodes in the cluster!");
+        if (targetNode == null) {
+            LOGGER.error("There are no available nodes in the cluster!");
+            return;
         }
-        if (!targetCluster.equals(serviceConfig.selfUrl())) {
+        if (!targetNode.equals(serviceConfig.selfUrl())) {
             try {
-                HttpRequest httpRequest = buildHttpRequest(key, targetCluster, request);
-                if (httpRequest == null) {
-                    handleDefault(request, session);
+                HttpRequest httpRequest;
+                try {
+                    httpRequest = buildHttpRequest(key, targetNode, request);
+                } catch (MethodNotAllowedException e) {
+                    LOGGER.error("Method not allowed " + serviceConfig.selfUrl() + " method: " + request.getMethod());
+                    Response response = new Response(
+                            Response.METHOD_NOT_ALLOWED,
+                            Response.EMPTY
+                    );
+                    session.sendResponse(response);
                     return;
                 }
                 CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture = httpClient
@@ -87,7 +93,7 @@ public class DemoHttpServer extends HttpServer {
                 getResponse(responseCompletableFuture, session);
                 return;
             } catch (InterruptedException | IOException e) {
-                throw new RuntimeException(e);
+                LOGGER.error("Error while working with response in server " + serviceConfig.selfUrl());
             }
         }
 
@@ -95,7 +101,7 @@ public class DemoHttpServer extends HttpServer {
             try {
                 super.handleRequest(request, session);
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                LOGGER.error("Error while handling request in " + serviceConfig.selfUrl());
             }
         });
     }
@@ -130,27 +136,47 @@ public class DemoHttpServer extends HttpServer {
                 session.close();
             }
         }
+        timer.shutdownNow();
         super.stop();
     }
 
-    public boolean isIll() {
-        return isIll;
+    private String getKeyFromRequest(Request request, HttpSession session) throws NullKeyException {
+        String key = request.getParameter("id=");
+        if (key == null || key.isEmpty()) {
+            try {
+                Response response = new Response(
+                        Response.BAD_REQUEST,
+                        Response.EMPTY
+                );
+                session.sendResponse(response);
+                throw new NullKeyException();
+            } catch (IOException e) {
+                LOGGER.error("Error while sending response from " + serviceConfig.selfUrl());
+            }
+        }
+        return key;
     }
 
     public void putNodesIllnessInfo(String node, boolean isIll) {
         nodesIllness.put(node, isIll);
     }
 
-    private HttpRequest.Builder request(String path, String clusterUrl) {
-        return HttpRequest.newBuilder(URI.create(clusterUrl + path));
+    private HttpRequest.Builder request(String nodeUrl, String path) {
+        return HttpRequest.newBuilder(URI.create(nodeUrl + path));
     }
 
-    private HttpRequest.Builder requestForKey(String key, String clusterUrl) {
-        return request("/v0/entity?id=" + key, clusterUrl);
+    private HttpRequest.Builder requestForKey(String nodeUrl, String key) {
+        return request(nodeUrl, "/v0/entity?id=" + key);
     }
 
-    private HttpRequest buildHttpRequest(String key, String targetCluster, Request request) {
-        HttpRequest.Builder httpRequest = requestForKey(key, targetCluster);
+    private HttpRequest buildHttpRequest(String key, String targetCluster, Request request)
+            throws MethodNotAllowedException {
+        if (request.getMethod() != Request.METHOD_GET &&request.getMethod() != Request.METHOD_PUT
+                && request.getMethod() != Request.METHOD_DELETE) {
+            throw new MethodNotAllowedException();
+        }
+
+        HttpRequest.Builder httpRequest = requestForKey(targetCluster, key);
         int requestMethod = request.getMethod();
         if (requestMethod == Request.METHOD_GET) {
             httpRequest.GET();
@@ -158,8 +184,6 @@ public class DemoHttpServer extends HttpServer {
             httpRequest.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
         } else if (requestMethod == Request.METHOD_DELETE) {
             httpRequest.DELETE();
-        } else {
-            return null;
         }
         return httpRequest.build();
     }
@@ -173,6 +197,7 @@ public class DemoHttpServer extends HttpServer {
                     response.body()
             ));
         } catch (ExecutionException | TimeoutException e) {
+            LOGGER.error("Error while working with response in " + serviceConfig.selfUrl());
             fallenRequestCount.incrementAndGet();
             session.sendResponse(new Response(
                     Response.SERVICE_UNAVAILABLE,
@@ -182,53 +207,58 @@ public class DemoHttpServer extends HttpServer {
     }
 
     private String getClusterByRendezvousHashing(String key) {
-        int hashVal = Integer.MIN_VALUE;
+        long hashVal = Long.MIN_VALUE;
         String cluster = null;
 
-        for (String clusterUrl : serviceConfig.clusterUrls()) {
-            if (nodesIllness.get(clusterUrl)) {
+        for (String nodeUrl : serviceConfig.clusterUrls()) {
+            if (nodesIllness.get(nodeUrl)) {
                 continue;
             }
-            int tmpHash = Hash.murmur3(clusterUrl + key);
+            int tmpHash = Hash.murmur3(nodeUrl + key);
             if (tmpHash > hashVal) {
                 hashVal = tmpHash;
-                cluster = clusterUrl;
+                cluster = nodeUrl;
             }
         }
         return cluster;
     }
 
-    // Пока что проверка здоровья ноды не придумана, и мы просто даём ноде 10 периодов по 5 секунд на восстановление
-    // и снова начинаем с ней работать (если она все еще больна, мы это поймём через 1 период - 5 секунд)
-    private boolean isStillIll() {
-        return illPeriodsCounter > 10;
-    }
-
-    private class BreakerTimerTask extends TimerTask {
+    private class BreakerTimerTask implements Runnable {
         @Override
         public void run() {
             if (fallenRequestCount.get() > 1000) {
-                isIll = true;
+                isIll.set(true);
                 nodesIllness.put(serviceConfig.selfUrl(), true);
-                for (String clusterUrl : serviceConfig.clusterUrls()) {
-                    try {
-                        httpClient.send(
-                                request("/service/message", clusterUrl)
-                                        .PUT(HttpRequest.BodyPublishers.ofString(clusterUrl))
-                                        .build(),
-                                HttpResponse.BodyHandlers.ofByteArray()
-                        );
-                    } catch (IOException | InterruptedException e) {
-                       throw new RuntimeException(e);
-                    }
-                }
+                tellToOtherNodesAboutHealth(true);
             }
             fallenRequestCount.getAndSet(0);
             illPeriodsCounter++;
-            if (isIll && !isStillIll()) {
-                isIll = false;
+            // Пока что проверка здоровья ноды не придумана, и мы просто даём ноде 10 периодов по 5 секунд на
+            // восстановление и снова начинаем с ней работать (если она все еще больна, мы это поймём через 1 период)
+            if (isIll.get() && illPeriodsCounter > 10) {
+                isIll.set(false);
                 nodesIllness.put(serviceConfig.selfUrl(), false);
                 illPeriodsCounter = 0;
+                tellToOtherNodesAboutHealth(false);
+            }
+        }
+
+        private void tellToOtherNodesAboutHealth(boolean isIll) {
+            String path = "/service/message/" + (isIll ? "ill" : "healthy");
+            for (String nodeUrl : serviceConfig.clusterUrls()) {
+                if (nodeUrl.equals(serviceConfig.selfUrl())) {
+                    continue;
+                }
+                try {
+                    httpClient.send(
+                            request(nodeUrl, path)
+                                    .PUT(HttpRequest.BodyPublishers.ofString(nodeUrl))
+                                    .build(),
+                            HttpResponse.BodyHandlers.ofByteArray()
+                    );
+                } catch (IOException | InterruptedException e) {
+                    LOGGER.error("Error while sending health-request from " + serviceConfig.selfUrl());
+                }
             }
         }
     }
