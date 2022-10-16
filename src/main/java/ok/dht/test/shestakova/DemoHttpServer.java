@@ -92,6 +92,7 @@ public class DemoHttpServer extends HttpServer {
                 super.handleRequest(request, session);
             } catch (IOException e) {
                 LOGGER.error("Error while handling request in " + serviceConfig.selfUrl());
+                circuitBreaker.incrementFallenRequestsCount();
             }
         });
     }
@@ -193,7 +194,6 @@ public class DemoHttpServer extends HttpServer {
             ));
         } catch (ExecutionException | TimeoutException e) {
             LOGGER.error("Error while working with response in " + serviceConfig.selfUrl());
-            circuitBreaker.incrementFallenRequestsCount();
             session.sendResponse(new Response(
                     Response.SERVICE_UNAVAILABLE,
                     Response.EMPTY
