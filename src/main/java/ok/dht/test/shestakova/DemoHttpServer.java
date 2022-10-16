@@ -13,7 +13,6 @@ import one.nio.server.SelectorThread;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -70,7 +69,6 @@ public class DemoHttpServer extends HttpServer {
         } catch (NullKeyException e) {
             return;
         }
-
         String targetNode = serviceConfig.clusterUrls().size() > 1 ? getClusterByRendezvousHashing(key)
                 : serviceConfig.selfUrl();
         if (targetNode == null) {
@@ -106,7 +104,6 @@ public class DemoHttpServer extends HttpServer {
                 LOGGER.error("Error while working with response in server " + serviceConfig.selfUrl());
             }
         }
-
         workersPool.execute(() -> {
             try {
                 super.handleRequest(request, session);
@@ -190,7 +187,6 @@ public class DemoHttpServer extends HttpServer {
                 && request.getMethod() != Request.METHOD_DELETE) {
             throw new MethodNotAllowedException();
         }
-
         HttpRequest.Builder httpRequest = requestForKey(targetCluster, key);
         int requestMethod = request.getMethod();
         if (requestMethod == Request.METHOD_GET) {
@@ -224,7 +220,6 @@ public class DemoHttpServer extends HttpServer {
     private String getClusterByRendezvousHashing(String key) {
         long hashVal = Long.MIN_VALUE;
         String cluster = null;
-
         for (String nodeUrl : serviceConfig.clusterUrls()) {
             if (nodesIllness.get(nodeUrl)) {
                 continue;
@@ -248,8 +243,6 @@ public class DemoHttpServer extends HttpServer {
             }
             fallenRequestCount.getAndSet(0);
             illPeriodsCounter++;
-            // Пока что проверка здоровья ноды не придумана, и мы просто даём ноде 10 периодов по 5 секунд на
-            // восстановление и снова начинаем с ней работать (если она все еще больна, мы это поймём через 1 период)
             if (isIll.get() && illPeriodsCounter > 10) {
                 isIll.set(false);
                 nodesIllness.put(serviceConfig.selfUrl(), false);
