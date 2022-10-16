@@ -13,35 +13,25 @@ import one.nio.server.SelectorThread;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class DemoHttpServer extends HttpServer {
 
-    private static final long DELAY = 0L;
-    private static final long PERIOD = 5L;
     private static final Logger LOGGER = LoggerFactory.getLogger(DemoHttpServer.class);
     private final HttpClient httpClient;
     private final ServiceConfig serviceConfig;
     private final ExecutorService workersPool;
-    private final AtomicLong fallenRequestCount = new AtomicLong();
-    private final ScheduledThreadPoolExecutor timer = new ScheduledThreadPoolExecutor(1);
-    private final Map<String, Boolean> nodesIllness;
-    private int illPeriodsCounter;
-    private final AtomicBoolean isIll = new AtomicBoolean();
+    private final CircuitBreakerImpl circuitBreaker;
 
     public DemoHttpServer(HttpServerConfig config, HttpClient httpClient, ExecutorService workersPool,
                           ServiceConfig serviceConfig, Object... routers) throws IOException {
@@ -49,16 +39,7 @@ public class DemoHttpServer extends HttpServer {
         this.httpClient = httpClient;
         this.serviceConfig = serviceConfig;
         this.workersPool = workersPool;
-        this.timer.scheduleAtFixedRate(
-                new BreakerTimerTask(),
-                DELAY,
-                PERIOD,
-                TimeUnit.SECONDS
-        );
-        this.nodesIllness = new HashMap<>();
-        for (String nodeUrl : this.serviceConfig.clusterUrls()) {
-            nodesIllness.put(nodeUrl, false);
-        }
+        this.circuitBreaker = new CircuitBreakerImpl(serviceConfig, httpClient);
     }
 
     @Override
@@ -69,6 +50,7 @@ public class DemoHttpServer extends HttpServer {
         } catch (NullKeyException e) {
             return;
         }
+
         String targetNode = serviceConfig.clusterUrls().size() > 1 ? getClusterByRendezvousHashing(key)
                 : serviceConfig.selfUrl();
         if (targetNode == null) {
@@ -104,6 +86,7 @@ public class DemoHttpServer extends HttpServer {
                 LOGGER.error("Error while working with response in server " + serviceConfig.selfUrl());
             }
         }
+
         workersPool.execute(() -> {
             try {
                 super.handleRequest(request, session);
@@ -148,7 +131,7 @@ public class DemoHttpServer extends HttpServer {
                 session.close();
             }
         }
-        timer.shutdownNow();
+        circuitBreaker.doShutdownNow();
         super.stop();
     }
 
@@ -170,7 +153,7 @@ public class DemoHttpServer extends HttpServer {
     }
 
     public void putNodesIllnessInfo(String node, boolean isIll) {
-        nodesIllness.put(node, isIll);
+        circuitBreaker.putNodesIllnessInfo(node, isIll);
     }
 
     private HttpRequest.Builder request(String nodeUrl, String path) {
@@ -187,6 +170,7 @@ public class DemoHttpServer extends HttpServer {
                 && request.getMethod() != Request.METHOD_DELETE) {
             throw new MethodNotAllowedException();
         }
+
         HttpRequest.Builder httpRequest = requestForKey(targetCluster, key);
         int requestMethod = request.getMethod();
         if (requestMethod == Request.METHOD_GET) {
@@ -209,7 +193,7 @@ public class DemoHttpServer extends HttpServer {
             ));
         } catch (ExecutionException | TimeoutException e) {
             LOGGER.error("Error while working with response in " + serviceConfig.selfUrl());
-            fallenRequestCount.incrementAndGet();
+            circuitBreaker.incrementFallenRequestsCount();
             session.sendResponse(new Response(
                     Response.SERVICE_UNAVAILABLE,
                     Response.EMPTY
@@ -220,8 +204,9 @@ public class DemoHttpServer extends HttpServer {
     private String getClusterByRendezvousHashing(String key) {
         long hashVal = Long.MIN_VALUE;
         String cluster = null;
+
         for (String nodeUrl : serviceConfig.clusterUrls()) {
-            if (nodesIllness.get(nodeUrl)) {
+            if (circuitBreaker.isNodeIll(nodeUrl)) {
                 continue;
             }
             int tmpHash = Hash.murmur3(nodeUrl + key);
@@ -231,43 +216,5 @@ public class DemoHttpServer extends HttpServer {
             }
         }
         return cluster;
-    }
-
-    private class BreakerTimerTask implements Runnable {
-        @Override
-        public void run() {
-            if (fallenRequestCount.get() > 1000) {
-                isIll.set(true);
-                nodesIllness.put(serviceConfig.selfUrl(), true);
-                tellToOtherNodesAboutHealth(true);
-            }
-            fallenRequestCount.getAndSet(0);
-            illPeriodsCounter++;
-            if (isIll.get() && illPeriodsCounter > 10) {
-                isIll.set(false);
-                nodesIllness.put(serviceConfig.selfUrl(), false);
-                illPeriodsCounter = 0;
-                tellToOtherNodesAboutHealth(false);
-            }
-        }
-
-        private void tellToOtherNodesAboutHealth(boolean isIll) {
-            String path = "/service/message/" + (isIll ? "ill" : "healthy");
-            for (String nodeUrl : serviceConfig.clusterUrls()) {
-                if (nodeUrl.equals(serviceConfig.selfUrl())) {
-                    continue;
-                }
-                try {
-                    httpClient.send(
-                            request(nodeUrl, path)
-                                    .PUT(HttpRequest.BodyPublishers.ofString(nodeUrl))
-                                    .build(),
-                            HttpResponse.BodyHandlers.ofByteArray()
-                    );
-                } catch (IOException | InterruptedException e) {
-                    LOGGER.error("Error while sending health-request from " + serviceConfig.selfUrl());
-                }
-            }
-        }
     }
 }
