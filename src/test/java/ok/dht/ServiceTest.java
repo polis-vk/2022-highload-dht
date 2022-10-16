@@ -12,6 +12,7 @@ import org.junit.jupiter.params.provider.ArgumentsProvider;
 import org.junit.jupiter.params.provider.ArgumentsSource;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -27,12 +28,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.CodeSource;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -162,24 +161,20 @@ public @interface ServiceTest {
         }
 
         private List<ServiceInfo> createServices(ExtensionContext context, Class<?> clazz) throws IOException, InstantiationException, IllegalAccessException, InvocationTargetException, NoSuchMethodException {
-            Path workingDir = Files.createTempDirectory("service");
-
             ServiceTest annotation = context.getRequiredTestMethod().getAnnotation(ServiceTest.class);
             ServiceFactory.Factory f = (ServiceFactory.Factory) clazz.getDeclaredConstructor().newInstance();
 
-            int[] ports = new int[annotation.clusterSize()];
+            int[] ports = randomPorts(annotation.clusterSize());
+            Arrays.sort(ports);
             List<String> cluster = new ArrayList<>(annotation.clusterSize());
-
-            for (int i = 0; i < annotation.clusterSize(); i++) {
-                int port = randomPort();
-                ports[i] = port;
+            for (int port : ports) {
                 cluster.add("http://localhost:" + port);
             }
 
-            Collections.sort(cluster);
-
             List<ServiceInfo> services = new ArrayList<>(annotation.clusterSize());
             for (int i = 0; i < annotation.clusterSize(); i++) {
+                Path workingDir = Files.createTempDirectory("service" + i);
+
                 ServiceConfig config = new ServiceConfig(ports[i], cluster.get(i), cluster, workingDir);
                 Service service = f.create(config);
 
@@ -237,15 +232,50 @@ public @interface ServiceTest {
             }
         }
 
-        private static int randomPort() {
-            try (ServerSocket socket = new ServerSocket()) {
-                socket.setReuseAddress(true);
-                socket.bind(new InetSocketAddress(InetAddress.getByName("0.0.0.0"), 0), 1);
-                return socket.getLocalPort();
-            } catch (IOException e) {
-                throw new RuntimeException("Can't discover a free port", e);
+        private static int[] randomPorts(int count) {
+            List<ServerSocket> sockets = new ArrayList<>(count);
+            for (int i = 0; i < count; i++) {
+                try {
+                    sockets.add(new ServerSocket());
+                } catch (IOException e) {
+                    throw closeAndRethrow(sockets, e);
+                }
             }
+
+            int[] ports = new int[count];
+            for (int i = 0; i < count; i++) {
+                try {
+                    ServerSocket socket = sockets.get(i);
+                    socket.bind(new InetSocketAddress(InetAddress.getByName("0.0.0.0"), 0), 1);
+                    ports[i] = socket.getLocalPort();
+                } catch (IOException e) {
+                    throw closeAndRethrow(sockets, e);
+                }
+            }
+
+            for (ServerSocket socket : sockets) {
+                try {
+                    socket.close();
+                } catch (IOException e) {
+                    throw closeAndRethrow(sockets, e);
+                }
+            }
+
+            return ports;
         }
+
+        private static RuntimeException closeAndRethrow(List<ServerSocket> sockets, IOException e) {
+            UncheckedIOException ex = new UncheckedIOException("Can't discover a free port", e);
+            for (ServerSocket socket : sockets) {
+                try {
+                    socket.close();
+                } catch (IOException e2) {
+                    ex.addSuppressed(e2);
+                }
+            }
+            throw ex;
+        }
+
     }
 
 }
