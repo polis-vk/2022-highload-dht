@@ -54,7 +54,8 @@ public class ConsistentHashingShardingManager implements ShardingManager {
             for (int vnode = 0; vnode < vnodes; vnode++) {
                 Shard shard = new Shard(
                         shardUrls.get(shardInd),
-                        String.format("shard-%d-%d", shardInd, vnode)
+                        String.format("shard-%d-%d", shardInd, vnode),
+                        shardInd
                 );
 
                 var shardHash = hasher.getHash(Utf8.toBytes(shard.getShardName() + shard.getShardUrl()));

@@ -33,7 +33,7 @@ public final class ServerImpl {
             new ServiceImpl(cfg).start().get(1, TimeUnit.SECONDS);
             LOG.info("Socket is ready: " + url);
             LOG.info("Volumes mounted on " + cfg.workingDir());
-            LOG.info("Volumes mounted on " + cfg.workingDir());
+            System.out.println("Volumes mounted on " + cfg.workingDir());
         } catch (IOException | InterruptedException | ExecutionException | TimeoutException e) {
             LOG.error("Unable to start server: " + e.getMessage());
         }

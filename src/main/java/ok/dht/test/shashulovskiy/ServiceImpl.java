@@ -4,6 +4,7 @@ import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.shashulovskiy.hashing.MD5Hasher;
+import ok.dht.test.shashulovskiy.sharding.CircuitBreaker;
 import ok.dht.test.shashulovskiy.sharding.ConsistentHashingShardingManager;
 import ok.dht.test.shashulovskiy.sharding.Shard;
 import ok.dht.test.shashulovskiy.sharding.ShardingManager;
@@ -26,7 +27,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.Arrays;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.concurrent.CompletableFuture;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
@@ -35,6 +37,9 @@ public class ServiceImpl implements Service {
 
     private static final Logger LOG = LoggerFactory.getLogger(ServiceImpl.class);
     private static final int VNODES_COUNT = 5;
+
+    private static final Duration REQUEST_TIMEOUT = Duration.of(2, ChronoUnit.SECONDS);
+    private CircuitBreaker circuitBreaker;
 
     private final ServiceConfig config;
     private HttpServer server;
@@ -60,6 +65,8 @@ public class ServiceImpl implements Service {
         options.createIfMissing(true);
 
         this.dao = factory.open(config.workingDir().toFile(), options);
+
+        this.circuitBreaker = new CircuitBreaker(config.clusterUrls().size());
 
         server = new HttpServerImpl(createConfigFromPort(config.selfPort()), config.clusterUrls().size());
         server.addRequestHandlers(this);
@@ -124,29 +131,42 @@ public class ServiceImpl implements Service {
                 LOG.error("Internal dao exception occurred on " + request.getPath(), exception);
                 return new Response(
                         Response.INTERNAL_ERROR,
-                        Utf8.toBytes("An error occurred when accessing database.")
+                        Response.EMPTY
                 );
             }
         } else {
             try {
-                HttpResponse<byte[]> response = client.send(
-                        HttpRequest
-                                .newBuilder()
-                                .method(request.getMethodName(),
-                                        HttpRequest.BodyPublishers.ofByteArray(request.getBody() == null
-                                                ? Response.EMPTY : request.getBody()))
-                                .uri(URI.create(shard.getShardUrl() + request.getURI())).build(),
-                        HttpResponse.BodyHandlers.ofByteArray()
-                );
+                if (circuitBreaker.isActive(shard.getNodeId())) {
+                    HttpResponse<byte[]> response = client.send(
+                            HttpRequest
+                                    .newBuilder()
+                                    .method(request.getMethodName(),
+                                            HttpRequest.BodyPublishers.ofByteArray(request.getBody() == null
+                                                    ? Response.EMPTY : request.getBody()))
+                                    .uri(URI.create(shard.getShardUrl() + request.getURI()))
+                                    .timeout(REQUEST_TIMEOUT).build(),
+                            HttpResponse.BodyHandlers.ofByteArray()
+                    );
 
-                return new Response(Integer.toString(response.statusCode()), response.body());
+                    circuitBreaker.successOn(shard.getNodeId());
+                    return new Response(Integer.toString(response.statusCode()), response.body());
+                } else {
+                    return new Response(
+                            Response.SERVICE_UNAVAILABLE,
+                            Response.EMPTY
+                    );
+                }
             } catch (IOException e) {
                 return new Response(
                         Response.SERVICE_UNAVAILABLE,
-                        Utf8.toBytes("Internal shard error")
+                        Response.EMPTY
                 );
             } catch (InterruptedException e) {
-                throw new RuntimeException(e);
+                circuitBreaker.failOn(shard.getNodeId());
+                return new Response(
+                        Response.SERVICE_UNAVAILABLE,
+                        Response.EMPTY
+                );
             }
         }
     }
