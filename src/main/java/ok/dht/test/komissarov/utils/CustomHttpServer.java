@@ -135,6 +135,7 @@ public class CustomHttpServer extends HttpServer {
             HttpResponse<byte[]> response = client.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
             return new Response(mapCode(response.statusCode()), response.body());
         } catch (Exception e) {
+            LOGGER.error("Unavailable error", e);
             return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
     }
