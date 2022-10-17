@@ -66,7 +66,7 @@ public class CustomHttpServer extends HttpServer {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
-        handle(request, session , id);
+        handle(request, session, id);
     }
 
     @Override
