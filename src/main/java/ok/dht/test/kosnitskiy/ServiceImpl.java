@@ -32,10 +32,10 @@ public class ServiceImpl implements Service {
     private static final int IN_MEMORY_SIZE = 8388608;
     private static final Logger LOG = LoggerFactory.getLogger(ServiceImpl.class);
 
-    private static final int CORE_POOL_SIZE = 8;
-    private static final int MAX_POOL_SIZE = 256;
+    private static final int CORE_POOL_SIZE = 1;
+    private static final int MAX_POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private static final long KEEP_ALIVE_SECS = 60L;
-    private static final int MAX_QUEUE_SIZE = 2048;
+    private static final int MAX_QUEUE_SIZE = MAX_POOL_SIZE * 40;
 
     private final ServiceConfig config;
     private HttpServerImpl server;
@@ -48,7 +48,7 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         memorySegmentDao = new MemorySegmentDao(new Config(config.workingDir(), IN_MEMORY_SIZE));
-        server = new HttpServerImpl(createConfigFromPort(config.selfPort()),
+        server = new HttpServerImpl(createConfigFromPort(config.selfPort()), memorySegmentDao,
                 new ThreadPoolExecutor(
                         CORE_POOL_SIZE,
                         MAX_POOL_SIZE,
@@ -56,7 +56,6 @@ public class ServiceImpl implements Service {
                         TimeUnit.SECONDS,
                         new ArrayBlockingQueue<Runnable>(MAX_QUEUE_SIZE)
                 ));
-        server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -66,77 +65,6 @@ public class ServiceImpl implements Service {
         server.stop();
         memorySegmentDao.close();
         return CompletableFuture.completedFuture(null);
-    }
-
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id") String id, HttpSession session) {
-        if (id == null || id.isEmpty()) {
-            return new Response(
-                    Response.BAD_REQUEST,
-                    Response.EMPTY
-            );
-        }
-        Entry<MemorySegment> entry;
-        try {
-            entry = memorySegmentDao.get(MemorySegment.ofArray(id.toCharArray()));
-        } catch (Exception e) {
-            LOG.error("Error occurred while getting " + id + ' ' + e.getMessage());
-            return new Response(
-                    Response.INTERNAL_ERROR,
-                    e.getMessage().getBytes(StandardCharsets.UTF_8)
-            );
-        }
-        if (entry != null) {
-            return new Response(
-                    Response.OK,
-                    entry.value().toByteArray()
-            );
-        }
-        return new Response(Response.NOT_FOUND, Response.EMPTY);
-    }
-
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(@Param(value = "id") String id, Request request, HttpSession session) {
-        if (id == null || id.isEmpty() || request.getBody() == null) {
-            return new Response(
-                    Response.BAD_REQUEST,
-                    Response.EMPTY
-            );
-        }
-        try {
-            memorySegmentDao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.toCharArray()),
-                    MemorySegment.ofArray(request.getBody())));
-        } catch (Exception e) {
-            LOG.error("Error occurred while inserting " + id + ' ' + e.getMessage());
-            return new Response(
-                    Response.INTERNAL_ERROR,
-                    e.getMessage().getBytes(StandardCharsets.UTF_8)
-            );
-        }
-        return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id") String id, HttpSession session) {
-        if (id == null || id.isEmpty()) {
-            return new Response(
-                    Response.BAD_REQUEST,
-                    Response.EMPTY
-            );
-        }
-        try {
-            memorySegmentDao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.toCharArray()), null));
-        } catch (Exception e) {
-            LOG.error("Error occurred while deleting " + id + ' ' + e.getMessage());
-            return new Response(
-                    Response.INTERNAL_ERROR,
-                    e.getMessage().getBytes(StandardCharsets.UTF_8)
-            );
-        }
-        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
