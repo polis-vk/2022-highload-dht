@@ -18,8 +18,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import static ok.dht.test.mikhaylov.MyService.makeError;
-
 public class OneNioHttpClient extends InternalHttpClient {
     private final ThreadLocal<Map<String, HttpClient>> clients;
 
@@ -42,7 +40,7 @@ public class OneNioHttpClient extends InternalHttpClient {
         return getExecutor().submit(() -> {
             try {
                 Request internalRequest = new Request(request.getMethod(),
-                        request.getURI().replaceFirst(MyService.ENTITY_PATH, MyService.ENTITY_INTERNAL_PATH),
+                        MyService.convertPathToInternal(request.getURI()),
                         true);
                 internalRequest.setBody(request.getBody());
                 for (String header : request.getHeaders()) {
@@ -53,9 +51,9 @@ public class OneNioHttpClient extends InternalHttpClient {
                 return clients.get().get(shard).invoke(internalRequest);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                return makeError(logger, shard, e);
+                return MyService.makeError(logger, shard, e);
             } catch (PoolException | IOException | HttpException e) {
-                return makeError(logger, shard, e);
+                return MyService.makeError(logger, shard, e);
             }
         }).get(1, TimeUnit.SECONDS);
     }

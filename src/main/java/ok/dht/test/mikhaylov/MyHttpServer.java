@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 class MyHttpServer extends HttpServer {
     private final ExecutorService requestHandlers;
 
-    private static final int REQUEST_HANDLERS = 4; // todo: tune
+    private static final int REQUEST_HANDLERS = 4;
     private static final int MAX_REQUESTS = 128;
 
     public MyHttpServer(HttpServerConfig config) throws IOException {

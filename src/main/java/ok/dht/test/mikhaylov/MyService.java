@@ -26,6 +26,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Pattern;
 
 public class MyService implements Service {
 
@@ -46,18 +47,24 @@ public class MyService implements Service {
     private static final Set<Integer> ALLOWED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT,
             Request.METHOD_DELETE);
 
-    public static final String ENTITY_PATH = "/v0/entity";
+    private static final String ENTITY_PATH = "/v0/entity";
 
-    public static final String ENTITY_INTERNAL_PATH = "/v0/internal/entity";
+    private static final String ENTITY_INTERNAL_PATH = "/v0/internal/entity";
+
+    private static final Pattern ENTITY_PATH_PATTERN = Pattern.compile(ENTITY_PATH);
 
     public MyService(ServiceConfig config, ShardResolver shardResolver) {
         this.config = config;
         this.shardResolver = shardResolver;
     }
 
-    public static Response makeError(Logger logger, String shard, Exception e) {
+    public static Response makeError(Logger logger, String shard, Throwable e) {
         logger.error("Could not proxy request to {}", shard, e);
-        return new Response(Response.INTERNAL_ERROR, new byte[0]);
+        return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+    }
+
+    public static String convertPathToInternal(String path) {
+        return ENTITY_PATH_PATTERN.matcher(path).replaceFirst(ENTITY_INTERNAL_PATH);
     }
 
     @Override

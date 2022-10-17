@@ -14,7 +14,7 @@ import java.util.concurrent.TimeoutException;
 
 public abstract class InternalHttpClient implements Closeable {
 
-    private static final int NUM_THREADS = 4; // todo: tune
+    private static final int NUM_THREADS = 4;
 
     private static final int MAX_REQUESTS = 128;
 

@@ -10,7 +10,9 @@ public class ConsistentHashingResolver implements ShardResolver {
     private final List<String> shards;
 
     public ConsistentHashingResolver(List<String> shards) {
-        this.shards = shards;
+        this.shards = shards.stream()
+                .sorted()
+                .toList();
     }
 
     @Override
