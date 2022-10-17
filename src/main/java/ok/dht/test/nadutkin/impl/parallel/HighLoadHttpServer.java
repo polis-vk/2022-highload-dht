@@ -1,4 +1,4 @@
-package ok.dht.test.nadutkin.impl;
+package ok.dht.test.nadutkin.impl.parallel;
 
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -13,9 +13,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import static ok.dht.test.nadutkin.impl.Constants.LOG;
-import static ok.dht.test.nadutkin.impl.UtilsClass.getBytes;
-import static ok.dht.test.nadutkin.impl.UtilsClass.shutdownAndAwaitTermination;
+import static ok.dht.test.nadutkin.impl.utils.Constants.LOG;
+import static ok.dht.test.nadutkin.impl.utils.UtilsClass.getBytes;
+import static ok.dht.test.nadutkin.impl.utils.UtilsClass.shutdownAndAwaitTermination;
 
 public class HighLoadHttpServer extends HttpServer {
     private final ExecutorService executors;
@@ -25,7 +25,7 @@ public class HighLoadHttpServer extends HttpServer {
         final int maximumPoolSize = Runtime.getRuntime().availableProcessors();
         final int corePoolSize = Math.max(1, maximumPoolSize / 2);
         final long keepAliveTime = 0;
-        executors = new ThreadPoolExecutor(corePoolSize,
+        this.executors = new ThreadPoolExecutor(corePoolSize,
                 maximumPoolSize,
                 keepAliveTime,
                 TimeUnit.MILLISECONDS,
@@ -42,8 +42,10 @@ public class HighLoadHttpServer extends HttpServer {
     public synchronized void stop() {
         shutdownAndAwaitTermination(executors);
         for (SelectorThread selector : selectors) {
-            for (Session session : selector.selector) {
-                session.close();
+            if (selector.selector.isOpen()) {
+                for (Session session : selector.selector) {
+                    session.close();
+                }
             }
         }
         super.stop();
@@ -51,7 +53,7 @@ public class HighLoadHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) {
-        executors.submit(() -> {
+        executors.execute(() -> {
             try {
                 super.handleRequest(request, session);
             } catch (Exception e) {

@@ -1,10 +1,12 @@
-package ok.dht.test.nadutkin.impl;
+package ok.dht.test.nadutkin.impl.utils;
 
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.nadutkin.database.Config;
 import ok.dht.test.nadutkin.database.Entry;
 import ok.dht.test.nadutkin.database.impl.MemorySegmentComparator;
 import ok.dht.test.nadutkin.database.impl.Storage;
+import one.nio.http.HttpServerConfig;
+import one.nio.server.AcceptorConfig;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
@@ -17,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static ok.dht.test.nadutkin.database.impl.StorageMethods.getSizeOnDisk;
-import static ok.dht.test.nadutkin.impl.Constants.LOG;
+import static ok.dht.test.nadutkin.impl.utils.Constants.LOG;
 
 public final class UtilsClass {
     private UtilsClass() {
@@ -207,6 +209,15 @@ public final class UtilsClass {
         public Entry<MemorySegment> get(MemorySegment key) {
             return delegate.get(key);
         }
+    }
+
+    public static HttpServerConfig createConfigFromPort(int port) {
+        HttpServerConfig httpConfig = new HttpServerConfig();
+        AcceptorConfig acceptor = new AcceptorConfig();
+        acceptor.port = port;
+        acceptor.reusePort = true;
+        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+        return httpConfig;
     }
 
     public static byte[] getBytes(String message) {

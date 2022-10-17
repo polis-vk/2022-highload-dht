@@ -8,26 +8,35 @@ import ok.dht.test.nadutkin.database.BaseEntry;
 import ok.dht.test.nadutkin.database.Config;
 import ok.dht.test.nadutkin.database.Entry;
 import ok.dht.test.nadutkin.database.impl.MemorySegmentDao;
+import ok.dht.test.nadutkin.impl.parallel.HighLoadHttpServer;
+import ok.dht.test.nadutkin.impl.shards.CircuitBreaker;
+import ok.dht.test.nadutkin.impl.shards.JumpHashSharder;
+import ok.dht.test.nadutkin.impl.shards.Sharder;
+import ok.dht.test.nadutkin.impl.utils.Constants;
+import ok.dht.test.nadutkin.impl.utils.UtilsClass;
 import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.concurrent.CompletableFuture;
 
-import static ok.dht.test.nadutkin.impl.UtilsClass.getBytes;
+import static ok.dht.test.nadutkin.impl.utils.UtilsClass.getBytes;
 
 public class ServiceImpl implements Service {
-
-    private static final String PATH = "/v0/entity";
     private final ServiceConfig config;
     private HttpServer server;
     private MemorySegmentDao dao;
+    private Sharder sharder;
+    private HttpClient client;
+    private CircuitBreaker breaker;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -36,8 +45,12 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         long flushThresholdBytes = 1 << 18;
-        dao = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
-        server = new HighLoadHttpServer(createConfigFromPort(config.selfPort()));
+        this.dao = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
+        this.server = new HighLoadHttpServer(UtilsClass.createConfigFromPort(config.selfPort()));
+        int size = config.clusterUrls().size();
+        this.sharder = new JumpHashSharder(size);
+        this.client = HttpClient.newHttpClient();
+        this.breaker = new CircuitBreaker(size);
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
@@ -45,75 +58,86 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        server.stop();
-        dao.close();
+        this.server.stop();
+        this.dao.close();
         return CompletableFuture.completedFuture(null);
     }
+
+    //region Handling Requests
 
     private MemorySegment getKey(String id) {
         return MemorySegment.ofArray(getBytes(id));
     }
 
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(value = "id", required = true) String id) {
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, getBytes("Id can not be null or empty!"));
-        } else {
-            Entry<MemorySegment> value = dao.get(getKey(id));
-            if (value == null) {
-                return new Response(Response.NOT_FOUND, getBytes("Can't find any value, for id %1$s".formatted(id)));
-            } else {
-                return new Response(Response.OK, value.value().toByteArray());
-            }
-        }
-    }
-
     private Response upsert(String id, MemorySegment value, String goodResponse) {
+        MemorySegment key = getKey(id);
+        Entry<MemorySegment> entry = new BaseEntry<>(key, value);
+        dao.upsert(entry);
+        return new Response(goodResponse, Response.EMPTY);
+    }
+
+    private Response fail(int index) {
+        breaker.fail(index);
+        Constants.LOG.error("Failed to request to shard {}", config.clusterUrls().get(index));
+        return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+    }
+
+    @Path(Constants.PATH)
+    public Response handle(@Param(value = "id", required = true) String id,
+                           Request request) throws IOException {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, getBytes("Id can not be null or empty!"));
+        }
+        Integer index = sharder.getShard(id);
+        if (breaker.isWorking(index)) {
+            String url = config.clusterUrls().get(index);
+            if (url.equals(config.selfUrl())) {
+                switch (request.getMethod()) {
+                    case Request.METHOD_GET -> {
+                        Entry<MemorySegment> value = dao.get(getKey(id));
+                        if (value == null) {
+                            return new Response(Response.NOT_FOUND, getBytes("Can't find any value, for id %1$s".formatted(id)));
+                        } else {
+                            return new Response(Response.OK, value.value().toByteArray());
+                        }
+                    }
+                    case Request.METHOD_PUT -> {
+                        return upsert(id, MemorySegment.ofArray(request.getBody()), Response.CREATED);
+                    }
+                    case Request.METHOD_DELETE -> {
+                        return upsert(id, null, Response.ACCEPTED);
+                    }
+                    default -> {
+                        return new Response(Response.METHOD_NOT_ALLOWED, getBytes("Not implemented yet"));
+                    }
+                }
+            } else {
+                try {
+                    HttpRequest proxyRequest = HttpRequest
+                            .newBuilder(URI.create(url + request.getURI()))
+                            .method(
+                                    request.getMethodName(),
+                                    HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                            .build();
+                    HttpResponse<byte[]> response = client.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
+                    if (response.statusCode() == HttpURLConnection.HTTP_UNAVAILABLE) {
+                        return fail(index);
+                    }
+                    breaker.success(index);
+                    return new Response(Integer.toString(response.statusCode()), response.body());
+                } catch (InterruptedException exception) {
+                    Constants.LOG.error("Server caught an exception {}", exception.getMessage());
+                    return fail(index);
+                }
+            }
         } else {
-            MemorySegment key = getKey(id);
-            Entry<MemorySegment> entry = new BaseEntry<>(key, value);
-            dao.upsert(entry);
-            return new Response(goodResponse, Response.EMPTY);
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
     }
 
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_PUT)
-    public Response put(@Param(value = "id", required = true) String id,
-                        @Param(value = "request", required = true) Request request) {
-        return upsert(id, MemorySegment.ofArray(request.getBody()), Response.CREATED);
-    }
+    //endregion
 
-    @Path(PATH)
-    @RequestMethod({Request.METHOD_CONNECT,
-            Request.METHOD_HEAD,
-            Request.METHOD_OPTIONS,
-            Request.METHOD_PATCH,
-            Request.METHOD_POST,
-            Request.METHOD_TRACE})
-    public Response others() {
-        return new Response(Response.METHOD_NOT_ALLOWED, getBytes("Not implemented yet"));
-    }
-
-    @Path(PATH)
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id", required = true) String id) {
-        return upsert(id, null, Response.ACCEPTED);
-    }
-
-    private static HttpServerConfig createConfigFromPort(int port) {
-        HttpServerConfig httpConfig = new HttpServerConfig();
-        AcceptorConfig acceptor = new AcceptorConfig();
-        acceptor.port = port;
-        acceptor.reusePort = true;
-        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
-        return httpConfig;
-    }
-
-    @ServiceFactory(stage = 1, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
+    @ServiceFactory(stage = 3, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

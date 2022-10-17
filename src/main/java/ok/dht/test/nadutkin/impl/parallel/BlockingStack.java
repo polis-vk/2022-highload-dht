@@ -1,4 +1,4 @@
-package ok.dht.test.nadutkin.impl;
+package ok.dht.test.nadutkin.impl.parallel;
 
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;

@@ -1,7 +1,7 @@
 package ok.dht.test.nadutkin;
 
 import ok.dht.ServiceConfig;
-import ok.dht.test.nadutkin.impl.Constants;
+import ok.dht.test.nadutkin.impl.utils.Constants;
 import ok.dht.test.nadutkin.impl.ServiceImpl;
 
 import java.io.IOException;
@@ -23,7 +23,7 @@ public final class ServerImpl {
     public static void main(String[] args) throws IOException {
         int port = 19234;
         String url = "http://localhost:" + port;
-        var temporary = Files.createTempDirectory("server");
+        var temporary = Files.createTempDirectory("server" + port);
         ServiceConfig cfg = new ServiceConfig(
                 port,
                 url,
