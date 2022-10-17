@@ -35,6 +35,7 @@ public class Shard {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Shard shard = (Shard) o;
-        return nodeId == shard.nodeId && Objects.equal(shardUrl, shard.shardUrl) && Objects.equal(shardName, shard.shardName);
+        return nodeId == shard.nodeId && Objects.equal(shardUrl, shard.shardUrl)
+                && Objects.equal(shardName, shard.shardName);
     }
 }
