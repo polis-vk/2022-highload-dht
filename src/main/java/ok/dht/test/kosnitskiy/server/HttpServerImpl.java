@@ -37,8 +37,12 @@ public class HttpServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         String id = request.getParameter("id=");
-        if (!isTypeSupported(request) || !"/v0/entity".equals(request.getPath()) || id == null || id.isEmpty()) {
-            handleDefault(request, session);
+        if (!isTypeSupported(request)) {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        }
+
+        if (!"/v0/entity".equals(request.getPath()) || id == null || id.isEmpty()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
         }
 
         executor.execute(() -> {
@@ -56,17 +60,6 @@ public class HttpServerImpl extends HttpServer {
                 }
             }
         });
-    }
-
-    @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response;
-        if (!isTypeSupported(request)) {
-            response = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        } else {
-            response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-        session.sendResponse(response);
     }
 
     @Override
