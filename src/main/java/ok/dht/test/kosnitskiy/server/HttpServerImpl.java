@@ -97,9 +97,9 @@ public class HttpServerImpl extends HttpServer {
     }
 
     private boolean isTypeSupported(Request request) {
-        return request.getMethod() == Request.METHOD_GET ||
-                request.getMethod() == Request.METHOD_PUT ||
-                request.getMethod() == Request.METHOD_DELETE;
+        return request.getMethod() == Request.METHOD_GET
+                || request.getMethod() == Request.METHOD_PUT
+                || request.getMethod() == Request.METHOD_DELETE;
     }
 
     private void handleSupported(Request request, HttpSession session, String id) throws IOException {

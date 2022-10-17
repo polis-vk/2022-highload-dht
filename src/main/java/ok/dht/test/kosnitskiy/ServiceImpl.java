@@ -1,27 +1,15 @@
 package ok.dht.test.kosnitskiy;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.kosnitskiy.dao.BaseEntry;
 import ok.dht.test.kosnitskiy.dao.Config;
-import ok.dht.test.kosnitskiy.dao.Entry;
 import ok.dht.test.kosnitskiy.dao.MemorySegmentDao;
 import ok.dht.test.kosnitskiy.server.HttpServerImpl;
 import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -30,7 +18,6 @@ import java.util.concurrent.TimeUnit;
 public class ServiceImpl implements Service {
 
     private static final int IN_MEMORY_SIZE = 8388608;
-    private static final Logger LOG = LoggerFactory.getLogger(ServiceImpl.class);
 
     private static final int CORE_POOL_SIZE = 1;
     private static final int MAX_POOL_SIZE = Runtime.getRuntime().availableProcessors();
