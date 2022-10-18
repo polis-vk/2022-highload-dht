@@ -1,7 +1,6 @@
 package ok.dht.test.yasevich;
 
 import one.nio.http.Request;
-import one.nio.http.Response;
 import one.nio.util.Hash;
 
 import java.net.URI;
@@ -25,7 +24,6 @@ public class ShardingRouter {
 
     private final List<Node> vNodes;
     private final HttpClient httpClient = HttpClient.newHttpClient();
-
 
     public ShardingRouter(List<String> clusterUrls) {
         List<Node> physicalNodes = new ArrayList<>(clusterUrls.size());
@@ -51,17 +49,22 @@ public class ShardingRouter {
         return vNodes;
     }
 
-    public Response routeRequest(String id, Request request) {
-        Node vNode = vNode(id);
-        return vNode.routeRequest(httpClient, id, request);
+    public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(String id, Request request) {
+        Node vNode = vNodeByKey(id);
+        return vNode.routedRequestFuture(httpClient, id, request);
+    }
+
+    public void informAboutFail(String id) {
+        Node vNode = vNodeByKey(id);
+        vNode.managePossibleIllness();
     }
 
     public boolean isSelfResponsible(String id, String url) {
-        Node vNode = vNode(id);
+        Node vNode = vNodeByKey(id);
         return vNode.url.equals(url);
     }
 
-    private Node vNode(String id) {
+    private Node vNodeByKey(String id) {
         int hash = Math.abs(Hash.murmur3(id));
         return vNodes.get(hash % vNodes.size());
     }
@@ -87,28 +90,19 @@ public class ShardingRouter {
             this.url = url;
         }
 
-        public Response routeRequest(HttpClient httpClient, String key, Request request) {
-
+        public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(HttpClient httpClient, String key, Request request) {
             if (isIll) {
                 managePossibleRecovery();
                 if (isIll) {
-                    return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                    return CompletableFuture.completedFuture(null);
                 }
             }
 
             HttpRequest httpRequest = httpRequestOf(key, url, request);
-            HttpResponse<byte[]> httpResponse;
+            CompletableFuture<HttpResponse<byte[]>> httpResponseFuture =
+                    httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
 
-            try {
-                CompletableFuture<HttpResponse<byte[]>> httpResponseFuture =
-                        httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-                httpResponse = httpResponseFuture.get(TIME_OUT_MS, TimeUnit.MILLISECONDS);
-            } catch (Exception e) {
-                managePossibleIllness();
-                return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-            }
-
-            return new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
+            return httpResponseFuture.completeOnTimeout(null, TIME_OUT_MS, TimeUnit.MILLISECONDS);
         }
 
         private void managePossibleRecovery() {

@@ -81,7 +81,7 @@ public class ServiceImpl implements Service {
 
         private final Dao<MemorySegment, Entry<MemorySegment>> dao;
         private final BlockingQueue<Runnable> queue = new AlmostLifoQueue(POOL_QUEUE_SIZE, FIFO_RARENESS);
-        private final ExecutorService pool = new ThreadPoolExecutor(CPUs, CPUs, 0L, TimeUnit.MILLISECONDS, queue);
+        private final ExecutorService workersPool = new ThreadPoolExecutor(CPUs, CPUs, 0L, TimeUnit.MILLISECONDS, queue);
         private final ShardingRouter shardingRouter = new ShardingRouter(config.clusterUrls());
 
         public CustomHttpServer(
@@ -97,15 +97,29 @@ public class ServiceImpl implements Service {
         public void handleRequest(Request request, HttpSession session) throws IOException {
             String id = request.getParameter("id=");
             try {
-                pool.execute(() -> {
+                workersPool.execute(() -> {
                     if (id == null || id.isEmpty()) {
                         sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                         return;
                     }
                     try {
-                        Response response = shardingRouter.isSelfResponsible(id, config.selfUrl()) ?
-                                handleRequest(request, id) : shardingRouter.routeRequest(id, request);
-                        sendResponse(session, response);
+                        if (shardingRouter.isSelfResponsible(id, config.selfUrl())) {
+                            sendResponse(session, handleRequest(request, id));
+                        } else {
+                            shardingRouter.routedRequestFuture(id, request).thenAccept(httpResponse -> {
+                                if (httpResponse == null) {
+                                    shardingRouter.informAboutFail(id);
+                                    sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                                    return;
+                                }
+                                sendResponse(session, new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body()));
+                            }).exceptionally(throwable -> {
+                                LOGGER.error("Error when making response to " + request);
+                                shardingRouter.informAboutFail(id);
+                                sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                                return null;
+                            });
+                        }
                     } catch (Exception e) {
                         LOGGER.error("Error when making response to " + request);
                         sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
@@ -116,7 +130,7 @@ public class ServiceImpl implements Service {
             }
         }
 
-        private static void sendResponse(HttpSession session, Response response) {
+        static void sendResponse(HttpSession session, Response response) {
             try {
                 session.sendResponse(response);
             } catch (IOException e) {
@@ -163,7 +177,7 @@ public class ServiceImpl implements Service {
                 }
             }
             super.stop();
-            pool.shutdown();
+            workersPool.shutdown();
         }
 
     }
