@@ -9,6 +9,8 @@ import java.util.List;
 public class ConsistentHashingResolver implements ShardResolver {
     private final List<String> shards;
 
+    private static final int VNODE_COUNT = 100;
+
     public ConsistentHashingResolver(List<String> shards) {
         this.shards = shards.stream()
                 .sorted()
@@ -18,7 +20,7 @@ public class ConsistentHashingResolver implements ShardResolver {
     @Override
     public String resolve(String key) {
         int hash = key.hashCode();
-        int shardIndex = Math.abs(hash % shards.size());
-        return shards.get(shardIndex);
+        int shardIndex = Math.abs(hash % (shards.size() * VNODE_COUNT));
+        return shards.get(shardIndex / VNODE_COUNT);
     }
 }
