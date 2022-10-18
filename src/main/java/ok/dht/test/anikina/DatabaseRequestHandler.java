@@ -8,7 +8,6 @@ import ok.dht.test.anikina.dao.MemorySegmentDao;
 import ok.dht.test.anikina.utils.MemorySegmentUtils;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.util.Utf8;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -30,7 +29,6 @@ class DatabaseRequestHandler {
     Response handle(String key, Request request) {
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
-//                return new Response(Response.OK, Utf8.toBytes("keks"));
                 byte[] value = getFromDao(key);
                 if (value == null) {
                     return new Response(Response.NOT_FOUND, Response.EMPTY);
