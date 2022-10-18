@@ -1,27 +1,57 @@
 package ok.dht.test.vihnin;
 
+import ok.dht.ServiceConfig;
+import one.nio.http.HttpClient;
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.ConnectionString;
 import one.nio.net.Session;
+import one.nio.pool.Pool;
+import one.nio.pool.PoolException;
+import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static ok.dht.test.vihnin.ServiceUtils.emptyResponse;
 
 public class ParallelHttpServer extends HttpServer {
-
+    // must be > 2
+    private static final int VNODE_NUMBER_PER_SERVER = 5;
     private static final int WORKERS_NUMBER = 10;
     private static final int QUEUE_CAPACITY = 100;
+
+    private static final int INTERNAL_WORKERS_NUMBER = 4;
+    private static final int INTERNAL_QUEUE_CAPACITY = 50;
+
+    private final ShardHelper shardHelper = new ShardHelper();
+    private final Map<Integer, String> shardToUrl;
+    private Integer shard;
+
+    private final Map<String, HttpClient> clients;
 
     private final ExecutorService executorService = new ThreadPoolExecutor(
             WORKERS_NUMBER,
@@ -31,8 +61,34 @@ public class ParallelHttpServer extends HttpServer {
             new ArrayBlockingQueue<>(QUEUE_CAPACITY)
     );
 
-    public ParallelHttpServer(HttpServerConfig config, Object... routers) throws IOException {
-        super(config, routers);
+    private final ExecutorService internalRequestService = new ThreadPoolExecutor(
+            INTERNAL_WORKERS_NUMBER,
+            INTERNAL_WORKERS_NUMBER,
+            0,
+            TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(INTERNAL_QUEUE_CAPACITY)
+    );
+
+
+    public ParallelHttpServer(ServiceConfig config, Object... routers) throws IOException {
+        super(createConfigFromPort(config.selfPort()), routers);
+        this.shardToUrl = new HashMap<>();
+
+        List<String> sortedUrls = new ArrayList<>(config.clusterUrls());
+        sortedUrls.sort(Comparator.naturalOrder());
+        for (int i = 0; i < sortedUrls.size(); i++) {
+            this.shardToUrl.put(i, sortedUrls.get(i));
+            if (sortedUrls.get(i).equals(config.selfUrl())) {
+                this.shard = i;
+            }
+        }
+
+        distributeVNodes(sortedUrls.size());
+
+        this.clients = new HashMap<>();
+        for (String url : config.clusterUrls()) {
+            clients.put(url, new one.nio.http.HttpClient(new ConnectionString(url)));
+        }
     }
 
     @Override
@@ -42,15 +98,62 @@ public class ParallelHttpServer extends HttpServer {
                 && request.getMethod() != Request.METHOD_PUT) {
             session.sendResponse(emptyResponse(Response.METHOD_NOT_ALLOWED));
         }
-        try {
-            executorService.submit(() -> {
-                requestTask(request, session);
-            });
-        } catch (RejectedExecutionException e) {
-            session.sendError(
-                    Response.SERVICE_UNAVAILABLE,
-                    "Handling was rejected due to some internal problem");
+
+        String id = request.getParameter("id=");
+
+        if (id == null) {
+            session.sendResponse(emptyResponse(Response.BAD_REQUEST));
+            return;
         }
+
+        int destinationShardId = getShardId(id);
+
+        if (destinationShardId != shard) {
+            internalRequestService.submit(() -> {
+                handleInnerRequest(request, session, destinationShardId);
+            });
+        } else {
+            try {
+                executorService.submit(() -> {
+                    requestTask(request, session);
+                });
+            } catch (RejectedExecutionException e) {
+                session.sendError(
+                        Response.SERVICE_UNAVAILABLE,
+                        "Handling was rejected due to some internal problem");
+            }
+        }
+    }
+
+    private void handleInnerRequest(Request request, HttpSession session, int shardId) {
+        try {
+            Request req = new Request(
+                    request.getMethod(),
+                    request.getURI(),
+                    true
+            );
+
+            req.setBody(request.getBody());
+            Arrays.stream(request.getHeaders())
+                    .filter(Objects::nonNull)
+                    .forEach(req::addHeader);
+
+            session.sendResponse(
+                    clients.get(shardToUrl.get(shardId)).invoke(req)
+            );
+        } catch (Exception e) {
+            e.printStackTrace();
+            try {
+                session.sendError(Response.SERVICE_UNAVAILABLE, "");
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+    }
+
+
+    private int getShardId(String key) {
+        return shardHelper.getShardByKey(key);
     }
 
     private void requestTask(Request request, HttpSession session) {
@@ -88,6 +191,9 @@ public class ParallelHttpServer extends HttpServer {
     @Override
     public synchronized void stop() {
         executorService.shutdown();
+        internalRequestService.shutdown();
+
+        clients.values().forEach(Pool::close);
 
         for (SelectorThread selectorThread : selectors) {
             for (Session session : selectorThread.selector) {
@@ -97,5 +203,29 @@ public class ParallelHttpServer extends HttpServer {
 
         super.stop();
 
+    }
+
+    private void distributeVNodes(int numberOfServers) {
+        int gapPerNode = 2 * (Integer.MAX_VALUE / VNODE_NUMBER_PER_SERVER);
+        int gapPerServer = gapPerNode / numberOfServers;
+
+        for (int i = 0; i < numberOfServers; i++) {
+            Set<Integer> vnodes = new HashSet<>();
+            int currVNode = Integer.MIN_VALUE + i * gapPerServer;
+            for (int j = 0; j < VNODE_NUMBER_PER_SERVER; j++) {
+                vnodes.add(currVNode);
+                currVNode += gapPerNode;
+            }
+            shardHelper.addShard(i, vnodes);
+        }
+    }
+
+    private static HttpServerConfig createConfigFromPort(int port) {
+        HttpServerConfig httpConfig = new HttpServerConfig();
+        AcceptorConfig acceptor = new AcceptorConfig();
+        acceptor.port = port;
+        acceptor.reusePort = true;
+        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+        return httpConfig;
     }
 }
