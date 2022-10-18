@@ -49,7 +49,7 @@ public class DatabaseHttpServer extends HttpServer {
 
     public DatabaseHttpServer(ServiceConfig config) throws IOException {
         super(createHttpServerConfig(config.selfPort()));
-        this.client = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(2)).build();
+        this.client = HttpClient.newHttpClient();
         this.selfUrl = config.selfUrl();
         this.consistentHashing = new ConsistentHashingImpl(config.clusterUrls());
         this.requestHandler = new DatabaseRequestHandler(config.workingDir());
