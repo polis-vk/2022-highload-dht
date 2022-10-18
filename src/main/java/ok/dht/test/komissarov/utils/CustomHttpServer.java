@@ -194,8 +194,6 @@ public class CustomHttpServer extends HttpServer {
                 node = url;
             }
         }
-
-        System.out.println(node + ", id:" + id);
         return node;
     }
 
