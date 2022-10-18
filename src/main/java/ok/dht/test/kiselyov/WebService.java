@@ -25,7 +25,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.net.http.HttpResponse;
@@ -139,13 +138,15 @@ public class WebService implements Service {
                     }
                 } catch (URISyntaxException e) {
                     LOGGER.error("URI error.", e);
+                    session.sendResponse(new Response(Response.BAD_GATEWAY, Response.EMPTY));
                     throw new RuntimeException(e);
                 } catch (IOException e) {
                     LOGGER.error("Error handling request.", e);
                     session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-                    throw new UncheckedIOException(e);
+                    throw new RuntimeException(e);
                 } catch (InterruptedException e) {
                     LOGGER.error("Error while getting response.", e);
+                    session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                     throw new RuntimeException(e);
                 }
             }
