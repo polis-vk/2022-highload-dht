@@ -6,6 +6,7 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.server.SelectorThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +49,7 @@ public class ConcurrentHttpServer extends HttpServer {
         cleanup.shutdown();
 
         Arrays.stream(selectors)
+                .filter(SelectorThread::isAlive)
                 .flatMap(selectorThread -> StreamSupport.stream(selectorThread.selector.spliterator(), false))
                 .forEach(Session::close);
 
