@@ -1,12 +1,11 @@
 package ok.dht.test.monakhov;
 
-
 import org.slf4j.Logger;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public class ExecutorUtils {
+public final class ExecutorUtils {
 
     private ExecutorUtils() {
     }
@@ -20,10 +19,8 @@ public class ExecutorUtils {
         try {
             if (!executor.awaitTermination(1, TimeUnit.SECONDS)) {
                 executor.shutdownNow();
-                if (!executor.awaitTermination(1, TimeUnit.SECONDS)) {
-                    if (log != null) {
-                        log.error("Unable to shutdown executor service: {}", executor);
-                    }
+                if (!executor.awaitTermination(1, TimeUnit.SECONDS) && log != null) {
+                    log.error("Unable to shutdown executor service: {}", executor);
                 }
             }
         } catch (InterruptedException e) {

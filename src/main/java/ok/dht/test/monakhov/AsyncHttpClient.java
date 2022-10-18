@@ -12,5 +12,7 @@ public class AsyncHttpClient extends HttpClient {
         super(conn);
     }
 
-    public AtomicBoolean available() {return isAvailable;}
+    public AtomicBoolean available() {
+        return isAvailable;
+    }
 }
