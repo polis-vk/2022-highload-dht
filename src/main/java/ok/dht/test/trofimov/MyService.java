@@ -19,51 +19,33 @@ import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Base64;
+import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import static java.net.HttpURLConnection.HTTP_ACCEPTED;
-import static java.net.HttpURLConnection.HTTP_BAD_GATEWAY;
-import static java.net.HttpURLConnection.HTTP_BAD_METHOD;
-import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
-import static java.net.HttpURLConnection.HTTP_CLIENT_TIMEOUT;
-import static java.net.HttpURLConnection.HTTP_CREATED;
-import static java.net.HttpURLConnection.HTTP_FORBIDDEN;
-import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
-import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
-import static java.net.HttpURLConnection.HTTP_MOVED_PERM;
-import static java.net.HttpURLConnection.HTTP_MULT_CHOICE;
-import static java.net.HttpURLConnection.HTTP_NOT_ACCEPTABLE;
-import static java.net.HttpURLConnection.HTTP_NOT_AUTHORITATIVE;
-import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
-import static java.net.HttpURLConnection.HTTP_NOT_IMPLEMENTED;
-import static java.net.HttpURLConnection.HTTP_NO_CONTENT;
-import static java.net.HttpURLConnection.HTTP_OK;
-import static java.net.HttpURLConnection.HTTP_PARTIAL;
-import static java.net.HttpURLConnection.HTTP_RESET;
-import static java.net.HttpURLConnection.HTTP_UNAUTHORIZED;
-import static java.net.HttpURLConnection.HTTP_UNAVAILABLE;
-import static java.net.HttpURLConnection.HTTP_VERSION;
+
 
 public class MyService implements Service {
 
     public static final String PATH_V0_ENTITY = "/v0/entity";
     private static final Logger logger = LoggerFactory.getLogger(MyService.class);
     private static final long FLUSH_THRESHOLD = 1 << 20;
-    private static final int REQUESTS_MAX_QUEUE_SIZE = 1024;
+    private static final int REQUESTS_MAX_QUEUE_SIZE = 256;
     private final ServiceConfig config;
     private HttpServer server;
     private InMemoryDao dao;
     private ThreadPoolExecutor requestsExecutor;
-    private MyHttpClient client = new MyHttpClient();
-
+    private Map<Long, MyHttpClient> clients;
     public MyService(ServiceConfig config) {
         this.config = config;
     }
@@ -89,6 +71,8 @@ public class MyService implements Service {
                 new ArrayBlockingQueue<>(REQUESTS_MAX_QUEUE_SIZE),
                 new ThreadPoolExecutor.DiscardOldestPolicy());
         requestsExecutor.prestartAllCoreThreads();
+
+        clients = new HashMap<>();
     }
 
     @Override
@@ -120,41 +104,42 @@ public class MyService implements Service {
                         }
                     }
                 } else {
-                    HttpResponse<byte[]> httpResponse = client.get(node, id);
+                    MyHttpClient httpClient = clients.computeIfAbsent(Thread.currentThread().getId(), k -> new MyHttpClient());
+                    HttpResponse<byte[]> httpResponse = httpClient.get(node, id);
                     response = new Response(getResponseStatusCode(httpResponse.statusCode()), httpResponse.body());
                 }
             } catch (Exception e) {
                 logger.error("Error while process request with key " + id, e);
-                response = errorResponse(e);
+                response = errorResponse();
             }
             sendResponse(session, response);
         });
     }
 
     public static String getResponseStatusCode(int statusCode) {
-        return statusCode + switch (statusCode) {
-            case HTTP_OK -> " OK";
-            case HTTP_CREATED -> " Created";
-            case HTTP_ACCEPTED -> " Accepted";
-            case HTTP_NOT_AUTHORITATIVE -> " Non-Authoritative Information";
-            case HTTP_NO_CONTENT -> " No Content";
-            case HTTP_RESET -> " Reset Content";
-            case HTTP_PARTIAL -> " Partial Content";
-            case HTTP_MULT_CHOICE -> " Multiple Choices";
-            case HTTP_MOVED_PERM -> " Moved Permanently";
-            case HTTP_BAD_REQUEST -> " Bad Request";
-            case HTTP_UNAUTHORIZED -> " Unauthorized";
-            case HTTP_FORBIDDEN -> " Forbidden";
-            case HTTP_NOT_FOUND -> " Not Found";
-            case HTTP_BAD_METHOD -> " Method Not Allowed";
-            case HTTP_NOT_ACCEPTABLE -> " Not Acceptable";
-            case HTTP_CLIENT_TIMEOUT -> " Request Time-Out";
-            case HTTP_INTERNAL_ERROR -> " Internal Server Error";
-            case HTTP_NOT_IMPLEMENTED -> " Not Implemented";
-            case HTTP_BAD_GATEWAY -> " Bad Gateway";
-            case HTTP_UNAVAILABLE -> " Service Unavailable";
-            case HTTP_GATEWAY_TIMEOUT -> " Gateway Timeout";
-            case HTTP_VERSION -> " HTTP Version Not Supported";
+        return switch (statusCode) {
+            case HttpURLConnection.HTTP_OK -> "200 OK";
+            case HttpURLConnection.HTTP_CREATED -> "201 Created";
+            case HttpURLConnection.HTTP_ACCEPTED -> "202 Accepted";
+            case HttpURLConnection.HTTP_NOT_AUTHORITATIVE -> "203 Non-Authoritative Information";
+            case HttpURLConnection.HTTP_NO_CONTENT -> "204 No Content";
+            case HttpURLConnection.HTTP_RESET -> "205 Reset Content";
+            case HttpURLConnection.HTTP_PARTIAL -> "206 Partial Content";
+            case HttpURLConnection.HTTP_MULT_CHOICE -> "300 Multiple Choices";
+            case HttpURLConnection.HTTP_MOVED_PERM -> "301 Moved Permanently";
+            case HttpURLConnection.HTTP_BAD_REQUEST -> "400 Bad Request";
+            case HttpURLConnection.HTTP_UNAUTHORIZED -> "401 Unauthorized";
+            case HttpURLConnection.HTTP_FORBIDDEN -> "403 Forbidden";
+            case HttpURLConnection.HTTP_NOT_FOUND -> "404 Not Found";
+            case HttpURLConnection.HTTP_BAD_METHOD -> "405 Method Not Allowed";
+            case HttpURLConnection.HTTP_NOT_ACCEPTABLE -> "406 Not Acceptable";
+            case HttpURLConnection.HTTP_CLIENT_TIMEOUT -> "408 Request Time-Out";
+            case HttpURLConnection.HTTP_INTERNAL_ERROR -> "500 Internal Server Error";
+            case HttpURLConnection.HTTP_NOT_IMPLEMENTED -> "501 Not Implemented";
+            case HttpURLConnection.HTTP_BAD_GATEWAY -> "502 Bad Gateway";
+            case HttpURLConnection.HTTP_UNAVAILABLE -> "503 Service Unavailable";
+            case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> "504 Gateway Timeout";
+            case HttpURLConnection.HTTP_VERSION -> "505 HTTP Version Not Supported";
             default -> " ";
         };
     }
@@ -166,7 +151,7 @@ public class MyService implements Service {
         int maxHash = Integer.MIN_VALUE;
         String node = "";
         for (String url : clusterUrls) {
-            int hash = url.hashCode() + key.hashCode();
+            int hash = Hash.murmur3(url) + Hash.murmur3(key);
             if (hash > maxHash) {
                 maxHash = hash;
                 node = url;
@@ -192,12 +177,13 @@ public class MyService implements Service {
                         response = emptyResponseFor(Response.CREATED);
                     }
                 } else {
-                    HttpResponse<byte[]> httpResponse = client.upsert(node, id, request.getBody());
+                    MyHttpClient httpClient = clients.computeIfAbsent(Thread.currentThread().getId(), k -> new MyHttpClient());
+                    HttpResponse<byte[]> httpResponse = httpClient.upsert(node, id, request.getBody());
                     response = new Response(getResponseStatusCode(httpResponse.statusCode()), httpResponse.body());
                 }
             } catch (Exception e) {
                 logger.error("Error while process request with key " + id, e);
-                response = errorResponse(e);
+                response = errorResponse();
             }
             sendResponse(session, response);
         });
@@ -218,12 +204,13 @@ public class MyService implements Service {
                         response = emptyResponseFor(Response.ACCEPTED);
                     }
                 } else {
-                    HttpResponse<byte[]> httpResponse = client.delete(node, id);
+                    MyHttpClient httpClient = clients.computeIfAbsent(Thread.currentThread().getId(), k -> new MyHttpClient());
+                    HttpResponse<byte[]> httpResponse = httpClient.delete(node, id);
                     response = new Response(getResponseStatusCode(httpResponse.statusCode()), httpResponse.body());
                 }
             } catch (Exception e) {
                 logger.error("Error while process request with key " + id, e);
-                response = errorResponse(e);
+                response = errorResponse();
             }
             sendResponse(session, response);
         });
