@@ -3,8 +3,11 @@ package ok.dht.test.ilin.service;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.ilin.config.ConsistentHashingConfig;
 import ok.dht.test.ilin.config.ExpandableHttpServerConfig;
+import ok.dht.test.ilin.hashing.impl.ConsistentHashing;
 import ok.dht.test.ilin.servers.ExpandableHttpServer;
+import ok.dht.test.ilin.sharding.ShardHandler;
 import one.nio.http.HttpServer;
 import one.nio.http.Param;
 import one.nio.http.Path;
@@ -43,7 +46,10 @@ public class EntityService implements Service {
             logger.error("Error initializing RocksDB");
             throw new IOException(ex);
         }
-        server = new ExpandableHttpServer(createConfigFromPort(config.selfPort()));
+        ConsistentHashingConfig consistentHashingConfig = new ConsistentHashingConfig();
+        ConsistentHashing consistentHashing = new ConsistentHashing(config.clusterUrls(), consistentHashingConfig);
+        ShardHandler shardHandler = new ShardHandler(config.selfUrl(), consistentHashing);
+        server = new ExpandableHttpServer(shardHandler, createConfigFromPort(config.selfPort()));
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
@@ -113,7 +119,7 @@ public class EntityService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

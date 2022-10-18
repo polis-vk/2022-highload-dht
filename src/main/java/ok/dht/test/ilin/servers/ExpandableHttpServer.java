@@ -1,6 +1,7 @@
 package ok.dht.test.ilin.servers;
 
 import ok.dht.test.ilin.config.ExpandableHttpServerConfig;
+import ok.dht.test.ilin.sharding.ShardHandler;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
@@ -19,9 +20,14 @@ import java.util.concurrent.TimeUnit;
 
 public class ExpandableHttpServer extends HttpServer {
     private final ExecutorService executorService;
+    private final ShardHandler shardHandler;
     private final Logger logger = LoggerFactory.getLogger(ExpandableHttpServer.class);
 
-    public ExpandableHttpServer(ExpandableHttpServerConfig config, Object... routers) throws IOException {
+    public ExpandableHttpServer(
+        ShardHandler shardHandler,
+        ExpandableHttpServerConfig config,
+        Object... routers
+    ) throws IOException {
         super(config, routers);
         LinkedBlockingQueue<Runnable> queue = new LinkedBlockingQueue<>(config.queueCapacity);
         this.executorService = new ThreadPoolExecutor(
@@ -31,31 +37,49 @@ public class ExpandableHttpServer extends HttpServer {
             TimeUnit.MILLISECONDS,
             queue
         );
+        this.shardHandler = shardHandler;
     }
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         switch (request.getMethod()) {
-            case Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE ->
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            case Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE -> session.sendResponse(new Response(
+                Response.BAD_REQUEST,
+                Response.EMPTY
+            ));
             default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        try {
+        String key = request.getParameter("id=");
+        if (key == null) {
+            handleDefault(request, session);
+            return;
+        }
+        if (shardHandler.isForSelf(key)) {
+            try {
+                executorService.execute(() -> {
+                    try {
+                        super.handleRequest(request, session);
+                    } catch (Exception e) {
+                        logger.error("failed to handle request: {}", e.getMessage());
+                        sendBadRequest(session);
+                    }
+                });
+            } catch (RejectedExecutionException e) {
+                logger.error("Failed to run execution: {}", e.getMessage());
+                sendServiceUnavailable(session);
+            }
+        } else {
             executorService.execute(() -> {
                 try {
-                    super.handleRequest(request, session);
-                } catch (Exception e) {
-                    logger.error("failed to handle request: {}", e.getMessage());
-                    sendBadRequest(session);
+                    session.sendResponse(shardHandler.executeRequest(key, request));
+                } catch (IOException e) {
+                    logger.error("failed to send response: {}", e.getMessage());
                 }
             });
-        } catch (RejectedExecutionException e) {
-            logger.error("Failed to run execution: {}", e.getMessage());
-            sendServiceUnavailable(session);
         }
     }
 
@@ -77,7 +101,11 @@ public class ExpandableHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        Arrays.stream(selectors).forEach(it -> it.selector.forEach(Session::close));
+        Arrays.stream(selectors).forEach(it -> {
+            if (it.selector.isOpen()) {
+                it.selector.forEach(Session::close);
+            }
+        });
         super.stop();
     }
 }
