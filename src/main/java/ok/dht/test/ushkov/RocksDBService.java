@@ -27,6 +27,7 @@ public class RocksDBService implements Service {
     public static final int N_WORKERS = 5;
     public static final int QUEUE_CAP = 100;
     public static final long STOP_TIMEOUT_MINUTES = 1;
+    public static final int REDIRECT_TIMEOUT_MILLIS = 600;
 
     private final ServiceConfig config;
     private RocksDB db;
@@ -167,7 +168,7 @@ public class RocksDBService implements Service {
     private Response redirectRequest(String url, Request request) {
         Request redirectedRequest = new Request(request);
         try {
-            return clientPool.get(url).invoke(redirectedRequest);
+            return clientPool.get(url).invoke(redirectedRequest, REDIRECT_TIMEOUT_MILLIS);
         } catch (Exception e1) {
             return new Response(Response.BAD_GATEWAY, Response.EMPTY);
         }
