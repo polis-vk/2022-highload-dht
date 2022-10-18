@@ -45,7 +45,7 @@ public class DbService implements Service {
         AsyncHttpServerConfig httpConfig = new AsyncHttpServerConfig();
         httpConfig.clusterUrls = serviceConfig.clusterUrls();
         httpConfig.selfUrl = serviceConfig.selfUrl();
-        httpConfig.workersNumber = Runtime.getRuntime().availableProcessors() / 2;
+        httpConfig.workersNumber = Runtime.getRuntime().availableProcessors();
         httpConfig.queueSize = QUEUE_SIZE;
         AcceptorConfig acceptor = new AcceptorConfig();
         acceptor.port = port;
