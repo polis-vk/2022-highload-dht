@@ -4,7 +4,8 @@ import ok.dht.ServiceConfig;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -22,14 +23,22 @@ public final class DemoServer {
 
     public static void main(String[] args) throws IOException,
             ExecutionException, InterruptedException, TimeoutException {
-        int port = 19234;
-        String url = "http://localhost:" + port;
-        ServiceConfig config = new ServiceConfig(
-                port,
-                url,
-                Collections.singletonList(url),
-                Files.createTempDirectory("server")
-        );
-        new ServiceImpl(config).start().get(1, TimeUnit.SECONDS);
+        List<String> clusterUrls = new ArrayList<>(3);
+        int[] ports = new int[3];
+        for (int i = 0; i < 3; i++) {
+            ports[i] = 12353 + i;
+            String url = "http://localhost:" + ports[i];
+            clusterUrls.add(url);
+        }
+
+        for (int i = 0; i < 3; i++) {
+            ServiceConfig config = new ServiceConfig(
+                    ports[i],
+                    clusterUrls.get(i),
+                    clusterUrls,
+                    Files.createTempDirectory("server" + i)
+            );
+            new ServiceImpl(config).start().get(1, TimeUnit.SECONDS);
+        }
     }
 }
