@@ -1,11 +1,15 @@
 package ok.dht.test.shestakova;
 
+import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
+import ok.dht.test.shestakova.dao.MemorySegmentDao;
+import ok.dht.test.shestakova.dao.base.BaseEntry;
 import ok.dht.test.shestakova.exceptions.MethodNotAllowedException;
 import ok.dht.test.shestakova.exceptions.NullKeyException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
+import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
@@ -19,6 +23,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -32,14 +38,16 @@ public class DemoHttpServer extends HttpServer {
     private final ServiceConfig serviceConfig;
     private final ExecutorService workersPool;
     private final CircuitBreakerImpl circuitBreaker;
+    private final MemorySegmentDao dao;
 
     public DemoHttpServer(HttpServerConfig config, HttpClient httpClient, ExecutorService workersPool,
-                          ServiceConfig serviceConfig, Object... routers) throws IOException {
+                          ServiceConfig serviceConfig, MemorySegmentDao dao, Object... routers) throws IOException {
         super(config, routers);
         this.httpClient = httpClient;
         this.serviceConfig = serviceConfig;
         this.workersPool = workersPool;
         this.circuitBreaker = new CircuitBreakerImpl(serviceConfig, httpClient);
+        this.dao = dao;
     }
 
     @Override
@@ -51,8 +59,7 @@ public class DemoHttpServer extends HttpServer {
             return;
         }
 
-        String targetNode = serviceConfig.clusterUrls().size() > 1 ? getClusterByRendezvousHashing(key)
-                : serviceConfig.selfUrl();
+        String targetNode = getClusterByRendezvousHashing(key);
         if (targetNode == null) {
             LOGGER.error("There are no available nodes in the cluster!");
             return;
@@ -89,7 +96,7 @@ public class DemoHttpServer extends HttpServer {
 
         workersPool.execute(() -> {
             try {
-                super.handleRequest(request, session);
+                handleInternalRequest(request, session);
             } catch (IOException e) {
                 LOGGER.error("Error while handling request in " + serviceConfig.selfUrl());
                 circuitBreaker.incrementFallenRequestsCount();
@@ -97,29 +104,74 @@ public class DemoHttpServer extends HttpServer {
         });
     }
 
-    @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-        try {
-            getKeyFromRequest(request, session);
-        } catch (NullKeyException e) {
-            return;
-        }
+    private void handleInternalRequest(Request request, HttpSession session) throws IOException {
+        int methodNum = request.getMethod();
         Response response;
-        int requestMethod = request.getMethod();
-        if (requestMethod != Request.METHOD_GET && requestMethod != Request.METHOD_PUT
-                && requestMethod != Request.METHOD_DELETE) {
+        String id = request.getParameter("id");
+        if (methodNum == Request.METHOD_GET) {
+            response = handleGet(id);
+        } else if (methodNum == Request.METHOD_PUT) {
+            if (request.getPath().equals("/service/message/ill")) {
+                handleIllnessMessage(request);
+                return;
+            } else if (request.getPath().equals("/service/message/healthy")) {
+                handleHealthMessage(request);
+                return;
+            }
+            response = handlePut(request, id);
+        } else if (methodNum == Request.METHOD_DELETE) {
+            response = handleDelete(id);
+        } else {
             response = new Response(
                     Response.METHOD_NOT_ALLOWED,
                     Response.EMPTY
             );
-            session.sendResponse(response);
-            return;
         }
-        response = new Response(
-                Response.SERVICE_UNAVAILABLE,
+        session.sendResponse(response);
+    }
+
+    private Response handleGet(@Param(value = "id") String id) {
+        BaseEntry<MemorySegment> entry = dao.get(fromString(id));
+        if (entry == null) {
+            return new Response(
+                    Response.NOT_FOUND,
+                    Response.EMPTY
+            );
+        }
+        return new Response(
+                Response.OK,
+                entry.value().toByteArray()
+        );
+    }
+
+    private Response handlePut(Request request, @Param(value = "id") String id) {
+        dao.upsert(new BaseEntry<>(
+                fromString(id),
+                MemorySegment.ofArray(request.getBody())
+        ));
+        return new Response(
+                Response.CREATED,
                 Response.EMPTY
         );
-        session.sendResponse(response);
+    }
+
+    private Response handleDelete(@Param(value = "id") String id) {
+        dao.upsert(new BaseEntry<>(
+                fromString(id),
+                null
+        ));
+        return new Response(
+                Response.ACCEPTED,
+                Response.EMPTY
+        );
+    }
+
+    private void handleIllnessMessage(Request request) {
+        putNodesIllnessInfo(Arrays.toString(request.getBody()), true);
+    }
+
+    private void handleHealthMessage(Request request) {
+        putNodesIllnessInfo(Arrays.toString(request.getBody()), false);
     }
 
     @Override
@@ -153,7 +205,7 @@ public class DemoHttpServer extends HttpServer {
         return key;
     }
 
-    public void putNodesIllnessInfo(String node, boolean isIll) {
+    private void putNodesIllnessInfo(String node, boolean isIll) {
         circuitBreaker.putNodesIllnessInfo(node, isIll);
     }
 
@@ -216,5 +268,9 @@ public class DemoHttpServer extends HttpServer {
             }
         }
         return cluster;
+    }
+
+    private MemorySegment fromString(String data) {
+        return data == null ? null : MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 }

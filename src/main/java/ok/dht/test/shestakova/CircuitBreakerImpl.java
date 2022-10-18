@@ -22,6 +22,8 @@ public class CircuitBreakerImpl {
     private final HttpClient httpClient;
     private static final long DELAY = 0L;
     private static final long PERIOD = 5L;
+    private static final int maxFallenRequestsCount = 1000;
+    private static final int maxIllPeriodsCount = 10;
     private final ScheduledThreadPoolExecutor timer = new ScheduledThreadPoolExecutor(1);
     private int illPeriodsCounter;
     private final AtomicLong fallenRequestCount = new AtomicLong();
@@ -67,24 +69,24 @@ public class CircuitBreakerImpl {
     private class BreakerTimerTask implements Runnable {
         @Override
         public void run() {
-            if (fallenRequestCount.get() > 1000) {
+            if (fallenRequestCount.get() > maxFallenRequestsCount) {
                 isIll.set(true);
                 nodesIllness.put(serviceConfig.selfUrl(), true);
-                tellToOtherNodesAboutHealth(true);
+                tellToOtherNodesAboutIllness(true);
             }
             fallenRequestCount.getAndSet(0);
             illPeriodsCounter++;
             // Пока что проверка здоровья ноды не придумана, и мы просто даём ноде 10 периодов по 5 секунд на
             // восстановление и снова начинаем с ней работать (если она все еще больна, мы это поймём через 1 период)
-            if (isIll.get() && illPeriodsCounter > 10) {
+            if (isIll.get() && illPeriodsCounter > maxIllPeriodsCount) {
                 isIll.set(false);
                 nodesIllness.put(serviceConfig.selfUrl(), false);
                 illPeriodsCounter = 0;
-                tellToOtherNodesAboutHealth(false);
+                tellToOtherNodesAboutIllness(false);
             }
         }
 
-        private void tellToOtherNodesAboutHealth(boolean isIll) {
+        private void tellToOtherNodesAboutIllness(boolean isIll) {
             String path = "/service/message/" + (isIll ? "ill" : "healthy");
             for (String nodeUrl : serviceConfig.clusterUrls()) {
                 if (nodeUrl.equals(serviceConfig.selfUrl())) {
