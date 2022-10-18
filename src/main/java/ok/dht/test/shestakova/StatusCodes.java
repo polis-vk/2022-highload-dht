@@ -3,12 +3,9 @@ package ok.dht.test.shestakova;
 import one.nio.http.Response;
 import java.util.Map;
 
-public class StatusCodes {
+public final class StatusCodes {
 
-    private StatusCodes() {
-    }
-
-    public static Map<Integer, String> statuses = Map.ofEntries(
+    public static final Map<Integer, String> statuses = Map.ofEntries(
             Map.entry(100, Response.CONTINUE),
             Map.entry(101, Response.SWITCHING_PROTOCOLS),
             Map.entry(200, Response.OK),
@@ -50,4 +47,7 @@ public class StatusCodes {
             Map.entry(504, Response.GATEWAY_TIMEOUT),
             Map.entry(505, Response.HTTP_VERSION_NOT_SUPPORTED)
     );
+
+    private StatusCodes() {
+    }
 }
