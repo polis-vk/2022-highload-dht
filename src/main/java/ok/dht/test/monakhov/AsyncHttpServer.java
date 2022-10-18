@@ -1,16 +1,20 @@
 package ok.dht.test.monakhov;
 
+import ok.dht.test.monakhov.hashing.NodesRouter;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
 import one.nio.server.SelectorThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.channels.ClosedSelectorException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -69,22 +73,18 @@ public class AsyncHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        executor.shutdown();
+        ExecutorUtils.shutdownGracefully(executor, log);
+
         try {
-            if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            executor.shutdownNow();
-            Thread.currentThread().interrupt();
-        } finally {
             for (SelectorThread thread : selectors) {
                 for (Session session : thread.selector) {
                     session.socket().close();
                 }
             }
-
-            super.stop();
+        } catch (ClosedSelectorException e) {
+            log.error("Unable to shutdown socket", e);
         }
+
+        super.stop();
     }
 }
