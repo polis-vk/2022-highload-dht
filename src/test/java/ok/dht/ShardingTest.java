@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -181,16 +182,20 @@ class ShardingTest extends TestBase {
             serviceInfo.stop();
         }
 
+        int successCount = 0;
         // Check each
         for (ServiceInfo serviceInfo : serviceInfos) {
             serviceInfo.start();
 
             HttpResponse<byte[]> response = serviceInfo.get(key);
-            assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
-            assertArrayEquals(value, response.body());
+            if (response.statusCode() == 200 && Arrays.equals(value, response.body())) {
+                successCount++;
+            }
 
             serviceInfo.stop();
         }
+
+        assertEquals(1, successCount);
     }
 
 }
