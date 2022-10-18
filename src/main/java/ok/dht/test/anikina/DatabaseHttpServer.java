@@ -1,12 +1,6 @@
 package ok.dht.test.anikina;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
-import ok.dht.test.anikina.dao.BaseEntry;
-import ok.dht.test.anikina.dao.Config;
-import ok.dht.test.anikina.dao.Entry;
-import ok.dht.test.anikina.dao.MemorySegmentDao;
-import ok.dht.test.anikina.utils.MemorySegmentUtils;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -19,6 +13,13 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpConnectTimeoutException;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -31,7 +32,6 @@ public class DatabaseHttpServer extends HttpServer {
     private static final int THREAD_MAX = 10;
     private static final int MAX_QUEUE_SIZE = 128;
     private static final int TERMINATION_TIMEOUT_MS = 800;
-    private static final long FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
 
     private final ExecutorService executorService =
             new ThreadPoolExecutor(
@@ -42,12 +42,17 @@ public class DatabaseHttpServer extends HttpServer {
                     new LinkedBlockingQueue<>(MAX_QUEUE_SIZE),
                     new ThreadPoolExecutor.AbortPolicy()
             );
-    private final MemorySegmentDao dao;
+    private final String selfUrl;
+    private final HttpClient client;
+    private final ConsistentHashingImpl consistentHashing;
+    private final DatabaseRequestHandler requestHandler;
 
     public DatabaseHttpServer(ServiceConfig config) throws IOException {
         super(createHttpServerConfig(config.selfPort()));
-        this.dao = new MemorySegmentDao(
-                new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+        this.client = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(2)).build();
+        this.selfUrl = config.selfUrl();
+        this.consistentHashing = new ConsistentHashingImpl(config.clusterUrls());
+        this.requestHandler = new DatabaseRequestHandler(config.workingDir());
     }
 
     private static HttpServerConfig createHttpServerConfig(int port) {
@@ -63,7 +68,20 @@ public class DatabaseHttpServer extends HttpServer {
     public void handleRequest(Request request, final HttpSession session) {
         executorService.execute(() -> {
             try {
-                session.sendResponse(processRequest(request));
+                String key = request.getParameter("id=");
+                if (!request.getPath().equals("/v0/entity") || key == null || key.isEmpty()) {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
+                }
+
+                String shard = consistentHashing.getShardByKey(key);
+                Response response;
+                if (shard.equals(selfUrl)) {
+                    response = requestHandler.handle(key, request);
+                } else {
+                    response = proxyRequest(shard, request);
+                }
+                session.sendResponse(response);
             } catch (IOException e) {
                 if (log.isDebugEnabled()) {
                     log.debug(e.getMessage());
@@ -75,8 +93,10 @@ public class DatabaseHttpServer extends HttpServer {
     @Override
     public synchronized void stop() {
         for (SelectorThread selectorThread : selectors) {
-            for (Session session : selectorThread.selector) {
-                session.close();
+            if (selectorThread.selector.isOpen()) {
+                for (Session session : selectorThread.selector) {
+                    session.close();
+                }
             }
         }
         super.stop();
@@ -94,46 +114,37 @@ public class DatabaseHttpServer extends HttpServer {
             executorService.shutdownNow();
         }
 
-        dao.close();
+        requestHandler.close();
     }
 
-    private Response processRequest(Request request) {
-        String key = request.getParameter("id=");
-        if (!request.getPath().equals("/v0/entity") || key == null || key.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
+    private Response proxyRequest(String serverUrl, Request request) {
+        HttpRequest httpRequest =
+                HttpRequest.newBuilder(URI.create(serverUrl + request.getURI()))
+                        .method(
+                                request.getMethodName(),
+                                HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                        .build();
+        try {
+            HttpResponse<byte[]> httpResponse =
+                    client.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+            String status = switch (httpResponse.statusCode()) {
+                case HttpURLConnection.HTTP_OK -> Response.OK;
+                case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
+                case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
+                case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
+                case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
+                case HttpURLConnection.HTTP_BAD_METHOD -> Response.METHOD_NOT_ALLOWED;
+                case HttpURLConnection.HTTP_INTERNAL_ERROR -> Response.INTERNAL_ERROR;
+                default -> throw new IllegalStateException("Unexpected status code: " + httpResponse.statusCode());
+            };
+            return new Response(status, httpResponse.body());
+        } catch (HttpConnectTimeoutException e) {
+            return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+        } catch (Exception e) {
+            if (log.isDebugEnabled()) {
+                log.debug("Error while proxying request happened", e);
+            }
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> {
-                byte[] value = getFromDao(key);
-                if (value == null) {
-                    return new Response(Response.NOT_FOUND, Response.EMPTY);
-                }
-                return new Response(Response.OK, value);
-            }
-            case Request.METHOD_PUT -> {
-                insertIntoDao(key, request.getBody());
-                return new Response(Response.CREATED, Response.EMPTY);
-            }
-            case Request.METHOD_DELETE -> {
-                insertIntoDao(key, null);
-                return new Response(Response.ACCEPTED, Response.EMPTY);
-            }
-            default -> {
-                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            }
-        }
-    }
-
-    private byte[] getFromDao(String key) {
-        Entry<MemorySegment> entry = dao.get(MemorySegmentUtils.fromString(key));
-        return entry == null ? null : MemorySegmentUtils.toBytes(entry.value());
-    }
-
-    private void insertIntoDao(String key, byte[] bytes) {
-        dao.upsert(new BaseEntry<>(
-                MemorySegmentUtils.fromString(key),
-                MemorySegmentUtils.fromBytes(bytes))
-        );
     }
 }
