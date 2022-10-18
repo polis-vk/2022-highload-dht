@@ -17,21 +17,23 @@ import java.util.concurrent.TimeoutException;
  */
 public final class DemoServer {
 
+    public static final int CLUSTER_SIZE = 5;
+
     private DemoServer() {
         // Only main method
     }
 
     public static void main(String[] args) throws IOException,
             ExecutionException, InterruptedException, TimeoutException {
-        List<String> clusterUrls = new ArrayList<>(3);
-        int[] ports = new int[3];
-        for (int i = 0; i < 3; i++) {
+        List<String> clusterUrls = new ArrayList<>(CLUSTER_SIZE);
+        int[] ports = new int[CLUSTER_SIZE];
+        for (int i = 0; i < CLUSTER_SIZE; i++) {
             ports[i] = 12353 + i;
             String url = "http://localhost:" + ports[i];
             clusterUrls.add(url);
         }
 
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < CLUSTER_SIZE; i++) {
             ServiceConfig config = new ServiceConfig(
                     ports[i],
                     clusterUrls.get(i),

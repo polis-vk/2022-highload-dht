@@ -11,16 +11,15 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ShardingRouter {
     public static final int LOGICAL_NODES_PER_PHYSICAL = 4;
     public static final int ILL_NODE_SKIPPED_REQUESTS = 100;
     public static final int FAILED_REQUESTS_THRESHOLD = 5;
-    public static final int TIME_OUT_MS = 30;
 
     private final List<Node> vNodes;
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -49,19 +48,19 @@ public class ShardingRouter {
         return vNodes;
     }
 
-    public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(String id, Request request) {
-        Node vNode = vNodeByKey(id);
-        return vNode.routedRequestFuture(httpClient, id, request);
+    public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(Request request, String key) {
+        Node vNode = vNodeByKey(key);
+        return vNode.routedRequestFuture(httpClient, request, key);
     }
 
-    public void informAboutFail(String id) {
-        Node vNode = vNodeByKey(id);
+    public void informAboutFail(String key) {
+        Node vNode = vNodeByKey(key);
         vNode.managePossibleIllness();
     }
 
-    public boolean isSelfResponsible(String id, String url) {
-        Node vNode = vNodeByKey(id);
-        return vNode.url.equals(url);
+    public boolean isUrlResponsibleForKey(String serverUrl, String key) {
+        Node vNode = vNodeByKey(key);
+        return vNode.url.equals(serverUrl);
     }
 
     private Node vNodeByKey(String id) {
@@ -86,23 +85,19 @@ public class ShardingRouter {
         private final String url;
         private boolean isIll;
 
-        private Node(String url) {
+        public Node(String url) {
             this.url = url;
         }
 
-        public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(HttpClient httpClient, String key, Request request) {
+        public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(HttpClient httpClient, Request request, String key) {
             if (isIll) {
                 managePossibleRecovery();
                 if (isIll) {
-                    return CompletableFuture.completedFuture(null);
+                    return CompletableFuture.failedFuture(new NoSuchElementException());
                 }
             }
-
             HttpRequest httpRequest = httpRequestOf(key, url, request);
-            CompletableFuture<HttpResponse<byte[]>> httpResponseFuture =
-                    httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-
-            return httpResponseFuture.completeOnTimeout(null, TIME_OUT_MS, TimeUnit.MILLISECONDS);
+            return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
         }
 
         private void managePossibleRecovery() {
