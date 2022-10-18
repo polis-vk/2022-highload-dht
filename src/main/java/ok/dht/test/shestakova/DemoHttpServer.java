@@ -70,15 +70,7 @@ public class DemoHttpServer extends HttpServer {
                 httpRequest = buildHttpRequest(key, targetNode, request);
             } catch (MethodNotAllowedException e) {
                 LOGGER.error("Method not allowed " + serviceConfig.selfUrl() + " method: " + request.getMethod());
-                Response response = new Response(
-                        Response.METHOD_NOT_ALLOWED,
-                        Response.EMPTY
-                );
-                try {
-                    session.sendResponse(response);
-                } catch (IOException ex) {
-                    LOGGER.error("Error while sending response in server " + serviceConfig.selfUrl());
-                }
+                tryToSendErrorResponse(session, Response.METHOD_NOT_ALLOWED);
                 return;
             }
             try {
@@ -91,6 +83,8 @@ public class DemoHttpServer extends HttpServer {
                 return;
             } catch (InterruptedException | IOException e) {
                 LOGGER.error("Error while working with response in server " + serviceConfig.selfUrl());
+                tryToSendErrorResponse(session, Response.INTERNAL_ERROR);
+                return;
             }
         }
 
@@ -104,6 +98,18 @@ public class DemoHttpServer extends HttpServer {
         });
     }
 
+    private void tryToSendErrorResponse(HttpSession session, String resultCode) {
+        Response response = new Response(
+                resultCode,
+                Response.EMPTY
+        );
+        try {
+            session.sendResponse(response);
+        } catch (IOException ex) {
+            LOGGER.error("Error while sending response in server " + serviceConfig.selfUrl());
+        }
+    }
+
     private void handleInternalRequest(Request request, HttpSession session) throws IOException {
         int methodNum = request.getMethod();
         Response response;
@@ -112,10 +118,10 @@ public class DemoHttpServer extends HttpServer {
             response = handleGet(id);
         } else if (methodNum == Request.METHOD_PUT) {
             if (request.getPath().equals("/service/message/ill")) {
-                handleIllnessMessage(request);
+                putNodesIllnessInfo(Arrays.toString(request.getBody()), true);
                 return;
             } else if (request.getPath().equals("/service/message/healthy")) {
-                handleHealthMessage(request);
+                putNodesIllnessInfo(Arrays.toString(request.getBody()), false);
                 return;
             }
             response = handlePut(request, id);
@@ -166,14 +172,6 @@ public class DemoHttpServer extends HttpServer {
         );
     }
 
-    private void handleIllnessMessage(Request request) {
-        putNodesIllnessInfo(Arrays.toString(request.getBody()), true);
-    }
-
-    private void handleHealthMessage(Request request) {
-        putNodesIllnessInfo(Arrays.toString(request.getBody()), false);
-    }
-
     @Override
     public synchronized void stop() {
         for (SelectorThread selectorThread : selectors) {
@@ -191,16 +189,8 @@ public class DemoHttpServer extends HttpServer {
     private String getKeyFromRequest(Request request, HttpSession session) throws NullKeyException {
         String key = request.getParameter("id=");
         if (key == null || key.isEmpty()) {
-            try {
-                Response response = new Response(
-                        Response.BAD_REQUEST,
-                        Response.EMPTY
-                );
-                session.sendResponse(response);
-                throw new NullKeyException();
-            } catch (IOException e) {
-                LOGGER.error("Error while sending response from " + serviceConfig.selfUrl());
-            }
+            tryToSendErrorResponse(session, Response.BAD_REQUEST);
+            throw new NullKeyException();
         }
         return key;
     }
@@ -241,7 +231,7 @@ public class DemoHttpServer extends HttpServer {
         try {
             HttpResponse<byte[]> response = responseCompletableFuture.get(1, TimeUnit.SECONDS);
             session.sendResponse(new Response(
-                    String.valueOf(response.statusCode()),
+                    StatusCodes.statuses.getOrDefault(response.statusCode(), "UNKNOWN ERROR"),
                     response.body()
             ));
         } catch (ExecutionException | TimeoutException e) {
