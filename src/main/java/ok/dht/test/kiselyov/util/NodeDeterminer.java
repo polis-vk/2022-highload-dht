@@ -1,5 +1,6 @@
 package ok.dht.test.kiselyov.util;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static one.nio.util.Hash.murmur3;
@@ -7,8 +8,11 @@ import static one.nio.util.Hash.murmur3;
 public class NodeDeterminer {
     private final List<ClusterNode> clusterNodes;
 
-    public NodeDeterminer(List<ClusterNode> clusterNodes) {
-        this.clusterNodes = clusterNodes;
+    public NodeDeterminer(List<String> clusterUrls) {
+        this.clusterNodes = new ArrayList<>();
+        for (String nodeUrl : clusterUrls) {
+            clusterNodes.add(new ClusterNode(nodeUrl));
+        }
     }
 
     public ClusterNode getNodeUrl(String key) {

@@ -10,4 +10,8 @@ public class ClusterNode {
     public String getUrl() {
         return url;
     }
+
+    public boolean hasUrl(String verifiableUrl) {
+        return url.equals(verifiableUrl);
+    }
 }

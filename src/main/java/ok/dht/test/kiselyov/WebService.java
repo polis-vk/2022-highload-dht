@@ -25,20 +25,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 public class WebService implements Service {
 
@@ -64,11 +61,7 @@ public class WebService implements Service {
             Files.createDirectory(config.workingDir());
         }
         dao = new PersistentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
-        List<ClusterNode> clusterNodes = new ArrayList<>();
-        for (String nodeUrl : config.clusterUrls()) {
-            clusterNodes.add(new ClusterNode(nodeUrl));
-        }
-        nodeDeterminer = new NodeDeterminer(clusterNodes);
+        nodeDeterminer = new NodeDeterminer(config.clusterUrls());
         internalClient = new InternalClient();
         executorService = new ThreadPoolExecutor(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, 0L,
                 TimeUnit.MILLISECONDS, new CustomLinkedBlockingDeque<>(DEQUE_CAPACITY));
@@ -76,7 +69,23 @@ public class WebService implements Service {
             @Override
             public void handleRequest(Request request, HttpSession session) throws IOException {
                 try {
-                    executorService.submit(() -> tryHandleRequest(request, session));
+                    executorService.submit(() -> {
+                        try {
+                            String id = request.getParameter("id=");
+                            if (id == null || id.isBlank()) {
+                                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                                return;
+                            }
+                            ClusterNode targetClusterNode = nodeDeterminer.getNodeUrl(id);
+                            if (targetClusterNode.hasUrl(config.selfUrl())) {
+                                super.handleRequest(request, session);
+                                return;
+                            }
+                            sendResponse(request, session, id, targetClusterNode);
+                        } catch (IOException e) {
+                            LOGGER.error("Error handling request.", e);
+                        }
+                    });
                 } catch (RejectedExecutionException e) {
                     LOGGER.error("Cannot execute task: ", e);
                     session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
@@ -104,78 +113,45 @@ public class WebService implements Service {
                 super.stop();
             }
 
-            private void tryHandleRequest(Request request, HttpSession session) {
-                try {
-                    String id = request.getParameter("id=");
-                    if (id == null || id.isBlank()) {
-                        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                        return;
-                    }
-                    ClusterNode targetClusterNode = nodeDeterminer.getNodeUrl(id);
-                    if (targetClusterNode.getUrl().equals(config.selfUrl())) {
-                        super.handleRequest(request, session);
-                        return;
-                    }
-                    sendResponse(request, session, id, targetClusterNode);
-                } catch (IOException e) {
-                    LOGGER.error("Error handling request.", e);
-                }
-            }
-
-            private void sendResponse(Request request, HttpSession session, String id, ClusterNode targetClusterNode) {
+            private void sendResponse(Request request, HttpSession session, String id, ClusterNode targetClusterNode)
+                    throws IOException {
                 HttpResponse<byte[]> getResponse;
                 try {
-                    try {
-                        getResponse = internalClient.sendRequestToNode(request, targetClusterNode, id)
-                                .get(100, TimeUnit.MILLISECONDS);
-                        switch (request.getMethod()) {
-                            case Request.METHOD_GET -> {
-                                switch (getResponse.statusCode()) {
-                                    case HttpURLConnection.HTTP_OK ->
-                                            session.sendResponse(new Response(Response.OK, getResponse.body()));
-                                    case HttpURLConnection.HTTP_NOT_FOUND ->
-                                            session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
-                                    default ->
-                                            session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
-                                                    Response.EMPTY));
-                                }
-                            }
-                            case Request.METHOD_PUT -> {
-                                if (getResponse.statusCode() == HttpURLConnection.HTTP_CREATED) {
-                                    session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
-                                }
+                    getResponse = internalClient.sendRequestToNode(request, targetClusterNode, id);
+                    switch (request.getMethod()) {
+                        case Request.METHOD_GET -> {
+                            if (getResponse.statusCode() == HttpURLConnection.HTTP_OK) {
+                                session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
+                                        getResponse.body()));
+                            } else {
                                 session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
                                         Response.EMPTY));
-                            }
-                            case Request.METHOD_DELETE -> {
-                                if (getResponse.statusCode() == HttpURLConnection.HTTP_ACCEPTED) {
-                                    session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
-                                }
-                                session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
-                                        Response.EMPTY));
-                            }
-                            default -> {
-                                LOGGER.error("Unsupported request method: {}", request.getMethodName());
-                                throw new InternalError("Unsupported request method: " + request.getMethodName());
                             }
                         }
-                    } catch (ExecutionException e) {
-                        LOGGER.warn("Cluster node is unavailable.", e);
-                        session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                        case Request.METHOD_PUT, Request.METHOD_DELETE ->
+                                session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
+                                Response.EMPTY));
+                        default -> {
+                            LOGGER.error("Unsupported request method: {}", request.getMethodName());
+                            throw new UnsupportedOperationException("Unsupported request method: "
+                                    + request.getMethodName());
+                        }
                     }
                 } catch (URISyntaxException e) {
                     LOGGER.error("URI error.", e);
-                } catch (InterruptedException e) {
-                    LOGGER.error("Error while getting response.");
+                    throw new RuntimeException(e);
                 } catch (IOException e) {
                     LOGGER.error("Error handling request.", e);
-                } catch (TimeoutException e) {
-                    LOGGER.error("No response from cluster node.", e);
+                    session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+                    throw new UncheckedIOException(e);
+                } catch (InterruptedException e) {
+                    LOGGER.error("Error while getting response.", e);
+                    throw new RuntimeException(e);
                 }
             }
         };
-        server.start();
         server.addRequestHandlers(this);
+        server.start();
         return CompletableFuture.completedFuture(null);
     }
 
