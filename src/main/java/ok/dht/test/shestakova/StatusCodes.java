@@ -1,9 +1,13 @@
 package ok.dht.test.shestakova;
 
-import java.util.Map;
 import one.nio.http.Response;
+import java.util.Map;
 
 public class StatusCodes {
+
+    private StatusCodes() {
+    }
+
     public static Map<Integer, String> statuses = Map.ofEntries(
             Map.entry(100, Response.CONTINUE),
             Map.entry(101, Response.SWITCHING_PROTOCOLS),
