@@ -17,6 +17,7 @@ import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 import static ok.dht.test.vihnin.ServiceUtils.ENDPOINT;
 import static ok.dht.test.vihnin.ServiceUtils.emptyResponse;
@@ -24,7 +25,6 @@ import static ok.dht.test.vihnin.ServiceUtils.emptyResponse;
 public class HighLoadService implements Service {
     private final ServiceConfig config;
     private HttpServer server;
-
     private DataBase<String, byte[]> storage;
 
     public HighLoadService(ServiceConfig config) {
@@ -45,7 +45,7 @@ public class HighLoadService implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         storage = getDataStorage(this.config);
-        server = new ParallelHttpServer(createConfigFromPort(config.selfPort()));
+        server = new ParallelHttpServer(config);
         server.start();
         server.addRequestHandlers(this);
         return CompletableFuture.completedFuture(null);
@@ -63,7 +63,7 @@ public class HighLoadService implements Service {
 
     @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id) {
+    public Response handleGet(@Param(value = "id", required = true) String id) throws ExecutionException, InterruptedException {
         if (storage == null) return emptyResponse(Response.NOT_FOUND);
         if (id == null || id.isEmpty()) return emptyResponse(Response.BAD_REQUEST);
 
@@ -109,7 +109,7 @@ public class HighLoadService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
