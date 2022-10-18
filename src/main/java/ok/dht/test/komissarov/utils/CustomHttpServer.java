@@ -36,8 +36,8 @@ public class CustomHttpServer extends HttpServer {
     private static final Logger LOGGER = LoggerFactory.getLogger(CustomHttpServer.class);
 
     private final ExecutorService nodeWorkers =
-            Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() / 2);
-    private final ExecutorService binder = Executors.newSingleThreadExecutor();
+            Executors.newFixedThreadPool(/*Runtime.getRuntime().availableProcessors() / 2*/2);
+    private final ExecutorService binder = Executors.newFixedThreadPool(2)/*newSingleThreadExecutor()*/;
     private final ServiceConfig config;
     private final HttpClient client;
     private final MemorySegmentDao dao;
@@ -172,17 +172,6 @@ public class CustomHttpServer extends HttpServer {
         }
     }
 
-    private String getNode(String id) {
-        int max = Integer.MIN_VALUE;
-        String node = null;
-
-        for (String url : config.clusterUrls()) {
-            max = Math.max(max, Hash.murmur3(url + id));
-            node = url;
-        }
-        return node;
-    }
-
     private String mapCode(int code) {
         return switch (code) {
             case HttpURLConnection.HTTP_OK -> Response.OK;
@@ -193,4 +182,21 @@ public class CustomHttpServer extends HttpServer {
             default -> throw new IllegalStateException("Unexpected value: " + code);
         };
     }
+
+    private String getNode(String id) {
+        int max = Integer.MIN_VALUE;
+        String node = null;
+
+        for (String url : config.clusterUrls()) {
+            int hash = Hash.murmur3(url + id);
+            if (max < hash) {
+                max = hash;
+                node = url;
+            }
+        }
+
+        System.out.println(node + ", id:" + id);
+        return node;
+    }
+
 }
