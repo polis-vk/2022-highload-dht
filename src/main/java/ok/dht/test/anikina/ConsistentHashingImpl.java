@@ -22,8 +22,7 @@ class ConsistentHashingImpl {
     }
 
     private long hashForKey(String key) {
-        byte[] keyBytes = Utf8.toBytes(key);
-        return Hash.xxhash(keyBytes, 0, keyBytes.length);
+        return key.hashCode();
     }
 
     String getShardByKey(String key) {
