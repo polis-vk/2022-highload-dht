@@ -169,9 +169,6 @@ public class ServiceImpl implements Service {
             case Request.METHOD_GET:
             case Request.METHOD_DELETE:
                 Shard shard = algorithm.chooseShard(id);
-                for (Map.Entry<String, Integer> stats : algorithm.getStatistic().entrySet()) {
-                    System.out.println(stats.getKey() + "=" + stats.getValue());
-                }
                 if (shard.getName().equals(config.selfUrl())) {
                     return entityHandlerSelf(id, request);
                 } else {
