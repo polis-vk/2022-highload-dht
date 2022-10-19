@@ -49,7 +49,6 @@ public class HttpServerImpl extends HttpServer {
     private static final Response BAD_RESPONSE = new Response(Response.BAD_REQUEST, Response.EMPTY);
     private static final Response METHOD_NOT_ALLOWED = new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     private static final Response SERVICE_UNAVAILABLE = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-    private static final Response NOT_FOUND = new Response(Response.NOT_FOUND, Response.EMPTY);
     private final MemorySegmentDao database;
     private final PathMapper handlerMapper = new PathMapper();
 
@@ -137,8 +136,10 @@ public class HttpServerImpl extends HttpServer {
                 if (key == null) return;
 
                 String url = shardMapper.getShardByKey(key);
+                LOGGER.info("url:" + url);
 
                 if (url.equals(selfUrl)) {
+                    LOGGER.info("selfurl:" + selfUrl);
                     RequestHandler handler = handlerMapper.find(path, methodName);
                     if (handler != null) {
                         handler.handleRequest(request, session);
@@ -196,7 +197,7 @@ public class HttpServerImpl extends HttpServer {
 
         Entry<MemorySegment> result = database.get(fromString(entityId));
         if (result == null) {
-            session.sendResponse(NOT_FOUND);
+            session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
             return;
         }
         session.sendResponse(new Response(Response.OK, toBytes(result.value())));

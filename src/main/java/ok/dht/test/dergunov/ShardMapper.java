@@ -8,25 +8,19 @@ import java.util.List;
 import java.util.Map;
 
 public class ShardMapper {
-    private static final int VIRTUAL_NODES = 3;
-    private static final char DELIMITER = ':';
     private final long[] rangeHashes;
 
     private final Map<Long, String> mappingHashShard = new HashMap<>();
 
     public ShardMapper(List<String> clusterUrls) {
-        rangeHashes = new long[clusterUrls.size() * VIRTUAL_NODES];
+        rangeHashes = new long[clusterUrls.size()];
         String node;
-        String virtualNode;
         long hash;
         for (int i = 0; i < clusterUrls.size(); i++) {
             node = clusterUrls.get(i);
-            for (int j = 0; j < VIRTUAL_NODES; j++) {
-                virtualNode = node + DELIMITER + j;
-                hash = fromKeyToHash(virtualNode);
-                rangeHashes[i * VIRTUAL_NODES + j] = hash;
-                mappingHashShard.put(hash, node);
-            }
+            hash = fromKeyToHash(node);
+            rangeHashes[i] = hash;
+            mappingHashShard.put(hash, node);
         }
         Arrays.sort(rangeHashes);
     }
