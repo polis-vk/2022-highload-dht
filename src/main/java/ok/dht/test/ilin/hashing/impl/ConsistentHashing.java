@@ -36,14 +36,14 @@ public class ConsistentHashing {
         int virtualNodeCount,
         HashEvaluator hashEvaluator
     ) {
-        NavigableMap<Integer, VirtualNode> virtualNodes = new TreeMap<>();
+        NavigableMap<Integer, VirtualNode> virtualNodesForInit = new TreeMap<>();
         for (String nodeAddress : topology) {
             for (int i = 0; i < virtualNodeCount; i++) {
                 VirtualNode node = new VirtualNode(nodeAddress, i);
-                virtualNodes.put(hashEvaluator.hash(node.name), node);
+                virtualNodesForInit.put(hashEvaluator.hash(node.name), node);
             }
         }
-        return virtualNodes;
+        return virtualNodesForInit;
     }
 
     private static class VirtualNode {
