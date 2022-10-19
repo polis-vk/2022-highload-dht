@@ -99,7 +99,7 @@ public class DemoService implements Service {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 1, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
