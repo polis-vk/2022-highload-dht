@@ -35,9 +35,8 @@ public class CustomHttpServer extends HttpServer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CustomHttpServer.class);
 
-    private final ExecutorService nodeWorkers =
-            Executors.newFixedThreadPool(/*Runtime.getRuntime().availableProcessors() / 2*/2);
-    private final ExecutorService binder = Executors.newFixedThreadPool(2)/*newSingleThreadExecutor()*/;
+    private final ExecutorService nodeWorkers = Executors.newFixedThreadPool(2);
+    private final ExecutorService binder = Executors.newFixedThreadPool(2);
     private final ServiceConfig config;
     private final HttpClient client;
     private final MemorySegmentDao dao;
