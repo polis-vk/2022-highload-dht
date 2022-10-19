@@ -6,12 +6,6 @@ public class HandlerResponse {
 
     private Response response;
 
-    public HandlerResponse() {}
-
-    public HandlerResponse(Response response) {
-        this.response = response;
-    }
-
     public Response getResponse() {
         return response;
     }

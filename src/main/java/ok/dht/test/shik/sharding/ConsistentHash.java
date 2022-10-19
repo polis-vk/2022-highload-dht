@@ -1,5 +1,8 @@
 package ok.dht.test.shik.sharding;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -7,9 +10,6 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
-
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 
 public class ConsistentHash {
 
@@ -22,7 +22,7 @@ public class ConsistentHash {
             return MessageDigest.getInstance(HASHING_ALGORITHMS);
         } catch (NoSuchAlgorithmException e) {
             LOG.error("Cannot instantiate sha-256 algorithm", e);
-            throw new RuntimeException("Cannot instantiate sha-256 algorithm");
+            throw new RuntimeException("Cannot instantiate sha-256 algorithm", e);
         }
     });
 
@@ -37,7 +37,7 @@ public class ConsistentHash {
         this.clusterUrls = clusterUrls;
 
         PriorityQueue<Pair> queue = new PriorityQueue<>(length,
-            Comparator.comparingInt(Pair::key).thenComparing(Pair::index));
+            Comparator.comparingInt(Pair::getKey).thenComparing(Pair::getIndex));
         for (int i = 0; i < clusterUrls.size(); ++i) {
             String url = clusterUrls.get(i);
             for (int j = 0; j < virtualNodesNumber; ++j) {
@@ -50,7 +50,8 @@ public class ConsistentHash {
             Pair pair = queue.poll();
             if (pair == null) {
                 LOG.error("Error while sorting hashes in consistent hashing, cannot poll all hashes");
-                throw new IllegalStateException("Error while sorting hashes in consistent hashing, cannot poll all hashes");
+                throw new IllegalStateException("Error while sorting hashes in consistent hashing,"
+                    + " cannot poll all hashes");
             }
 
             hashes[i] = pair.key;
@@ -75,6 +76,22 @@ public class ConsistentHash {
         return (sha256[0] << 24) + (sha256[1] << 16) + (sha256[2] << 8) + sha256[3];
     }
 
-    private record Pair(int key, int index) { }
+    private static class Pair {
+        private final int key;
+        private final int index;
+
+        public Pair(int key, int index) {
+            this.key = key;
+            this.index = index;
+        }
+
+        public int getKey() {
+            return key;
+        }
+
+        public int getIndex() {
+            return index;
+        }
+    }
 }
 

@@ -139,7 +139,8 @@ public class CustomHttpServer extends HttpServer {
         }
     }
 
-    private void handleProxyRequest(Request request, HttpSession session, String id, String shardUrl) throws IOException {
+    private void handleProxyRequest(Request request, HttpSession session,
+                                    String id, String shardUrl) throws IOException {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(shardUrl + URL_INFIX + id));
         HttpRequest httpRequest;
         switch (request.getMethod()) {
