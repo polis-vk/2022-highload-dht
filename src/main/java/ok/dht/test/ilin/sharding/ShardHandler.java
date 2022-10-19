@@ -19,6 +19,7 @@ public class ShardHandler {
     private final ConsistentHashing consistentHashing;
     private final String selfAddress;
     private final Logger logger = LoggerFactory.getLogger(ShardHandler.class);
+    private final HttpClient httpClient;
 
     public ShardHandler(
         String selfAddress,
@@ -26,11 +27,11 @@ public class ShardHandler {
     ) {
         this.consistentHashing = consistentHashing;
         this.selfAddress = selfAddress;
+        this.httpClient = HttpClient.newBuilder().build();
     }
 
     public Response executeRequest(String key, Request request) {
         final String address = consistentHashing.getServerAddressFromKey(key);
-        HttpClient httpClient = HttpClient.newBuilder().build();
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
             .uri(URI.create(address.concat("/v0/entity?id=").concat(key)))
             .timeout(DEFAULT_TIMEOUT);
