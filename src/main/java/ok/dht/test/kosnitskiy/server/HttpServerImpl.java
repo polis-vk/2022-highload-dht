@@ -1,6 +1,5 @@
 package ok.dht.test.kosnitskiy.server;
 
-import jdk.dynalink.linker.LinkerServices;
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
 import ok.dht.test.kosnitskiy.dao.BaseEntry;
@@ -18,6 +17,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -27,6 +31,7 @@ public class HttpServerImpl extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(HttpServerImpl.class);
     private final ThreadPoolExecutor executor;
     private final MemorySegmentDao memorySegmentDao;
+    private final HttpClient httpClient;
 
     private final String serverUrl;
     private final List<String> clusterUrls;
@@ -39,8 +44,10 @@ public class HttpServerImpl extends HttpServer {
         super(createConfigFromPort(config.selfPort()), routers);
         this.executor = executor;
         this.memorySegmentDao = memorySegmentDao;
+        this.httpClient = HttpClient.newHttpClient();
         clusterUrls = config.clusterUrls();
         serverUrl = config.selfUrl();
+
     }
 
     @Override
@@ -62,7 +69,15 @@ public class HttpServerImpl extends HttpServer {
                 if(targetUrl.equals(serverUrl)) {
                     handleSupported(request, session, id);
                 } else {
-                    
+                    HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(targetUrl + request.getURI()))
+                            .method(
+                                    request.getMethodName(),
+                                    HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                            )
+                            .build();
+                    HttpResponse<byte[]> response = httpClient.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
+
+                    session.sendResponse(new Response(convertResponse(response.statusCode()), response.body()));
                 }
             } catch (Exception e) {
                 try {
@@ -171,7 +186,7 @@ public class HttpServerImpl extends HttpServer {
     }
 
     private String getTargetUrlFromKey(String key) {
-        return String.valueOf(key.hashCode() % clusterUrls.size());
+        return clusterUrls.get(Math.abs(key.hashCode()) % clusterUrls.size());
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -181,5 +196,31 @@ public class HttpServerImpl extends HttpServer {
         acceptor.reusePort = true;
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
         return httpConfig;
+    }
+
+    private static String convertResponse(int statusCode) {
+        return switch (statusCode) {
+            case HttpURLConnection.HTTP_OK -> Response.OK;
+            case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
+            case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
+            case HttpURLConnection.HTTP_NO_CONTENT -> Response.NO_CONTENT;
+            case HttpURLConnection.HTTP_SEE_OTHER -> Response.SEE_OTHER;
+            case HttpURLConnection.HTTP_NOT_MODIFIED -> Response.NOT_MODIFIED;
+            case HttpURLConnection.HTTP_USE_PROXY -> Response.USE_PROXY;
+            case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
+            case HttpURLConnection.HTTP_UNAUTHORIZED -> Response.UNAUTHORIZED;
+            case HttpURLConnection.HTTP_PAYMENT_REQUIRED -> Response.PAYMENT_REQUIRED;
+            case HttpURLConnection.HTTP_FORBIDDEN -> Response.FORBIDDEN;
+            case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
+            case HttpURLConnection.HTTP_NOT_ACCEPTABLE -> Response.NOT_ACCEPTABLE;
+            case HttpURLConnection.HTTP_CONFLICT -> Response.CONFLICT;
+            case HttpURLConnection.HTTP_GONE -> Response.GONE;
+            case HttpURLConnection.HTTP_LENGTH_REQUIRED -> Response.LENGTH_REQUIRED;
+            case HttpURLConnection.HTTP_INTERNAL_ERROR -> Response.INTERNAL_ERROR;
+            case HttpURLConnection.HTTP_NOT_IMPLEMENTED -> Response.NOT_IMPLEMENTED;
+            case HttpURLConnection.HTTP_BAD_GATEWAY -> Response.BAD_GATEWAY;
+            case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> Response.GATEWAY_TIMEOUT;
+            default -> throw new IllegalArgumentException("Unknown status code: " + statusCode);
+        };
     }
 }
