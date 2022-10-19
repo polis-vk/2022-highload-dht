@@ -7,14 +7,10 @@ import ok.dht.test.labazov.dao.Config;
 import ok.dht.test.labazov.dao.Dao;
 import ok.dht.test.labazov.dao.Entry;
 import ok.dht.test.labazov.dao.MemorySegmentDao;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
+import ok.dht.test.labazov.hash.ConsistentHash;
+import ok.dht.test.labazov.hash.Hasher;
+import one.nio.http.*;
+import one.nio.net.ConnectionString;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
@@ -22,6 +18,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -30,13 +30,52 @@ import java.util.concurrent.TimeUnit;
 public final class HttpApi extends HttpServer {
     public static final int FLUSH_THRESHOLD_BYTES = 8 * 1024 * 1024;
     private static final Logger LOG = LoggerFactory.getLogger(HttpApi.class);
+    private final HashMap<String, HttpClient> httpClients = new HashMap<>();
+    private final ConsistentHash shards;
+    private final ServiceConfig config;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private ExecutorService threadPool;
-    private final ServiceConfig config;
 
     public HttpApi(ServiceConfig config) throws IOException {
         super(createConfigFromPort(config.selfPort()));
+        shards = new ConsistentHash();
+        for (final String url : config.clusterUrls()) {
+            final int VNODES = 1;
+
+            final HashSet<Integer> nodeSet = new HashSet<>(VNODES);
+            final Hasher hasher = new Hasher();
+            for (int i = 0; i < VNODES; i++) {
+                nodeSet.add(hasher.digest(url.getBytes(StandardCharsets.UTF_8)));
+            }
+
+            shards.addShard(url, nodeSet);
+        }
         this.config = config;
+    }
+
+    private static void ioExceptionHandler(HttpSession session, IOException e) {
+        try {
+            session.sendResponse(getEmptyResponse(Response.INTERNAL_ERROR));
+        } catch (IOException ex) {
+            LOG.error("IOException during error reporting: " + e.getMessage());
+        }
+    }
+
+    private static Response getEmptyResponse(final String httpCode) {
+        return new Response(httpCode, Response.EMPTY);
+    }
+
+    private static MemorySegment fromString(final String data) {
+        return MemorySegment.ofArray(data.toCharArray());
+    }
+
+    private static HttpServerConfig createConfigFromPort(final int port) {
+        HttpServerConfig httpConfig = new HttpServerConfig();
+        AcceptorConfig acceptor = new AcceptorConfig();
+        acceptor.port = port;
+        acceptor.reusePort = true;
+        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+        return httpConfig;
     }
 
     @Override
@@ -49,6 +88,12 @@ public final class HttpApi extends HttpServer {
             throw new RuntimeException(e);
         }
         super.start();
+
+        for (final String url : config.clusterUrls()) {
+            ConnectionString str = new ConnectionString(url);
+            HttpClient client = new HttpClient(str);
+            httpClients.put(url, client);
+        }
     }
 
     @Override
@@ -58,6 +103,11 @@ public final class HttpApi extends HttpServer {
                 session.close();
             }
         }
+
+        for (final Map.Entry<String, HttpClient> entry : httpClients.entrySet()) {
+            entry.getValue().close();
+        }
+        httpClients.clear();
 
         super.stop();
         shutdownAndAwaitTermination(threadPool);
@@ -91,9 +141,7 @@ public final class HttpApi extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            threadPool.submit(() -> {
-                jobHandler(request, session);
-            });
+            threadPool.submit(() -> jobHandler(request, session));
         } catch (RejectedExecutionException e) {
             session.sendResponse(getEmptyResponse(Response.SERVICE_UNAVAILABLE));
             LOG.error("RejectedExecutionException during job submission: " + e.getMessage());
@@ -112,17 +160,21 @@ public final class HttpApi extends HttpServer {
         }
     }
 
+    private Response forwardRequestByKey(final Request request, final String key) {
+        Response response;
+        Request redirectedRequest = new Request(request);
+        try {
+            response = httpClients.get(shards.getShardByKey(key)).invoke(redirectedRequest);
+        } catch (Exception e1) {
+            response = new Response(Response.BAD_GATEWAY, Response.EMPTY);
+        }
+        final String code = response.getHeaders()[0];
+        return new Response(code, response.getBody());
+    }
+
     private void genericExceptionHandler(Request request, HttpSession session, Exception e) {
         try {
             handleDefault(request, session);
-        } catch (IOException ex) {
-            LOG.error("IOException during error reporting: " + e.getMessage());
-        }
-    }
-
-    private static void ioExceptionHandler(HttpSession session, IOException e) {
-        try {
-            session.sendResponse(getEmptyResponse(Response.INTERNAL_ERROR));
         } catch (IOException ex) {
             LOG.error("IOException during error reporting: " + e.getMessage());
         }
@@ -138,11 +190,19 @@ public final class HttpApi extends HttpServer {
         session.sendResponse(getEmptyResponse(code));
     }
 
+    private boolean isForeignKey(final String key) {
+        final var targetShard = shards.getShardByKey(key);
+        return !targetShard.equals(config.selfUrl());
+    }
+
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) final String key) throws IOException {
+    public Response handleGet(@Param(value = "id", required = true) final String key, final Request req) throws IOException {
         if (key.isEmpty()) {
             return getEmptyResponse(Response.BAD_REQUEST);
+        }
+        if (isForeignKey(key)) {
+            return forwardRequestByKey(req, key);
         }
         Entry<MemorySegment> result = dao.get(fromString(key));
         if (result == null) {
@@ -158,34 +218,23 @@ public final class HttpApi extends HttpServer {
         if (key.isEmpty()) {
             return getEmptyResponse(Response.BAD_REQUEST);
         }
+        if (isForeignKey(key)) {
+            return forwardRequestByKey(req, key);
+        }
         dao.upsert(new BaseEntry<>(fromString(key), MemorySegment.ofArray(req.getBody())));
         return getEmptyResponse(Response.CREATED);
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) final String key) {
+    public Response handleDelete(@Param(value = "id", required = true) final String key, final Request req) {
         if (key.isEmpty()) {
             return getEmptyResponse(Response.BAD_REQUEST);
         }
+        if (isForeignKey(key)) {
+            return forwardRequestByKey(req, key);
+        }
         dao.upsert(new BaseEntry<>(fromString(key), null));
         return getEmptyResponse(Response.ACCEPTED);
-    }
-
-    private static Response getEmptyResponse(final String httpCode) {
-        return new Response(httpCode, Response.EMPTY);
-    }
-
-    private static MemorySegment fromString(final String data) {
-        return MemorySegment.ofArray(data.toCharArray());
-    }
-
-    private static HttpServerConfig createConfigFromPort(final int port) {
-        HttpServerConfig httpConfig = new HttpServerConfig();
-        AcceptorConfig acceptor = new AcceptorConfig();
-        acceptor.port = port;
-        acceptor.reusePort = true;
-        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
-        return httpConfig;
     }
 }
