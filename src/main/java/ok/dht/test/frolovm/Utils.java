@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
-
 public final class Utils {
     public static final int SERVER_ERROR = 500;
     public static final Map<Integer, String> STATUS_MAP = Map.ofEntries(
