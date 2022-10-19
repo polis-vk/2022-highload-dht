@@ -3,12 +3,12 @@ package ok.dht.test.trofimov;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.trofimov.HttpClient.MyHttpClient;
 import ok.dht.test.trofimov.dao.BaseEntry;
 import ok.dht.test.trofimov.dao.Config;
 import ok.dht.test.trofimov.dao.Entry;
 import ok.dht.test.trofimov.dao.MyHttpServer;
 import ok.dht.test.trofimov.dao.impl.InMemoryDao;
+import ok.dht.test.trofimov.httpClient.MyHttpClient;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -34,7 +34,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-
 public class MyService implements Service {
 
     public static final String PATH_V0_ENTITY = "/v0/entity";
@@ -46,6 +45,7 @@ public class MyService implements Service {
     private InMemoryDao dao;
     private ThreadPoolExecutor requestsExecutor;
     private Map<Long, MyHttpClient> clients;
+
     public MyService(ServiceConfig config) {
         this.config = config;
     }
@@ -104,7 +104,8 @@ public class MyService implements Service {
                         }
                     }
                 } else {
-                    MyHttpClient httpClient = clients.computeIfAbsent(Thread.currentThread().getId(), k -> new MyHttpClient());
+                    MyHttpClient httpClient = clients.computeIfAbsent(Thread.currentThread().getId(),
+                            k -> new MyHttpClient());
                     HttpResponse<byte[]> httpResponse = httpClient.get(node, id);
                     response = new Response(getResponseStatusCode(httpResponse.statusCode()), httpResponse.body());
                 }
@@ -177,7 +178,8 @@ public class MyService implements Service {
                         response = emptyResponseFor(Response.CREATED);
                     }
                 } else {
-                    MyHttpClient httpClient = clients.computeIfAbsent(Thread.currentThread().getId(), k -> new MyHttpClient());
+                    MyHttpClient httpClient = clients.computeIfAbsent(Thread.currentThread().getId(),
+                            k -> new MyHttpClient());
                     HttpResponse<byte[]> httpResponse = httpClient.upsert(node, id, request.getBody());
                     response = new Response(getResponseStatusCode(httpResponse.statusCode()), httpResponse.body());
                 }
@@ -204,7 +206,8 @@ public class MyService implements Service {
                         response = emptyResponseFor(Response.ACCEPTED);
                     }
                 } else {
-                    MyHttpClient httpClient = clients.computeIfAbsent(Thread.currentThread().getId(), k -> new MyHttpClient());
+                    MyHttpClient httpClient = clients.computeIfAbsent(Thread.currentThread().getId(),
+                            k -> new MyHttpClient());
                     HttpResponse<byte[]> httpResponse = httpClient.delete(node, id);
                     response = new Response(getResponseStatusCode(httpResponse.statusCode()), httpResponse.body());
                 }
