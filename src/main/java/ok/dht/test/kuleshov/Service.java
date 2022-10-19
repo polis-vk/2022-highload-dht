@@ -8,10 +8,7 @@ import ok.dht.test.kuleshov.dao.Dao;
 import ok.dht.test.kuleshov.dao.Entry;
 import ok.dht.test.kuleshov.dao.storage.MemorySegmentDao;
 import one.nio.http.HttpServer;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.util.Utf8;
 
@@ -26,6 +23,7 @@ public class Service implements ok.dht.Service {
     private static final int DEFAULT_DAO_FLUSH_THRESHOLD = 8192;
     private Dao<MemorySegment, Entry<MemorySegment>> memorySegmentDao;
     private HttpServer server;
+    private boolean isStarted;
 
     public Service(ServiceConfig config) {
         this.config = config;
@@ -33,26 +31,46 @@ public class Service implements ok.dht.Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        server = new CoolAsyncHttpServer(createConfigFromPort(config.selfPort()));
-        server.start();
-        server.addRequestHandlers(this);
+        System.out.println(config.workingDir());
         Config daoConfig = new Config(config.workingDir(), DEFAULT_DAO_FLUSH_THRESHOLD);
         memorySegmentDao = new MemorySegmentDao(daoConfig);
+        server = new CoolAsyncHttpServer(createConfigFromPort(config.selfPort()), this);
+        isStarted = true;
+        server.start();
+
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        server.stop();
-        memorySegmentDao.close();
+        if (isStarted) {
+            System.out.println(config.selfUrl());
+            server.stop();
+            memorySegmentDao.close();
+            isStarted = false;
+        }
+
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(
-            @Param(value = "id", required = true) String id
-    ) {
+    public Response handle(int method, String id, Request request) {
+        switch (method) {
+            case Request.METHOD_GET -> {
+                return handleGet(id);
+            }
+            case Request.METHOD_PUT -> {
+                return handlePut(id, request);
+            }
+            case Request.METHOD_DELETE -> {
+                return handleDelete(id);
+            }
+            default -> {
+                return emptyResponse(Response.BAD_REQUEST);
+            }
+        }
+    }
+
+    public Response handleGet(String id) {
         if (!isCorrectId(id)) {
             return emptyResponse(Response.BAD_REQUEST);
         }
@@ -70,33 +88,25 @@ public class Service implements ok.dht.Service {
         }
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(
-            @Param(value = "id", required = true) String id,
+            String id,
             Request request
     ) {
-        if (!isCorrectId(id)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
         upsertById(id, MemorySegment.ofArray(request.getBody()));
 
         return emptyResponse(Response.CREATED);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(
-            @Param(value = "id", required = true) String id
+            String id
     ) {
-        if (!isCorrectId(id)) {
-            return emptyResponse(Response.BAD_REQUEST);
-        }
-
         upsertById(id, null);
 
         return emptyResponse(Response.ACCEPTED);
+    }
+
+    public ServiceConfig getConfig() {
+        return config;
     }
 
     private static boolean isExistValue(Entry<MemorySegment> entry) {

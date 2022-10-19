@@ -12,14 +12,18 @@ import java.io.IOException;
 import java.util.Set;
 
 public class CoolHttpServer extends HttpServer {
-    private static final Set<Integer> SUPPORTED_METHODS = Set.of(
+    protected final Service service;
+    protected final HttpServerConfig config;
+    protected static final Set<Integer> SUPPORTED_METHODS = Set.of(
             Request.METHOD_DELETE,
             Request.METHOD_GET,
             Request.METHOD_PUT
     );
 
-    public CoolHttpServer(HttpServerConfig config, Object... routers) throws IOException {
+    public CoolHttpServer(HttpServerConfig config, Service service, Object... routers) throws IOException {
         super(config, routers);
+        this.service = service;
+        this.config = config;
     }
 
     @Override
@@ -30,6 +34,32 @@ public class CoolHttpServer extends HttpServer {
         }
 
         session.sendResponse(response);
+    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        int method = request.getMethod();
+        if (!SUPPORTED_METHODS.contains(method)) {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+
+            return;
+        }
+
+        String path = request.getPath();
+        if (path.equals("v1/entity")) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+
+            return;
+        }
+
+        String id = request.getParameter("id=");
+        if (id == null || id.isBlank()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+
+            return;
+        }
+
+        session.sendResponse(service.handle(method, id, request));
     }
 
     @Override
