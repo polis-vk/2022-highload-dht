@@ -49,12 +49,14 @@ public final class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         database = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
-        server = new HttpServerImpl(createConfigFromPort(config.selfPort()), database);
+        ShardMapper shardMapper = new ShardMapper(config.clusterUrls());
+        server = new HttpServerImpl(createConfigFromPort(config.selfPort()), database, config.selfUrl(),
+                shardMapper);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 2, week = 1)
+    @ServiceFactory(stage = 3, week = 1)
     public static class ServiceFactoryImpl implements ServiceFactory.Factory {
 
         @Override
