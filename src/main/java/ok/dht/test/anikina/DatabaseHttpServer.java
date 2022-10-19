@@ -27,8 +27,8 @@ import java.util.concurrent.TimeUnit;
 public class DatabaseHttpServer extends HttpServer {
     private static final Log log = LogFactory.getLog(DatabaseHttpServer.class);
 
-    private static final int THREADS_MIN = 8;
-    private static final int THREAD_MAX = 10;
+    private static final int THREADS_MIN = 2;
+    private static final int THREAD_MAX = 3;
     private static final int MAX_QUEUE_SIZE = 128;
     private static final int TERMINATION_TIMEOUT_MS = 800;
 
