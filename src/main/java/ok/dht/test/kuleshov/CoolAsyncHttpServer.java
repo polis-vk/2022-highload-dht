@@ -69,9 +69,9 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
         return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
     }
 
-    private Response sendPut(int node, String id, byte[] body, String headers) throws HttpException, IOException, PoolException {
+    private Response sendPut(int node, String id, byte[] body) throws HttpException, IOException, PoolException {
         try {
-            return hashToClient.get(node).put("/v1/entity?id=" + id, body, headers);
+            return hashToClient.get(node).put("/v1/entity?id=" + id, body);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
         }
@@ -138,8 +138,9 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                 if (!hashToHost.get(number).equals(selfUrl)) {
                     switch (method) {
                         case Request.METHOD_GET -> session.sendResponse(sendGet(number, id));
-                        case Request.METHOD_PUT -> session.sendResponse(sendPut(number, id, request.getBody(), request.getHeaders()[0]));
+                        case Request.METHOD_PUT -> session.sendResponse(sendPut(number, id, request.getBody()));
                         case Request.METHOD_DELETE -> session.sendResponse(sendDelete(number, id));
+                        default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
                     }
                     return;
                 }
@@ -163,8 +164,6 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-
-
 
         if (isFinished) {
             executorService.shutdown();
