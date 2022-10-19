@@ -47,11 +47,11 @@ public final class HttpApi extends HttpServer {
         super(createConfigFromPort(config.selfPort()));
         shards = new ConsistentHash();
         for (final String url : config.clusterUrls()) {
-            final int VIRTUAL_NODE_COUNT = 1;
+            final int virtualNodeCount = 1;
 
-            final HashSet<Integer> nodeSet = new HashSet<>(VIRTUAL_NODE_COUNT);
+            final HashSet<Integer> nodeSet = new HashSet<>(virtualNodeCount);
             final Hasher hasher = new Hasher();
-            for (int i = 0; i < VIRTUAL_NODE_COUNT; i++) {
+            for (int i = 0; i < virtualNodeCount; i++) {
                 nodeSet.add(hasher.digest(url.getBytes(StandardCharsets.UTF_8)));
             }
 
