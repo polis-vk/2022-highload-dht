@@ -46,7 +46,7 @@ public class CoolHttpServer extends HttpServer {
         }
 
         String path = request.getPath();
-        if (path.equals("v1/entity")) {
+        if ("v1/entity".equals(path)) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
 
             return;
