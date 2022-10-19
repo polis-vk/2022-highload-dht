@@ -24,21 +24,28 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class ServiceImpl implements Service {
 
     private static final long FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
-    private static final long AWAIT_TIMEOUT = 1;
+    private static final long AWAIT_TIMEOUT_SECONDS = 1;
+    private static final long HEALTHCHECK_TIMEOUT_SECONDS = 5;
 
     private final ServiceConfig config;
     private HttpServer server;
     private HttpClient client;
     private MemorySegmentDao dao;
     private NodeRouter router;
+    private Map<String, Boolean> isAlive;
+    private ScheduledExecutorService turnAliveService;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -46,6 +53,13 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
+        isAlive = new HashMap<>();
+        for (String url : config.clusterUrls()) {
+            isAlive.put(url, true);
+        }
+
+        turnAliveService = Executors.newScheduledThreadPool(config.clusterUrls().size());
+
         server = new ConcurrentHttpServer(
                 createConfigFromPort(config.selfPort()),
                 new RoutingConfig(config.selfUrl(), config.clusterUrls())
@@ -91,26 +105,32 @@ public class ServiceImpl implements Service {
                         new Response(Response.METHOD_NOT_ALLOWED, "Unhandled method".getBytes(StandardCharsets.UTF_8));
             };
         } else {
-            byte[] requestBody = request.getBody();
-            if (requestBody == null) requestBody = new byte[]{};
-            HttpRequest.BodyPublisher bodyPublisher = HttpRequest.BodyPublishers.ofByteArray(requestBody);
+            if (isAlive.get(targetUrl)) {
+                byte[] requestBody = request.getBody();
+                if (requestBody == null) requestBody = new byte[]{};
+                HttpRequest.BodyPublisher bodyPublisher = HttpRequest.BodyPublishers.ofByteArray(requestBody);
 
-            HttpRequest httpRequest =
-                    HttpRequest
-                            .newBuilder()
-                            .method(request.getMethodName(), bodyPublisher)
-                            .uri(URI.create(targetUrl + "/v0/entity?id=" + id))
-                            .build();
+                HttpRequest httpRequest = HttpRequest
+                        .newBuilder()
+                        .method(request.getMethodName(), bodyPublisher)
+                        .uri(URI.create(targetUrl + "/v0/entity?id=" + id))
+                        .build();
 
-            try {
-                HttpResponse<byte[]> response =
-                        client
-                                .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                                .get(AWAIT_TIMEOUT, TimeUnit.SECONDS);
+                try {
+                    HttpResponse<byte[]> response = client
+                            .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                            .get(AWAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-                return new Response(String.valueOf(response.statusCode()), response.body());
-            } catch (TimeoutException | InterruptedException | ExecutionException e) {
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                    return new Response(String.valueOf(response.statusCode()), response.body());
+                } catch (TimeoutException | InterruptedException | ExecutionException e) {
+                    isAlive.put(targetUrl, false);
+                    turnAliveService.schedule(() -> {
+                       isAlive.put(targetUrl, true);
+                    }, HEALTHCHECK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                    return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                }
+            } else {
+                return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
             }
         }
     }
