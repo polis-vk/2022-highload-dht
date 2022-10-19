@@ -1,5 +1,6 @@
 package ok.dht.test.shestakova;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
@@ -18,8 +19,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 public class DemoService implements Service {
 
