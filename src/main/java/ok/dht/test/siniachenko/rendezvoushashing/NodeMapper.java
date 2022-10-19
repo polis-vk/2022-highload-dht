@@ -1,13 +1,14 @@
 package ok.dht.test.siniachenko.rendezvoushashing;
 
-import java.util.Arrays;
 import java.util.List;
 
 public class NodeMapper {
     private final List<String> nodeUrls;
+    private final int mod;
 
     public NodeMapper(List<String> nodeUrls) {
         this.nodeUrls = nodeUrls;
+        mod = nodeUrls.size() * 1000;
     }
 
     public String getNodeUrlByKey(byte[] key) {
@@ -23,9 +24,14 @@ public class NodeMapper {
         return maxHashNodeUrl;
     }
 
-    private static int hash(byte[] key, String node) {
-        // TODO: THIS HASH IS MONOTONIC BY NODE NO
-        // TODO: calculate node hashes one time
-        return Arrays.hashCode(key) * 1009 + node.hashCode();
+    private int hash(byte[] key, String node) {
+        int result = 0;
+        for (int i = 0; i < key.length; i++) {
+            for (int j = 0; j < node.length(); j++) {
+                char c = node.charAt(j);
+                result = (result + ((j << 2) == 0 ? ~c : c) * key[i]) % mod;
+            }
+        }
+        return result;
     }
 }
