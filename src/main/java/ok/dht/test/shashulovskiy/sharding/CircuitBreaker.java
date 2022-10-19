@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicIntegerArray;
 public class CircuitBreaker {
 
     private static final int FAILED_REQUESTS_SHUTDOWN_THRESHOLD = Runtime.getRuntime().availableProcessors();
-    private static final int RESTORE_ACTIVE_STATUS_TIMEOUT_DURATION = 4;
+    private static final int RESTORE_ACTIVE_STATUS_TIMEOUT_DURATION = 10;
     private static final TimeUnit RESTORE_ACTIVE_STATUS_TIMEOUT_UNIT = TimeUnit.SECONDS;
 
     private final AtomicIntegerArray shardsFailedRequestsCount;
