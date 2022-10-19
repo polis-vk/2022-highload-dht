@@ -10,7 +10,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.nio.channels.ClosedSelectorException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -31,6 +30,7 @@ public class AsyncHttpServer extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
+            log.debug("Request collected");
             executor.submit(() -> handle(request, session));
         } catch (RejectedExecutionException e) {
             session.sendError(Response.INTERNAL_ERROR, e.getMessage());
@@ -70,18 +70,16 @@ public class AsyncHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        ExecutorUtils.shutdownGracefully(executor, log);
+        super.stop();
 
-        try {
-            for (SelectorThread thread : selectors) {
+        for (SelectorThread thread : selectors) {
+            if (thread.isAlive()) {
                 for (Session session : thread.selector) {
                     session.socket().close();
                 }
             }
-        } catch (ClosedSelectorException e) {
-            log.error("Unable to shutdown socket", e);
         }
 
-        super.stop();
+        ExecutorUtils.shutdownGracefully(executor, log);
     }
 }
