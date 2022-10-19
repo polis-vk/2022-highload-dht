@@ -23,10 +23,13 @@ import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -45,33 +48,27 @@ public class ServiceImpl implements Service {
     private static final String BAD_ID = "Given id is bad.";
     private static final String NO_SUCH_METHOD = "No such method.";
     private static final Logger LOGGER = LoggerFactory.getLogger(ServiceImpl.class);
+    public static final int SERVER_ERROR = 500;
     private final ServiceConfig config;
     private final ShardingAlgorithm algorithm;
     private final HttpClient client = HttpClient.newHttpClient();
     private ExecutorService requestService;
     private MemorySegmentDao dao;
     private HttpServer server;
+    private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(1);
+
+    private static final int MAX_REQUEST_TRIES = 100;
+
+    private final CircuitBreakerImpl circuitBreaker;
 
     public ServiceImpl(ServiceConfig config) {
-        this.config = config;
-        this.algorithm = new RendezvousHashing(config.clusterUrls(), Hash::murmur3);
+        this(config, Hash::murmur3);
     }
 
     public ServiceImpl(ServiceConfig config, Hasher hasher) {
         this.config = config;
-        this.algorithm = new RendezvousHashing(config.clusterUrls(), hasher);
-    }
-
-    private static boolean checkId(final String id) {
-        return id != null && !id.isBlank();
-    }
-
-    private static MemorySegment stringToSegment(final String value) {
-        return MemorySegment.ofArray(Utf8.toBytes(value));
-    }
-
-    private static Response emptyResponse(final String responseCode) {
-        return new Response(responseCode, Response.EMPTY);
+        this.algorithm = new ConsistentHashing(config.clusterUrls(), hasher);
+        this.circuitBreaker = new CircuitBreakerImpl(MAX_REQUEST_TRIES, config.clusterUrls());
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -117,7 +114,7 @@ public class ServiceImpl implements Service {
 
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
-                session.sendResponse(emptyResponse(Response.BAD_REQUEST));
+                session.sendResponse(Utils.emptyResponse(Response.BAD_REQUEST));
             }
 
             @Override
@@ -154,9 +151,9 @@ public class ServiceImpl implements Service {
     }
 
     private Response getHandler(String id) {
-        Entry result = dao.get(stringToSegment(id));
+        Entry result = dao.get(Utils.stringToSegment(id));
         if (result == null) {
-            return emptyResponse(Response.NOT_FOUND);
+            return Utils.emptyResponse(Response.NOT_FOUND);
         } else {
             return new Response(Response.OK, result.value().toByteArray());
         }
@@ -164,7 +161,7 @@ public class ServiceImpl implements Service {
 
     @Path(PATH_ENTITY)
     public Response entityHandler(@Param(PARAM_ID_NAME) String id, Request request, HttpSession session) {
-        if (!checkId(id)) {
+        if (!Utils.checkId(id)) {
             return new Response(Response.BAD_REQUEST, Utf8.toBytes(BAD_ID));
         }
         switch (request.getMethod()) {
@@ -172,32 +169,48 @@ public class ServiceImpl implements Service {
             case Request.METHOD_GET:
             case Request.METHOD_DELETE:
                 Shard shard = algorithm.chooseShard(id);
+                for (Map.Entry<String, Integer> stats : algorithm.getStatistic().entrySet()) {
+                    System.out.println(stats.getKey() + "=" + stats.getValue());
+                }
                 if (shard.getName().equals(config.selfUrl())) {
                     return entityHandlerSelf(id, request);
                 } else {
-                    try {
-                        HttpResponse<byte[]> response = client.send(
-                                HttpRequest.newBuilder().uri(URI.create(shard.getName() + request.getURI())).method(
-                                        request.getMethodName(),
-                                        HttpRequest.BodyPublishers.ofByteArray(request.getBody())).build(),
-                                HttpResponse.BodyHandlers.ofByteArray()
-                        );
-                        String responseStatus = Integer.toString(response.statusCode());
-                        byte[] answer = response.body();
-                        return new Response(responseStatus, answer);
-                    } catch (Exception e) {
-                        LOGGER.error("Something bad happens when client answer", e);
-                        return emptyResponse(Response.BAD_REQUEST);
+                    if (circuitBreaker.isReady(shard.getName())) {
+                        try {
+                            HttpRequest.Builder proxyRequest =
+                                    HttpRequest.newBuilder().uri(URI.create(shard.getName() + request.getURI())).method(
+                                                    request.getMethodName(),
+                                                    HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                                            .timeout(RESPONSE_TIMEOUT);
+                            HttpResponse<byte[]> response =
+                                    client.send(proxyRequest.build(), HttpResponse.BodyHandlers.ofByteArray());
+                            if (response.statusCode() >= SERVER_ERROR) {
+                                circuitBreaker.incrementFail(shard.getName());
+                            } else {
+                                circuitBreaker.successRequest(shard.getName());
+                            }
+                            String responseStatus = Utils.STATUS_MAP.get(response.statusCode());
+                            byte[] answer = response.body();
+                            if (responseStatus == null) {
+                                throw new IllegalArgumentException("Unknown status code: " + response.statusCode());
+                            }
+                            return new Response(responseStatus, answer);
+                        } catch (IOException | InterruptedException e) {
+                            LOGGER.error("Something bad happens when client answer", e);
+                            circuitBreaker.incrementFail(shard.getName());
+                            return Utils.emptyResponse(Response.SERVICE_UNAVAILABLE);
+                        }
+                    } else {
+                        return Utils.emptyResponse(Response.SERVICE_UNAVAILABLE);
                     }
                 }
-
             default:
                 return new Response(Response.METHOD_NOT_ALLOWED, Utf8.toBytes(NO_SUCH_METHOD));
         }
     }
 
     private Response entityHandlerSelf(String id, Request request) {
-        if (!checkId(id)) {
+        if (!Utils.checkId(id)) {
             return new Response(Response.BAD_REQUEST, Utf8.toBytes(BAD_ID));
         }
         switch (request.getMethod()) {
@@ -214,8 +227,8 @@ public class ServiceImpl implements Service {
 
     private Response putHandler(Request request, String id) {
         MemorySegment bodySegment = MemorySegment.ofArray(request.getBody());
-        dao.upsert(new Entry(stringToSegment(id), bodySegment));
-        return emptyResponse(Response.CREATED);
+        dao.upsert(new Entry(Utils.stringToSegment(id), bodySegment));
+        return Utils.emptyResponse(Response.CREATED);
     }
 
     void closeExecutorPool(ExecutorService pool) {
@@ -234,8 +247,8 @@ public class ServiceImpl implements Service {
     }
 
     private Response deleteHandler(String id) {
-        dao.upsert(new Entry(stringToSegment(id), null));
-        return emptyResponse(Response.ACCEPTED);
+        dao.upsert(new Entry(Utils.stringToSegment(id), null));
+        return Utils.emptyResponse(Response.ACCEPTED);
     }
 
     @Override
