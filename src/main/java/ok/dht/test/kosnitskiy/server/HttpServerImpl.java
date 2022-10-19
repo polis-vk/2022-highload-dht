@@ -27,6 +27,9 @@ import java.util.List;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import com.google.common.hash.HashFunction;
+import com.google.common.hash.Hashing;
+
 public class HttpServerImpl extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(HttpServerImpl.class);
     private final ThreadPoolExecutor executor;
@@ -35,6 +38,8 @@ public class HttpServerImpl extends HttpServer {
 
     private final String serverUrl;
     private final List<String> clusterUrls;
+
+    private final HashFunction hash = Hashing.murmur3_128();
 
     private static final long SHUTDOWN_WAIT_TIME_SECONDS = 60;
 
@@ -72,7 +77,9 @@ public class HttpServerImpl extends HttpServer {
                     HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(targetUrl + request.getURI()))
                             .method(
                                     request.getMethodName(),
-                                    HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                                    HttpRequest
+                                            .BodyPublishers
+                                            .ofByteArray(request.getBody() == null ? Response.EMPTY : request.getBody())
                             )
                             .build();
                     HttpResponse<byte[]> response = httpClient.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
@@ -186,7 +193,7 @@ public class HttpServerImpl extends HttpServer {
     }
 
     private String getTargetUrlFromKey(String key) {
-        return clusterUrls.get(Math.abs(key.hashCode()) % clusterUrls.size());
+        return clusterUrls.get(Math.abs(hash.newHasher().putString(key, StandardCharsets.UTF_8).hash().hashCode() % clusterUrls.size()));
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
