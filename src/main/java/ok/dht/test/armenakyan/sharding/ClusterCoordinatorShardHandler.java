@@ -3,6 +3,7 @@ package ok.dht.test.armenakyan.sharding;
 import ok.dht.test.armenakyan.sharding.hashing.ConsistentHashing;
 import ok.dht.test.armenakyan.sharding.hashing.KeyHasher;
 import ok.dht.test.armenakyan.sharding.model.Shard;
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
@@ -38,6 +39,11 @@ public class ClusterCoordinatorShardHandler implements ShardRequestHandler {
                 .shardByKey(key)
                 .requestHandler()
                 .handleForKey(key, request);
+    }
+
+    @Override
+    public void handleForKey(String key, Request request, HttpSession session) throws IOException {
+        session.sendResponse(handleForKey(key, request));
     }
 
     @Override
