@@ -1,12 +1,11 @@
 package ok.dht.test.nadutkin;
 
 import ok.dht.ServiceConfig;
-import ok.dht.test.nadutkin.impl.utils.Constants;
 import ok.dht.test.nadutkin.impl.ServiceImpl;
+import ok.dht.test.nadutkin.impl.utils.Constants;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 

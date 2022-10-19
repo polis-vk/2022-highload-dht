@@ -112,7 +112,8 @@ public class ServiceImpl implements Service {
                         return upsert(id, null, Response.ACCEPTED);
                     }
                     default -> {
-                        return new Response(Response.METHOD_NOT_ALLOWED, getBytes("Not implemented yet"));
+                        return new Response(Response.METHOD_NOT_ALLOWED,
+                                getBytes("Not implemented yet"));
                     }
                 }
             } else {

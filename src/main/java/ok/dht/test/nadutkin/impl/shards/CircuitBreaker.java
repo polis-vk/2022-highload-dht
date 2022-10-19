@@ -28,18 +28,10 @@ public class CircuitBreaker {
         }
     }
 
-    /**
-     * Функция вызывается если был сделан удачный запрос на соседний шард
-     * @param index Шард на который был отправлен удачный запрос
-     */
     public void success(int index) {
         process(index, oldValue -> max(0, oldValue - 1));
     }
-
-    /**
-     * Функция вызывается в случае, если запрос на соседний шард упал с InterruptedException
-     * @param index Шард на который был отправлен неудачный запрос
-     */
+    
     public void fail(int index) {
         process(index, oldValue -> min(Constants.MAX_FAILS, oldValue + 1));
     }
