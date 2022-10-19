@@ -7,7 +7,7 @@ import java.util.Map;
 
 public class Utils {
 
-    public Utils() {
+    private Utils() {
     }
 
     public static final Map<Integer, String> STATUS_MAP = Map.ofEntries(
