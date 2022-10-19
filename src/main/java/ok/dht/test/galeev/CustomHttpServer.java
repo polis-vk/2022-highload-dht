@@ -28,8 +28,6 @@ public class CustomHttpServer extends HttpServer {
         this.executorService = executorService;
     }
 
-
-
     @Override
     public void handleDefault(Request request,
                               HttpSession session) throws IOException {
@@ -69,7 +67,10 @@ public class CustomHttpServer extends HttpServer {
 
         RequestHandler requestHandler = defaultMapper.find(path, method);
 
-        if (requestHandler != null) {
+        if (requestHandler == null) {
+            // If handler wasn't found - trying to understand whether its METHOD_NOT_ALLOWED or BAD_REQUEST
+            handleDefault(request, session);
+        } else {
             // If handler was found - then everything is OK
             String id = request.getParameter("id=");
             if (id == null || id.isEmpty()) {
@@ -77,9 +78,6 @@ public class CustomHttpServer extends HttpServer {
                 return;
             }
             executorService.submit(new RunnableForRequestHandler(requestHandler, request, session));
-        } else {
-            // If handler wasn't found - trying to understand whether its METHOD_NOT_ALLOWED or BAD_REQUEST
-            handleDefault(request, session);
         }
     }
 

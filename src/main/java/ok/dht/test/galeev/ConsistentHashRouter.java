@@ -25,8 +25,8 @@ public class ConsistentHashRouter {
 
     public int getAmountOfVNodes(Node physicalNodeName) {
         int amount = 0;
-        for (VNode vNode : ring.values()) {
-            if (vNode.isVirtualNodeOf(physicalNodeName)) {
+        for (VNode vnode : ring.values()) {
+            if (vnode.isVirtualNodeOf(physicalNodeName)) {
                 amount++;
             }
         }
@@ -42,21 +42,21 @@ public class ConsistentHashRouter {
         }
         int hash = Hash.murmur3(key);
         SortedMap<Integer,VNode> tailMap = ring.tailMap(hash);
-        int nodeHashVal = !tailMap.isEmpty() ? tailMap.firstKey() : ring.firstKey();
+        int nodeHashVal = tailMap.isEmpty() ? ring.firstKey() : tailMap.firstKey();
         return ring.get(nodeHashVal).getPhysicalNode();
     }
 
     public static class VNode {
         final Node physicalNode;
-        final String vNodeName;
+        final String vnodeName;
 
-        public VNode(Node physicalNode, int vNodeIndex) {
+        public VNode(Node physicalNode, int vnodeIndex) {
             this.physicalNode = physicalNode;
-            this.vNodeName = physicalNode.nodeAddress + "_" + vNodeIndex;
+            this.vnodeName = physicalNode.nodeAddress + "_" + vnodeIndex;
         }
 
         public String getKey() {
-            return vNodeName;
+            return vnodeName;
         }
 
         public boolean isVirtualNodeOf(Node physicalNode) {

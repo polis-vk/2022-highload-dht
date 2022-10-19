@@ -26,7 +26,7 @@ public class DemoService implements Service {
     private static final Logger LOGGER = LoggerFactory.getLogger(DemoService.class);
     public static final String DEFAULT_PATH = "/v0/entity";
     public static final int FLUSH_THRESHOLD_BYTES = 16777216; // 16MB
-    private final String LOGGER_PREFIX;
+    private final String LoggerPrefix;
     protected SkipOldExecutorFactory skipOldThreadExecutorFactory = new SkipOldExecutorFactory();
     private final ServiceConfig config;
     private DaoMiddleLayer<String, byte[]> dao;
@@ -37,7 +37,7 @@ public class DemoService implements Service {
 
     public DemoService(ServiceConfig config) {
         this.config = config;
-        LOGGER_PREFIX = config.selfUrl() + ": ";
+        LoggerPrefix = config.selfUrl() + ": ";
     }
 
     @Override
@@ -84,120 +84,123 @@ public class DemoService implements Service {
     }
 
     public void handleGet(Request request, HttpSession session) throws IOException {
-        String id = request.getParameter("id=");
-        ConsistentHashRouter.Node routerNode = consistentHashRouter.getNode(id);
+        String key = request.getParameter("id=");
+        ConsistentHashRouter.Node routerNode = consistentHashRouter.getNode(key);
 
         Response finalResponse;
-        if (!routerNode.isAlive) {
-            logInfo("cannot access router node is dead", request.getMethod(), id, routerNode);
-            finalResponse = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-        } else if (routerNode.nodeAddress.equals(config.selfUrl())) {
-            logInfo("dao get", request.getMethod(), id, null);
-            Entry<String, byte[]> entry = dao.get(id);
-            if (entry == null) {
-                finalResponse = new Response(Response.NOT_FOUND, Response.EMPTY);
+        if (routerNode.isAlive) {
+            if (routerNode.nodeAddress.equals(config.selfUrl())) {
+                logInfo("dao get", request.getMethod(), key, null);
+                Entry<String, byte[]> entry = dao.get(key);
+                if (entry == null) {
+                    finalResponse = new Response(Response.NOT_FOUND, Response.EMPTY);
+                } else {
+                    finalResponse = new Response(Response.OK, entry.value());
+                }
             } else {
-                finalResponse = new Response(Response.OK, entry.value());
+                logInfo("proxy send", request.getMethod(), key, routerNode);
+                try {
+                    finalResponse = clusterClient.get(routerNode, key);
+                    logInfo("proxy got response", request.getMethod(), key, routerNode);
+                } catch (ExecutionException | InterruptedException e) {
+                    logError("proxy error while getting response",
+                            request.getMethod(), key, routerNode, e);
+                    finalResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                } catch (TimeoutException e) {
+                    logError("proxy time out while getting response",
+                            request.getMethod(), key, routerNode, null);
+                    finalResponse = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                }
             }
         } else {
-            logInfo("proxy send", request.getMethod(), id, routerNode);
-            try {
-                finalResponse = clusterClient.get(routerNode, id);
-                logInfo("proxy got response", request.getMethod(), id, routerNode);
-            } catch (ExecutionException | InterruptedException e) {
-                logError("proxy error while getting response",
-                        request.getMethod(), id, routerNode, e);
-                finalResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-            } catch (TimeoutException e) {
-                logError("proxy time out while getting response",
-                        request.getMethod(), id, routerNode, null);
-                finalResponse = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-            }
+            logInfo("cannot access router node is dead", request.getMethod(), key, routerNode);
+            finalResponse = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
         session.sendResponse(finalResponse);
-        logInfo("send response", request.getMethod(), id, null);
+        logInfo("send response", request.getMethod(), key, null);
     }
 
     public void handlePut(Request request, HttpSession session) throws IOException {
-        String id = request.getParameter("id=");
-        ConsistentHashRouter.Node routerNode = consistentHashRouter.getNode(id);
+        String key = request.getParameter("id=");
+        ConsistentHashRouter.Node routerNode = consistentHashRouter.getNode(key);
 
         Response finalResponse;
-        if (!routerNode.isAlive) {
-            logInfo("cannot access router node is dead", request.getMethod(), id, routerNode);
-            finalResponse = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-        } else if (routerNode.nodeAddress.equals(config.selfUrl())) {
-            logInfo("dao put", request.getMethod(), id, null);
-            dao.upsert(id, request.getBody());
-            finalResponse = new Response(Response.CREATED, Response.EMPTY);
-        } else {
-            logInfo("proxy send", request.getMethod(), id, routerNode);
-            try {
-                finalResponse = clusterClient.put(routerNode, id, request.getBody());
-                logInfo("proxy got response", request.getMethod(), id, routerNode);
-            } catch (ExecutionException | InterruptedException e) {
-                logError("proxy error while getting response",
-                        request.getMethod(), id, routerNode, e);
-                finalResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-            } catch (TimeoutException e) {
-                logError("proxy time out while getting response",
-                        request.getMethod(), id, routerNode, null);
-                finalResponse = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+        if (routerNode.isAlive) {
+            if (routerNode.nodeAddress.equals(config.selfUrl())) {
+                logInfo("dao put", request.getMethod(), key, null);
+                dao.upsert(key, request.getBody());
+                finalResponse = new Response(Response.CREATED, Response.EMPTY);
+            } else {
+                logInfo("proxy send", request.getMethod(), key, routerNode);
+                try {
+                    finalResponse = clusterClient.put(routerNode, key, request.getBody());
+                    logInfo("proxy got response", request.getMethod(), key, routerNode);
+                } catch (ExecutionException | InterruptedException e) {
+                    logError("proxy error while getting response",
+                            request.getMethod(), key, routerNode, e);
+                    finalResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                } catch (TimeoutException e) {
+                    logError("proxy time out while getting response",
+                            request.getMethod(), key, routerNode, null);
+                    finalResponse = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                }
             }
+        } else {
+            logInfo("cannot access router node is dead", request.getMethod(), key, routerNode);
+            finalResponse = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
         session.sendResponse(finalResponse);
-        logInfo("send response", request.getMethod(), id, null);
+        logInfo("send response", request.getMethod(), key, null);
 
     }
 
     public void handleDelete(Request request, HttpSession session) throws IOException {
-        String id = request.getParameter("id=");
-        ConsistentHashRouter.Node routerNode = consistentHashRouter.getNode(id);
+        String key = request.getParameter("id=");
+        ConsistentHashRouter.Node routerNode = consistentHashRouter.getNode(key);
 
         Response finalResponse;
-        if (!routerNode.isAlive) {
-            logInfo("cannot access router node is dead", request.getMethod(), id, routerNode);
-            finalResponse = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-        } else if (routerNode.nodeAddress.equals(config.selfUrl())) {
-            logInfo("dao response", request.getMethod(), id, null);
-            dao.delete(id);
-            finalResponse = new Response(Response.ACCEPTED, Response.EMPTY);
-        } else {
-            logInfo("proxy send", request.getMethod(), id, routerNode);
-            try {
-                finalResponse = clusterClient.delete(routerNode, id);
-                logInfo("proxy got response", request.getMethod(), id, routerNode);
-            } catch (ExecutionException | InterruptedException e) {
-                logError("proxy error while getting response",
-                        request.getMethod(), id, routerNode, e);
-                finalResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-            } catch (TimeoutException e) {
-                logError("proxy time out while getting response",
-                        request.getMethod(), id, routerNode, null);
-                finalResponse = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+        if (routerNode.isAlive) {
+            if (routerNode.nodeAddress.equals(config.selfUrl())) {
+                logInfo("dao response", request.getMethod(), key, null);
+                dao.delete(key);
+                finalResponse = new Response(Response.ACCEPTED, Response.EMPTY);
+            } else {
+                logInfo("proxy send", request.getMethod(), key, routerNode);
+                try {
+                    finalResponse = clusterClient.delete(routerNode, key);
+                    logInfo("proxy got response", request.getMethod(), key, routerNode);
+                } catch (ExecutionException | InterruptedException e) {
+                    logError("proxy error while getting response",
+                            request.getMethod(), key, routerNode, e);
+                    finalResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                } catch (TimeoutException e) {
+                    logError("proxy time out while getting response",
+                            request.getMethod(), key, routerNode, null);
+                    finalResponse = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                }
             }
+        } else {
+            logInfo("cannot access router node is dead", request.getMethod(), key, routerNode);
+            finalResponse = new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
         session.sendResponse(finalResponse);
-        logInfo("send response", request.getMethod(), id, null);
+        logInfo("send response", request.getMethod(), key, null);
     }
 
-    private void logInfo(String message, int method, String id, ConsistentHashRouter.Node routeNode) {
-//        LOGGER.info(LOGGER_PREFIX + "\n"
-//                + "\t" + message + "\n"
-//                + "\t" + "Method: " + method + "\n"
-//                + "\t" + "Id: " + id + "\n"
-//                + "\t" + ((routeNode == null) ? "Locally" : "RouteNode: " + routeNode.nodeAddress)
-//        );
+    private void logInfo(String messageText, int method, String id, ConsistentHashRouter.Node routeNode) {
+        LOGGER.info(getLogText(messageText, method, id, routeNode));
     }
 
-    private void logError(String message, int method, String id, ConsistentHashRouter.Node routeNode, Exception e) {
-//        LOGGER.error(LOGGER_PREFIX + "\n"
-//                        + "\t" + message + "\n"
-//                        + "\t" + "Method: " + method + "\n"
-//                        + "\t" + "Id: " + id + "\n"
-//                        + "\t" + ((routeNode == null) ? "Locally" : "RouteNode: " + routeNode.nodeAddress)
-//                , e
-//        );
+    private void logError(String messageText, int method, String id, ConsistentHashRouter.Node routeNode, Exception e) {
+        LOGGER.error(getLogText(messageText, method, id, routeNode), e);
+    }
+
+    private String getLogText(String messageText, int method, String id, ConsistentHashRouter.Node routeNode) {
+        return LoggerPrefix + "\n"
+                + "\t" + messageText + "\n"
+                + "\t" + "Method: " + method + "\n"
+                + "\t" + "Id: " + id + "\n"
+                + "\t" + ((routeNode == null) ? "Locally" : "RouteNode: " + routeNode.nodeAddress);
     }
 
     private static DaoMiddleLayer<String, byte[]> getDao(ServiceConfig config)

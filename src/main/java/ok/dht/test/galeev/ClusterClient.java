@@ -18,10 +18,10 @@ import java.util.concurrent.TimeoutException;
 
 public class ClusterClient {
     public static final int deadNodeThreshold = 10;
-    private final HttpClient httpClient;
-    private final int CONNECT_TIMEOUT = 150;
-    private final ExecutorService executor;
+    private static final int CONNECT_TIMEOUT = 150;
     private static final Duration CLIENT_TIMEOUT = Duration.of(300, ChronoUnit.MILLIS);
+    private final HttpClient httpClient;
+    private final ExecutorService executor;
 
     public ClusterClient() throws IOException {
         executor = Executors.newFixedThreadPool(8);
