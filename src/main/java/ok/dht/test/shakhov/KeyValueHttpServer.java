@@ -14,65 +14,83 @@ import java.io.IOException;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiFunction;
 
 public class KeyValueHttpServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(KeyValueHttpServer.class);
 
+    private static final String ENDPOINT = "/v0/entity";
+    private static final String ID_PARAMETER = "id=";
+    private static final int QUEUE_MAX_SIZE = 50_000;
+    private static final int MAX_POOL_SIZE = Runtime.getRuntime().availableProcessors() / 2;
+    private static final int CORE_POOL_SIZE = MAX_POOL_SIZE / 2;
+    private static final int KEEP_ALIVE_TIME_SECONDS = 30;
+    private static final RejectedExecutionHandler DISCARD_POLICY = new ThreadPoolExecutor.DiscardPolicy();
+    private static final int AWAIT_TERMINATION_TIMEOUT_SECONDS = 20;
+
+    private final BiFunction<Request, String, Response> requestHandler;
     private ExecutorService executorService;
 
-    public KeyValueHttpServer(HttpServerConfig config, Object... routers) throws IOException {
-        super(config, routers);
+    public KeyValueHttpServer(HttpServerConfig config, BiFunction<Request, String, Response> requestHandler) throws IOException {
+        super(config);
+        this.requestHandler = requestHandler;
     }
 
     @Override
     public synchronized void start() {
         super.start();
-        int maximumPoolSize = Runtime.getRuntime().availableProcessors();
-        int corePoolSize = maximumPoolSize / 2;
-        BlockingQueue<Runnable> taskQueue = new LinkedBlockingQueue<>();
-        executorService = new ThreadPoolExecutor(corePoolSize, maximumPoolSize, 60, TimeUnit.SECONDS, taskQueue);
+        BlockingQueue<Runnable> taskQueue = new LinkedBlockingQueue<>(QUEUE_MAX_SIZE);
+        executorService = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE, KEEP_ALIVE_TIME_SECONDS, TimeUnit.SECONDS, taskQueue, DISCARD_POLICY);
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) {
+    public void handleRequest(Request request, HttpSession session) throws IOException {
         executorService.execute(() -> {
             try {
-                super.handleRequest(request, session);
-            } catch (Exception e) {
-                try {
-                    session.sendError(Response.BAD_REQUEST, e.getMessage());
-                } catch (IOException ioEx) {
-                    log.error("IO Error occurred", ioEx);
+                if (!ENDPOINT.equals(request.getPath())) {
+                    session.sendResponse(badRequest());
+                    return;
                 }
+
+                String id = request.getParameter(ID_PARAMETER);
+                if (id == null || id.isEmpty()) {
+                    session.sendResponse(badRequest());
+                    return;
+                }
+
+                session.sendResponse(requestHandler.apply(request, id));
+            } catch (IOException e) {
+                log.error("Error during sending response", e);
+                session.close();
             }
         });
     }
 
     @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response badRequest = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        session.sendResponse(badRequest);
-    }
-
-    @Override
     public synchronized void stop() {
         super.stop();
+
+        executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(AWAIT_TERMINATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                executorService.shutdownNow();
+                executorService.awaitTermination(AWAIT_TERMINATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
         for (SelectorThread selector : selectors) {
             for (Session session : selector.selector) {
                 session.close();
             }
         }
+    }
 
-        executorService.shutdown();
-        try {
-            if (!executorService.awaitTermination(20, TimeUnit.SECONDS)) {
-                executorService.shutdownNow();
-                executorService.awaitTermination(10, TimeUnit.SECONDS);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+    private static Response badRequest() {
+        return new Response(Response.BAD_REQUEST, Response.EMPTY);
     }
 }
