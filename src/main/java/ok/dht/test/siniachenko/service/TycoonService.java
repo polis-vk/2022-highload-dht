@@ -97,10 +97,10 @@ public class TycoonService implements ok.dht.Service {
         }
 
         String nodeUrlByKey = nodeMapper.getNodeUrlByKey(Utf8.toBytes(idParameter));
-        if (!config.selfUrl().equals(nodeUrlByKey)) {
-            proxyRequest(request, session, idParameter, nodeUrlByKey);
+        if (config.selfUrl().equals(nodeUrlByKey)) {
+            executeLocal(session, request.getMethod(), idParameter, request.getBody());
         } else {
-            handleLocal(session, request.getMethod(), idParameter, request.getBody());
+            proxyRequest(request, session, idParameter, nodeUrlByKey);
         }
     }
 
@@ -140,7 +140,7 @@ public class TycoonService implements ok.dht.Service {
         });
     }
 
-    private void handleLocal(HttpSession session, int method, String id, byte[] body) {
+    private void executeLocal(HttpSession session, int method, String id, byte[] body) {
         try {
             executorService.execute(() -> {
                 Response response = switch (method) {
