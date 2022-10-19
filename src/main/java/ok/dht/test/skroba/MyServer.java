@@ -50,7 +50,7 @@ public final class MyServer {
         try {
             int result = Integer.parseInt(s);
             return result > 0 && result <= 9999;
-        } catch (NumberFormatException | NullPointerException e) {
+        } catch (NumberFormatException e) {
             return false;
         }
     }

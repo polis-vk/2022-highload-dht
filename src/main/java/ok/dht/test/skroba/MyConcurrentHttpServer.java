@@ -51,15 +51,16 @@ public class MyConcurrentHttpServer extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(MyConcurrentHttpServer.class);
     
     private final MyClient client = new MyClientImpl();
-    ;
     private final ServiceConfig config;
-    
     private ExecutorService requestsWorkers;
     private MemorySegmentDao dao;
     private Manager manager;
     
-    
-    public MyConcurrentHttpServer(ServiceConfig serviceConfig, HttpServerConfig config, Object... routers) throws IOException {
+    public MyConcurrentHttpServer(
+            ServiceConfig serviceConfig,
+            HttpServerConfig config,
+            Object... routers
+    ) throws IOException {
         super(config, routers);
         this.manager = new MyManagerImpl(serviceConfig);
         this.dao = createDaoFromDir(serviceConfig.workingDir(), FLUSH_THRESHOLD_BYTES);
@@ -153,7 +154,10 @@ public class MyConcurrentHttpServer extends HttpServer {
                     (response, throwable) -> {
                         try {
                             if (throwable == null) {
-                                session.sendResponse(new Response(Integer.toString(response.statusCode()), response.body()));
+                                session.sendResponse(
+                                        new Response(
+                                                Integer.toString(response.statusCode()),
+                                                response.body()));
                                 return null;
                             }
                             

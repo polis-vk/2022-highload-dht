@@ -16,9 +16,4 @@ public class Node {
     public int getHash() {
         return hash;
     }
-    
-    @Override
-    public int hashCode() {
-        return hash;
-    }
 }
