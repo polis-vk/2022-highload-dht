@@ -19,7 +19,7 @@ public class CircuitBreakerImpl implements CircuitBreaker {
     private final Map<String, Integer> nameToIndex;
     private final AtomicBoolean[] isRestarterStart;
 
-//    private final ScheduledExecutorService demonRestarter;
+    private final ScheduledExecutorService demonRestarter;
 
     public CircuitBreakerImpl(int maxRequestTries, List<String> shardNames) {
         this.failed = new AtomicIntegerArray(shardNames.size());
@@ -30,7 +30,7 @@ public class CircuitBreakerImpl implements CircuitBreaker {
             this.nameToIndex.put(shardNames.get(i), i);
             isRestarterStart[i] = new AtomicBoolean(false);
         }
-//        this.demonRestarter = Executors.newScheduledThreadPool(1);
+        this.demonRestarter = Executors.newScheduledThreadPool(1);
     }
 
     @Override
@@ -43,21 +43,21 @@ public class CircuitBreakerImpl implements CircuitBreaker {
     public void incrementFail(String shardName) {
         int index = nameToIndex.get(shardName);
         failed.incrementAndGet(index);
-//        if (maxRequestTries <= failed.get(index) && isRestarterStart[index].get()) {
-//            startDemonRestarter(index, shardName);
-//        }
+        if (maxRequestTries <= failed.get(index) && isRestarterStart[index].get()) {
+            startDemonRestarter(index, shardName);
+        }
     }
 
     private void startDemonRestarter(int nodeIndex, String shardName) {
         isRestarterStart[nodeIndex].set(true);
-//        demonRestarter.schedule(
-//                () -> {
-//                    successRequest(shardName);
-//                    isRestarterStart[nodeIndex].set(false);
-//                },
-//                RETRY_TIME_PERIOD,
-//                TimeUnit.MILLISECONDS
-//        );
+        demonRestarter.schedule(
+                () -> {
+                    successRequest(shardName);
+                    isRestarterStart[nodeIndex].set(false);
+                },
+                RETRY_TIME_PERIOD,
+                TimeUnit.MILLISECONDS
+        );
     }
 
     @Override
@@ -66,7 +66,7 @@ public class CircuitBreakerImpl implements CircuitBreaker {
     }
 
     public void close() {
-//        Utils.closeExecutorPool(demonRestarter);
+        Utils.closeExecutorPool(demonRestarter);
     }
 
 }

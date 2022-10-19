@@ -3,19 +3,16 @@ package ok.dht.test.frolovm;
 import jdk.incubator.foreign.MemorySegment;
 import one.nio.http.Response;
 import one.nio.util.Utf8;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.net.http.HttpResponse;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 
 public final class Utils {
     public static final int SERVER_ERROR = 500;
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(Utils.class);
-
     public static final Map<Integer, String> STATUS_MAP = Map.ofEntries(
             Map.entry(100, Response.CONTINUE),
             Map.entry(101, Response.SWITCHING_PROTOCOLS),
@@ -58,6 +55,7 @@ public final class Utils {
             Map.entry(504, Response.GATEWAY_TIMEOUT),
             Map.entry(505, Response.HTTP_VERSION_NOT_SUPPORTED)
     );
+    private static final Logger LOGGER = LoggerFactory.getLogger(Utils.class);
 
     private Utils() {
     }
