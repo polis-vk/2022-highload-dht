@@ -17,7 +17,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 public class ProxyShardHandler implements ShardRequestHandler {
-    private final static Executor CLIENT_EXECUTOR = Executors.newCachedThreadPool();
+    private static final Executor CLIENT_EXECUTOR = Executors.newCachedThreadPool();
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
             .executor(CLIENT_EXECUTOR)
             .build();
