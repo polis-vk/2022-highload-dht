@@ -126,11 +126,11 @@ public class ServiceImpl implements Service {
 
     private Response sendResponseToAnotherNode(Request request, Shard shard) throws IOException, InterruptedException {
         byte[] body = request.getBody() == null ? Response.EMPTY : request.getBody();
-        HttpRequest.Builder proxyRequest =
-                HttpRequest.newBuilder().uri(URI.create(shard.getName() + request.getURI())).method(
+        HttpResponse<byte[]> response =
+                client.send(HttpRequest.newBuilder().uri(URI.create(shard.getName() + request.getURI())).method(
                                 request.getMethodName(),
-                                HttpRequest.BodyPublishers.ofByteArray(body)).timeout(RESPONSE_TIMEOUT);
-        HttpResponse<byte[]> response = client.send(proxyRequest.build(), HttpResponse.BodyHandlers.ofByteArray());
+                                HttpRequest.BodyPublishers.ofByteArray(body)).timeout(RESPONSE_TIMEOUT).build(),
+                        HttpResponse.BodyHandlers.ofByteArray());
         if (Utils.isServerError(response)) {
             circuitBreaker.incrementFail(shard.getName());
         } else {
