@@ -1,6 +1,8 @@
 package ok.dht.test.kosnitskiy.server;
 
+import jdk.dynalink.linker.LinkerServices;
 import jdk.incubator.foreign.MemorySegment;
+import ok.dht.ServiceConfig;
 import ok.dht.test.kosnitskiy.dao.BaseEntry;
 import ok.dht.test.kosnitskiy.dao.Entry;
 import ok.dht.test.kosnitskiy.dao.MemorySegmentDao;
@@ -10,12 +12,14 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -24,14 +28,19 @@ public class HttpServerImpl extends HttpServer {
     private final ThreadPoolExecutor executor;
     private final MemorySegmentDao memorySegmentDao;
 
+    private final String serverUrl;
+    private final List<String> clusterUrls;
+
     private static final long SHUTDOWN_WAIT_TIME_SECONDS = 60;
 
-    public HttpServerImpl(HttpServerConfig config,
+    public HttpServerImpl(ServiceConfig config,
                           MemorySegmentDao memorySegmentDao,
                           ThreadPoolExecutor executor, Object... routers) throws IOException {
-        super(config, routers);
+        super(createConfigFromPort(config.selfPort()), routers);
         this.executor = executor;
         this.memorySegmentDao = memorySegmentDao;
+        clusterUrls = config.clusterUrls();
+        serverUrl = config.selfUrl();
     }
 
     @Override
@@ -39,15 +48,22 @@ public class HttpServerImpl extends HttpServer {
         String id = request.getParameter("id=");
         if (!isTypeSupported(request)) {
             session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            return;
         }
 
         if (!"/v0/entity".equals(request.getPath()) || id == null || id.isEmpty()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
         }
 
         executor.execute(() -> {
+            String targetUrl = getTargetUrlFromKey(id);
             try {
-                handleSupported(request, session, id);
+                if(targetUrl.equals(serverUrl)) {
+                    handleSupported(request, session, id);
+                } else {
+                    
+                }
             } catch (Exception e) {
                 try {
                     session.sendResponse(new Response(
@@ -152,5 +168,18 @@ public class HttpServerImpl extends HttpServer {
                 ));
             }
         }
+    }
+
+    private String getTargetUrlFromKey(String key) {
+        return String.valueOf(key.hashCode() % clusterUrls.size());
+    }
+
+    private static HttpServerConfig createConfigFromPort(int port) {
+        HttpServerConfig httpConfig = new HttpServerConfig();
+        AcceptorConfig acceptor = new AcceptorConfig();
+        acceptor.port = port;
+        acceptor.reusePort = true;
+        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+        return httpConfig;
     }
 }
