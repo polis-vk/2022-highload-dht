@@ -110,10 +110,10 @@ public class EntityService implements Service {
     }
 
     private static ExpandableHttpServerConfig createConfigFromPort(int port) {
-        ExpandableHttpServerConfig httpConfig = new ExpandableHttpServerConfig();
         AcceptorConfig acceptor = new AcceptorConfig();
         acceptor.port = port;
         acceptor.reusePort = true;
+        ExpandableHttpServerConfig httpConfig = new ExpandableHttpServerConfig();
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
         httpConfig.selectors = 2;
         return httpConfig;
