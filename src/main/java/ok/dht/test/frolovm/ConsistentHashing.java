@@ -14,9 +14,6 @@ public class ConsistentHashing implements ShardingAlgorithm {
     private final Hasher hasher;
 
     private static final int SHARD_VNODES = 4;
-
-    private final Map<String, Integer> statistic;
-
     private final Map<Integer, Shard> hashing;
 
     private final int[] vnodes;
@@ -24,15 +21,10 @@ public class ConsistentHashing implements ShardingAlgorithm {
     public ConsistentHashing(List<String> shardNames, Hasher hasher) {
         this.shards = shardNames.stream().map(Shard::new).sorted(Comparator.comparing(Shard::getName)).toList();
         this.hasher = hasher;
-        statistic = new HashMap<>();
         this.vnodes = new int[SHARD_VNODES * this.shards.size()];
         this.hashing = new HashMap<>();
 
         initVnodes(hasher, this.shards);
-
-        for (String shard : shardNames) {
-            statistic.put(shard, 0);
-        }
     }
 
     private void initVnodes(Hasher hasher, List<Shard> shards) {
@@ -58,12 +50,6 @@ public class ConsistentHashing implements ShardingAlgorithm {
         } else {
             answer = hashing.get(vnodes[(-index - 1) % vnodes.length]);
         }
-        statistic.put(answer.getName(), statistic.getOrDefault(answer.getName(), 0) + 1);
         return answer;
-    }
-
-    @Override
-    public Map<String, Integer> getStatistic() {
-        return statistic;
     }
 }

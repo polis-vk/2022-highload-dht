@@ -6,5 +6,4 @@ public interface ShardingAlgorithm {
 
     Shard chooseShard(String shard);
 
-    Map<String, Integer> getStatistic();
 }
