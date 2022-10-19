@@ -16,7 +16,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -27,7 +26,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
 
 public class TycoonService implements ok.dht.Service {
     private static final Logger LOG = LoggerFactory.getLogger(TycoonService.class);
@@ -100,52 +98,59 @@ public class TycoonService implements ok.dht.Service {
 
         String nodeUrlByKey = nodeMapper.getNodeUrlByKey(Utf8.toBytes(idParameter));
         if (!config.selfUrl().equals(nodeUrlByKey)) {
-            httpClient.sendAsync(
-                HttpRequest.newBuilder()
-                    .uri(URI.create(nodeUrlByKey + PATH + "?id=" + idParameter))
-                    .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                    .build(),
-                HttpResponse.BodyHandlers.ofByteArray()
-            ).thenAccept(response -> {
-                String statusCode;
-                if (response.statusCode() == 400) {
-                    statusCode = Response.BAD_REQUEST;
-                } else if (response.statusCode() == 405) {
-                    statusCode = Response.METHOD_NOT_ALLOWED;
-                } else if (response.statusCode() == 404) {
-                    statusCode = Response.NOT_FOUND;
-                } else if (response.statusCode() == 200) {
-                    statusCode = Response.OK;
-                } else if (response.statusCode() == 201) {
-                    statusCode = Response.CREATED;
-                } else if (response.statusCode() == 202) {
-                    statusCode = Response.ACCEPTED;
-                } else {
-                    LOG.error("Unexpected status {} code requesting node {}", response.statusCode(), nodeUrlByKey);
-                    statusCode = Response.INTERNAL_ERROR;
-                }
-                Response proxyResponse = new Response(statusCode, response.body());
-                sendResponse(session, proxyResponse);
-            }).orTimeout(1000, TimeUnit.MILLISECONDS)
-            .exceptionally(ex -> {
-                LOG.error("Error after proxy request to {}", nodeUrlByKey, ex);
-                Response proxyResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-                sendResponse(session, proxyResponse);
-                return null;
-            });
+            proxyRequest(request, session, idParameter, nodeUrlByKey);
         } else {
-            switch (request.getMethod()) {
-                case Request.METHOD_GET -> execute(session, () -> get(idParameter));
-                case Request.METHOD_PUT -> execute(session, () -> upsert(idParameter, request));
-                case Request.METHOD_DELETE -> execute(session, () -> delete(idParameter));
-                default -> execute(session, () -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-            }
+            handleLocal(session, request.getMethod(), idParameter, request.getBody());
         }
     }
 
-    private void execute(HttpSession session, Supplier<Response> supplier) {
+    private void proxyRequest(Request request, HttpSession session, String idParameter, String nodeUrl) {
+        httpClient.sendAsync(
+            HttpRequest.newBuilder()
+                .uri(URI.create(nodeUrl + PATH + "?id=" + idParameter))
+                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .build(),
+            HttpResponse.BodyHandlers.ofByteArray()
+        ).thenAccept(response -> {
+            String statusCode;
+            if (response.statusCode() == 400) {
+                statusCode = Response.BAD_REQUEST;
+            } else if (response.statusCode() == 405) {
+                statusCode = Response.METHOD_NOT_ALLOWED;
+            } else if (response.statusCode() == 404) {
+                statusCode = Response.NOT_FOUND;
+            } else if (response.statusCode() == 200) {
+                statusCode = Response.OK;
+            } else if (response.statusCode() == 201) {
+                statusCode = Response.CREATED;
+            } else if (response.statusCode() == 202) {
+                statusCode = Response.ACCEPTED;
+            } else {
+                LOG.error("Unexpected status {} code requesting node {}", response.statusCode(), nodeUrl);
+                statusCode = Response.INTERNAL_ERROR;
+            }
+            Response proxyResponse = new Response(statusCode, response.body());
+            sendResponse(session, proxyResponse);
+        }).orTimeout(1000, TimeUnit.MILLISECONDS)
+        .exceptionally(ex -> {
+            LOG.error("Error after proxy request to {}", nodeUrl, ex);
+            Response proxyResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            sendResponse(session, proxyResponse);
+            return null;
+        });
+    }
+
+    private void handleLocal(HttpSession session, int method, String id, byte[] body) {
         try {
-            executorService.execute(() -> sendResponse(session, supplier.get()));
+            executorService.execute(() -> {
+                Response response = switch (method) {
+                    case Request.METHOD_GET -> get(id);
+                    case Request.METHOD_PUT -> upsert(id, body);
+                    case Request.METHOD_DELETE -> delete(id);
+                    default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                };
+                sendResponse(session, response);
+            });
         } catch (RejectedExecutionException e) {
             LOG.error("Cannot execute task", e);
             sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
@@ -180,9 +185,9 @@ public class TycoonService implements ok.dht.Service {
         }
     }
 
-    private Response upsert(String id, Request request) {
+    private Response upsert(String id, byte[] value) {
         try {
-            levelDb.put(Utf8.toBytes(id), request.getBody());
+            levelDb.put(Utf8.toBytes(id), value);
             return new Response(Response.CREATED, Response.EMPTY);
         } catch (DBException e) {
             LOG.error("Error in DB", e);
