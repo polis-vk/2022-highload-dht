@@ -20,7 +20,7 @@ public class CircuitBreakerImpl {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CircuitBreakerImpl.class);
     private final HttpClient httpClient;
-    private static final long DELAY = 0L;
+    private static final long DELAY = 5L;
     private static final long PERIOD = 5L;
     private static final int MAX_FALLEN_REQUESTS_COUNT = 1000;
     private static final int MAX_ILL_PERIODS_COUNT = 10;

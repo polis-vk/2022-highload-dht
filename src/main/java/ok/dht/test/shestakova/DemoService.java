@@ -14,10 +14,12 @@ import java.nio.file.Files;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import static java.net.http.HttpClient.newHttpClient;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 public class DemoService implements Service {
 
@@ -49,7 +51,16 @@ public class DemoService implements Service {
                 TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(QUEUE_CAPACITY)
         );
-        httpClient = newHttpClient();
+        ThreadFactory threadFactory = new ThreadFactoryBuilder()
+                .setNameFormat("Client-thread-%d")
+                .build();
+        httpClient = HttpClient.newBuilder()
+                .executor(
+                        Executors.newFixedThreadPool(
+                                POOL_SIZE,
+                                threadFactory
+                        ))
+                .build();
         server = new DemoHttpServer(createConfigFromPort(config.selfPort()), httpClient, workersPool, config, dao);
         server.addRequestHandlers(this);
         server.start();

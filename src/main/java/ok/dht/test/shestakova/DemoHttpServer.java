@@ -5,7 +5,6 @@ import ok.dht.ServiceConfig;
 import ok.dht.test.shestakova.dao.MemorySegmentDao;
 import ok.dht.test.shestakova.dao.base.BaseEntry;
 import ok.dht.test.shestakova.exceptions.MethodNotAllowedException;
-import ok.dht.test.shestakova.exceptions.NullKeyException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -52,10 +51,9 @@ public class DemoHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) {
-        String key;
-        try {
-            key = getKeyFromRequest(request, session);
-        } catch (NullKeyException e) {
+        String key = request.getParameter("id=");
+        if (key == null || key.isEmpty()) {
+            tryToSendErrorResponse(session, Response.BAD_REQUEST);
             return;
         }
 
@@ -69,7 +67,7 @@ public class DemoHttpServer extends HttpServer {
             try {
                 httpRequest = buildHttpRequest(key, targetNode, request);
             } catch (MethodNotAllowedException e) {
-                LOGGER.error("Method not allowed " + serviceConfig.selfUrl() + " method: " + request.getMethod());
+                LOGGER.error("Method not allowed {} method: {}", serviceConfig.selfUrl(), request.getMethod());
                 tryToSendErrorResponse(session, Response.METHOD_NOT_ALLOWED);
                 return;
             }
@@ -82,7 +80,7 @@ public class DemoHttpServer extends HttpServer {
                 getResponse(responseCompletableFuture, session);
                 return;
             } catch (InterruptedException | IOException e) {
-                LOGGER.error("Error while working with response in server " + serviceConfig.selfUrl());
+                LOGGER.error("Error while working with response in server {}", serviceConfig.selfUrl());
                 tryToSendErrorResponse(session, Response.INTERNAL_ERROR);
                 return;
             }
@@ -92,8 +90,9 @@ public class DemoHttpServer extends HttpServer {
             try {
                 handleInternalRequest(request, session);
             } catch (IOException e) {
-                LOGGER.error("Error while handling request in " + serviceConfig.selfUrl());
+                LOGGER.error("Error while handling request in {}", serviceConfig.selfUrl());
                 circuitBreaker.incrementFallenRequestsCount();
+                tryToSendErrorResponse(session, Response.SERVICE_UNAVAILABLE);
             }
         });
     }
@@ -106,7 +105,7 @@ public class DemoHttpServer extends HttpServer {
         try {
             session.sendResponse(response);
         } catch (IOException ex) {
-            LOGGER.error("Error while sending response in server " + serviceConfig.selfUrl());
+            LOGGER.error("Error while sending response in server {}", serviceConfig.selfUrl());
         }
     }
 
@@ -186,15 +185,6 @@ public class DemoHttpServer extends HttpServer {
         super.stop();
     }
 
-    private String getKeyFromRequest(Request request, HttpSession session) throws NullKeyException {
-        String key = request.getParameter("id=");
-        if (key == null || key.isEmpty()) {
-            tryToSendErrorResponse(session, Response.BAD_REQUEST);
-            throw new NullKeyException();
-        }
-        return key;
-    }
-
     private void putNodesIllnessInfo(String node, boolean isIll) {
         circuitBreaker.putNodesIllnessInfo(node, isIll);
     }
@@ -235,7 +225,7 @@ public class DemoHttpServer extends HttpServer {
                     response.body()
             ));
         } catch (ExecutionException | TimeoutException e) {
-            LOGGER.error("Error while working with response in " + serviceConfig.selfUrl());
+            LOGGER.error("Error while working with response in {}", serviceConfig.selfUrl());
             session.sendResponse(new Response(
                     Response.SERVICE_UNAVAILABLE,
                     Response.EMPTY
@@ -244,7 +234,7 @@ public class DemoHttpServer extends HttpServer {
     }
 
     private String getClusterByRendezvousHashing(String key) {
-        long hashVal = Long.MIN_VALUE;
+        long hashVal = Integer.MIN_VALUE;
         String cluster = null;
 
         for (String nodeUrl : serviceConfig.clusterUrls()) {
@@ -252,7 +242,7 @@ public class DemoHttpServer extends HttpServer {
                 continue;
             }
             int tmpHash = Hash.murmur3(nodeUrl + key);
-            if (tmpHash > hashVal) {
+            if (cluster == null || tmpHash > hashVal) {
                 hashVal = tmpHash;
                 cluster = nodeUrl;
             }
