@@ -29,7 +29,6 @@ import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements Service {
 
-    public static final int SERVER_ERROR = 500;
     private static final int FLUSH_THRESHOLD_BYTES = 1_048_576;
     private static final String PATH_ENTITY = "/v0/entity";
     private static final String PARAM_ID_NAME = "id=";
@@ -115,23 +114,24 @@ public class ServiceImpl implements Service {
                             return Utils.emptyResponse(Response.SERVICE_UNAVAILABLE);
                         }
                     } else {
+                        LOGGER.info("Node is unavailable right now");
                         return Utils.emptyResponse(Response.SERVICE_UNAVAILABLE);
                     }
                 }
             default:
+                LOGGER.info("Method is not allowed: " + request.getMethod());
                 return new Response(Response.METHOD_NOT_ALLOWED, Utf8.toBytes(NO_SUCH_METHOD));
         }
     }
 
     private Response sendResponseToAnotherNode(Request request, Shard shard) throws IOException, InterruptedException {
+        byte[] body = request.getBody() == null ? Response.EMPTY : request.getBody();
         HttpRequest.Builder proxyRequest =
                 HttpRequest.newBuilder().uri(URI.create(shard.getName() + request.getURI())).method(
                                 request.getMethodName(),
-                                HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                        .timeout(RESPONSE_TIMEOUT);
-        HttpResponse<byte[]> response =
-                client.send(proxyRequest.build(), HttpResponse.BodyHandlers.ofByteArray());
-        if (response.statusCode() >= SERVER_ERROR) {
+                                HttpRequest.BodyPublishers.ofByteArray(body)).timeout(RESPONSE_TIMEOUT);
+        HttpResponse<byte[]> response = client.send(proxyRequest.build(), HttpResponse.BodyHandlers.ofByteArray());
+        if (Utils.isServerError(response)) {
             circuitBreaker.incrementFail(shard.getName());
         } else {
             circuitBreaker.successRequest(shard.getName());

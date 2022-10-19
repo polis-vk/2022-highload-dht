@@ -3,9 +3,11 @@ package ok.dht.test.frolovm;
 import jdk.incubator.foreign.MemorySegment;
 import one.nio.http.Response;
 import one.nio.util.Utf8;
+import java.net.http.HttpResponse;
 import java.util.Map;
 
 public final class Utils {
+    public static final int SERVER_ERROR = 500;
 
     public static final Map<Integer, String> STATUS_MAP = Map.ofEntries(
             Map.entry(100, Response.CONTINUE),
@@ -63,5 +65,9 @@ public final class Utils {
 
     public static Response emptyResponse(final String responseCode) {
         return new Response(responseCode, Response.EMPTY);
+    }
+
+    public static boolean isServerError(HttpResponse<byte[]> response) {
+        return response.statusCode() >= SERVER_ERROR;
     }
 }
