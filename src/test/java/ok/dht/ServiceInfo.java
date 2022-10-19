@@ -74,4 +74,8 @@ public class ServiceInfo {
     private HttpRequest.Builder requestForRange(String key) {
         return request("/v0/entity?id=" + key);
     }
+
+    public ServiceConfig getConfig() {
+        return config;
+    }
 }
