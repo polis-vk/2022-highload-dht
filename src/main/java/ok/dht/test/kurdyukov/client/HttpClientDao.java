@@ -3,13 +3,11 @@ package ok.dht.test.kurdyukov.client;
 import ok.dht.test.kurdyukov.server.HttpServerDao;
 import one.nio.http.Request;
 
-import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.http.WebSocket;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
@@ -18,14 +16,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class HttpClientDao {
-    private final String uri;
-
     public final AtomicBoolean isNotConnect = new AtomicBoolean(false);
 
     private final ScheduledExecutorService listenerConnect = Executors.newSingleThreadScheduledExecutor();
-    public HttpClientDao(String uri) {
-        this.uri = uri;
 
+    public HttpClientDao(String uri) {
         try {
             HttpRequest httpRequest = HttpRequest
                     .newBuilder(new URI(uri + HttpServerDao.PING))
@@ -55,6 +50,7 @@ public class HttpClientDao {
             throw new RuntimeException(e);
         }
     }
+
     private final HttpClient httpClient = HttpClient
             .newBuilder()
             .connectTimeout(Duration.ofSeconds(1))
