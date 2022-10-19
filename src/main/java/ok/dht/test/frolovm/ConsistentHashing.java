@@ -9,12 +9,9 @@ import java.util.Map;
 
 public class ConsistentHashing implements ShardingAlgorithm {
 
-    private final List<Shard> shards;
-
-    private final Hasher hasher;
-
     private static final int SHARD_VNODES = 4;
-
+    private final List<Shard> shards;
+    private final Hasher hasher;
     private final Map<String, Integer> statistic;
 
     private final Map<Integer, Shard> hashing;
