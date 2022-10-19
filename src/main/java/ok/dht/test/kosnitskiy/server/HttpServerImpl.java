@@ -39,10 +39,12 @@ public class HttpServerImpl extends HttpServer {
         String id = request.getParameter("id=");
         if (!isTypeSupported(request)) {
             session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            return;
         }
 
         if (!"/v0/entity".equals(request.getPath()) || id == null || id.isEmpty()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
         }
 
         executor.execute(() -> {
