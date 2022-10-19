@@ -37,6 +37,5 @@ public final class ServerImpl {
         );
         ServiceImpl service = new ServiceImpl(cfg);
         service.start().get(1, TimeUnit.SECONDS);
-        System.out.println("Socket is ready: " + url);
     }
 }

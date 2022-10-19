@@ -1,5 +1,7 @@
 package ok.dht.test.kosnitskiy.server;
 
+import com.google.common.hash.HashFunction;
+import com.google.common.hash.Hashing;
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
 import ok.dht.test.kosnitskiy.dao.BaseEntry;
@@ -26,9 +28,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-
-import com.google.common.hash.HashFunction;
-import com.google.common.hash.Hashing;
 
 public class HttpServerImpl extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(HttpServerImpl.class);
@@ -71,7 +70,7 @@ public class HttpServerImpl extends HttpServer {
         executor.execute(() -> {
             String targetUrl = getTargetUrlFromKey(id);
             try {
-                if(targetUrl.equals(serverUrl)) {
+                if (targetUrl.equals(serverUrl)) {
                     handleSupported(request, session, id);
                 } else {
                     HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(targetUrl + request.getURI()))
@@ -82,7 +81,8 @@ public class HttpServerImpl extends HttpServer {
                                             .ofByteArray(request.getBody() == null ? Response.EMPTY : request.getBody())
                             )
                             .build();
-                    HttpResponse<byte[]> response = httpClient.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
+                    HttpResponse<byte[]> response = httpClient.send(proxyRequest,
+                            HttpResponse.BodyHandlers.ofByteArray());
 
                     session.sendResponse(new Response(convertResponse(response.statusCode()), response.body()));
                 }
@@ -193,7 +193,8 @@ public class HttpServerImpl extends HttpServer {
     }
 
     private String getTargetUrlFromKey(String key) {
-        return clusterUrls.get(Math.abs(hash.newHasher().putString(key, StandardCharsets.UTF_8).hash().hashCode() % clusterUrls.size()));
+        return clusterUrls.get(Math.abs(hash.newHasher().putString(key, StandardCharsets.UTF_8)
+                .hash().hashCode() % clusterUrls.size()));
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
