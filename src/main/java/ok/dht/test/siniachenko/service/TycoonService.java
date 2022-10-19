@@ -98,13 +98,13 @@ public class TycoonService implements ok.dht.Service {
 
         String nodeUrlByKey = nodeMapper.getNodeUrlByKey(Utf8.toBytes(idParameter));
         if (config.selfUrl().equals(nodeUrlByKey)) {
-            executeLocal(session, request.getMethod(), idParameter, request.getBody());
+            executeLocal(session, request, idParameter);
         } else {
-            proxyRequest(request, session, idParameter, nodeUrlByKey);
+            proxyRequest(session, request, idParameter, nodeUrlByKey);
         }
     }
 
-    private void proxyRequest(Request request, HttpSession session, String idParameter, String nodeUrl) {
+    private void proxyRequest(HttpSession session, Request request, String idParameter, String nodeUrl) {
         httpClient.sendAsync(
             HttpRequest.newBuilder()
                 .uri(URI.create(nodeUrl + PATH + "?id=" + idParameter))
@@ -140,12 +140,12 @@ public class TycoonService implements ok.dht.Service {
         });
     }
 
-    private void executeLocal(HttpSession session, int method, String id, byte[] body) {
+    private void executeLocal(HttpSession session, Request request, String id) {
         try {
             executorService.execute(() -> {
-                Response response = switch (method) {
+                Response response = switch (request.getMethod()) {
                     case Request.METHOD_GET -> get(id);
-                    case Request.METHOD_PUT -> upsert(id, body);
+                    case Request.METHOD_PUT -> upsert(id, request.getBody());
                     case Request.METHOD_DELETE -> delete(id);
                     default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
                 };
