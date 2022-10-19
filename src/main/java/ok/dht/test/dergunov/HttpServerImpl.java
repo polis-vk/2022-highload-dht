@@ -64,8 +64,8 @@ public class HttpServerImpl extends HttpServer {
     private final HttpClient httpClient;
     private final String selfUrl;
     private final Set<String> illNodes = new HashSet<>();
-
     private final ShardMapper shardMapper;
+
     public HttpServerImpl(HttpServerConfig httpServerConfig, MemorySegmentDao database, String selfUrl,
                           ShardMapper shardMapper,
                           Object... routers) throws IOException {
@@ -154,25 +154,29 @@ public class HttpServerImpl extends HttpServer {
                     return;
                 }
 
-                HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(url + request.getURI()))
-                                .method(request.getMethodName(),
-                                        HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                        .build();
-
-                try {
-                    HttpResponse<byte[]> httpResponse = httpClient.
-                            send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
-                    session.sendResponse(new Response(fromHttpResponseStatusJavaToOneNoi(httpResponse.statusCode()),
-                                    httpResponse.body()));
-                } catch (InterruptedException e) {
-                    illNodes.add(url);
-                    LOGGER.error("Error when send response (node ill) url : " + url);
-                    handleUnavailable(session);
-                }
+                proxy(request, session, url);
             } catch (IOException e) {
                 handleUnavailable(session);
             }
         });
+    }
+
+    private void proxy(Request request, HttpSession session, String url) throws IOException {
+        HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(url + request.getURI()))
+                        .method(request.getMethodName(),
+                                HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .build();
+
+        try {
+            HttpResponse<byte[]> httpResponse = httpClient.
+                    send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
+            session.sendResponse(new Response(fromHttpResponseStatusJavaToOneNoi(httpResponse.statusCode()),
+                            httpResponse.body()));
+        } catch (Exception e) {
+            illNodes.add(url);
+            LOGGER.error("Error when send response (node ill) url : " + url);
+            handleUnavailable(session);
+        }
     }
 
     @Override
