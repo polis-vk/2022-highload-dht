@@ -4,7 +4,11 @@ import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.shakhov.dao.*;
+import ok.dht.test.shakhov.dao.BaseEntry;
+import ok.dht.test.shakhov.dao.Dao;
+import ok.dht.test.shakhov.dao.DaoConfig;
+import ok.dht.test.shakhov.dao.Entry;
+import ok.dht.test.shakhov.dao.MemorySegmentDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.Request;
@@ -129,10 +133,17 @@ public class KeyValueService implements Service {
     }
 
     private Response sendRequestToUrl(Request request, String url) throws IOException, InterruptedException {
+        byte[] requestBody = request.getBody();
+        HttpRequest.BodyPublisher bodyPublisher;
+        if (requestBody != null) {
+            bodyPublisher = HttpRequest.BodyPublishers.ofByteArray(requestBody);
+        } else {
+            bodyPublisher = HttpRequest.BodyPublishers.noBody();
+        }
+
         HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(url + request.getURI()))
-                .method(request.getMethodName(),
-                        HttpRequest.BodyPublishers.ofByteArray(request.getBody())
-                ).build();
+                .method(request.getMethodName(), bodyPublisher)
+                .build();
         HttpResponse<byte[]> response = httpClient.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
         return new Response(String.valueOf(response.statusCode()), response.body());
     }

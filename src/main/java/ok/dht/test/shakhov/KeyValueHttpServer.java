@@ -55,7 +55,7 @@ public class KeyValueHttpServer extends HttpServer {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
+    public void handleRequest(Request request, HttpSession session) {
         executorService.execute(() -> {
             try {
                 if (!ENDPOINT.equals(request.getPath())) {
