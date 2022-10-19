@@ -1,5 +1,6 @@
 package ok.dht.test.armenakyan.sharding;
 
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
@@ -10,9 +11,16 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 public class ProxyShardHandler implements ShardRequestHandler {
-    private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+    private final static Executor CLIENT_EXECUTOR = Executors.newCachedThreadPool();
+    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
+            .executor(CLIENT_EXECUTOR)
+            .build();
     private static final String REQUEST_PATH = "/v0/entity?id=";
 
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
@@ -25,41 +33,43 @@ public class ProxyShardHandler implements ShardRequestHandler {
     @Override
     public Response handleForKey(String key, Request request) {
         try {
-            return switch (request.getMethod()) {
-                case Request.METHOD_GET -> get(key);
-                case Request.METHOD_PUT -> put(key, request.getBody());
-                case Request.METHOD_DELETE -> delete(key);
-                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            };
-        } catch (HttpTimeoutException e) {
+            return handleAsync(key, request).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-        } catch (Exception e) {
+        } catch (ExecutionException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
 
-    private HttpRequest.Builder requestForKey(String key) {
-        return HttpRequest.newBuilder(URI.create(fullPath.concat(key))).timeout(TIMEOUT);
-    }
-
-    private Response get(String key) throws IOException, InterruptedException {
-        return send(requestForKey(key).GET().build());
-    }
-
-    private Response put(String key, byte[] body) throws IOException, InterruptedException {
-        return send(requestForKey(key).PUT(HttpRequest.BodyPublishers.ofByteArray(body)).build());
-    }
-
-    private Response delete(String key) throws IOException, InterruptedException {
-        return send(requestForKey(key).DELETE().build());
-    }
-
-    private static Response send(HttpRequest request) throws IOException, InterruptedException {
-        HttpResponse<byte[]> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofByteArray());
-        return new Response(String.valueOf(response.statusCode()), response.body());
-    }
-
     @Override
-    public void close() throws IOException {
+    public void handleForKey(String key, Request request, HttpSession session) throws IOException {
+        handleAsync(key, request).thenAcceptAsync(response -> {
+            try {
+                session.sendResponse(response);
+            } catch (IOException e) {
+                session.close();
+            }
+        }, CLIENT_EXECUTOR);
+    }
+
+    private CompletableFuture<Response> handleAsync(String key, Request request) {
+        HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(fullPath.concat(key)))
+                .timeout(TIMEOUT)
+                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .build();
+        return HTTP_CLIENT
+                .sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .handle((resp, ex) -> {
+                    if (ex == null) {
+                        return new Response(String.valueOf(resp.statusCode()), resp.body());
+                    }
+
+                    if (ex instanceof HttpTimeoutException) {
+                        return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                    } else {
+                        return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                    }
+                });
     }
 }

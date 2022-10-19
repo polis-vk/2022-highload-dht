@@ -1,5 +1,6 @@
 package ok.dht.test.armenakyan.sharding;
 
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.util.Utf8;
@@ -39,6 +40,11 @@ public class SelfShardHandler implements ShardRequestHandler {
         } catch (RocksDBException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
+    }
+
+    @Override
+    public void handleForKey(String key, Request request, HttpSession session) throws IOException {
+        session.sendResponse(handleForKey(key, request));
     }
 
     public Response get(String id) throws RocksDBException {

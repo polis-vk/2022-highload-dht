@@ -42,18 +42,11 @@ public class DhtService implements Service {
 
         SelfShardHandler daoHandler = new SelfShardHandler(serviceConfig.workingDir());
 
-        MD5KeyHasher keyHasher;
-        try {
-            keyHasher = new MD5KeyHasher();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
-
         requestHandler = new ClusterCoordinatorShardHandler(
                 serviceConfig.selfUrl(),
                 daoHandler,
                 serviceConfig.clusterUrls(),
-                keyHasher
+                new MD5KeyHasher()
         );
 
         httpServer.start();
