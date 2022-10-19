@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
 import java.nio.channels.ClosedSelectorException;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -28,22 +29,24 @@ import static org.iq80.leveldb.impl.Iq80DBFactory.bytes;
 public class HttpServerDao extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(HttpServerDao.class);
     private static final int AWAIT_TERMINATE_SECONDS = 1;
-    private static final String ENDPOINT = "/v0/entity";
+
     private static final Set<Integer> supportMethods = Set.of(
             Request.METHOD_GET,
             Request.METHOD_PUT,
             Request.METHOD_DELETE
     );
 
-    private final HttpClientDao httpClientDao = new HttpClientDao();
+    public static final String ENDPOINT = "/v0/entity";
+    public static final String PING = "/ping";
+    private final Map<String, HttpClientDao> clients;
 
     private final DB levelDB;
     private final ExecutorService executorService;
     private final Sharding sharding;
     private final String selfUrl;
-
     public HttpServerDao(
             HttpServerConfig config,
+            Map<String, HttpClientDao> clients,
             DB levelDB,
             ExecutorService executorService,
             Sharding sharding,
@@ -51,6 +54,7 @@ public class HttpServerDao extends HttpServer {
             Object... routers
     ) throws IOException {
         super(config, routers);
+        this.clients = clients;
         this.levelDB = levelDB;
         this.executorService = executorService;
         this.sharding = sharding;
@@ -59,6 +63,11 @@ public class HttpServerDao extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        if (request.getPath().equals(PING)) {
+            session.sendResponse(responseEmpty(Response.OK));
+            return;
+        }
+
         if (!request.getPath().equals(ENDPOINT)) {
             session.sendResponse(responseEmpty(Response.BAD_REQUEST));
             return;
@@ -86,6 +95,17 @@ public class HttpServerDao extends HttpServer {
                             if (urlNode.equals(selfUrl)) {
                                 session.sendResponse(handle(request, method, id));
                             } else {
+                                HttpClientDao httpClientDao = clients.get(urlNode);
+
+                                if (httpClientDao.isNotConnect.get()) {
+                                    logger.error("Fail node is ill");
+
+                                    session.sendResponse(
+                                            responseEmpty(Response.INTERNAL_ERROR)
+                                    );
+                                    return;
+                                }
+
                                 httpClientDao
                                         .requestNode(
                                                 String.format("%s%s%s", urlNode, ENDPOINT, "?id=" + id),
@@ -97,6 +117,7 @@ public class HttpServerDao extends HttpServer {
                                                     try {
                                                         if (throwable != null) {
                                                             logger.error("Fail send to other node", throwable);
+
                                                             session.sendResponse(
                                                                     responseEmpty(Response.INTERNAL_ERROR)
                                                             );
@@ -108,6 +129,7 @@ public class HttpServerDao extends HttpServer {
                                                             session.sendResponse(response);
                                                         }
                                                     } catch (IOException e) {
+                                                        httpClientDao.isNotConnect.set(true);
                                                         logger.error("Fail send response", e);
                                                         throw new UncheckedIOException(e);
                                                     }
@@ -138,6 +160,8 @@ public class HttpServerDao extends HttpServer {
         } catch (ClosedSelectorException e) {
             logger.error("Sockets were closed.", e);
         }
+
+        clients.forEach((key, value) -> value.close());
 
         super.stop();
         executorService.shutdown();

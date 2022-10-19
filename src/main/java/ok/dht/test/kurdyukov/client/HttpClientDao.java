@@ -1,16 +1,60 @@
 package ok.dht.test.kurdyukov.client;
 
+import ok.dht.test.kurdyukov.server.HttpServerDao;
 import one.nio.http.Request;
 
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.WebSocket;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class HttpClientDao {
+    private final String uri;
+
+    public final AtomicBoolean isNotConnect = new AtomicBoolean(false);
+
+    private final ScheduledExecutorService listenerConnect = Executors.newSingleThreadScheduledExecutor();
+    public HttpClientDao(String uri) {
+        this.uri = uri;
+
+        try {
+            HttpRequest httpRequest = HttpRequest
+                    .newBuilder(new URI(uri + HttpServerDao.PING))
+                    .GET()
+                    .build();
+
+            listenerConnect.schedule(
+                    () -> {
+                        try {
+                            HttpResponse<byte[]> response = httpClient
+                                    .send(
+                                            httpRequest,
+                                            HttpResponse.BodyHandlers.ofByteArray()
+                                    );
+
+                            if (response.statusCode() == 200) {
+                                isNotConnect.set(true);
+                            }
+                        } catch (Exception e) {
+                            isNotConnect.set(false);
+                        }
+                    },
+                    500,
+                    TimeUnit.MILLISECONDS
+            );
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(e);
+        }
+    }
     private final HttpClient httpClient = HttpClient
             .newBuilder()
             .connectTimeout(Duration.ofSeconds(1))
@@ -32,5 +76,9 @@ public class HttpClientDao {
         };
 
         return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+    }
+
+    public void close() {
+        listenerConnect.shutdown();
     }
 }

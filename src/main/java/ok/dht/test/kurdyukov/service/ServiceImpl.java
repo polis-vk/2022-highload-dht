@@ -3,6 +3,7 @@ package ok.dht.test.kurdyukov.service;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.kurdyukov.client.HttpClientDao;
 import ok.dht.test.kurdyukov.server.HttpServerDao;
 import ok.dht.test.kurdyukov.sharding.ConsistentHashingSharding;
 import one.nio.http.HttpServer;
@@ -18,6 +19,8 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
@@ -73,6 +76,7 @@ public class ServiceImpl implements Service {
                         port,
                         url
                 ),
+                urls.stream().collect(Collectors.toMap(Function.identity(), HttpClientDao::new)),
                 levelDB,
                 new ThreadPoolExecutor(
                         THREAD_POOL_SIZE, // fixed thread pool
