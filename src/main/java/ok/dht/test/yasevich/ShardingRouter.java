@@ -17,11 +17,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ShardingRouter {
-    public static final int LOGICAL_NODES_PER_PHYSICAL = 4;
+    public static final int VIRTUAL_NODES_PER_PHYSICAL = 4;
     public static final int ILL_NODE_SKIPPED_REQUESTS = 100;
     public static final int FAILED_REQUESTS_THRESHOLD = 5;
 
-    private final List<Node> vNodes;
+    private final List<Node> virtualNodes;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
     public ShardingRouter(List<String> clusterUrls) {
@@ -29,43 +29,43 @@ public class ShardingRouter {
         for (String url : clusterUrls) {
             physicalNodes.add(new Node(url));
         }
-        this.vNodes = assignVNodes(physicalNodes);
+        this.virtualNodes = assignVNodes(physicalNodes);
     }
 
     private List<Node> assignVNodes(List<Node> physicalNodes) {
-        int logicalNodes = physicalNodes.size() * LOGICAL_NODES_PER_PHYSICAL;
-        List<Node> vNodes = new ArrayList<>(logicalNodes);
+        int virtualNodesCount = physicalNodes.size() * VIRTUAL_NODES_PER_PHYSICAL;
+        List<Node> virtualNodes = new ArrayList<>(virtualNodesCount);
         Random random = new Random(System.currentTimeMillis() / (1000 * 60 * 60 * 24));
         Map<Node, Integer> nodeAssignments = new HashMap<>();
-        for (int i = 0; i < logicalNodes; i++) {
+        for (int i = 0; i < virtualNodesCount; i++) {
             Node node;
             do {
                 node = physicalNodes.get(random.nextInt(0, physicalNodes.size()));
-            } while (nodeAssignments.computeIfAbsent(node, s -> 0) >= LOGICAL_NODES_PER_PHYSICAL);
+            } while (nodeAssignments.computeIfAbsent(node, s -> 0) >= VIRTUAL_NODES_PER_PHYSICAL);
             nodeAssignments.computeIfPresent(node, (s, integer) -> integer + 1);
-            vNodes.add(node);
+            virtualNodes.add(node);
         }
-        return vNodes;
+        return virtualNodes;
     }
 
     public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(Request request, String key) {
-        Node vNode = vNodeByKey(key);
+        Node vNode = virtualNodeByKey(key);
         return vNode.routedRequestFuture(httpClient, request, key);
     }
 
     public void informAboutFail(String key) {
-        Node vNode = vNodeByKey(key);
+        Node vNode = virtualNodeByKey(key);
         vNode.managePossibleIllness();
     }
 
     public boolean isUrlResponsibleForKey(String serverUrl, String key) {
-        Node vNode = vNodeByKey(key);
+        Node vNode = virtualNodeByKey(key);
         return vNode.url.equals(serverUrl);
     }
 
-    private Node vNodeByKey(String id) {
+    private Node virtualNodeByKey(String id) {
         int hash = Math.abs(Hash.murmur3(id));
-        return vNodes.get(hash % vNodes.size());
+        return virtualNodes.get(hash % virtualNodes.size());
     }
 
     private static HttpRequest httpRequestOf(String key, String targetUrl, Request request) {
@@ -89,7 +89,11 @@ public class ShardingRouter {
             this.url = url;
         }
 
-        public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(HttpClient httpClient, Request request, String key) {
+        public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(
+                HttpClient httpClient,
+                Request request,
+                String key
+        ) {
             if (isIll) {
                 managePossibleRecovery();
                 if (isIll) {

@@ -83,7 +83,8 @@ public class ServiceImpl implements Service {
 
         private final Dao<MemorySegment, Entry<MemorySegment>> dao;
         private final BlockingQueue<Runnable> queue = new AlmostLifoQueue(POOL_QUEUE_SIZE, FIFO_RARENESS);
-        private final ExecutorService workersPool = new ThreadPoolExecutor(CPUs, CPUs, 0L, TimeUnit.MILLISECONDS, queue);
+        private final ExecutorService workersPool = new ThreadPoolExecutor(CPUs, CPUs, 0L,
+                TimeUnit.MILLISECONDS, queue);
         private final ShardingRouter shardingRouter = new ShardingRouter(config.clusterUrls());
 
         public CustomHttpServer(
