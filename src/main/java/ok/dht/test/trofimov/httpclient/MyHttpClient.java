@@ -1,4 +1,4 @@
-package ok.dht.test.trofimov.httpClient;
+package ok.dht.test.trofimov.httpclient;
 
 import java.io.IOException;
 import java.net.URI;

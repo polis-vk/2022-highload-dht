@@ -8,7 +8,7 @@ import ok.dht.test.trofimov.dao.Config;
 import ok.dht.test.trofimov.dao.Entry;
 import ok.dht.test.trofimov.dao.MyHttpServer;
 import ok.dht.test.trofimov.dao.impl.InMemoryDao;
-import ok.dht.test.trofimov.httpClient.MyHttpClient;
+import ok.dht.test.trofimov.httpclient.MyHttpClient;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
