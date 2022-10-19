@@ -13,14 +13,9 @@ import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 
 public class ProxyShardHandler implements ShardRequestHandler {
-    private static final Executor CLIENT_EXECUTOR = Executors.newCachedThreadPool();
-    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
-            .executor(CLIENT_EXECUTOR)
-            .build();
+    private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
     private static final String REQUEST_PATH = "/v0/entity?id=";
 
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
@@ -50,7 +45,7 @@ public class ProxyShardHandler implements ShardRequestHandler {
             } catch (IOException e) {
                 session.close();
             }
-        }, CLIENT_EXECUTOR);
+        });
     }
 
     private CompletableFuture<Response> handleAsync(String key, Request request) {
@@ -60,7 +55,7 @@ public class ProxyShardHandler implements ShardRequestHandler {
                 .build();
         return HTTP_CLIENT
                 .sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
-                .handle((resp, ex) -> {
+                .handleAsync((resp, ex) -> {
                     if (ex == null) {
                         return new Response(String.valueOf(resp.statusCode()), resp.body());
                     }
