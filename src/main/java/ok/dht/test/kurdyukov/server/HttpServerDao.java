@@ -119,6 +119,8 @@ public class HttpServerDao extends HttpServer {
                                                         if (throwable != null) {
                                                             logger.error("Fail send to other node", throwable);
 
+                                                            httpClientDao.isNotConnect.set(true);
+
                                                             session.sendResponse(
                                                                     responseEmpty(Response.INTERNAL_ERROR)
                                                             );
@@ -130,7 +132,6 @@ public class HttpServerDao extends HttpServer {
                                                             session.sendResponse(response);
                                                         }
                                                     } catch (IOException e) {
-                                                        httpClientDao.isNotConnect.set(true);
                                                         logger.error("Fail send response", e);
                                                         throw new UncheckedIOException(e);
                                                     }

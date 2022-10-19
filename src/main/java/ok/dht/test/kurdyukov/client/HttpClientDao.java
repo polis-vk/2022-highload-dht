@@ -27,7 +27,7 @@ public class HttpClientDao {
                     .GET()
                     .build();
 
-            listenerConnect.schedule(
+            listenerConnect.scheduleAtFixedRate(
                     () -> {
                         try {
                             HttpResponse<byte[]> response = httpClient
@@ -37,12 +37,13 @@ public class HttpClientDao {
                                     );
 
                             if (response.statusCode() == 200) {
-                                isNotConnect.set(true);
+                                isNotConnect.set(false);
                             }
                         } catch (Exception e) {
-                            isNotConnect.set(false);
+                            isNotConnect.set(true);
                         }
                     },
+                    0,
                     500,
                     TimeUnit.MILLISECONDS
             );
