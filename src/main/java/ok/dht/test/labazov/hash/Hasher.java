@@ -3,13 +3,11 @@ package ok.dht.test.labazov.hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.HashSet;
 
 public class Hasher {
-    private static final Logger LOG = LoggerFactory.getLogger(HashSet.class);
+    private static final Logger LOG = LoggerFactory.getLogger(Hasher.class);
     private final MessageDigest md;
 
     public Hasher() {

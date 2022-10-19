@@ -9,7 +9,15 @@ import ok.dht.test.labazov.dao.Entry;
 import ok.dht.test.labazov.dao.MemorySegmentDao;
 import ok.dht.test.labazov.hash.ConsistentHash;
 import ok.dht.test.labazov.hash.Hasher;
-import one.nio.http.*;
+import one.nio.http.HttpClient;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.net.ConnectionString;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
@@ -39,11 +47,11 @@ public final class HttpApi extends HttpServer {
         super(createConfigFromPort(config.selfPort()));
         shards = new ConsistentHash();
         for (final String url : config.clusterUrls()) {
-            final int VNODES = 1;
+            final int VIRTUAL_NODE_COUNT = 1;
 
-            final HashSet<Integer> nodeSet = new HashSet<>(VNODES);
+            final HashSet<Integer> nodeSet = new HashSet<>(VIRTUAL_NODE_COUNT);
             final Hasher hasher = new Hasher();
-            for (int i = 0; i < VNODES; i++) {
+            for (int i = 0; i < VIRTUAL_NODE_COUNT; i++) {
                 nodeSet.add(hasher.digest(url.getBytes(StandardCharsets.UTF_8)));
             }
 
@@ -196,7 +204,8 @@ public final class HttpApi extends HttpServer {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) final String key, final Request req) throws IOException {
+    public Response handleGet(@Param(value = "id", required = true)final String key,
+                              final Request req) throws IOException {
         if (key.isEmpty()) {
             return getEmptyResponse(Response.BAD_REQUEST);
         }
