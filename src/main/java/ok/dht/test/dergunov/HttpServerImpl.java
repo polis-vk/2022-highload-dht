@@ -43,7 +43,7 @@ public class HttpServerImpl extends HttpServer {
     private static final String PARAMETER_KEY = "id=";
 
     private static final int SIZE_QUEUE = 128;
-    private static final int COUNT_CORES = 6;
+    private static final int COUNT_CORES = 4;
 
     private static final Set<Integer> SUPPORTED_METHODS = Set.of(METHOD_GET, METHOD_PUT, METHOD_DELETE);
     private static final Response BAD_RESPONSE = new Response(Response.BAD_REQUEST, Response.EMPTY);
