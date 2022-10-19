@@ -14,5 +14,6 @@ public interface ShardRequestHandler extends Closeable {
 
     @Override
     default void close() throws IOException {
+        //nothing to close by default
     }
 }

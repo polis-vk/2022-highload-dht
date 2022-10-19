@@ -15,7 +15,6 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 
 import java.io.IOException;
-import java.security.NoSuchAlgorithmException;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
