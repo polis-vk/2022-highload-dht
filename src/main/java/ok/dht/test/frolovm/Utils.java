@@ -7,6 +7,9 @@ import java.util.Map;
 
 public class Utils {
 
+    public Utils() {
+    }
+
     public static final Map<Integer, String> STATUS_MAP = Map.ofEntries(
             Map.entry(100, Response.CONTINUE),
             Map.entry(101, Response.SWITCHING_PROTOCOLS),

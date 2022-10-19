@@ -108,24 +108,7 @@ public class ServiceImpl implements Service {
                 } else {
                     if (circuitBreaker.isReady(shard.getName())) {
                         try {
-                            HttpRequest.Builder proxyRequest =
-                                    HttpRequest.newBuilder().uri(URI.create(shard.getName() + request.getURI())).method(
-                                                    request.getMethodName(),
-                                                    HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                                            .timeout(RESPONSE_TIMEOUT);
-                            HttpResponse<byte[]> response =
-                                    client.send(proxyRequest.build(), HttpResponse.BodyHandlers.ofByteArray());
-                            if (response.statusCode() >= SERVER_ERROR) {
-                                circuitBreaker.incrementFail(shard.getName());
-                            } else {
-                                circuitBreaker.successRequest(shard.getName());
-                            }
-                            String responseStatus = Utils.STATUS_MAP.get(response.statusCode());
-                            byte[] answer = response.body();
-                            if (responseStatus == null) {
-                                throw new IllegalArgumentException("Unknown status code: " + response.statusCode());
-                            }
-                            return new Response(responseStatus, answer);
+                            return sendResponseToAnotherNode(request, shard);
                         } catch (IOException | InterruptedException e) {
                             LOGGER.error("Something bad happens when client answer", e);
                             circuitBreaker.incrementFail(shard.getName());
@@ -138,6 +121,27 @@ public class ServiceImpl implements Service {
             default:
                 return new Response(Response.METHOD_NOT_ALLOWED, Utf8.toBytes(NO_SUCH_METHOD));
         }
+    }
+
+    private Response sendResponseToAnotherNode(Request request, Shard shard) throws IOException, InterruptedException {
+        HttpRequest.Builder proxyRequest =
+                HttpRequest.newBuilder().uri(URI.create(shard.getName() + request.getURI())).method(
+                                request.getMethodName(),
+                                HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                        .timeout(RESPONSE_TIMEOUT);
+        HttpResponse<byte[]> response =
+                client.send(proxyRequest.build(), HttpResponse.BodyHandlers.ofByteArray());
+        if (response.statusCode() >= SERVER_ERROR) {
+            circuitBreaker.incrementFail(shard.getName());
+        } else {
+            circuitBreaker.successRequest(shard.getName());
+        }
+        String responseStatus = Utils.STATUS_MAP.get(response.statusCode());
+        byte[] answer = response.body();
+        if (responseStatus == null) {
+            throw new IllegalArgumentException("Unknown status code: " + response.statusCode());
+        }
+        return new Response(responseStatus, answer);
     }
 
     private Response entityHandlerSelf(String id, Request request) {
@@ -179,7 +183,6 @@ public class ServiceImpl implements Service {
         dao = null;
         return CompletableFuture.completedFuture(null);
     }
-
 
     @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
