@@ -14,6 +14,7 @@ import one.nio.http.HttpServerConfig;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Hash;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -111,8 +112,8 @@ public class KeyValueService implements Service {
         return httpConfig;
     }
 
-    private int getHashForKey(String id) {
-        return id.hashCode();
+    private static int getHashForKey(String id) {
+        return Math.abs(Hash.murmur3(id));
     }
 
     private Response sendRequestToUrl(Request request, String url) throws IOException, InterruptedException {
