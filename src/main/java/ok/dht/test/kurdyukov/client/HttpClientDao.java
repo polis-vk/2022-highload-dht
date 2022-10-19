@@ -43,7 +43,7 @@ public class HttpClientDao {
                             isNotConnect.set(true);
                         }
                     },
-                    0,
+                    1500,
                     500,
                     TimeUnit.MILLISECONDS
             );
