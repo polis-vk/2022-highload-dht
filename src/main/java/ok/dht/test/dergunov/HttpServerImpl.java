@@ -25,8 +25,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -57,7 +57,7 @@ public class HttpServerImpl extends HttpServer {
             COUNT_CORES,
             0L,
             TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<>(SIZE_QUEUE)
+            new LinkedBlockingQueue<>(SIZE_QUEUE)
     );
 
     private final HttpClient httpClient;
@@ -134,12 +134,9 @@ public class HttpServerImpl extends HttpServer {
 
                 String key = getEntityId(request, session);
                 if (key == null) return;
-
                 String url = shardMapper.getShardByKey(key);
-                LOGGER.info("url:" + url);
 
                 if (url.equals(selfUrl)) {
-                    LOGGER.info("selfurl:" + selfUrl);
                     RequestHandler handler = handlerMapper.find(path, methodName);
                     if (handler != null) {
                         handler.handleRequest(request, session);

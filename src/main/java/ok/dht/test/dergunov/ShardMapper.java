@@ -2,7 +2,6 @@ package ok.dht.test.dergunov;
 
 import one.nio.util.Hash;
 
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,7 +21,6 @@ public class ShardMapper {
             rangeHashes[i] = hash;
             mappingHashShard.put(hash, node);
         }
-        Arrays.sort(rangeHashes);
     }
 
     String getShardByKey(String key) {
