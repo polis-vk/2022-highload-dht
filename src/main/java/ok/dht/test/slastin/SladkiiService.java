@@ -3,6 +3,8 @@ package ok.dht.test.slastin;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.slastin.node.Node;
+import ok.dht.test.slastin.node.NodeConfig;
 import ok.dht.test.slastin.sharding.ConsistentHashingManager;
 import ok.dht.test.slastin.sharding.ShardingManager;
 import one.nio.async.CustomThreadFactory;
@@ -20,9 +22,10 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.ArrayBlockingQueue;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -48,11 +51,13 @@ public class SladkiiService implements Service {
     private final Supplier<ExecutorService> processorsSupplier;
     private final Supplier<ShardingManager> shardingManagerSupplier;
     private final Supplier<HttpServerConfig> httpServerConfigSupplier;
+    private final List<NodeConfig> nodeConfigs;
 
     private Options dbOptions;
     private SladkiiComponent component;
     private ExecutorService processors;
     private ShardingManager shardingManager;
+    private List<Node> nodes;
     private SladkiiServer server;
 
     private boolean isClosed;
@@ -66,9 +71,8 @@ public class SladkiiService implements Service {
         return () -> new ThreadPoolExecutor(
                 cores / 2, cores,
                 30, TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(1024),
-                new CustomThreadFactory(serviceConfig.selfUrl() + "-processor"),
-                new ThreadPoolExecutor.DiscardOldestPolicy()
+                new LinkedBlockingQueue<>(),
+                new CustomThreadFactory(serviceConfig.selfUrl() + "-processor")
         );
     }
 
@@ -89,12 +93,20 @@ public class SladkiiService implements Service {
         return () -> new ConsistentHashingManager(serviceConfig.clusterUrls(), 50, Hash::murmur3);
     }
 
+    public static List<NodeConfig> makeDefaultNodeConfigs(ServiceConfig serviceConfig) {
+        int cores = Runtime.getRuntime().availableProcessors();
+        return serviceConfig.clusterUrls().stream()
+                .map(url -> new NodeConfig(512, cores / 2))
+                .toList();
+    }
+
     public SladkiiService(ServiceConfig serviceConfig) {
         this(serviceConfig,
                 DEFAULT_OPTIONS_SUPPLIER,
                 makeDefaultProcessorsSupplier(serviceConfig),
                 makeDefaultShardingManagerSupplier(serviceConfig),
-                makeDefaultHttpServerConfigSupplier(serviceConfig)
+                makeDefaultHttpServerConfigSupplier(serviceConfig),
+                makeDefaultNodeConfigs(serviceConfig)
         );
     }
 
@@ -103,13 +115,15 @@ public class SladkiiService implements Service {
             Supplier<Options> dbOptionsSupplier,
             Supplier<ExecutorService> processorsSupplier,
             Supplier<ShardingManager> shardingManagerSupplier,
-            Supplier<HttpServerConfig> httpServerConfigSupplier
+            Supplier<HttpServerConfig> httpServerConfigSupplier,
+            List<NodeConfig> nodeConfigs
     ) {
         this.serviceConfig = serviceConfig;
         this.dbOptionsSupplier = dbOptionsSupplier;
         this.processorsSupplier = processorsSupplier;
         this.shardingManagerSupplier = shardingManagerSupplier;
         this.httpServerConfigSupplier = httpServerConfigSupplier;
+        this.nodeConfigs = nodeConfigs;
     }
 
     @Override
@@ -123,8 +137,10 @@ public class SladkiiService implements Service {
 
         shardingManager = shardingManagerSupplier.get();
 
+        nodes = nodeConfigs.stream().map(Node::new).toList();
+
         server = new SladkiiServer(
-                httpServerConfigSupplier.get(), serviceConfig, component, processors, shardingManager
+                httpServerConfigSupplier.get(), serviceConfig, nodes, component, processors, shardingManager
         );
         server.start();
 
@@ -133,7 +149,7 @@ public class SladkiiService implements Service {
 
     Path getDbLocation() {
         return serviceConfig.workingDir()
-                .resolve("cluster" + serviceConfig.clusterUrls().indexOf(serviceConfig.selfUrl()))
+                .resolve("node" + serviceConfig.clusterUrls().indexOf(serviceConfig.selfUrl()))
                 .resolve(DEFAULT_DB_DIRECTORY);
     }
 
@@ -156,6 +172,8 @@ public class SladkiiService implements Service {
 
             server.stop();
             server = null;
+
+            nodes = null;
 
             shardingManager = null;
 
@@ -184,52 +202,6 @@ public class SladkiiService implements Service {
             log.warn("Service was interrupted during shutdown");
             service.shutdownNow();
             Thread.currentThread().interrupt();
-        }
-    }
-
-    public static class Builder {
-        private final ServiceConfig serviceConfig;
-        private Supplier<Options> dbOptionsSupplier;
-        private Supplier<ExecutorService> processorsSupplier;
-        private Supplier<ShardingManager> shardingManagerSupplier;
-        private Supplier<HttpServerConfig> httpServerConfigSupplier;
-
-        Builder(ServiceConfig serviceConfig) {
-            this.serviceConfig = serviceConfig;
-            this.dbOptionsSupplier = DEFAULT_OPTIONS_SUPPLIER;
-            this.processorsSupplier = makeDefaultProcessorsSupplier(serviceConfig);
-            this.shardingManagerSupplier = makeDefaultShardingManagerSupplier(serviceConfig);
-            this.httpServerConfigSupplier = makeDefaultHttpServerConfigSupplier(serviceConfig);
-        }
-
-        Builder setDbOptionsSupplier(Supplier<Options> dbOptionsSupplier) {
-            this.dbOptionsSupplier = dbOptionsSupplier;
-            return this;
-        }
-
-        Builder setProcessorsSupplier(Supplier<ExecutorService> processorsSupplier) {
-            this.processorsSupplier = processorsSupplier;
-            return this;
-        }
-
-        Builder setShardingManagerSupplier(Supplier<ShardingManager> shardingManagerSupplier) {
-            this.shardingManagerSupplier = shardingManagerSupplier;
-            return this;
-        }
-
-        Builder setHttpServerConfigSupplier(Supplier<HttpServerConfig> httpServerConfigSupplier) {
-            this.httpServerConfigSupplier = httpServerConfigSupplier;
-            return this;
-        }
-
-        SladkiiService build() {
-            return new SladkiiService(
-                    serviceConfig,
-                    dbOptionsSupplier,
-                    processorsSupplier,
-                    shardingManagerSupplier,
-                    httpServerConfigSupplier
-            );
         }
     }
 

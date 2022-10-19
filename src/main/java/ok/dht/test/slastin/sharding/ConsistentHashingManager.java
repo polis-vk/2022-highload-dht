@@ -1,5 +1,6 @@
 package ok.dht.test.slastin.sharding;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -7,8 +8,8 @@ import java.util.function.Function;
 
 public class ConsistentHashingManager implements ShardingManager {
     private final Function<String, Integer> hashFunction;
-    private final int[] vnodeHashes;
-    private final String[] vnodeUrls;
+    private final List<Integer> vnodeHashes;
+    private final List<String> vnodeUrls;
 
     public ConsistentHashingManager(List<String> clusterUrls, int vnodesPerCluster,
                                     Function<String, Integer> hashFunction) {
@@ -16,14 +17,12 @@ public class ConsistentHashingManager implements ShardingManager {
 
         var vnodesMap = makeVnodesMap(clusterUrls, vnodesPerCluster, hashFunction);
 
-        vnodeHashes = new int[vnodesMap.size()];
-        vnodeUrls = new String[vnodesMap.size()];
+        vnodeHashes = new ArrayList<>(vnodesMap.size());
+        vnodeUrls = new ArrayList<>(vnodesMap.size());
 
-        int index = 0;
         for (var entry : vnodesMap.entrySet()) {
-            vnodeHashes[index] = entry.getKey();
-            vnodeUrls[index] = entry.getValue();
-            ++index;
+            vnodeHashes.add(entry.getKey());
+            vnodeUrls.add(entry.getValue());
         }
     }
 
@@ -43,23 +42,24 @@ public class ConsistentHashingManager implements ShardingManager {
     }
 
     @Override
-    public String getClusterUrlByKey(String key) {
+    public String getNodeUrlByKey(String key) {
         int hash = hashFunction.apply(key);
         int index = findNextHashIndex(hash);
-        return vnodeUrls[index];
+        return vnodeUrls.get(index);
     }
 
     private int findNextHashIndex(int hash) {
+        int lastIndex = vnodeHashes.size() - 1;
         int left = -1;
-        int right = vnodeHashes.length - 1;
+        int right = lastIndex;
         while (right - left > 1) {
             int mid = (left + right) >> 1;
-            if (vnodeHashes[mid] < hash) {
+            if (vnodeHashes.get(mid) < hash) {
                 left = mid;
             } else {
                 right = mid;
             }
         }
-        return (right == vnodeHashes.length - 1 && vnodeHashes[right] < hash) ? 0 : right;
+        return (right == lastIndex && vnodeHashes.get(right) < hash) ? 0 : right;
     }
 }

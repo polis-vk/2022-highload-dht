@@ -1,6 +1,7 @@
 package ok.dht.test.slastin;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.slastin.node.Node;
 import ok.dht.test.slastin.sharding.ShardingManager;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -21,6 +22,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -31,6 +33,7 @@ public class SladkiiServer extends HttpServer {
 
     private final PathMapper defaultMapper;
     private final ServiceConfig serviceConfig;
+    private final List<Node> nodes;
     private final SladkiiComponent component;
     private final ExecutorService processors;
     private final ShardingManager shardingManager;
@@ -39,6 +42,7 @@ public class SladkiiServer extends HttpServer {
     public SladkiiServer(
             HttpServerConfig httpServerConfig,
             ServiceConfig serviceConfig,
+            List<Node> nodes,
             SladkiiComponent component,
             ExecutorService processors,
             ShardingManager shardingManager
@@ -46,6 +50,7 @@ public class SladkiiServer extends HttpServer {
         super(httpServerConfig);
         defaultMapper = extractDefaultMapper();
         this.serviceConfig = serviceConfig;
+        this.nodes = nodes;
         this.component = component;
         this.processors = processors;
         this.shardingManager = shardingManager;
@@ -65,13 +70,52 @@ public class SladkiiServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        RequestHandler handler = defaultMapper.find(request.getPath(), request.getMethod());
+        if (handler == null) {
+            handleDefault(request, session);
+            return;
+        }
+
+        String id = request.getParameter("id=");
+        if (id == null) {
+            sendResponse(session, badRequest());
+            return;
+        }
+
+//        log.info("handling {} for id {}", request.getMethodName(), id);
+
+        String currentNodeUrl = shardingManager.getNodeUrlByKey(id);
+        int currentNodeIndex = serviceConfig.clusterUrls().indexOf(currentNodeUrl);
+
+        boolean wasTaskAdded = nodes.get(currentNodeIndex).offerTask(() -> {
+            try {
+                processRequest(currentNodeUrl, id, request, session);
+            } catch (Exception e) {
+                log.error("Exception occurred while handling request", e);
+                sendResponse(session, internalError());
+            }
+        });
+
+        if (!wasTaskAdded) {
+            sendResponse(session, serviceUnavailable());
+            return;
+        }
+
         try {
             processors.submit(() -> {
-                try {
-                    handleRequestWrapper(request, session);
-                } catch (Exception e) {
-                    log.error("Exception occurred while handling request", e);
-                    sendResponse(session, internalError());
+                int nodeIndex = currentNodeIndex;
+                while (true) {
+                    var node = nodes.get(nodeIndex);
+                    var task = node.pollTask();
+                    if (task != null) {
+                        try {
+                            task.run();
+                        } finally {
+                            node.finishTask();
+                        }
+                        return;
+                    }
+                    nodeIndex = (nodeIndex + 1) % nodes.size();
                 }
             });
         } catch (RejectedExecutionException e) {
@@ -85,32 +129,16 @@ public class SladkiiServer extends HttpServer {
         sendResponse(session, badRequest());
     }
 
-    private void handleRequestWrapper(Request request, HttpSession session) {
-        RequestHandler handler = defaultMapper.find(request.getPath(), request.getMethod());
-        if (handler == null) {
-            handleDefault(request, session);
-            return;
-        }
-
-        String id = request.getParameter("id=");
-        if (id == null) {
-            sendResponse(session, badRequest());
-            return;
-        }
-
-        log.info("handling {} for id {}", request.getMethodName(), id);
-
-        String clusterUrl = shardingManager.getClusterUrlByKey(id);
-
-        if (clusterUrl.equals(serviceConfig.selfUrl())) {
-            sendResponse(session, processRequest(id, request));
+    private void processRequest(String nodeUrl, String id, Request request, HttpSession session) {
+        if (nodeUrl.equals(serviceConfig.selfUrl())) {
+            sendResponse(session, processRequestSelf(id, request));
         } else {
-            handleRequestProxy(clusterUrl, request, session);
+            processRequestProxy(nodeUrl, request, session);
         }
     }
 
     @Path("/v0/entity")
-    public Response processRequest(@Param(value = "id", required = true) String id, Request request) {
+    public Response processRequestSelf(@Param(value = "id", required = true) String id, Request request) {
         if (id.isBlank()) {
             return badRequest();
         }
@@ -122,8 +150,8 @@ public class SladkiiServer extends HttpServer {
         };
     }
 
-    private void handleRequestProxy(String clusterUrl, Request request, HttpSession session) {
-        var builder = HttpRequest.newBuilder(URI.create(clusterUrl + request.getURI()));
+    private void processRequestProxy(String nodeUrl, Request request, HttpSession session) {
+        var builder = HttpRequest.newBuilder(URI.create(nodeUrl + request.getURI()));
         var bodyPublishers = request.getBody() == null
                 ? HttpRequest.BodyPublishers.noBody()
                 : HttpRequest.BodyPublishers.ofByteArray(request.getBody());
@@ -134,7 +162,7 @@ public class SladkiiServer extends HttpServer {
             var response = new Response(getResponseCodeByStatusCode(httpResponse.statusCode()), httpResponse.body());
             sendResponse(session, response);
         } catch (IOException e) {
-            log.error("can not reach {}", clusterUrl, e);
+            log.error("can not reach {}", nodeUrl, e);
             sendResponse(session, serviceUnavailable());
         } catch (InterruptedException e) {
             log.error("error occurred while handling http response", e);
