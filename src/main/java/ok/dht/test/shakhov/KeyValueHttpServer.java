@@ -34,7 +34,8 @@ public class KeyValueHttpServer extends HttpServer {
     private final BiFunction<Request, String, Response> requestHandler;
     private ExecutorService executorService;
 
-    public KeyValueHttpServer(HttpServerConfig config, BiFunction<Request, String, Response> requestHandler) throws IOException {
+    public KeyValueHttpServer(HttpServerConfig config,
+                              BiFunction<Request, String, Response> requestHandler) throws IOException {
         super(config);
         this.requestHandler = requestHandler;
     }
@@ -43,7 +44,14 @@ public class KeyValueHttpServer extends HttpServer {
     public synchronized void start() {
         super.start();
         BlockingQueue<Runnable> taskQueue = new LinkedBlockingQueue<>(QUEUE_MAX_SIZE);
-        executorService = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE, KEEP_ALIVE_TIME_SECONDS, TimeUnit.SECONDS, taskQueue, DISCARD_POLICY);
+        executorService = new ThreadPoolExecutor(
+                CORE_POOL_SIZE,
+                MAX_POOL_SIZE,
+                KEEP_ALIVE_TIME_SECONDS,
+                TimeUnit.SECONDS,
+                taskQueue,
+                DISCARD_POLICY
+        );
     }
 
     @Override
