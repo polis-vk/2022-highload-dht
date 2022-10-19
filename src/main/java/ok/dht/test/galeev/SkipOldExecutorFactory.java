@@ -7,8 +7,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class SkipOldThreadExecutorFactory {
-
+public class SkipOldExecutorFactory {
     protected static final int CORE_POLL_SIZE = 64;
     protected static final int KEEP_ALIVE_TIME = 0;
     protected static final int QUEUE_CAPACITY = 128;
