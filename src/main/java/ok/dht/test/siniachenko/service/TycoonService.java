@@ -21,6 +21,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -32,16 +34,21 @@ public class TycoonService implements ok.dht.Service {
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
     public static final String PATH = "/v0/entity";
     public static final int THREAD_POOL_QUEUE_CAPACITY = 128;
+    public static final int DEFAULT_TIMEOUT_MILLIS = 1000;
+    public static final int MIN_TIMEOUT_MILLIS = 300;
+    public static final int MAX_TIMEOUT_MILLIS = 2000;
     private final ServiceConfig config;
     private final NodeMapper nodeMapper;
     private DB levelDb;
     private TycoonHttpServer server;
     private ExecutorService executorService;
     private HttpClient httpClient;
+    private ConcurrentMap<String, Integer> nodeRequestsTimeouts;
 
     public TycoonService(ServiceConfig config) {
         this.config = config;
         this.nodeMapper = new NodeMapper(config.clusterUrls());
+        this.nodeRequestsTimeouts = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -105,6 +112,7 @@ public class TycoonService implements ok.dht.Service {
     }
 
     private void proxyRequest(HttpSession session, Request request, String idParameter, String nodeUrl) {
+        Integer timeout = nodeRequestsTimeouts.computeIfAbsent(nodeUrl, s -> DEFAULT_TIMEOUT_MILLIS);
         httpClient.sendAsync(
             HttpRequest.newBuilder()
                 .uri(URI.create(nodeUrl + PATH + "?id=" + idParameter))
@@ -127,8 +135,10 @@ public class TycoonService implements ok.dht.Service {
             }
             Response proxyResponse = new Response(statusCode, response.body());
             sendResponse(session, proxyResponse);
-        }).orTimeout(1000, TimeUnit.MILLISECONDS)
+            nodeRequestsTimeouts.compute(nodeUrl, (url, t) -> Math.max(t * 2, MIN_TIMEOUT_MILLIS));
+        }).orTimeout(timeout, TimeUnit.MILLISECONDS)
         .exceptionally(ex -> {
+            nodeRequestsTimeouts.compute(nodeUrl, (url, t) -> Math.min(t / 2, MAX_TIMEOUT_MILLIS));
             LOG.error("Error after proxy request to {}", nodeUrl, ex);
             Response proxyResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             sendResponse(session, proxyResponse);
