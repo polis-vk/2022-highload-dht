@@ -8,24 +8,21 @@
 Проведем нагрузочное тестирование:
 
 ```
-i.panov@macbook-i stage_1 % wrk2 -d 1m -t 8 -c 32 -R 10000 -s PutStableLoad.lua "http://localhost:19234"
+wrk2 -d 1m -t 8 -c 32 -R 10000 -s PutStableLoad.lua "http://localhost:19234"
+```
+
+```
 Running 1m test @ http://localhost:19234
-  8 threads and 32 connections
-  Thread calibration: mean lat.: 114.830ms, rate sampling interval: 1162ms
-  Thread calibration: mean lat.: 113.133ms, rate sampling interval: 1148ms
-  Thread calibration: mean lat.: 112.489ms, rate sampling interval: 1141ms
-  Thread calibration: mean lat.: 113.425ms, rate sampling interval: 1149ms
-  Thread calibration: mean lat.: 113.817ms, rate sampling interval: 1153ms
-  Thread calibration: mean lat.: 112.116ms, rate sampling interval: 1140ms
-  Thread calibration: mean lat.: 112.023ms, rate sampling interval: 1140ms
-  Thread calibration: mean lat.: 112.817ms, rate sampling interval: 1144ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
+Thread Stats   Avg      Stdev     Max   +/- Stdev
     Latency     1.24ms    1.57ms  37.70ms   98.48%
     Req/Sec     1.25k     2.25     1.27k    98.26%
   599800 requests in 1.00m, 36.01MB read
 Requests/sec:   9997.12
 Transfer/sec:    614.57KB
 ```
+
+На 10000 запросах, сервер отрабатывает стабильно как и без шардирования.
+Скорее всего это происходит из-за запуска всех нод на одной машине, конкуренцией за процессорное время и т. д.
 
 ```
 i.panov@macbook-i stage_1 % du -sh /var/folders/0y/h0j9xdp567j7f7y_f9jf08qm0000gp/T/server3531925502667129736 
@@ -36,22 +33,47 @@ i.panov@macbook-i stage_1 % du -sh /var/folders/0y/h0j9xdp567j7f7y_f9jf08qm0000g
  32M    /var/folders/0y/h0j9xdp567j7f7y_f9jf08qm0000gp/T/server6025840628954999856
 ```
 
+Если посмотреть на распределение данных по нодам, может показаться что нагрузка распределяется 
+не равномерно, но при повторном запуске скрипта видно, что распределение ключей становится 
+более равномерным. Для распределения ключей использовался алгоритм консистентного хэширования.
+Ключи для PUT запросов генерируются псевдорандомно в заданом диапазоне.
+Для хеширования исполльзовался murmur хэш. Думаю можно использовать более сложные криптографичекие хэшкоды,
+но придется немного пожетвовать производительностью. 
+
+```
+i.panov@macbook-i stage_1 % du -sh /var/folders/0y/h0j9xdp567j7f7y_f9jf08qm0000gp/T/server3531925502667129736 
+ 69M    /var/folders/0y/h0j9xdp567j7f7y_f9jf08qm0000gp/T/server3531925502667129736
+i.panov@macbook-i stage_1 % du -sh /var/folders/0y/h0j9xdp567j7f7y_f9jf08qm0000gp/T/server12492733374320666327
+ 48M    /var/folders/0y/h0j9xdp567j7f7y_f9jf08qm0000gp/T/server12492733374320666327
+i.panov@macbook-i stage_1 % du -sh /var/folders/0y/h0j9xdp567j7f7y_f9jf08qm0000gp/T/server6025840628954999856 
+ 67M    /var/folders/0y/h0j9xdp567j7f7y_f9jf08qm0000gp/T/server6025840628954999856
+```
+
+Проведем профилирование
+
+![put_cpu](put_cpu.png)
+Не сложно заметить, что в новой версии приложения много времени (около 23%) тратится на проксировани
+запросов на другие ноды, и работы с CompletableFuture, что кажется логичным.  
+
+![put_alloc](put_alloc.png)
+Видно, что огромное количество алокаций теперь тратится на проксирование запросов на другие ноды.
+
+![put_lock](put_lock.png)
+Картина по блокировкам изменилась координально, теперь бОльшая чать блокировок приходится именно на проксирование запросов,
+по сравнению с этим блокировки на многопоточную работу занимают крошечную долю от всех.
+
+
 ## GET
 
 Проведем нагрузочное тестирование:
 
 ```
-i.panov@macbook-i stage_1 % wrk2 -d 1m -t 8 -c 32 -R 10000 -s GetStableLoad.lua "http://localhost:19234"
+wrk2 -d 1m -t 8 -c 32 -R 10000 -s GetStableLoad.lua "http://localhost:19234"
+```
+
+```
 Running 1m test @ http://localhost:19234
   8 threads and 32 connections
-  Thread calibration: mean lat.: 18.181ms, rate sampling interval: 10ms
-  Thread calibration: mean lat.: 17.533ms, rate sampling interval: 10ms
-  Thread calibration: mean lat.: 17.663ms, rate sampling interval: 10ms
-  Thread calibration: mean lat.: 17.570ms, rate sampling interval: 10ms
-  Thread calibration: mean lat.: 17.653ms, rate sampling interval: 10ms
-  Thread calibration: mean lat.: 17.453ms, rate sampling interval: 10ms
-  Thread calibration: mean lat.: 17.461ms, rate sampling interval: 10ms
-  Thread calibration: mean lat.: 17.322ms, rate sampling interval: 10ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
     Latency     1.04ms  454.33us   3.34ms   65.20%
     Req/Sec     1.32k    99.00     1.78k    58.73%
@@ -60,4 +82,17 @@ Requests/sec:   9997.59
 Transfer/sec:     12.05MB
 ```
 
+Проведем профилирование
 
+![get_cpu](get_cpu.png)
+![get_alloc](get_alloc.png)
+![get_alloc](get_lock.png)
+
+Картина профилирования GET запросов аналогична PUT.
+
+##Выводы
+* По профилю видно, что много ресурсов тратится на проксирование запросов на другие ноды и работу с сетью, так как 
+теперь в худшем случае создается два HTTP запроса на один реквест.
+Оптимизацией может послужить изменение протокола взаимодействия: другой протокол сетевого взаимодействия или 
+работа с брокерами сообщений и асинхронная обработка этих сообщений. 
+* Для более равномерного распределения можно тюнить хэшфункцию для ключей.
