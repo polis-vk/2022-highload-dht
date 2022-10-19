@@ -3,6 +3,7 @@ package ok.dht.test.gerasimov.sharding;
 import one.nio.http.HttpClient;
 import one.nio.net.ConnectionString;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -14,6 +15,7 @@ public class Shard {
     private final HttpClient httpClient;
     private final String host;
     private final int port;
+    private final AtomicBoolean isAvailable = new AtomicBoolean(true);
 
     public Shard(String url) {
         Matcher matcher = URL_PATTERN.matcher(url);
@@ -45,5 +47,9 @@ public class Shard {
 
     public int getPort() {
         return port;
+    }
+
+    public AtomicBoolean isAvailable() {
+        return isAvailable;
     }
 }

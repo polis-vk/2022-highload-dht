@@ -4,13 +4,14 @@ import ok.dht.test.gerasimov.exception.ServerException;
 import ok.dht.test.gerasimov.sharding.ConsistentHash;
 import ok.dht.test.gerasimov.sharding.Shard;
 import ok.dht.test.gerasimov.sharding.VNode;
-import one.nio.http.HttpClient;
+import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.pool.PoolException;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
 
@@ -20,6 +21,8 @@ import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -36,12 +39,14 @@ public final class Server extends HttpServer {
             Request.METHOD_DELETE
     );
 
+    private final ScheduledExecutorService scheduledExecutorService;
     private final ExecutorService executorService;
     private final ConsistentHash<String> consistentHash;
     private final ServiceImpl service;
 
     public Server(int port, ServiceImpl service, ConsistentHash<String> consistentHash) throws IOException {
         super(createHttpServerConfig(port));
+        this.scheduledExecutorService = new ScheduledThreadPoolExecutor(consistentHash.getShards().size());
         this.executorService = new ThreadPoolExecutor(
                 DEFAULT_THREAD_POOL_SIZE,
                 DEFAULT_THREAD_POOL_SIZE,
@@ -66,14 +71,15 @@ public final class Server extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        consistentHash.getShards().forEach(s -> s.getHttpClient().close());
         for (SelectorThread thread : selectors) {
             for (Session session : thread.selector) {
                 session.socket().close();
             }
         }
         super.stop();
+        consistentHash.getShards().forEach(s -> s.getHttpClient().close());
         executorService.shutdown();
+        scheduledExecutorService.shutdown();
     }
 
     @Override
@@ -106,7 +112,7 @@ public final class Server extends HttpServer {
 
                     Shard shard = consistentHash.getShardByKey(id);
                     if (shard.getPort() != port) {
-                        return shard.getHttpClient().invoke(request);
+                        return circuitBreaker(shard, request);
                     }
 
                     return switch (request.getMethod()) {
@@ -130,7 +136,7 @@ public final class Server extends HttpServer {
                     request.addHeader("From-Main");
                     for (Shard node : consistentHash.getShards()) {
                         if (node.getPort() != port) {
-                            stringBuilder.append(node.getHttpClient().invoke(request).getBodyUtf8());
+                            stringBuilder.append(circuitBreaker(node, request).getBodyUtf8());
                             stringBuilder.append("\n");
                         }
                     }
@@ -150,6 +156,24 @@ public final class Server extends HttpServer {
         }
     }
 
+    private Response circuitBreaker(Shard shard, Request request) {
+        if (shard.isAvailable().get()) {
+            try {
+                return shard.getHttpClient().invoke(request);
+            } catch (PoolException | InterruptedException | IOException | HttpException e) {
+                if (shard.isAvailable().compareAndSet(true, false)) {
+                    scheduledExecutorService.scheduleAtFixedRate(
+                            createMonitoringNodeTask(shard),
+                            10,
+                            10,
+                            TimeUnit.SECONDS
+                    );
+                }
+            }
+        }
+        return ResponseEntity.serviceUnavailable();
+    }
+
     private static HttpServerConfig createHttpServerConfig(int port) {
         HttpServerConfig httpServerConfig = new HttpServerConfig();
         AcceptorConfig acceptor = new AcceptorConfig();
@@ -160,5 +184,19 @@ public final class Server extends HttpServer {
         httpServerConfig.selectors = SELECTOR_POOL_SIZE;
 
         return httpServerConfig;
+    }
+
+    private Runnable createMonitoringNodeTask(Shard shard) {
+        return () -> {
+            try {
+                shard.getHttpClient().connect(
+                        String.format("%s:%s", shard.getHost(), shard.getPort())
+                );
+                shard.isAvailable().compareAndSet(false, true);
+                Thread.currentThread().interrupt();
+            } catch (Exception ignored) {
+                // ignored
+            }
+        };
     }
 }
