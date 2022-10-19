@@ -113,11 +113,7 @@ public class TycoonService implements ok.dht.Service {
             HttpResponse.BodyHandlers.ofByteArray()
         ).thenAccept(response -> {
             String statusCode;
-            if (response.statusCode() == 400) {
-                statusCode = Response.BAD_REQUEST;
-            } else if (response.statusCode() == 405) {
-                statusCode = Response.METHOD_NOT_ALLOWED;
-            } else if (response.statusCode() == 404) {
+            if (response.statusCode() == 404) {
                 statusCode = Response.NOT_FOUND;
             } else if (response.statusCode() == 200) {
                 statusCode = Response.OK;
