@@ -4,11 +4,7 @@ import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.shakhov.dao.BaseEntry;
-import ok.dht.test.shakhov.dao.Dao;
-import ok.dht.test.shakhov.dao.DaoConfig;
-import ok.dht.test.shakhov.dao.Entry;
-import ok.dht.test.shakhov.dao.MemorySegmentDao;
+import ok.dht.test.shakhov.dao.*;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.Request;
@@ -63,8 +59,7 @@ public class KeyValueService implements Service {
 
     private Response handleRequest(Request request, String id) {
         try {
-            List<String> clusterUrls = serviceConfig.clusterUrls();
-            String url = clusterUrls.get(getHashForKey(id) % clusterUrls.size());
+            String url = getUrlForKey(id);
             if (!serviceConfig.selfUrl().equals(url)) {
                 return sendRequestToUrl(request, url);
             }
@@ -114,8 +109,23 @@ public class KeyValueService implements Service {
         return httpConfig;
     }
 
-    private static int getHashForKey(String id) {
-        return Math.abs(Hash.murmur3(id));
+    private String getUrlForKey(String key) {
+        List<String> clusterUrls = serviceConfig.clusterUrls();
+        int argmax = -1;
+        long max = Long.MIN_VALUE;
+        for (int i = 0; i < clusterUrls.size(); i++) {
+            int candidate = Hash.murmur3(key + i);
+            if (candidate > max) {
+                max = candidate;
+                argmax = i;
+            }
+        }
+
+        if (argmax == -1) {
+            throw new IllegalStateException("There is no url for this key");
+        }
+
+        return clusterUrls.get(argmax);
     }
 
     private Response sendRequestToUrl(Request request, String url) throws IOException, InterruptedException {
