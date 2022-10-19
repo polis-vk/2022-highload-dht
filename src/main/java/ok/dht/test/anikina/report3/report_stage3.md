@@ -9,32 +9,34 @@ veronika@MBP-Veronika dht % du -sh *
 ```
 Видно, что ключи распределены почти равномерно на наших тестовых данных, но мы брали ключи как последовательные числа,
 не факт что на реальных данных распределение получилось бы такое же.  
-Посмотрим на результаты нагрузочного тестирования:
+Посмотрим на результаты нагрузочного тестирования.
+
+## PUT
 
 ```
-veronika@MBP-Veronika anikina % wrk2 -t 8 -c 64 -d 3m -R 15000 -s lua/get.lua http://localhost:8080
+veronika@MBP-Veronika anikina % wrk2 -t 8 -c 64 -d 3m -R 15000 -s lua/put.lua http://localhost:8080
 Running 3m test @ http://localhost:8080
   8 threads and 64 connections
-  Thread calibration: mean lat.: 134.832ms, rate sampling interval: 916ms
-  Thread calibration: mean lat.: 134.870ms, rate sampling interval: 916ms
-  Thread calibration: mean lat.: 134.255ms, rate sampling interval: 913ms
-  Thread calibration: mean lat.: 135.079ms, rate sampling interval: 919ms
-  Thread calibration: mean lat.: 134.915ms, rate sampling interval: 916ms
-  Thread calibration: mean lat.: 134.403ms, rate sampling interval: 914ms
-  Thread calibration: mean lat.: 135.323ms, rate sampling interval: 918ms
-  Thread calibration: mean lat.: 134.695ms, rate sampling interval: 915ms
-^C  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.14ms  636.27us   7.87ms   73.11%
-    Req/Sec     1.88k     1.69     1.88k    92.65%
-  390355 requests in 26.04s, 247.19MB read
-Requests/sec:  14989.23
-Transfer/sec:      9.49MB
+  Thread calibration: mean lat.: 1.132ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.139ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.140ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.152ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.158ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.138ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.153ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.163ms, rate sampling interval: 10ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.13ms  804.99us  23.90ms   85.73%
+    Req/Sec     1.98k   172.55     3.44k    65.64%
+  2699745 requests in 3.00m, 172.50MB read
+Requests/sec:  14998.62
+Transfer/sec:      0.96MB
 ```
 
 Теперь база данных справляется с нагрузкой R = 15000, версия с использованием одной ноды выдерживала только R = 10000.
 Однако, если попробовать большую нагрузку, например R = 20000, сервис уже "захлебывается".
 
-Посмотрим на GET запросы:
+## GET
 
 ```
 veronika@MBP-Veronika anikina % wrk2 -t 8 -c 64 -d 3m -R 10000 -s lua/get.lua http://localhost:8080
