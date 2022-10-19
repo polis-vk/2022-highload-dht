@@ -93,21 +93,24 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     }
 
     private Future<?> flushInBg(boolean tolerateFlushInProgress) {
-        upsertLock.writeLock().lock();
-        try {
-            State state = accessState();
-            if (state.isFlushing()) {
-                if (tolerateFlushInProgress) {
-                    // or any other completed future
-                    return CompletableFuture.completedFuture(null);
+        while (true) {
+            upsertLock.writeLock().lock();
+            try {
+                State freezedState = accessState();
+                if (freezedState.isFlushing()) {
+                    if (tolerateFlushInProgress) {
+                        // or any other completed future
+                        return CompletableFuture.completedFuture(null);
+                    }
+                    continue;
                 }
-                throw new TooManyFlushesInBgException();
-            }
 
-            state = state.prepareForFlush();
-            this.daoState = state;
-        } finally {
-            upsertLock.writeLock().unlock();
+                freezedState = freezedState.prepareForFlush();
+                this.daoState = freezedState;
+                break;
+            } finally {
+                upsertLock.writeLock().unlock();
+            }
         }
 
         return executor.submit(() -> {
