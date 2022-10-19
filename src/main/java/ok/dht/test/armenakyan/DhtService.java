@@ -74,7 +74,7 @@ public class DhtService implements Service {
             return;
         }
 
-        session.sendResponse(requestHandler.handleForKey(id, request));
+       requestHandler.handleForKey(id, request, session);
     }
 
     @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
