@@ -51,7 +51,8 @@ public class ClusterClient {
             throws ExecutionException, InterruptedException, TimeoutException {
         try {
             HttpResponse<byte[]> httpResponse = httpClient.sendAsync(
-                    requestBuilderForKey(routerNode.nodeAddress, id).PUT(HttpRequest.BodyPublishers.ofByteArray(body)).build(),
+                    requestBuilderForKey(routerNode.nodeAddress, id)
+                            .PUT(HttpRequest.BodyPublishers.ofByteArray(body)).build(),
                     HttpResponse.BodyHandlers.ofByteArray()
             ).get(
                     CONNECT_TIMEOUT,
