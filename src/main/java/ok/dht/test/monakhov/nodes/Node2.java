@@ -3,10 +3,13 @@ package ok.dht.test.monakhov.nodes;
 import ok.dht.ServiceConfig;
 import ok.dht.test.monakhov.DbService;
 
-import java.nio.file.Files;
 import java.util.concurrent.TimeUnit;
 
 public class Node2 {
+
+    private Node2() {
+    }
+
     public static void main(String[] args) throws Exception {
         String url = ClusterConfig.clusterUrls.get(1);
         int port = ClusterConfig.clusterPorts.get(1);
