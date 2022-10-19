@@ -5,10 +5,7 @@ import one.nio.http.Response;
 import one.nio.util.Utf8;
 import java.util.Map;
 
-public class Utils {
-
-    private Utils() {
-    }
+public final class Utils {
 
     public static final Map<Integer, String> STATUS_MAP = Map.ofEntries(
             Map.entry(100, Response.CONTINUE),
@@ -52,6 +49,9 @@ public class Utils {
             Map.entry(504, Response.GATEWAY_TIMEOUT),
             Map.entry(505, Response.HTTP_VERSION_NOT_SUPPORTED)
     );
+
+    private Utils() {
+    }
 
     public static boolean checkId(final String id) {
         return id != null && !id.isBlank();
