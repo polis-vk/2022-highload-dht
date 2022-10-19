@@ -98,11 +98,48 @@ public class TycoonService implements ok.dht.Service {
             return;
         }
 
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> execute(session, () -> get(idParameter, request));
-            case Request.METHOD_PUT -> execute(session, () -> upsert(idParameter, request));
-            case Request.METHOD_DELETE -> execute(session, () -> delete(idParameter, request));
-            default -> execute(session, () -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        String nodeUrlByKey = nodeMapper.getNodeUrlByKey(Utf8.toBytes(idParameter));
+        if (!config.selfUrl().equals(nodeUrlByKey)) {
+            httpClient.sendAsync(
+                HttpRequest.newBuilder()
+                    .uri(URI.create(nodeUrlByKey + PATH + "?id=" + idParameter))
+                    .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                    .build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+            ).thenAccept(response -> {
+                String statusCode;
+                if (response.statusCode() == 400) {
+                    statusCode = Response.BAD_REQUEST;
+                } else if (response.statusCode() == 405) {
+                    statusCode = Response.METHOD_NOT_ALLOWED;
+                } else if (response.statusCode() == 404) {
+                    statusCode = Response.NOT_FOUND;
+                } else if (response.statusCode() == 200) {
+                    statusCode = Response.OK;
+                } else if (response.statusCode() == 201) {
+                    statusCode = Response.CREATED;
+                } else if (response.statusCode() == 202) {
+                    statusCode = Response.ACCEPTED;
+                } else {
+                    LOG.error("Unexpected status {} code requesting node {}", response.statusCode(), nodeUrlByKey);
+                    statusCode = Response.INTERNAL_ERROR;
+                }
+                Response proxyResponse = new Response(statusCode, response.body());
+                sendResponse(session, proxyResponse);
+            }).orTimeout(1000, TimeUnit.MILLISECONDS)
+            .exceptionally(ex -> {
+                LOG.error("Error after proxy request to {}", nodeUrlByKey, ex);
+                Response proxyResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                sendResponse(session, proxyResponse);
+                return null;
+            });
+        } else {
+            switch (request.getMethod()) {
+                case Request.METHOD_GET -> execute(session, () -> get(idParameter));
+                case Request.METHOD_PUT -> execute(session, () -> upsert(idParameter, request));
+                case Request.METHOD_DELETE -> execute(session, () -> delete(idParameter));
+                default -> execute(session, () -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            }
         }
     }
 
@@ -129,113 +166,38 @@ public class TycoonService implements ok.dht.Service {
         }
     }
 
-    private Response get(String id, Request request) {
-        byte[] value = null;
-
-        String nodeUrlByKey = nodeMapper.getNodeUrlByKey(Utf8.toBytes(id));
-        if (config.selfUrl().equals(nodeUrlByKey)) {
-            try {
-                value = levelDb.get(Utf8.toBytes(id));
-            } catch (DBException e) {
-                LOG.error("Error in DB", e);
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+    private Response get(String id) {
+        try {
+            byte[] value = levelDb.get(Utf8.toBytes(id));
+            if (value == null) {
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
+            } else {
+                return new Response(Response.OK, value);
             }
-        } else {
-            try {
-                HttpResponse<byte[]> response = httpClient.send(
-                    HttpRequest.newBuilder()
-                        .GET()
-                        .uri(URI.create(nodeUrlByKey + PATH + "?id=" + id))
-                        .build(),
-                    HttpResponse.BodyHandlers.ofByteArray()
-                );
-                if (response.statusCode() == HttpURLConnection.HTTP_OK) {
-                    value = response.body();
-                } else if (response.statusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
-                    LOG.error("Unexpected status {} code requesting node {}", response.statusCode(), nodeUrlByKey);
-                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-                }
-            } catch (IOException | InterruptedException e) {
-                LOG.error("Error while requesting node {}", nodeUrlByKey, e);
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-            }
-        }
-
-        if (value == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        } else {
-            return new Response(Response.OK, value);
+        } catch (DBException e) {
+            LOG.error("Error in DB", e);
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
 
     private Response upsert(String id, Request request) {
-        byte[] value = Response.EMPTY;
-
-        String nodeUrlByKey = nodeMapper.getNodeUrlByKey(Utf8.toBytes(id));
-        if (config.selfUrl().equals(nodeUrlByKey)) {
-            try {
-                levelDb.put(Utf8.toBytes(id), request.getBody());
-            } catch (DBException e) {
-                LOG.error("Error in DB", e);
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-            }
-        } else {
-            try {
-                HttpResponse<byte[]> response = httpClient.send(
-                    HttpRequest.newBuilder()
-                        .PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                        .uri(URI.create(nodeUrlByKey + PATH + "?id=" + id))
-                        .build(),
-                    HttpResponse.BodyHandlers.ofByteArray()
-                );
-                if (response.statusCode() == HttpURLConnection.HTTP_CREATED) {
-                    value = response.body();
-                } else {
-                    LOG.error("Unexpected status {} code requesting node {}", response.statusCode(), nodeUrlByKey);
-                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-                }
-            } catch (IOException | InterruptedException e) {
-                LOG.error("Error while requesting node {}", nodeUrlByKey, e);
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-            }
+        try {
+            levelDb.put(Utf8.toBytes(id), request.getBody());
+            return new Response(Response.CREATED, Response.EMPTY);
+        } catch (DBException e) {
+            LOG.error("Error in DB", e);
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-
-        return new Response(Response.CREATED, value);
     }
 
-    private Response delete(String id, Request request) {
-        byte[] value = Response.EMPTY;
-
-        String nodeUrlByKey = nodeMapper.getNodeUrlByKey(Utf8.toBytes(id));
-        if (config.selfUrl().equals(nodeUrlByKey)) {
-            try {
-                levelDb.delete(Utf8.toBytes(id));
-            } catch (DBException e) {
-                LOG.error("Error in DB", e);
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-            }
-        } else {
-            try {
-                HttpResponse<byte[]> response = httpClient.send(
-                    HttpRequest.newBuilder()
-                        .DELETE()
-                        .uri(URI.create(nodeUrlByKey + PATH + "?id=" + id))
-                        .build(),
-                    HttpResponse.BodyHandlers.ofByteArray()
-                );
-                if (response.statusCode() == HttpURLConnection.HTTP_ACCEPTED) {
-                    value = response.body();
-                } else {
-                    LOG.error("Unexpected status {} code requesting node {}", response.statusCode(), nodeUrlByKey);
-                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-                }
-            } catch (IOException | InterruptedException e) {
-                LOG.error("Error while requesting node {}", nodeUrlByKey, e);
-                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-            }
+    private Response delete(String id) {
+        try {
+            levelDb.delete(Utf8.toBytes(id));
+            return new Response(Response.ACCEPTED, Response.EMPTY);
+        } catch (DBException e) {
+            LOG.error("Error in DB", e);
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-
-        return new Response(Response.ACCEPTED, value);
     }
 
     @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
