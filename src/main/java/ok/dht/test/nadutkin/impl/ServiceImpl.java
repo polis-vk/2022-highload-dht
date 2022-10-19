@@ -99,7 +99,8 @@ public class ServiceImpl implements Service {
                     case Request.METHOD_GET -> {
                         Entry<MemorySegment> value = dao.get(getKey(id));
                         if (value == null) {
-                            return new Response(Response.NOT_FOUND, getBytes("Can't find any value, for id %1$s".formatted(id)));
+                            return new Response(Response.NOT_FOUND,
+                                    getBytes("Can't find any value, for id %1$s".formatted(id)));
                         } else {
                             return new Response(Response.OK, value.value().toByteArray());
                         }
