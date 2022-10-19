@@ -171,7 +171,7 @@ public final class HttpApi extends HttpServer {
         Response response;
         Request redirectedRequest = new Request(request);
         try {
-            response = httpClients.get(shards.getShardByKey(key)).invoke(redirectedRequest);
+            response = httpClients.get(shards.getShardByKey(key)).invoke(redirectedRequest, 500);
         } catch (Exception e1) {
             response = new Response(Response.BAD_GATEWAY, Response.EMPTY);
         }
