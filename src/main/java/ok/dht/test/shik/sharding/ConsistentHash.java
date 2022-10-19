@@ -1,34 +1,80 @@
 package ok.dht.test.shik.sharding;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.TreeMap;
+import java.util.PriorityQueue;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 public class ConsistentHash {
 
-    private final NavigableMap<Integer, String> bounds;
+    private static final Log LOG = LogFactory.getLog(ConsistentHash.class);
+    private static final String HASHING_ALGORITHMS = "SHA-256";
+
+    // MessageDigest is not thread safe
+    private static final ThreadLocal<MessageDigest> DIGEST = ThreadLocal.withInitial(() -> {
+        try {
+            return MessageDigest.getInstance(HASHING_ALGORITHMS);
+        } catch (NoSuchAlgorithmException e) {
+            LOG.error("Cannot instantiate sha-256 algorithm", e);
+            throw new RuntimeException("Cannot instantiate sha-256 algorithm");
+        }
+    });
+
+    private final int[] hashes;
+    private final int[] nodeIndex;
+    private final List<String> clusterUrls;
 
     public ConsistentHash(int virtualNodesNumber, List<String> clusterUrls) {
-        bounds = new TreeMap<>();
-        for (String url : clusterUrls) {
-            for (int i = 0; i < virtualNodesNumber; ++i) {
-                int hash = Arrays.hashCode((url + i + url).getBytes(StandardCharsets.UTF_8));
-                bounds.put(hash, url);
+        int length = clusterUrls.size() * virtualNodesNumber;
+        hashes = new int[length];
+        nodeIndex = new int[length];
+        this.clusterUrls = clusterUrls;
+
+        PriorityQueue<Pair> queue = new PriorityQueue<>(length,
+            Comparator.comparingInt(Pair::key).thenComparing(Pair::index));
+        for (int i = 0; i < clusterUrls.size(); ++i) {
+            String url = clusterUrls.get(i);
+            for (int j = 0; j < virtualNodesNumber; ++j) {
+                byte[] hash = DIGEST.get().digest((url + j + url).getBytes(StandardCharsets.UTF_8));
+                queue.add(new Pair(convertToIntHash(hash), i));
             }
+        }
+
+        for (int i = 0; i < length; ++i) {
+            Pair pair = queue.poll();
+            if (pair == null) {
+                LOG.error("Error while sorting hashes in consistent hashing, cannot poll all hashes");
+                throw new IllegalStateException("Error while sorting hashes in consistent hashing, cannot poll all hashes");
+            }
+
+            hashes[i] = pair.key;
+            nodeIndex[i] = pair.index;
         }
     }
 
     public String getShardUrlByKey(byte[] key) {
-        int hash = Arrays.hashCode(key);
-        Map.Entry<Integer, String> floorEntry = bounds.floorEntry(hash);
-        if (floorEntry == null) {
-            return bounds.lastEntry().getValue();
+        byte[] hash = DIGEST.get().digest(key);
+        int insertionPoint = Arrays.binarySearch(hashes, convertToIntHash(hash));
+        if (insertionPoint >= 0) {
+            return clusterUrls.get(nodeIndex[insertionPoint]);
         }
-        return floorEntry.getValue();
+        insertionPoint = -insertionPoint - 2;
+        if (insertionPoint >= 0) {
+            return clusterUrls.get(nodeIndex[insertionPoint]);
+        }
+        return clusterUrls.get(nodeIndex[nodeIndex.length - 1]);
     }
 
+    private int convertToIntHash(byte[] sha256) {
+        return (sha256[0] << 24) + (sha256[1] << 16) + (sha256[2] << 8) + sha256[3];
+    }
+
+    private record Pair(int key, int index) { }
 }
 

@@ -20,26 +20,29 @@ import java.util.concurrent.TimeoutException;
 public final class Server {
 
     private static final Log LOG = LogFactory.getLog(Server.class);
-    private static final Path DEFAULT_DATABASE_DIR1 =
-        Paths.get("/var/folders/85/g8ft9y9d1kb9z88s8kgjh21m0000gp/T/server3");
+    private static final Path DEFAULT_DATABASE_DIR =
+        Paths.get("/var/folders/85/g8ft9y9d1kb9z88s8kgjh21m0000gp/T/server11");
     private static final int DEFAULT_PORT1 = 19234;
     private static final int DEFAULT_PORT2 = 19876;
+    private static final int DEFAULT_PORT3 = 19877;
     private static final String LOCALHOST = "http://localhost:";
     private static final String DEFAULT_URL1 = LOCALHOST + DEFAULT_PORT1;
     private static final String DEFAULT_URL2 = LOCALHOST + DEFAULT_PORT2;
+    private static final String DEFAULT_URL3 = LOCALHOST + DEFAULT_PORT3;
     private static final ServiceConfig DEFAULT_CONFIG1 = new ServiceConfig(
         DEFAULT_PORT1,
         DEFAULT_URL1,
         List.of(
             DEFAULT_URL1,
-            DEFAULT_URL2
+            DEFAULT_URL2,
+            DEFAULT_URL3
         ),
-        DEFAULT_DATABASE_DIR1
+        DEFAULT_DATABASE_DIR
     );
     private static final int MAX_WORKERS = 8;
     private static final long KEEP_ALIVE_TIME = 20;
     private static final WorkersConfig.QueuePolicy QUEUE_POLICY = WorkersConfig.QueuePolicy.FIFO;
-    private static final int QUEUE_CAPACITY = 10000;
+    private static final int QUEUE_CAPACITY = 100;
     private static final WorkersConfig WORKERS_CONFIG = new WorkersConfig.Builder()
         .corePoolSize(0)
         .maxPoolSize(MAX_WORKERS)
@@ -47,7 +50,7 @@ public final class Server {
         .queuePolicy(QUEUE_POLICY)
         .queueCapacity(QUEUE_CAPACITY)
         .build();
-    private static final int V_NODES_NUMBER = 3000;
+    private static final int V_NODES_NUMBER = 50;
     private static final ShardingConfig SHARDING_CONFIG = new ShardingConfig(V_NODES_NUMBER);
     private static final int TIMEOUT_SECONDS = 10;
 

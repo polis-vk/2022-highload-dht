@@ -3,14 +3,11 @@ package ok.dht.test.shik;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.shik.sharding.ConsistentHash;
+import ok.dht.test.shik.events.HandlerRequest;
+import ok.dht.test.shik.events.HandlerResponse;
 import ok.dht.test.shik.sharding.ShardingConfig;
 import ok.dht.test.shik.workers.WorkersConfig;
 import one.nio.http.HttpServerConfig;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.net.ConnectionString;
 import one.nio.server.ServerConfig;
@@ -21,34 +18,20 @@ import org.iq80.leveldb.Options;
 import org.iq80.leveldb.impl.Iq80DBFactory;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.function.Function;
 
-public class ServiceImpl implements Service {
+public class ServiceImpl implements CustomService {
 
     private static final Log LOG = LogFactory.getLog(ServiceImpl.class);
-    private static final String URL_INFIX = "/v0/entity?id=";
-    private static final int TIMEOUT_MILLIS = 1000;
-    private static final int SERVICE_UNAVAILABLE_CODE = 503;
-    private static final int SERVER_ERROR_CODE = 500;
-    private static final int NOT_FOUND_CODE = 404;
+    private static final Options LEVELDB_OPTIONS = new Options();
 
     private final ServiceConfig config;
     private final WorkersConfig workersConfig;
-    private final ConsistentHash consistentHash;
+    private final ShardingConfig shardingConfig;
 
     private CustomHttpServer server;
-    private HttpClient client;
     private DB levelDB;
 
     public ServiceImpl(ServiceConfig config) {
@@ -58,20 +41,19 @@ public class ServiceImpl implements Service {
     public ServiceImpl(ServiceConfig config, WorkersConfig workersConfig, ShardingConfig shardingConfig) {
         this.config = config;
         this.workersConfig = workersConfig;
-        consistentHash = new ConsistentHash(shardingConfig.getVNodesNumber(), config.clusterUrls());
+        this.shardingConfig = shardingConfig;
     }
 
     @Override
     public CompletableFuture<?> start() throws IOException {
         try {
-            levelDB = Iq80DBFactory.factory.open(config.workingDir().toFile(), new Options());
+            levelDB = Iq80DBFactory.factory.open(config.workingDir().toFile(), LEVELDB_OPTIONS);
         } catch (IOException e) {
             LOG.error("Error while starting database: ", e);
             throw e;
         }
-        client = HttpClient.newHttpClient();
-        server = new CustomHttpServer(createHttpConfig(config), workersConfig);
-        server.addRequestHandlers(this);
+        server = new CustomHttpServer(createHttpConfig(config), config, workersConfig, shardingConfig);
+        server.setRequestHandler(this);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -87,114 +69,26 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id) {
-        if (notValidId(id)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        byte[] key = id.getBytes(StandardCharsets.UTF_8);
-        String shardUrl = consistentHash.getShardUrlByKey(key);
-
-        if (config.selfUrl().equals(shardUrl)) {
-            byte[] value = levelDB.get(key);
-            return value == null ? new Response(Response.NOT_FOUND, Response.EMPTY) : Response.ok(value);
-        } else {
-            HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(shardUrl + URL_INFIX + id)).GET().build();
-            return proxyRequest(httpRequest, httpResponse -> {
-                Response proxyResponse = checkProxyResponse(httpRequest, httpResponse);
-                if (proxyResponse != null) {
-                    return proxyResponse;
-                }
-                byte[] value = null;
-                if (httpResponse != null) {
-                    value = httpResponse.body();
-                }
-                return value == null ? new Response(Response.NOT_FOUND, Response.EMPTY) : Response.ok(value);
-            });
-        }
+    @Override
+    public void handleGet(HandlerRequest request, HandlerResponse response) {
+        byte[] key = request.getId().getBytes(StandardCharsets.UTF_8);
+        byte[] value = levelDB.get(key);
+        response.setResponse(value == null ? new Response(Response.NOT_FOUND, Response.EMPTY) : Response.ok(value));
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(@Param(value = "id", required = true) String id, Request request) {
-        if (notValidId(id) || !isValidBody(request)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-        byte[] value = request.getBody();
-        byte[] key = id.getBytes(StandardCharsets.UTF_8);
-        String shardUrl = consistentHash.getShardUrlByKey(key);
-        if (config.selfUrl().equals(shardUrl)) {
-            levelDB.put(key, value);
-        } else {
-            HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(shardUrl + URL_INFIX + id))
-                .PUT(HttpRequest.BodyPublishers.ofByteArray(value)).build();
-            return proxyRequest(httpRequest, httpResponse ->
-                Objects.requireNonNullElseGet(checkProxyResponse(httpRequest, httpResponse),
-                    () -> new Response(Response.CREATED, Response.EMPTY)));
-        }
-
-        return new Response(Response.CREATED, Response.EMPTY);
+    @Override
+    public void handlePut(HandlerRequest request, HandlerResponse response) {
+        byte[] value = request.getRequest().getBody();
+        byte[] key = request.getId().getBytes(StandardCharsets.UTF_8);
+        levelDB.put(key, value);
+        response.setResponse(new Response(Response.CREATED, Response.EMPTY));
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(required = true, value = "id") String id) {
-        if (notValidId(id)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-
-        byte[] key = id.getBytes(StandardCharsets.UTF_8);
-        String shardUrl = consistentHash.getShardUrlByKey(key);
-        if (config.selfUrl().equals(shardUrl)) {
-            levelDB.delete(key);
-        } else {
-            HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(shardUrl + URL_INFIX + id)).DELETE().build();
-            return proxyRequest(httpRequest, httpResponse ->
-                Objects.requireNonNullElseGet(checkProxyResponse(httpRequest, httpResponse),
-                    () -> new Response(Response.ACCEPTED, Response.EMPTY)));
-        }
-
-        return new Response(Response.ACCEPTED, Response.EMPTY);
-    }
-
-    private Response checkProxyResponse(HttpRequest httpRequest, HttpResponse<byte[]> httpResponse) {
-        if (httpResponse == null || httpResponse.statusCode() == SERVICE_UNAVAILABLE_CODE) {
-            LOG.error("Cannot proxy query, request " + httpRequest.uri().toString());
-            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-        }
-        if (httpResponse.statusCode() == SERVER_ERROR_CODE) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-        if (httpResponse.statusCode() == NOT_FOUND_CODE) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-        return null;
-    }
-
-    private Response proxyRequest(HttpRequest request, Function<HttpResponse<byte[]>, Response> processResponse) {
-        CompletableFuture<HttpResponse<byte[]>> future =
-            client.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
-        try {
-            return future.thenApply(processResponse).get(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            LOG.warn("Interrupted while processing async query ", e);
-        } catch (ExecutionException e) {
-            LOG.warn("Exception while processing async query ", e);
-        } catch (TimeoutException e) {
-            LOG.info("Timeout while processing async query ", e);
-        }
-        return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-    }
-
-    private static boolean notValidId(String id) {
-        return id == null || id.isEmpty();
-    }
-
-    private static boolean isValidBody(Request request) {
-        return request.getBody() != null;
+    @Override
+    public void handleDelete(HandlerRequest request, HandlerResponse response) {
+        byte[] key = request.getId().getBytes(StandardCharsets.UTF_8);
+        levelDB.delete(key);
+        response.setResponse(new Response(Response.ACCEPTED, Response.EMPTY));
     }
 
     private static HttpServerConfig createHttpConfig(ServiceConfig config) {
