@@ -168,8 +168,8 @@ public class HttpServerImpl extends HttpServer {
                 .build();
 
         try {
-            HttpResponse<byte[]> httpResponse = httpClient.
-                    send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
+            HttpResponse<byte[]> httpResponse = httpClient
+                    .send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
             session.sendResponse(new Response(fromHttpResponseStatusJavaToOneNoi(httpResponse.statusCode()),
                             httpResponse.body()));
         } catch (Exception e) {
