@@ -49,18 +49,18 @@ public class ShardingRouter {
     }
 
     public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(Request request, String key) {
-        Node vNode = virtualNodeByKey(key);
-        return vNode.routedRequestFuture(httpClient, request, key);
+        Node virtualNode = virtualNodeByKey(key);
+        return virtualNode.routedRequestFuture(httpClient, request, key);
     }
 
     public void informAboutFail(String key) {
-        Node vNode = virtualNodeByKey(key);
-        vNode.managePossibleIllness();
+        Node virtualNode = virtualNodeByKey(key);
+        virtualNode.managePossibleIllness();
     }
 
     public boolean isUrlResponsibleForKey(String serverUrl, String key) {
-        Node vNode = virtualNodeByKey(key);
-        return vNode.url.equals(serverUrl);
+        Node virtualNode = virtualNodeByKey(key);
+        return virtualNode.url.equals(serverUrl);
     }
 
     private Node virtualNodeByKey(String id) {
