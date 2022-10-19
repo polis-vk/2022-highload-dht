@@ -6,18 +6,15 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.vihnin.database.DataBase;
 import ok.dht.test.vihnin.database.DataBaseRocksDBImpl;
 import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.server.AcceptorConfig;
 import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 
 import static ok.dht.test.vihnin.ServiceUtils.ENDPOINT;
 import static ok.dht.test.vihnin.ServiceUtils.emptyResponse;
@@ -63,7 +60,7 @@ public class HighLoadService implements Service {
 
     @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id) throws ExecutionException, InterruptedException {
+    public Response handleGet(@Param(value = "id", required = true) String id) {
         if (storage == null) return emptyResponse(Response.NOT_FOUND);
         if (id == null || id.isEmpty()) return emptyResponse(Response.BAD_REQUEST);
 
@@ -98,15 +95,6 @@ public class HighLoadService implements Service {
         storage.delete(id);
 
         return emptyResponse(Response.ACCEPTED);
-    }
-
-    private static HttpServerConfig createConfigFromPort(int port) {
-        HttpServerConfig httpConfig = new HttpServerConfig();
-        AcceptorConfig acceptor = new AcceptorConfig();
-        acceptor.port = port;
-        acceptor.reusePort = true;
-        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
-        return httpConfig;
     }
 
     @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
