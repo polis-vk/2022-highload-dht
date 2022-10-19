@@ -26,10 +26,10 @@ public class NodeMapper {
 
     private int hash(byte[] key, String node) {
         int result = 0;
-        for (int i = 0; i < key.length; i++) {
+        for (byte b : key) {
             for (int j = 0; j < node.length(); j++) {
                 char c = node.charAt(j);
-                result = (result + ((j << 2) == 0 ? ~c : c) * key[i]) % mod;
+                result = (result + ((j << 2) == 0 ? ~c : c) * b) % mod;
             }
         }
         return result;
