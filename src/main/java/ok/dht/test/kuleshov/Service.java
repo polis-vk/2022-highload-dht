@@ -31,9 +31,9 @@ public class Service implements ok.dht.Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        System.out.println(config.workingDir());
         Config daoConfig = new Config(config.workingDir(), DEFAULT_DAO_FLUSH_THRESHOLD);
         memorySegmentDao = new MemorySegmentDao(daoConfig);
+        memorySegmentDao.flush();
         server = new CoolAsyncHttpServer(createConfigFromPort(config.selfPort()), this);
         isStarted = true;
         server.start();
@@ -44,8 +44,8 @@ public class Service implements ok.dht.Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         if (isStarted) {
-            System.out.println(config.selfUrl());
             server.stop();
+            memorySegmentDao.flush();
             memorySegmentDao.close();
             isStarted = false;
         }
