@@ -8,9 +8,9 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.ConnectionString;
 import one.nio.pool.PoolException;
+import one.nio.util.Hash;
 
 import java.io.IOException;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
@@ -35,12 +35,12 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
         selfUrl = service.getConfig().selfUrl();
         List<String> clusters = service.getConfig().clusterUrls();
-        clusters.sort(Comparator.naturalOrder());
 
         int n = clusters.size();
 
         int startRangeSize = Integer.MAX_VALUE / n;
         int cur = startRangeSize;
+
         for (String cluster : clusters) {
             treeSet.add(cur);
             hashToClient.put(cur, new HttpClient(new ConnectionString(cluster)));
@@ -80,7 +80,7 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
     }
 
     private Integer getVirtualNodeNumber(String id) {
-        int hash = id.hashCode();
+        int hash = Hash.murmur3(id);
 
         Integer next = treeSet.ceiling(hash);
 
