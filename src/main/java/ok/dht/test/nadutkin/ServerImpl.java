@@ -7,6 +7,7 @@ import ok.dht.test.nadutkin.impl.ServiceImpl;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -21,13 +22,18 @@ public final class ServerImpl {
     }
 
     public static void main(String[] args) throws IOException {
-        int port = 19234;
+        if (args == null || args.length != 1) {
+            throw new IllegalArgumentException("You need to pass port to args");
+        }
+        int port = Integer.parseInt(args[0]);
         String url = "http://localhost:" + port;
         var temporary = Files.createTempDirectory("server" + port);
         ServiceConfig cfg = new ServiceConfig(
                 port,
                 url,
-                Collections.singletonList(url),
+                List.of("http://localhost:19234",
+                        "http://localhost:19235",
+                        "http://localhost:19236"),
                 temporary);
         ServiceImpl service = new ServiceImpl(cfg);
         try {

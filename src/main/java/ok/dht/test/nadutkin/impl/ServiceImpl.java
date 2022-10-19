@@ -18,6 +18,7 @@ import one.nio.http.HttpServer;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
+import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 
 import java.io.IOException;
@@ -27,6 +28,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static ok.dht.test.nadutkin.impl.utils.UtilsClass.getBytes;
 
@@ -37,6 +39,7 @@ public class ServiceImpl implements Service {
     private Sharder sharder;
     private HttpClient client;
     private CircuitBreaker breaker;
+    private final AtomicInteger storedData = new AtomicInteger(0);
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -102,6 +105,7 @@ public class ServiceImpl implements Service {
                         }
                     }
                     case Request.METHOD_PUT -> {
+                        storedData.getAndIncrement();
                         return upsert(id, MemorySegment.ofArray(request.getBody()), Response.CREATED);
                     }
                     case Request.METHOD_DELETE -> {
@@ -126,7 +130,7 @@ public class ServiceImpl implements Service {
                     breaker.success(index);
                     return new Response(Integer.toString(response.statusCode()), response.body());
                 } catch (InterruptedException exception) {
-                    Constants.LOG.error("Server caught an exception {}", exception.getMessage());
+                    Constants.LOG.error("Server caught an exception at url {}", url);
                     return fail(index);
                 }
             }
@@ -136,6 +140,12 @@ public class ServiceImpl implements Service {
     }
 
     //endregion
+
+    @Path("/statistics/stored")
+    @RequestMethod(Request.METHOD_GET)
+    public Response getNumber() {
+        return new Response(Response.OK, getBytes(storedData.toString()));
+    }
 
     @ServiceFactory(stage = 3, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
     public static class Factory implements ServiceFactory.Factory {
