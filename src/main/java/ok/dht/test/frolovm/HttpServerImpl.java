@@ -81,22 +81,7 @@ public class HttpServerImpl extends HttpServer {
 
     public void close() {
         this.stop();
-        closeExecutorPool(requestService);
-    }
-
-    private void closeExecutorPool(ExecutorService pool) {
-        pool.shutdown();
-        try {
-            if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
-                pool.shutdownNow();
-                if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
-                    LOGGER.error("Pool didn't terminate");
-                }
-            }
-        } catch (InterruptedException ie) {
-            pool.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        Utils.closeExecutorPool(requestService);
     }
 
 }

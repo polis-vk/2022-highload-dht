@@ -12,7 +12,7 @@ import java.util.function.IntBinaryOperator;
 
 public class CircuitBreakerImpl implements CircuitBreaker {
 
-    private static final int RETRY_TIME_PERIOD = 1000;
+    private static final int RETRY_TIME_PERIOD = 5000;
     private static final IntBinaryOperator SAFE_DECREMENT_FUNC = (value, term) -> Math.max(0, term + value);
     private final AtomicIntegerArray failed;
     private final int maxRequestTries;
@@ -43,7 +43,7 @@ public class CircuitBreakerImpl implements CircuitBreaker {
     public void incrementFail(String shardName) {
         int index = nameToIndex.get(shardName);
         failed.incrementAndGet(index);
-        if (maxRequestTries > failed.get(index)) {
+        if (maxRequestTries <= failed.get(index) && isRestarterStart[index].get()) {
             startDemonRestarter(index, shardName);
         }
     }
@@ -63,6 +63,10 @@ public class CircuitBreakerImpl implements CircuitBreaker {
     @Override
     public void successRequest(String shardName) {
         failed.getAndAccumulate(nameToIndex.get(shardName), -1, SAFE_DECREMENT_FUNC);
+    }
+
+    public void close() {
+        Utils.closeExecutorPool(demonRestarter);
     }
 
 }

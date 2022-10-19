@@ -5,9 +5,16 @@ import one.nio.http.Response;
 import one.nio.util.Utf8;
 import java.net.http.HttpResponse;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 
 public final class Utils {
     public static final int SERVER_ERROR = 500;
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(Utils.class);
 
     public static final Map<Integer, String> STATUS_MAP = Map.ofEntries(
             Map.entry(100, Response.CONTINUE),
@@ -69,5 +76,20 @@ public final class Utils {
 
     public static boolean isServerError(HttpResponse<byte[]> response) {
         return response.statusCode() >= SERVER_ERROR;
+    }
+
+    public static void closeExecutorPool(ExecutorService pool) {
+        pool.shutdown();
+        try {
+            if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
+                pool.shutdownNow();
+                if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
+                    LOGGER.error("Pool didn't terminate");
+                }
+            }
+        } catch (InterruptedException ie) {
+            pool.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }

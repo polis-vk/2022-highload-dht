@@ -50,7 +50,7 @@ public class ServiceImpl implements Service {
 
     public ServiceImpl(ServiceConfig config, Hasher hasher) {
         this.config = config;
-        this.algorithm = new ConsistentHashing(config.clusterUrls(), hasher);
+        this.algorithm = new RendezvousHashing(config.clusterUrls(), hasher);
         this.circuitBreaker = new CircuitBreakerImpl(MAX_REQUEST_TRIES, config.clusterUrls());
     }
 
