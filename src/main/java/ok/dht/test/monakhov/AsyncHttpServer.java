@@ -30,7 +30,6 @@ public class AsyncHttpServer extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            log.debug("Request collected");
             executor.submit(() -> handle(request, session));
         } catch (RejectedExecutionException e) {
             session.sendError(Response.INTERNAL_ERROR, e.getMessage());
@@ -70,8 +69,6 @@ public class AsyncHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        super.stop();
-
         for (SelectorThread thread : selectors) {
             if (thread.isAlive()) {
                 for (Session session : thread.selector) {
@@ -79,7 +76,8 @@ public class AsyncHttpServer extends HttpServer {
                 }
             }
         }
-
         ExecutorUtils.shutdownGracefully(executor, log);
+
+        super.stop();
     }
 }
