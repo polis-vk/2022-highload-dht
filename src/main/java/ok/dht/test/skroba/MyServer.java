@@ -18,7 +18,7 @@ public final class MyServer {
     }
     
     public static void main(String[] args) {
-        if (args.length != 1 || args[0] != null || !isRightInteger(args[0])) {
+        if (args.length != 1 || args[0] == null || !isRightInteger(args[0])) {
             LOG.error("Wrong args, arg must contain port");
             return;
         }
@@ -31,7 +31,7 @@ public final class MyServer {
             cfg = new ServiceConfig(
                     port,
                     url,
-                    List.of("http://localhost:3000", "http://localhost:3020", "http://localhost:3030"),
+                    List.of("http://localhost:3000", "http://localhost:3020", "http://localhost:3040"),
                     Files.createTempDirectory("server-" + port)
             );
         } catch (IOException e) {
