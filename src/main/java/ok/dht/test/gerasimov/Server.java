@@ -4,6 +4,7 @@ import ok.dht.test.gerasimov.exception.ServerException;
 import ok.dht.test.gerasimov.sharding.ConsistentHash;
 import ok.dht.test.gerasimov.sharding.Shard;
 import ok.dht.test.gerasimov.sharding.VNode;
+import one.nio.http.HttpClient;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -65,6 +66,7 @@ public final class Server extends HttpServer {
 
     @Override
     public synchronized void stop() {
+        consistentHash.getShards().forEach(s -> s.getHttpClient().close());
         for (SelectorThread thread : selectors) {
             for (Session session : thread.selector) {
                 session.socket().close();
