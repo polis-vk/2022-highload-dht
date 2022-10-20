@@ -52,7 +52,7 @@ public class CircuitBreakerImpl implements CircuitBreaker {
         isRestarterStart[nodeIndex].set(true);
         demonRestarter.schedule(
                 () -> {
-                    successRequest(shardName);
+                    failed.getAndSet(nodeIndex, 0);
                     isRestarterStart[nodeIndex].set(false);
                 },
                 RETRY_TIME_PERIOD,
