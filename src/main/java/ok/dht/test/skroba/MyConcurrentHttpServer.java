@@ -126,7 +126,7 @@ public class MyConcurrentHttpServer extends HttpServer {
         }
         
         try {
-            requestsWorkers.execute(() -> processRequest(request, session, id));
+            requestsWorkers.submit(() -> processRequest(request, session, id));
         } catch (RejectedExecutionException e) {
             LOG.error("Can't submit task: " + e.getMessage());
             session.sendResponse(getEmptyResponse(Response.INTERNAL_ERROR));
