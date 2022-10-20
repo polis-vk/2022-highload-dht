@@ -34,7 +34,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author Vadim Tsesko
  */
 class ShardingTest extends TestBase {
-    private static final Duration TIMEOUT = Duration.ofMinutes(1);
 
     @ServiceTest(stage = 3, clusterSize = 2)
     void insert(List<ServiceInfo> serviceInfos) throws Exception {
