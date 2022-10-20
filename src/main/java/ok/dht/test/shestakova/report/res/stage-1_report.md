@@ -365,7 +365,7 @@ Value   Percentile   TotalCount 1/(1-Percentile)
 Requests/sec:     99.98  
 Transfer/sec:      6.51KB  
 
-С увеличением rate с 100 до 10000 среднее значение latency возрастает более, чем в 3 раза.
+С увеличением rate с 100 до 1000 среднее значение latency возрастает более, чем в 3 раза.
 
 `wrk -t 1 -c 1 -d 30 -R 1000 -s get.lua -L http://localhost:19234`  
 Running 30s test @ http://localhost:19234  
