@@ -4,23 +4,16 @@ import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionHandler;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 
 public final class RequestExecutorService {
 
-    public static final int QUEUE_CAPACITY = 5;
+    public static final int QUEUE_CAPACITY = 100;
     public static final int AWAIT_TERMINATION_SECONDS = 60;
     public static final int THREADS_NUMBER = calculateThreadNumber();
     private static final Logger LOG = LoggerFactory.getLogger(RequestExecutorService.class);
 
     private RequestExecutorService() {
-
     }
 
     public static ThreadPoolExecutor requestExecutorDiscard() {
