@@ -17,6 +17,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static ok.dht.test.kuleshov.Validator.isCorrectId;
 import static ok.dht.test.kuleshov.utils.ConfigUtils.createConfigFromPort;
+import static ok.dht.test.kuleshov.utils.ResponseUtils.emptyResponse;
 
 public class Service implements ok.dht.Service {
     private final ServiceConfig config;
@@ -33,7 +34,6 @@ public class Service implements ok.dht.Service {
     public CompletableFuture<?> start() throws IOException {
         Config daoConfig = new Config(config.workingDir(), DEFAULT_DAO_FLUSH_THRESHOLD);
         memorySegmentDao = new MemorySegmentDao(daoConfig);
-        memorySegmentDao.flush();
         server = new CoolAsyncHttpServer(createConfigFromPort(config.selfPort()), this);
         isStarted = true;
         server.start();
@@ -111,10 +111,6 @@ public class Service implements ok.dht.Service {
 
     private static boolean isExistValue(Entry<MemorySegment> entry) {
         return entry != null && !entry.isTombstone();
-    }
-
-    private static Response emptyResponse(String statusCode) {
-        return new Response(statusCode, Response.EMPTY);
     }
 
     private void upsertById(String id, MemorySegment segment) {
