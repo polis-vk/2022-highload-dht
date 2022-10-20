@@ -44,7 +44,7 @@ public class MyConcurrentHttpServer extends HttpServer {
     
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        requestsWorkers.execute(() -> {
+        requestsWorkers.submit(() -> {
             try {
                 super.handleRequest(request, session);
             } catch (IOException e) {
