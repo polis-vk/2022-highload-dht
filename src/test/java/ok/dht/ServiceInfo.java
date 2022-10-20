@@ -22,18 +22,29 @@ public class ServiceInfo {
         return config.selfUrl();
     }
 
-    public Service service() {
-        return service;
+    public void start() throws Exception {
+        service.start().get(10, TimeUnit.SECONDS);
+    }
+
+    public void stop() throws Exception {
+        service.stop().get(10, TimeUnit.SECONDS);
     }
 
     public void cleanUp() throws Exception {
-        service.stop().get(10, TimeUnit.SECONDS);
+        stop();
         FileUtils.delete(config.workingDir());
     }
 
     public HttpResponse<byte[]> get(String key) throws Exception {
         return client.send(
                 requestForKey(key).GET().build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
+    public HttpResponse<byte[]> get(String key, int ack, int from) throws Exception {
+        return client.send(
+                requestForKey(key, ack, from).GET().build(),
                 HttpResponse.BodyHandlers.ofByteArray()
         );
     }
@@ -45,9 +56,37 @@ public class ServiceInfo {
         );
     }
 
+    public HttpResponse<byte[]> delete(String key, int ack, int from) throws Exception {
+        return client.send(
+                requestForKey(key, ack, from).DELETE().build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
     public HttpResponse<byte[]> upsert(String key, byte[] data) throws Exception {
         return client.send(
                 requestForKey(key).PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
+    public HttpResponse<byte[]> upsert(String key, byte[] data, int ack, int from) throws Exception {
+        return client.send(
+                requestForKey(key, ack, from).PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
+    public HttpResponse<byte[]> post(String key, byte[] data) throws Exception {
+        return client.send(
+                requestForKey(key).POST(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
+    public HttpResponse<byte[]> post(String key, byte[] data, int ack, int from) throws Exception {
+        return client.send(
+                requestForKey(key, ack, from).POST(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
                 HttpResponse.BodyHandlers.ofByteArray()
         );
     }
@@ -58,5 +97,9 @@ public class ServiceInfo {
 
     private HttpRequest.Builder requestForKey(String key) {
         return request("/v0/entity?id=" + key);
+    }
+
+    private HttpRequest.Builder requestForKey(String key, int from, int ack) {
+        return request("/v0/entity?id=" + key + "&from=" + from + "&ack=" + ack);
     }
 }
