@@ -43,6 +43,7 @@ public class ServiceImpl implements Service {
         server.start();
         server.addRequestHandlers(this);
         dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
+        server.start();
         return CompletableFuture.completedFuture(null);
     }
 
@@ -70,6 +71,7 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
+        dao.close();
 
         return CompletableFuture.completedFuture(null);
     }
@@ -93,7 +95,7 @@ public class ServiceImpl implements Service {
             case Request.METHOD_GET -> getEntity(id);
             case Request.METHOD_PUT -> putEntity(request, id);
             case Request.METHOD_DELETE -> deleteEntity(id);
-            default -> new Response(Response.BAD_REQUEST, "Unhandled method".getBytes(StandardCharsets.UTF_8));
+            default -> new Response(Response.METHOD_NOT_ALLOWED, "Unhandled method".getBytes(StandardCharsets.UTF_8));
         };
     }
 
