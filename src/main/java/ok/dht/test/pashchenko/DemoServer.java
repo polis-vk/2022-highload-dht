@@ -32,7 +32,7 @@ public final class DemoServer {
             ServiceConfig cfg = new ServiceConfig(
                     ports[i],
                     url,
-                    Collections.singletonList(url),
+                    cluster,
                     Files.createTempDirectory("server")
             );
             new DemoService(cfg).start().get(1, TimeUnit.SECONDS);
