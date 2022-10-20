@@ -24,8 +24,10 @@ import java.util.concurrent.TimeUnit;
 import static ok.dht.test.kuleshov.utils.ResponseUtils.emptyResponse;
 
 public class CoolAsyncHttpServer extends CoolHttpServer {
-    private static final int CORE_POOL_SIZE = 4;
-    private static final int MAXIMUM_POOL_SIZE = 4;
+    private static final int WORKER_CORE_POOL_SIZE = 4;
+    private static final int WORKER_MAXIMUM_POOL_SIZE = 4;
+    private static final int SENDER_CORE_POOL_SIZE = 4;
+    private static final int SENDER_MAXIMUM_POOL_SIZE = 4;
 
     private final String selfUrl;
     private ExecutorService workerExecutorService;
@@ -57,15 +59,14 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
     @Override
     public synchronized void start() {
         super.start();
-        workerExecutorService = new ThreadPoolExecutor(CORE_POOL_SIZE,
-                MAXIMUM_POOL_SIZE,
+        workerExecutorService = new ThreadPoolExecutor(WORKER_CORE_POOL_SIZE,
+                WORKER_MAXIMUM_POOL_SIZE,
                 100,
                 TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>(128)
         );
-
-        senderExecutorService = new ThreadPoolExecutor(CORE_POOL_SIZE,
-                MAXIMUM_POOL_SIZE,
+        senderExecutorService = new ThreadPoolExecutor(SENDER_CORE_POOL_SIZE,
+                SENDER_MAXIMUM_POOL_SIZE,
                 100,
                 TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>(128)
@@ -109,8 +110,12 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                     senderExecutorService.execute(() -> {
                         try {
                             session.sendResponse(sendRequest(number, id, request));
-                        } catch (IOException | HttpException | PoolException e) {
-                            e.printStackTrace();
+                        } catch (Exception e) {
+                            try {
+                                session.sendResponse(emptyResponse(Response.BAD_REQUEST));
+                            } catch (IOException ex) {
+                                //ignore
+                            }
                         }
                     });
                     return;
