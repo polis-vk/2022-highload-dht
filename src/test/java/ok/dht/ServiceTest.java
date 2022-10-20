@@ -195,8 +195,8 @@ public @interface ServiceTest {
             if (annotation.prestartCluster()) {
                 for (ServiceInfo service : services) {
                     try {
-                        service.service().start().get(10, TimeUnit.SECONDS);
-                    } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                        service.start();
+                    } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
                 }

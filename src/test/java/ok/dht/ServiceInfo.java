@@ -22,12 +22,16 @@ public class ServiceInfo {
         return config.selfUrl();
     }
 
-    public Service service() {
-        return service;
+    public void start() throws Exception {
+        service.start().get(10, TimeUnit.SECONDS);
+    }
+
+    public void stop() throws Exception {
+        service.stop().get(10, TimeUnit.SECONDS);
     }
 
     public void cleanUp() throws Exception {
-        service.stop().get(10, TimeUnit.SECONDS);
+        stop();
         FileUtils.delete(config.workingDir());
     }
 
@@ -52,11 +56,22 @@ public class ServiceInfo {
         );
     }
 
+    public HttpResponse<byte[]> post(String key, byte[] data) throws Exception {
+        return client.send(
+                requestForKey(key).POST(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
     HttpRequest.Builder request(String path) {
         return HttpRequest.newBuilder(URI.create(url() + path));
     }
 
     private HttpRequest.Builder requestForKey(String key) {
+        return request("/v0/entity?id=" + key);
+    }
+
+    private HttpRequest.Builder requestForRange(String key) {
         return request("/v0/entity?id=" + key);
     }
 }
