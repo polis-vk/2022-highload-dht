@@ -44,11 +44,11 @@ public class CircuitBreakerImpl implements CircuitBreaker {
         int index = nameToIndex.get(shardName);
         failed.incrementAndGet(index);
         if (maxRequestTries <= failed.get(index) && isRestarterStart[index].get()) {
-            startDemonRestarter(index, shardName);
+            startDemonRestarter(index);
         }
     }
 
-    private void startDemonRestarter(int nodeIndex, String shardName) {
+    private void startDemonRestarter(int nodeIndex) {
         isRestarterStart[nodeIndex].set(true);
         demonRestarter.schedule(
                 () -> {
