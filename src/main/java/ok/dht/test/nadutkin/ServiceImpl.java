@@ -14,7 +14,6 @@ import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
@@ -75,21 +74,6 @@ public class ServiceImpl implements Service {
         return MemorySegment.ofArray(getBytes(id));
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response get(@Param(value = "id", required = true) String id) {
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, getBytes("Id can not be null or empty!"));
-        } else {
-            Entry<MemorySegment> value = dao.get(getKey(id));
-            if (value == null) {
-                return new Response(Response.NOT_FOUND, getBytes("Can't find any value, for id %1$s".formatted(id)));
-            } else {
-                return new Response(Response.OK, value.value().toByteArray());
-            }
-        }
-    }
-
     private Response upsert(String id, MemorySegment value, String goodResponse) {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, getBytes("Id can not be null or empty!"));
@@ -102,16 +86,30 @@ public class ServiceImpl implements Service {
     }
 
     @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response put(@Param(value = "id", required = true) String id,
-                        @Param(value = "request", required = true) Request request) {
-        return upsert(id, MemorySegment.ofArray(request.getBody()), Response.CREATED);
-    }
-
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response delete(@Param(value = "id", required = true) String id) {
-        return upsert(id, null, Response.ACCEPTED);
+    public Response handleRequest(@Param(value = "id", required = true) String id,
+                                  Request request) {
+        if (id == null || id.isEmpty()) {
+            return new Response(Response.BAD_REQUEST, getBytes("Id can not be null or empty!"));
+        }
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> {
+                Entry<MemorySegment> value = dao.get(getKey(id));
+                if (value == null) {
+                    return new Response(Response.NOT_FOUND, getBytes("Can't find any value, for id %1$s".formatted(id)));
+                } else {
+                    return new Response(Response.OK, value.value().toByteArray());
+                }
+            }
+            case Request.METHOD_PUT -> {
+                return upsert(id, MemorySegment.ofArray(request.getBody()), Response.CREATED);
+            }
+            case Request.METHOD_DELETE -> {
+                return upsert(id, null, Response.ACCEPTED);
+            }
+            default -> {
+                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            }
+        }
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
