@@ -6,8 +6,12 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +38,7 @@ public class MyServer extends HttpServer {
     private final Executor executor;
     private final HttpClient client;
     private final ServiceConfig config;
+    private final List<Node> nodes;
 
     public MyServer(ServiceConfig config) throws IOException {
         super(createConfigFromPort(config.selfPort()));
@@ -41,6 +46,11 @@ public class MyServer extends HttpServer {
         dao = new MemorySegmentDao(new Config(config.workingDir(), 1048576L));
         executor = Executors.newFixedThreadPool(16);
         client = HttpClient.newHttpClient();
+
+        nodes = new ArrayList<>(config.clusterUrls().size());
+        for (String url : config.clusterUrls()) {
+            nodes.add(new Node(url));
+        }
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -65,19 +75,59 @@ public class MyServer extends HttpServer {
             return;
         }
 
-        executor.execute(() -> {
+        Node node = getNodeForKey(id);
+
+        int tasks = node.tasksCount.incrementAndGet();
+        if (tasks > Node.MAX_TASKS_ALLOWED) {
+            node.tasksCount.decrementAndGet();
+            session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+            return;
+        }
+
+        node.tasks.add(() -> {
             try {
-                String url = config.clusterUrls().get(getHashForKey(id) % config.clusterUrls().size());
+                String url = node.url;
+                LOG.debug("Url {} for id {} (my port is {})", url, id, config.selfPort());
                 session.sendResponse(url.equals(config.selfUrl()) ? handleRequest(request, id) : proxyRequest(request, url));
             } catch (Exception e) {
                 LOG.error("error handle request", e);
                 sendError(session);
             }
         });
+
+        if (tasks <= Node.MAX_WORKERS_ALLOWED) {
+            executor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    Runnable poll = node.tasks.poll();
+                    if (poll != null) {
+                        try {
+                            poll.run();
+                        } catch (Exception e) {
+                            LOG.error("Unexpected error handle request", e);
+                        } finally {
+                            node.tasksCount.decrementAndGet();
+                            executor.execute(this);
+                        }
+                    }
+                }
+            });
+        }
+
     }
 
-    private int getHashForKey(String id) {
-        return id.hashCode();
+    private Node getNodeForKey(String id) {
+        int hash = Integer.MAX_VALUE;
+        Node result = null;
+        int idHash = id.hashCode() * 17;
+        for (Node node : nodes) {
+            int newHash = idHash + node.url.hashCode();
+            if (newHash < hash) {
+                hash = newHash;
+                result = node;
+            }
+        }
+        return result == null ? nodes.get(0) : result;
     }
 
     private static void sendError(HttpSession session) {
@@ -101,7 +151,9 @@ public class MyServer extends HttpServer {
         HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(url + request.getURI()))
                 .method(
                         request.getMethodName(),
-                        HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                        request.getBody() == null
+                                ? HttpRequest.BodyPublishers.noBody()
+                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
                 ).build();
 
         HttpResponse<byte[]> response = client.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
@@ -168,4 +220,19 @@ public class MyServer extends HttpServer {
             throw new RuntimeException(e);
         }
     }
+
+    static class Node {
+        static final int MAX_TASKS_ALLOWED = 128;
+        static final int MAX_WORKERS_ALLOWED = 3;
+
+        final String url;
+        final ConcurrentLinkedQueue<Runnable> tasks = new ConcurrentLinkedQueue<>();
+
+        final AtomicInteger tasksCount = new AtomicInteger(0);
+
+        Node(String url) {
+            this.url = url;
+        }
+    }
+
 }
