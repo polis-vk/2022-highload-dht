@@ -29,6 +29,7 @@ public class KeyValueService implements Service {
 
     private static final String UNEXPECTED_ERROR = "Unexpected error";
     private static final int FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024; // 4 mb
+    private static final String ENDPOINT = "/v0/entity";
 
     private final ServiceConfig serviceConfig;
     private HttpServer server;
@@ -56,7 +57,7 @@ public class KeyValueService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path("/v0/entity")
+    @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(@Param(value = "id", required = true) String id) {
         try {
@@ -75,7 +76,7 @@ public class KeyValueService implements Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(@Param(value = "id", required = true) String id, Request request) {
         try {
@@ -93,7 +94,7 @@ public class KeyValueService implements Service {
         }
     }
 
-    @Path("/v0/entity")
+    @Path(ENDPOINT)
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(@Param(value = "id", required = true) String id) {
         try {
@@ -108,6 +109,11 @@ public class KeyValueService implements Service {
             log.error(UNEXPECTED_ERROR, e);
             return internalError();
         }
+    }
+
+    @Path(ENDPOINT)
+    public Response handleNotAllowedMethod() {
+        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
 
     private static HttpServerConfig createHttpServerConfigFromPort(int port) {
