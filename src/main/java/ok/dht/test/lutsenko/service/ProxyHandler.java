@@ -98,7 +98,7 @@ public class ProxyHandler implements Closeable {
     @Override
     public void close() throws IOException {
         try {
-            unavailableNodesCleaner.shutdown();
+            unavailableNodesCleaner.shutdownNow();
             RequestExecutorService.shutdownAndAwaitTermination(proxyRequestExecutor);
         } catch (TimeoutException e) {
             LOG.warn("Proxy request executor executor await termination too long");
