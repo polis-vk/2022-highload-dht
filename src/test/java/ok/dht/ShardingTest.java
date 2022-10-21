@@ -216,7 +216,7 @@ class ShardingTest extends TestBase {
         Files.move(serviceWorkingDirPathToBeIll, newServiceWorkingDirPath, StandardCopyOption.ATOMIC_MOVE);
 
         HttpResponse<byte[]> response = nodeToBeIll.get(key);
-        assertEquals(HttpURLConnection.HTTP_UNAVAILABLE, response.statusCode());
+        assertEquals(HttpURLConnection.HTTP_NOT_FOUND, response.statusCode());
 
         Files.move(newServiceWorkingDirPath, serviceWorkingDirPathToBeIll, StandardCopyOption.ATOMIC_MOVE);
 
