@@ -4,6 +4,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
 public class ServiceInfo {
@@ -20,6 +21,10 @@ public class ServiceInfo {
 
     public String url() {
         return config.selfUrl();
+    }
+
+    public Path workingDir() {
+        return config.workingDir();
     }
 
     public void start() throws Exception {

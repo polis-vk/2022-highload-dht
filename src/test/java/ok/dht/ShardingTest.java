@@ -22,6 +22,9 @@ import org.slf4j.LoggerFactory;
 
 import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
@@ -195,6 +198,31 @@ class ShardingTest extends TestBase {
         }
 
         assertEquals(1, successCount);
+    }
+
+
+    @ServiceTest(stage = 3, clusterSize = 1)
+    void illAndRecovery(List<ServiceInfo> serviceInfos) throws Exception {
+        final String key = randomId();
+        final byte[] value = randomValue();
+        ServiceInfo nodeToBeIll = serviceInfos.get(0);
+
+        nodeToBeIll.upsert(key, value);
+        nodeToBeIll.stop(); // for flush
+        nodeToBeIll.start();
+
+        Path serviceWorkingDirPathToBeIll = nodeToBeIll.workingDir();
+        Path newServiceWorkingDirPath = serviceWorkingDirPathToBeIll.getParent().resolve("ill");
+        Files.move(serviceWorkingDirPathToBeIll, newServiceWorkingDirPath, StandardCopyOption.ATOMIC_MOVE);
+
+        HttpResponse<byte[]> response = nodeToBeIll.get(key);
+        assertEquals(HttpURLConnection.HTTP_UNAVAILABLE, response.statusCode());
+
+        Files.move(newServiceWorkingDirPath, serviceWorkingDirPathToBeIll, StandardCopyOption.ATOMIC_MOVE);
+
+        response = nodeToBeIll.get(key);
+        assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
+        assertArrayEquals(value, response.body());
     }
 
 }
