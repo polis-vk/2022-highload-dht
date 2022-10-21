@@ -95,13 +95,20 @@ public class MyServer extends HttpServer {
             }
         });
 
-        if (tasks <= Node.MAX_WORKERS_ALLOWED) {
+        int workers = node.workersCount.get();
+        while (workers <= Node.MAX_WORKERS_ALLOWED) {
+            if (!node.workersCount.compareAndSet(workers, workers + 1)) {
+                workers = node.workersCount.get();
+                continue;
+            }
+
             executor.execute(new Runnable() {
                 @Override
                 public void run() {
                     Runnable poll = node.tasks.poll();
                     while (poll == null) {
                         if (node.tasksCount.get() == 0) {
+                            node.workersCount.decrementAndGet();
                             return;
                         }
                         Thread.yield(); // back-off
@@ -118,6 +125,7 @@ public class MyServer extends HttpServer {
                     }
                 }
             });
+            break;
         }
 
     }
@@ -235,6 +243,7 @@ public class MyServer extends HttpServer {
         final ConcurrentLinkedQueue<Runnable> tasks = new ConcurrentLinkedQueue<>();
 
         final AtomicInteger tasksCount = new AtomicInteger(0);
+        final AtomicInteger workersCount = new AtomicInteger(0);
 
         Node(String url) {
             this.url = url;
