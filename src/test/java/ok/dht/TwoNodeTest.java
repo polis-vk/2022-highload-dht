@@ -49,9 +49,9 @@ class TwoNodeTest extends TestBase {
     void unreachableRF(List<ServiceInfo> nodes) throws Exception {
         nodes.get(0).stop();
 
-        assertEquals(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, nodes.get(1).get(randomId(), 3, 2).statusCode());
-        assertEquals(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, nodes.get(1).upsert(randomId(), randomValue(), 3, 2).statusCode());
-        assertEquals(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, nodes.get(1).delete(randomId(), 3, 2).statusCode());
+        assertEquals(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, nodes.get(1).get(randomId(), 2, 2).statusCode());
+        assertEquals(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, nodes.get(1).upsert(randomId(), randomValue(), 2, 2).statusCode());
+        assertEquals(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, nodes.get(1).delete(randomId(), 2, 2).statusCode());
     }
 
     @ServiceTest(stage = 4, clusterSize = 2)
