@@ -113,7 +113,7 @@ public class MyServiceBase implements Service {
         loadBalancer.balance(this, request, session);
     }
 
-    public Response handleGet(String id) throws IOException {
+    public Response handleGet(String id, Request request) throws IOException {
         ByteBuffer key = daoFactory.fromString(id);
         TypedEntry res = this.dao.get(key);
         if (res == null) {
@@ -130,7 +130,7 @@ public class MyServiceBase implements Service {
         return emptyResponseForCode(Response.CREATED);
     }
 
-    public Response handleDelete(String id) throws IOException {
+    public Response handleDelete(String id, Request request) throws IOException {
         ByteBuffer key = daoFactory.fromString(id);
         this.dao.upsert(new TypedBaseEntry(key, null));
         return emptyResponseForCode(Response.ACCEPTED);

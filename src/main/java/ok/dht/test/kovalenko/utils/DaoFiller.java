@@ -1,11 +1,11 @@
 package ok.dht.test.kovalenko.utils;
 
 import ok.dht.test.kovalenko.LoadBalancer;
+import ok.dht.test.kovalenko.MyServiceBase;
 import ok.dht.test.kovalenko.dao.LSMDao;
 import ok.dht.test.kovalenko.dao.aliases.TypedBaseEntry;
 import ok.dht.test.kovalenko.dao.aliases.TypedEntry;
 import ok.dht.test.kovalenko.dao.base.ByteBufferDaoFactoryB;
-import ok.dht.test.kovalenko.MyServiceBase;
 
 import java.io.IOException;
 import java.util.List;

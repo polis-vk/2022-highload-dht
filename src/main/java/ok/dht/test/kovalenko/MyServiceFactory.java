@@ -6,7 +6,7 @@ import ok.dht.test.ServiceFactory;
 
 import java.io.IOException;
 
-@ServiceFactory(stage = 3, week = 1)
+@ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
 public class MyServiceFactory implements ServiceFactory.Factory {
 
     @Override

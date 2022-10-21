@@ -42,4 +42,8 @@ public class Node {
     public void setIll(boolean isIll) {
         this.isIll = isIll;
     }
+
+    public String selfUrl() {
+        return this.selfUrl;
+    }
 }
