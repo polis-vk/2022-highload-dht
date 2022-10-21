@@ -1,8 +1,6 @@
 package ok.dht.test.kovalenko;
 
 import ok.dht.test.kovalenko.dao.utils.PoolKeeper;
-import ok.dht.test.kovalenko.shards.MyServerBase;
-import ok.dht.test.kovalenko.shards.MyServiceBase;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -26,7 +24,7 @@ public class MyServer extends HttpServer {
             = Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
     private static final int N_WORKERS = 2 * (Runtime.getRuntime().availableProcessors() + 1);
     private static final int QUEUE_CAPACITY = 10 * N_WORKERS;
-    private final Logger log = LoggerFactory.getLogger(MyServerBase.class);
+    private final Logger log = LoggerFactory.getLogger(MyServer.class);
     private final PoolKeeper workers;
 
     public MyServer(HttpServerConfig config, Object... routers) throws IOException {
@@ -41,20 +39,20 @@ public class MyServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = MyServiceBase.emptyResponseForCode(Response.BAD_REQUEST);
+        Response response = MyService.emptyResponseForCode(Response.BAD_REQUEST);
         session.sendResponse(response);
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         if (!MyServer.availableMethods.contains(request.getMethod())) {
-            Response response = MyServiceBase.emptyResponseForCode(Response.METHOD_NOT_ALLOWED);
+            Response response = MyService.emptyResponseForCode(Response.METHOD_NOT_ALLOWED);
             session.sendResponse(response);
             return;
         }
         String id = request.getParameter("id=");
         if (id == null || id.isEmpty()) {
-            Response response = MyServiceBase.emptyResponseForCode(Response.BAD_REQUEST);
+            Response response = MyService.emptyResponseForCode(Response.BAD_REQUEST);
             session.sendResponse(response);
             return;
         }
