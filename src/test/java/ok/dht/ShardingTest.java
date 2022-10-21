@@ -16,15 +16,16 @@
 
 package ok.dht;
 
-import one.nio.http.Response;
-import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
+import ok.dht.test.pashchenko.MyServer;
 
 import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -197,4 +198,20 @@ class ShardingTest extends TestBase {
         assertEquals(1, successCount);
     }
 
+    @SuppressWarnings("unchecked")
+    @ServiceTest(stage = 3, clusterSize = 2)
+    void starvationTest(List<ServiceInfo> serviceInfos) throws Exception {
+        final ExecutorService threadPool = Executors.newFixedThreadPool(MyServer.Node.MAX_WORKERS_ALLOWED + 1);
+        final String key = randomId();
+        final byte[] value = randomValue();
+
+        Future<HttpResponse<byte[]>>[] futures = new Future[MyServer.Node.MAX_WORKERS_ALLOWED + 1];
+        for (int i = 0; i < futures.length; i++) {
+            futures[i] = threadPool.submit(() -> serviceInfos.get(0).upsert(key, value));
+        }
+
+        for (Future<HttpResponse<byte[]>> future : futures) {
+            assertEquals(HttpURLConnection.HTTP_CREATED, future.get().statusCode());
+        }
+    }
 }

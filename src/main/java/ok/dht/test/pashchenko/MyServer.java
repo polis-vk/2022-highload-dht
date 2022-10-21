@@ -78,6 +78,12 @@ public class MyServer extends HttpServer {
         Node node = getNodeForKey(id);
 
         int tasks = node.tasksCount.incrementAndGet();
+        try {
+            Thread.sleep(tasks * 100L);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+
         if (tasks > Node.MAX_TASKS_ALLOWED) {
             node.tasksCount.decrementAndGet();
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
@@ -221,9 +227,9 @@ public class MyServer extends HttpServer {
         }
     }
 
-    static class Node {
+    public static class Node {
         static final int MAX_TASKS_ALLOWED = 128;
-        static final int MAX_WORKERS_ALLOWED = 3;
+        public static final int MAX_WORKERS_ALLOWED = 1;
 
         final String url;
         final ConcurrentLinkedQueue<Runnable> tasks = new ConcurrentLinkedQueue<>();
