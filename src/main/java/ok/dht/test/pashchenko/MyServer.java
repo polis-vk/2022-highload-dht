@@ -100,15 +100,21 @@ public class MyServer extends HttpServer {
                 @Override
                 public void run() {
                     Runnable poll = node.tasks.poll();
-                    if (poll != null) {
-                        try {
-                            poll.run();
-                        } catch (Exception e) {
-                            LOG.error("Unexpected error handle request", e);
-                        } finally {
-                            node.tasksCount.decrementAndGet();
-                            executor.execute(this);
+                    while (poll == null) {
+                        if (node.tasksCount.get() == 0) {
+                            return;
                         }
+                        Thread.yield(); // back-off
+                        poll = node.tasks.poll();
+                    }
+
+                    try {
+                        poll.run();
+                    } catch (Exception e) {
+                        LOG.error("Unexpected error handle request", e);
+                    } finally {
+                        node.tasksCount.decrementAndGet();
+                        executor.execute(this);
                     }
                 }
             });
