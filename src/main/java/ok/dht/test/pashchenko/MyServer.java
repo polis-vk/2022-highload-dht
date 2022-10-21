@@ -108,12 +108,12 @@ public class MyServer extends HttpServer {
                         poll = node.tasks.poll();
                     }
 
+                    node.tasksCount.decrementAndGet();
                     try {
                         poll.run();
                     } catch (Exception e) {
                         LOG.error("Unexpected error handle request", e);
                     } finally {
-                        node.tasksCount.decrementAndGet();
                         executor.execute(this);
                     }
                 }
