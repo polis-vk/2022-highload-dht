@@ -212,7 +212,7 @@ class ShardingTest extends TestBase {
         nodeToBeIll.start();
 
         Path serviceWorkingDirPathToBeIll = nodeToBeIll.workingDir();
-        Path newServiceWorkingDirPath = serviceWorkingDirPathToBeIll.getParent().resolve("ill");
+        Path newServiceWorkingDirPath = serviceWorkingDirPathToBeIll.getParent().resolve("ill" + key);
         Files.move(serviceWorkingDirPathToBeIll, newServiceWorkingDirPath, StandardCopyOption.ATOMIC_MOVE);
 
         HttpResponse<byte[]> response = nodeToBeIll.get(key);
