@@ -96,7 +96,7 @@ public class MyServer extends HttpServer {
         });
 
         int workers = node.workersCount.get();
-        while (workers <= Node.MAX_WORKERS_ALLOWED) {
+        while (workers < Node.MAX_WORKERS_ALLOWED) {
             if (!node.workersCount.compareAndSet(workers, workers + 1)) {
                 workers = node.workersCount.get();
                 continue;
