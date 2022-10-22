@@ -79,7 +79,7 @@ class TwoNodeTest extends TestBase {
 
         // Insert value2
         byte[] value2 = randomValue();
-        assertEquals(HttpURLConnection.HTTP_CREATED, nodes.get(1).upsert(key, value1, 1, 2).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, nodes.get(1).upsert(key, value2, 1, 2).statusCode());
 
         // Check
         {
@@ -119,7 +119,7 @@ class TwoNodeTest extends TestBase {
 
         // Insert value2
         byte[] value2 = randomValue();
-        assertEquals(HttpURLConnection.HTTP_CREATED, nodes.get(1).upsert(key, value1, 2, 2).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, nodes.get(1).upsert(key, value2, 2, 2).statusCode());
 
         // Check
         {
@@ -271,7 +271,7 @@ class TwoNodeTest extends TestBase {
 
             // Insert value2
             byte[] value2 = randomValue();
-            assertEquals(HttpURLConnection.HTTP_CREATED, nodes.get(i).upsert(key, value1, 1, 2).statusCode());
+            assertEquals(HttpURLConnection.HTTP_CREATED, nodes.get((i + 1) % nodes.size()).upsert(key, value2, 1, 2).statusCode());
 
             // Start node
             nodes.get(i).start();
@@ -303,7 +303,7 @@ class TwoNodeTest extends TestBase {
 
             // Check
             {
-                HttpResponse<byte[]> response = nodes.get(i).get(key, 1, 2);
+                HttpResponse<byte[]> response = nodes.get((i + 1) % nodes.size()).get(key, 1, 2);
                 assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
                 assertArrayEquals(value, response.body());
             }

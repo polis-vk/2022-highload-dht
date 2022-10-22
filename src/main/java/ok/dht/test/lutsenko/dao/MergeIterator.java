@@ -77,12 +77,12 @@ public class MergeIterator implements Iterator<BaseEntry<String>> {
                 readNextFromFiles(lastElementWithFilesMap.get(polledEntry.key()));
                 readNextFromMemory();
                 tempDataPriorities.remove(polledEntry.key());
-            } while (!tempData.isEmpty() && polledEntry.value() == null);
+            } while (!tempData.isEmpty());
         } catch (IOException e) {
             throw new RuntimeException("Fail to read new Entry after" + polledEntry, e);
         }
         hasNextCalled = true;
-        hasNextResult = polledEntry.value() != null && (isToNull || polledEntry.key().compareTo(to) < 0);
+        hasNextResult = (isToNull || polledEntry.key().compareTo(to) < 0);
         return hasNextResult;
     }
 

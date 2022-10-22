@@ -22,7 +22,6 @@ public final class DaoUtils {
 
     public static final int WRITE_BUFFER_SIZE = 16384;
     public static final int NULL_BYTES = 8;
-    public static final int BYTES_IN_INT = Integer.SIZE / Byte.SIZE;
     public static final int DELETED_MARK = 0;
     public static final int EXISTING_MARK = 1;
     public static final byte NEXT_LINE_BYTE = (byte) '\n';
@@ -34,36 +33,47 @@ public final class DaoUtils {
         return entry.key().length() + (entry.value() == null ? NULL_BYTES : entry.value().length());
     }
 
+    public static long readRequestTime(ByteBuffer byteBuffer, ThreadLocal<Integer> position) {
+        Integer positionBefore = position.get();
+        long requestTime = byteBuffer.getLong(positionBefore);
+        position.set(positionBefore + Long.BYTES);
+        return requestTime;
+    }
+
     public static String readKey(ByteBuffer byteBuffer, ThreadLocal<Integer> position) {
         Integer positionBefore = position.get();
         int keyLength = byteBuffer.getInt(positionBefore);
         byte[] keyBytes = new byte[keyLength];
-        byteBuffer.get(positionBefore + BYTES_IN_INT, keyBytes);
-        position.set(positionBefore + keyLength + BYTES_IN_INT);
+        byteBuffer.get(positionBefore + Integer.BYTES, keyBytes);
+        position.set(positionBefore + keyLength + Integer.BYTES);
         return postprocess(keyBytes);
     }
 
     public static String readValue(MappedByteBuffer byteBuffer, ThreadLocal<Integer> position) {
         Integer positionBefore = position.get();
         if (byteBuffer.getInt(positionBefore) == EXISTING_MARK) {
-            int valueLength = byteBuffer.getInt(positionBefore + BYTES_IN_INT);
+            int valueLength = byteBuffer.getInt(positionBefore + Integer.BYTES);
             byte[] valueBytes = new byte[valueLength];
-            byteBuffer.get(positionBefore + BYTES_IN_INT + BYTES_IN_INT, valueBytes);
-            byteBuffer.get(positionBefore + BYTES_IN_INT + BYTES_IN_INT + valueBytes.length); // читаем '\n'
-            position.set(positionBefore + BYTES_IN_INT + BYTES_IN_INT + valueBytes.length + 1);
+            byteBuffer.get(positionBefore + Integer.BYTES + Integer.BYTES, valueBytes);
+            byteBuffer.get(positionBefore + Integer.BYTES + Integer.BYTES + valueBytes.length); // читаем '\n'
+            position.set(positionBefore + Integer.BYTES + Integer.BYTES + valueBytes.length + 1);
             return postprocess(valueBytes);
         }
-        byteBuffer.get(position.get() + BYTES_IN_INT); // читаем '\n'
-        position.set(positionBefore + BYTES_IN_INT + 1);
+        byteBuffer.get(position.get() + Integer.BYTES); // читаем '\n'
+        position.set(positionBefore + Integer.BYTES + 1);
         return null;
     }
 
     public static BaseEntry<String> readEntry(MappedByteBuffer byteBuffer, ThreadLocal<Integer> position) {
-        position.set(position.get() + BYTES_IN_INT); // Пропускаем длину предыдущей записи
+        position.set(position.get() + Integer.BYTES); // Пропускаем длину предыдущей записи
         if (isEnd(byteBuffer, position)) {
             return null;
         }
-        return new BaseEntry<>(readKey(byteBuffer, position), readValue(byteBuffer, position));
+        return new BaseEntry<>(
+                readRequestTime(byteBuffer, position),
+                readKey(byteBuffer, position),
+                readValue(byteBuffer, position)
+        );
     }
 
     public static void writeKey(byte[] keyBytes, ByteBuffer byteBuffer) {
@@ -94,12 +104,13 @@ public final class DaoUtils {
                 BaseEntry<String> baseEntry = iterator.next();
                 byte[] keyBytes = Utf8.toBytes(preprocess(baseEntry.key()));
                 byte[] valueBytes = (baseEntry.value() == null ? null : Utf8.toBytes(preprocess(baseEntry.value())));
-                int entrySize = BYTES_IN_INT // размер численного значения для длины ключа
+                int entrySize = Integer.BYTES // размер численного значения для длины ключа
                         + keyBytes.length
-                        + BYTES_IN_INT // размер численного значения для длины значения
+                        + Integer.BYTES // размер численного значения для длины значения
                         + (valueBytes == null ? 0 : valueBytes.length)
-                        + BYTES_IN_INT // размер всей записи
-                        + BYTES_IN_INT // DELETED_MARK or EXISTING_MARK
+                        + Integer.BYTES // размер всей записи
+                        + Integer.BYTES // DELETED_MARK or EXISTING_MARK
+                        + Long.BYTES // request time
                         + 1; // размер '\n'
                 if (writeBuffer.position() + entrySize > writeBuffer.capacity()) {
                     writeBuffer.flip();
@@ -109,6 +120,7 @@ public final class DaoUtils {
                 if (entrySize > writeBuffer.capacity()) {
                     writeBuffer = ByteBuffer.allocate(entrySize);
                 }
+                writeBuffer.putLong(baseEntry.requestTime());
                 writeKey(keyBytes, writeBuffer);
                 writeValue(valueBytes, writeBuffer);
                 writeBuffer.putInt(entrySize);
@@ -153,35 +165,37 @@ public final class DaoUtils {
      * при этом не храня индексы для сдвигов ключей вовсе.
      */
     public static BaseEntry<String> ceilKey(MappedByteBuffer byteBuffer, String key, ThreadLocal<Integer> position) {
-        long left = BYTES_IN_INT;
-        long right = (long) byteBuffer.capacity() - BYTES_IN_INT;
+        long left = Integer.BYTES;
+        long right = (long) byteBuffer.capacity() - Integer.BYTES;
         while (left < right) {
             position.set((int) ((left + right) / 2));
             int startPosition = position.get();
             int leastPartOfLineLength = getLeastPartOfLineLength(byteBuffer, position);
-            int readBytes = leastPartOfLineLength + BYTES_IN_INT; // BYTES_IN_INT -> prevEntryLength
+            int readBytes = leastPartOfLineLength + Integer.BYTES; // BYTES_IN_INT -> prevEntryLength
             int prevEntryLength = byteBuffer.getInt(position.get());
-            position.set(position.get() + BYTES_IN_INT);
+            position.set(position.get() + Integer.BYTES);
             if (position.get() >= right) {
                 right = (long) startPosition + readBytes - prevEntryLength + 1;
                 readBytes = 0;
                 position.set((int) left);
             }
+            long requestTime = readRequestTime(byteBuffer, position);
             String currentKey = readKey(byteBuffer, position);
             String currentValue = readValue(byteBuffer, position);
             int compareResult = key.compareTo(currentKey);
             if (compareResult == 0) {
-                return new BaseEntry<>(currentKey, currentValue);
+                return new BaseEntry<>(requestTime, currentKey, currentValue);
             }
             if (compareResult > 0) {
                 prevEntryLength = byteBuffer.getInt(position.get());
-                position.set(position.get() + BYTES_IN_INT);
+                position.set(position.get() + Integer.BYTES);
                 if (isEnd(byteBuffer, position)) {
                     return null;
                 }
+                requestTime = readRequestTime(byteBuffer, position);
                 String nextKey = readKey(byteBuffer, position);
                 if (key.compareTo(nextKey) <= 0) {
-                    return new BaseEntry<>(nextKey, readValue(byteBuffer, position));
+                    return new BaseEntry<>(requestTime, nextKey, readValue(byteBuffer, position));
                 }
                 left = (long) startPosition + readBytes + prevEntryLength;
             } else {

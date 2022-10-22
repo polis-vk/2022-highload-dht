@@ -1,13 +1,12 @@
 package ok.dht.test.lutsenko.service;
 
-import one.nio.http.HttpSession;
 import one.nio.http.Request;
-import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -15,6 +14,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutorService;
@@ -29,14 +29,14 @@ public class ProxyHandler implements Closeable {
 
     private static final int EXECUTOR_THREADS = 10;
     private static final int RESPONSE_TIMEOUT_SECONDS = 5;
-    private static final int MAX_NODE_TIMEOUTS_NUMBER = 5;
+    private static final int MAX_NODE_FAILS_NUMBER = 5;
     private static final int NODE_AS_UNAVAILABLE_DURATION_MILLIS = 180_000;
     private static final int UNAVAILABLE_NODES_CLEAN_INTERVAL_MILLIS = NODE_AS_UNAVAILABLE_DURATION_MILLIS / 2;
     private static final Duration CLIENT_TIMEOUT = Duration.of(5, ChronoUnit.SECONDS);
     private static final Logger LOG = LoggerFactory.getLogger(ProxyHandler.class);
 
     private final Map<String, Long> unavailableNodes = new ConcurrentSkipListMap<>();
-    private final Map<String, AtomicInteger> nodesTimeoutsNumberMap = new ConcurrentSkipListMap<>();
+    private final Map<String, AtomicInteger> nodesFailsNumberMap = new ConcurrentSkipListMap<>();
     private final ExecutorService proxyRequestExecutor = Executors.newFixedThreadPool(EXECUTOR_THREADS);
     private final ScheduledExecutorService unavailableNodesCleaner = Executors.newSingleThreadScheduledExecutor();
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -55,33 +55,32 @@ public class ProxyHandler implements Closeable {
         LOG.info(unusedScheduledFuture.toString());
     }
 
-    public void handle(Request request, HttpSession session, String externalUrl) {
-        if (unavailableNodes.containsKey(externalUrl)) {
-            ServiceUtils.sendResponse(session, Response.SERVICE_UNAVAILABLE);
-            return;
-        }
-        proxyRequestExecutor.execute(new SessionRunnable(session, () -> {
-            try {
-                HttpResponse<byte[]> httpResponse = proxyRequestAsync(request, externalUrl)
-                        .get(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-                ServiceUtils.sendResponse(session, httpResponse);
-            } catch (TimeoutException te) {
-                LOG.error("Timeout while getting response from external node", te);
-                nodesTimeoutsNumberMap.putIfAbsent(externalUrl, new AtomicInteger(0));
-                if (nodesTimeoutsNumberMap.get(externalUrl).incrementAndGet() >= MAX_NODE_TIMEOUTS_NUMBER) {
-                    unavailableNodes.put(externalUrl, System.currentTimeMillis() + NODE_AS_UNAVAILABLE_DURATION_MILLIS);
-                    nodesTimeoutsNumberMap.remove(externalUrl);
-                }
-                ServiceUtils.sendResponse(session, Response.GATEWAY_TIMEOUT);
-            } catch (Exception e) {
-                LOG.error("Failed to get response from external url", e);
-                unavailableNodes.put(externalUrl, System.currentTimeMillis() + NODE_AS_UNAVAILABLE_DURATION_MILLIS);
-                ServiceUtils.sendResponse(session, Response.SERVICE_UNAVAILABLE);
+    public CompletableFuture<ResponseInfo> proceed(Request request, String externalUrl, long requestTime) {
+        return CompletableFuture.supplyAsync(() -> {
+            if (unavailableNodes.containsKey(externalUrl)) {
+                return new ResponseInfo(HttpURLConnection.HTTP_UNAVAILABLE);
             }
-        }));
-    }
+            try {
+                HttpResponse<byte[]> httpResponse = proxyRequestAsync(request, externalUrl, requestTime)
+                        .get(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                OptionalLong requestTimeOfResponse = httpResponse.headers().firstValueAsLong("Request-Time");
+                if (requestTimeOfResponse.isPresent()) {
+                    return new ResponseInfo(httpResponse.statusCode(), httpResponse.body(), requestTimeOfResponse.getAsLong());
+                }
+                return new ResponseInfo(httpResponse.statusCode(), httpResponse.body());
+            } catch (Exception e) {
+                LOG.error("Failed while getting response from external node", e);
+                nodesFailsNumberMap.putIfAbsent(externalUrl, new AtomicInteger(0));
+                if (nodesFailsNumberMap.get(externalUrl).incrementAndGet() >= MAX_NODE_FAILS_NUMBER) {
+                    unavailableNodes.put(externalUrl, System.currentTimeMillis() + NODE_AS_UNAVAILABLE_DURATION_MILLIS);
+                    nodesFailsNumberMap.remove(externalUrl);
+                }
+                return new ResponseInfo(HttpURLConnection.HTTP_UNAVAILABLE);
+            }
+        });
 
-    private CompletableFuture<HttpResponse<byte[]>> proxyRequestAsync(Request request, String externalUrl) {
+    }
+    private CompletableFuture<HttpResponse<byte[]>> proxyRequestAsync(Request request, String externalUrl, long requestTime) {
         return httpClient.sendAsync(
                 HttpRequest.newBuilder(URI.create(externalUrl + request.getURI()))
                         .method(
@@ -90,6 +89,7 @@ public class ProxyHandler implements Closeable {
                                         ? HttpRequest.BodyPublishers.noBody()
                                         : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
                         )
+                        .setHeader("Proxy", String.valueOf(requestTime))
                         .build(),
                 HttpResponse.BodyHandlers.ofByteArray()
         );
@@ -98,6 +98,8 @@ public class ProxyHandler implements Closeable {
     @Override
     public void close() throws IOException {
         try {
+            unavailableNodes.clear();
+            nodesFailsNumberMap.clear();
             unavailableNodesCleaner.shutdownNow();
             RequestExecutorService.shutdownAndAwaitTermination(proxyRequestExecutor);
         } catch (TimeoutException e) {

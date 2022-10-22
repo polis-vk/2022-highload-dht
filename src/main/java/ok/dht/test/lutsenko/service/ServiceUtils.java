@@ -73,13 +73,15 @@ public final class ServiceUtils {
         sendResponse(session, new Response(resultCode, Response.EMPTY));
     }
 
-    public static void sendResponse(HttpSession session, HttpResponse<byte[]> httpResponse) {
-        sendResponse(session, new Response(
-                HTTP_CODES_MAP.get(httpResponse.statusCode()),
-                httpResponse.body() == null
-                        ? Response.EMPTY
-                        : httpResponse.body()
-        ));
+    public static Response toResponse(ResponseInfo responseInfo) {
+        Response response = new Response(
+                HTTP_CODES_MAP.get(responseInfo.httpStatusCode),
+                responseInfo.body
+        );
+        if (responseInfo.requestTime != null) {
+            response.addHeader("Request-Time: " + responseInfo.requestTime);
+        }
+        return response;
     }
 
     public static void closeSession(HttpSession session) {
