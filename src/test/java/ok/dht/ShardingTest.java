@@ -186,7 +186,7 @@ class ShardingTest extends TestBase {
         for (ServiceInfo serviceInfo : serviceInfos) {
             serviceInfo.start();
 
-            HttpResponse<byte[]> response = serviceInfo.get(key);
+            HttpResponse<byte[]> response = serviceInfo.get(key, 1, 1);
             if (response.statusCode() == 200 && Arrays.equals(value, response.body())) {
                 successCount++;
             }
