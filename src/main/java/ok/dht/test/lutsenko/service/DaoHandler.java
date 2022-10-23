@@ -5,13 +5,14 @@ import ok.dht.test.lutsenko.dao.common.BaseEntry;
 import ok.dht.test.lutsenko.dao.common.DaoConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
+import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.net.HttpURLConnection;
 import java.util.Base64;
+import java.util.concurrent.CompletableFuture;
 
 public class DaoHandler implements Closeable {
 
@@ -23,46 +24,49 @@ public class DaoHandler implements Closeable {
         dao = new PersistenceRangeDao(config);
     }
 
-    public ResponseInfo proceed(String id, Request request, Long requestTime) {
-        try {
-            return switch (request.getMethod()) {
-                case Request.METHOD_GET -> proceedGet(id);
-                case Request.METHOD_PUT -> proceedPut(id, request.getBody(), requestTime);
-                case Request.METHOD_DELETE -> proceedDelete(id, requestTime);
-                default -> new ResponseInfo(HttpURLConnection.HTTP_BAD_METHOD);
-            };
-        } catch (Exception e) {
-            LOG.error("Failed to proceed request in dao", e);
-            return new ResponseInfo(HttpURLConnection.HTTP_UNAVAILABLE);
-        }
+    public CompletableFuture<Response> proceed(String id, Request request, Long requestTime) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return switch (request.getMethod()) {
+                    case Request.METHOD_GET -> proceedGet(id);
+                    case Request.METHOD_PUT -> proceedPut(id, request.getBody(), requestTime);
+                    case Request.METHOD_DELETE -> proceedDelete(id, requestTime);
+                    default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                };
+            } catch (Exception e) {
+                LOG.error("Failed to proceed request in dao", e);
+                return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+            }
+        });
     }
 
     public void handle(String id, Request request, HttpSession session, Long requestTime) {
-        ServiceUtils.sendResponse(
-                session,
-                ServiceUtils.toResponse(proceed(id, request, requestTime))
-        );
+        // unused variable due to warnings
+        CompletableFuture<Void> unusedCompletableFuture = proceed(id, request, requestTime)
+                .thenAccept(response -> ServiceUtils.sendResponse(session, response));
+        LOG.info("DaoHandler handle() success: " + unusedCompletableFuture.isDone());
     }
 
-    private ResponseInfo proceedGet(String id) {
+    private Response proceedGet(String id) {
         BaseEntry<String> entry = dao.get(id);
         if (entry == null) {
-            return new ResponseInfo(HttpURLConnection.HTTP_NOT_FOUND);
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
-        if (entry.value() == null) {
-            return new ResponseInfo(HttpURLConnection.HTTP_NOT_FOUND, ResponseInfo.EMPTY, entry.requestTime());
-        }
-        return new ResponseInfo(HttpURLConnection.HTTP_OK, Base64.getDecoder().decode(entry.value()), entry.requestTime());
+        Response response = (entry.value() == null)
+                        ? new Response(Response.NOT_FOUND, Response.EMPTY)
+                        : new Response(Response.OK, Base64.getDecoder().decode(entry.value()));
+        response.addHeader(CustomHeaders.REQUEST_TIME + entry.requestTime());
+        return response;
     }
 
-    private ResponseInfo proceedPut(String id, byte[] body, long requestTime) {
+    private Response proceedPut(String id, byte[] body, long requestTime) {
         dao.upsert(new BaseEntry<>(requestTime, id, Base64.getEncoder().encodeToString(body)));
-        return new ResponseInfo(HttpURLConnection.HTTP_CREATED);
+        return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    private ResponseInfo proceedDelete(String id, long requestTime) {
+    private Response proceedDelete(String id, long requestTime) {
         dao.upsert(new BaseEntry<>(requestTime, id, null));
-        return new ResponseInfo(HttpURLConnection.HTTP_ACCEPTED);
+        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
     @Override

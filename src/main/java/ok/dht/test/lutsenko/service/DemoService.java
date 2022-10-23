@@ -1,6 +1,5 @@
 package ok.dht.test.lutsenko.service;
 
-import ch.qos.logback.core.joran.action.SiftAction;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
@@ -16,21 +15,24 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.HttpURLConnection;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class DemoService implements Service {
 
     private static final int MAX_NODES_NUMBER = 1000; // was limited in lection
     private static final int VIRTUAL_NODES_NUMBER = 10;
     private static final int HASH_SPACE = MAX_NODES_NUMBER * VIRTUAL_NODES_NUMBER * 360;
+    private static final int PROXY_RESPONSES_EXECUTOR_THREADS = 16;
     private static final String DAO_PREFIX = "dao";
-    private static final String REQUEST_PATH = "/v0/entity";
+    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final Logger LOG = LoggerFactory.getLogger(DemoService.class);
 
     private final Path daoPath;
@@ -39,10 +41,13 @@ public class DemoService implements Service {
     private final Map<Integer, String> nodesNumberToUrlMap = new HashMap<>();
     private final NavigableMap<Integer, Integer> virtualNodes = new TreeMap<>(); // node position to node number
 
-    private HttpServer server; // Non-final due to stop() and possible restart in start()
-    private ExecutorService requestExecutor; // Non-final due to shutdown in stop() and possible restart in start()
-    private DaoHandler daoHandler; // Non-final due to close in stop() and possible restart in start()
-    private ProxyHandler proxyHandler; // Non-final due to close in stop() and possible restart in start()
+    //--------------------------Non final fields due to stop / close / shutdown in stop()--------------------------\\
+    private HttpServer server;
+    private ExecutorService requestExecutor;
+    private ExecutorService replicasResponsesExecutor;
+    private DaoHandler daoHandler;
+    private ProxyHandler proxyHandler;
+    //--------------------------------------------------------------------------------------------------------------\\
 
     public DemoService(ServiceConfig config) {
         if (config.clusterUrls().size() > MAX_NODES_NUMBER) {
@@ -61,6 +66,7 @@ public class DemoService implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         requestExecutor = RequestExecutorService.requestExecutorDiscardOldest();
+        replicasResponsesExecutor = Executors.newFixedThreadPool(PROXY_RESPONSES_EXECUTOR_THREADS);
         daoHandler = new DaoHandler(DaoConfig.defaultConfig(daoPath));
         proxyHandler = new ProxyHandler();
 
@@ -68,95 +74,33 @@ public class DemoService implements Service {
 
             @Override
             public void handleRequest(Request request, HttpSession session) {
-                String path = request.getPath();
-                if (!path.equals(REQUEST_PATH)) {
-                    ServiceUtils.sendResponse(session, Response.BAD_REQUEST);
-                    return;
-                }
                 long requestTime = System.currentTimeMillis();
                 requestExecutor.execute(new SessionRunnable(session, () -> {
-                    String id = request.getParameter("id=");
-                    if (id == null || id.isBlank()) {
-                        ServiceUtils.sendResponse(session, Response.BAD_REQUEST);
+                    if (isProxyRequestAndHandle(request, session)) {
                         return;
                     }
-                    String proxyHeader = request.getHeader("Proxy");
-                    if (proxyHeader != null) {
-                        // substring(2) due to ": " before value
-                        daoHandler.handle(id, request, session, Long.valueOf(proxyHeader.substring(2)));
+                    RequestParser requestParser = new RequestParser(request)
+                            .checkPath()
+                            .checkSuccessStatusCodes()
+                            .checkId()
+                            .checkAckFrom(config.clusterUrls().size());
+                    if (requestParser.isFailed()) {
+                        ServiceUtils.sendResponse(session, requestParser.failStatus());
                         return;
                     }
-                    String ackParameter = request.getParameter("ack=");
-                    String fromParameter = request.getParameter("from=");
-                    int ack;
-                    int from;
-                    if (ackParameter != null && fromParameter != null) {
-                        ack = Integer.parseInt(ackParameter);
-                        from = Integer.parseInt(fromParameter);
-                        if (ack <= 0 || ack > from || from > config.clusterUrls().size()) {
-                            ServiceUtils.sendResponse(session, Response.BAD_REQUEST);
-                            return;
-                        }
-                    } else if (ackParameter == null && fromParameter == null) {
-                        from = config.clusterUrls().size();
-                        ack = quorum(from);
-                    } else {
-                        ServiceUtils.sendResponse(session, Response.BAD_REQUEST);
-                        return;
+                    List<Integer> successStatuses = requestParser.successStatuses();
+                    String id = requestParser.id();
+                    int ack = requestParser.ack();
+                    int from = requestParser.from();
+                    List<CompletableFuture<Response>> replicasResponsesFutures = new ArrayList<>(from);
+                    for (int nodeNumber : getReplicaNodeNumbers(id, from)) {
+                        // both proceed() methods wrapped with try / catch Exception
+                        replicasResponsesFutures.add(nodeNumber == selfNodeNumber
+                                ? daoHandler.proceed(id, request, requestTime)
+                                : proxyHandler.proceed(request, nodesNumberToUrlMap.get(nodeNumber), requestTime)
+                        );
                     }
-
-                    List<CompletableFuture<ResponseInfo>> futures = new ArrayList<>();
-                    List<ResponseInfo> responseInfos = new ArrayList<>();
-                    Set<Integer> keyRelatedNodeNumbers = getReplicaNodeNumbersBy(id, from);
-                    for (int nodeNumber : keyRelatedNodeNumbers) {
-                        // both handle() methods wrapped with try / catch Exception
-                        if (nodeNumber == selfNodeNumber) {
-                            responseInfos.add(daoHandler.proceed(id, request, requestTime));
-                        } else {
-                            futures.add(proxyHandler.proceed(request, nodesNumberToUrlMap.get(nodeNumber), requestTime));
-                        }
-                    }
-                    for (CompletableFuture<ResponseInfo> future : futures) {
-                        try {
-                            responseInfos.add(future.get());
-                        } catch (InterruptedException | ExecutionException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
-
-                    int[] positiveStatusCodes = new int[0];
-                    switch (request.getMethod()) {
-                        case Request.METHOD_GET -> {
-                            positiveStatusCodes = new int[]{HttpURLConnection.HTTP_OK, HttpURLConnection.HTTP_NOT_FOUND};
-                        }
-                        case Request.METHOD_PUT -> {
-                            positiveStatusCodes = new int[]{HttpURLConnection.HTTP_CREATED};
-                        }
-                        case Request.METHOD_DELETE -> {
-                            positiveStatusCodes = new int[]{HttpURLConnection.HTTP_ACCEPTED};
-                        }
-                    }
-                    int counter = 0;
-                    long latestRequestTime = 0;
-                    ResponseInfo latestRequestTimeInfo = responseInfos.get(0);
-                    for (ResponseInfo responseInfo : responseInfos) {
-                        for (int statusCode : positiveStatusCodes) {
-                            if (responseInfo.httpStatusCode == statusCode) {
-                                counter++;
-                                break;
-                            }
-                        }
-                         System.out.println(request.getMethod() + "  " +  responseInfo.requestTime + "  " + responseInfo.httpStatusCode);
-                        if (responseInfo.requestTime  != null && responseInfo.requestTime > latestRequestTime) {
-                            latestRequestTimeInfo = responseInfo;
-                            latestRequestTime = responseInfo.requestTime;
-                        }
-                    }
-                    if (counter >= ack) {
-                        ServiceUtils.sendResponse(session, ServiceUtils.toResponse(latestRequestTimeInfo));
-                    } else {
-                        ServiceUtils.sendResponse(session, new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-                    }
+                    handleReplicasResponses(session, replicasResponsesFutures, successStatuses, ack, from);
                 }));
             }
 
@@ -175,8 +119,47 @@ public class DemoService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    private static int quorum(int from) {
-        return (from / 2) + 1;
+    private void handleReplicasResponses(HttpSession session,
+                                         List<CompletableFuture<Response>> replicasResponsesFutures,
+                                         List<Integer> successStatuses,
+                                         int ack,
+                                         int from) {
+        AtomicInteger totalCounter = new AtomicInteger(0);
+        AtomicInteger failsCounter = new AtomicInteger(0);
+        NavigableMap<Long, Response> responses = new ConcurrentSkipListMap<>();
+        for (CompletableFuture<Response> replicaResponseFuture : replicasResponsesFutures) {
+            replicasResponsesExecutor.execute(() -> {
+                try {
+                    Response response = replicaResponseFuture.get();
+                    if (successStatuses.contains(response.getStatus())) {
+                        String requestTimeHeaderValue = response.getHeader(CustomHeaders.REQUEST_TIME);
+                        if (requestTimeHeaderValue != null) {
+                            responses.put(Long.parseLong(requestTimeHeaderValue), response);
+                        } else if (responses.isEmpty()) {
+                            responses.put(0L, response);
+                        }
+                    } else if (failsCounter.incrementAndGet() == from - ack + 1) {
+                        ServiceUtils.sendResponse(session, new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+                        for (CompletableFuture<Response> replicasResponsesFuture : replicasResponsesFutures) {
+                            replicasResponsesFuture.cancel(true);
+                        }
+                    }
+                    if (totalCounter.incrementAndGet() == from && failsCounter.get() <= from - ack) {
+                        ServiceUtils.sendResponse(session, responses.lastEntry().getValue());
+                    }
+                } catch (InterruptedException | ExecutionException e) {
+                    if (failsCounter.incrementAndGet() == from - ack + 1) {
+                        ServiceUtils.sendResponse(session, new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+                        for (CompletableFuture<Response> replicasResponsesFuture : replicasResponsesFutures) {
+                            replicasResponsesFuture.cancel(true);
+                        }
+                    }
+                    if (totalCounter.incrementAndGet() == from && failsCounter.get() <= from - ack) {
+                        ServiceUtils.sendResponse(session, responses.lastEntry().getValue());
+                    }
+                }
+            });
+        }
     }
 
     @Override
@@ -190,6 +173,16 @@ public class DemoService implements Service {
         server.stop();
         daoHandler.close();
         return CompletableFuture.completedFuture(null);
+    }
+
+    private boolean isProxyRequestAndHandle(Request request, HttpSession session) {
+        String proxyRequestTimeHeaderValue = request.getHeader(CustomHeaders.PROXY_REQUEST_TIME);
+        if (proxyRequestTimeHeaderValue == null) {
+            return false;
+        }
+        long requestTime = Long.parseLong(proxyRequestTimeHeaderValue);
+        daoHandler.handle(request.getParameter(RequestParser.ID_PARAM), request, session, requestTime);
+        return true;
     }
 
     private void fillVirtualNodes() {
@@ -206,31 +199,37 @@ public class DemoService implements Service {
         }
     }
 
-    private Set<Integer> getReplicaNodeNumbersBy(String key, int ack) {
+    private Set<Integer> getReplicaNodeNumbers(String key, int from) {
         Map.Entry<Integer, Integer> virtualNode = virtualNodes.ceilingEntry(calculateHashRingPosition(key));
         if (virtualNode == null) {
             virtualNode = virtualNodes.firstEntry();
         }
         Set<Integer> replicaNodesPositions = new HashSet<>();
-        for (Integer nodePosition : virtualNodes.tailMap(virtualNode.getKey()).values()) {
-            replicaNodesPositions.add(nodePosition);
-            if (replicaNodesPositions.size() == ack) {
-                break;
-            }
+        Collection<Integer> nextVirtualNodesPositions = virtualNodes.tailMap(virtualNode.getKey()).values();
+        addReplicaNodePositions(replicaNodesPositions, nextVirtualNodesPositions, from);
+        if (replicaNodesPositions.size() < from) {
+            addReplicaNodePositions(replicaNodesPositions, virtualNodes.values(), from);
         }
-        if (replicaNodesPositions.size() < ack) {
-            for (Integer nodePosition : virtualNodes.values()) {
-                replicaNodesPositions.add(nodePosition);
-                if (replicaNodesPositions.size() == ack) {
-                    break;
-                }
-            }
+        if (replicaNodesPositions.size() != from) {
+            throw new IllegalArgumentException("Can`t find from amount of replica nodes positions");
         }
         return replicaNodesPositions;
     }
 
     private int calculateHashRingPosition(String url) {
         return Math.abs(Hash.murmur3(url)) % HASH_SPACE;
+    }
+
+    private static void addReplicaNodePositions(Set<Integer> replicaNodesPositions,
+                                                Collection<Integer> virtualNodesPositions,
+                                                int from
+    ) {
+        for (Integer nodePosition : virtualNodesPositions) {
+            replicaNodesPositions.add(nodePosition);
+            if (replicaNodesPositions.size() == from) {
+                break;
+            }
+        }
     }
 
     @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")

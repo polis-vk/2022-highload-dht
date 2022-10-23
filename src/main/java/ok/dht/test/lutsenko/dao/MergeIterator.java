@@ -77,7 +77,7 @@ public class MergeIterator implements Iterator<BaseEntry<String>> {
                 readNextFromFiles(lastElementWithFilesMap.get(polledEntry.key()));
                 readNextFromMemory();
                 tempDataPriorities.remove(polledEntry.key());
-            } while (!tempData.isEmpty());
+            } while (!tempData.isEmpty() && polledEntry.value() == null);
         } catch (IOException e) {
             throw new RuntimeException("Fail to read new Entry after" + polledEntry, e);
         }
