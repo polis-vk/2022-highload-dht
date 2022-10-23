@@ -1,11 +1,9 @@
 package ok.dht.test.kiselyov.dao.impl;
 
-import ok.dht.test.kiselyov.dao.BaseEntry;
-
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-public class SkipNullValuesIterator implements Iterator<BaseEntry<byte[]>> {
+public class SkipNullValuesIterator implements Iterator<EntryWithTimestamp> {
 
     private final IndexedPeekIterator iterator;
 
@@ -15,14 +13,14 @@ public class SkipNullValuesIterator implements Iterator<BaseEntry<byte[]>> {
 
     @Override
     public boolean hasNext() {
-        while (iterator.hasNext() && iterator.peek().value() == null) {
+        while (iterator.hasNext() && iterator.peek().getEntry().value() == null) {
             iterator.next();
         }
         return iterator.hasNext();
     }
 
     @Override
-    public BaseEntry<byte[]> next() {
+    public EntryWithTimestamp next() {
         if (!hasNext()) {
             throw new NoSuchElementException("There is no next element!");
         }

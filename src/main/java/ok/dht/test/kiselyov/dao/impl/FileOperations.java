@@ -51,16 +51,16 @@ public class FileOperations {
         }
     }
 
-    Iterator<BaseEntry<byte[]>> diskIterator(byte[] from, byte[] to) throws IOException {
+    Iterator<EntryWithTimestamp> diskIterator(byte[] from, byte[] to) throws IOException {
         List<IndexedPeekIterator> peekIterators = new ArrayList<>();
         for (int i = 0; i < ssTables.size(); i++) {
-            Iterator<BaseEntry<byte[]>> iterator = diskIterator(ssTables.get(i), ssIndexes.get(i), from, to);
+            Iterator<EntryWithTimestamp> iterator = diskIterator(ssTables.get(i), ssIndexes.get(i), from, to);
             peekIterators.add(new IndexedPeekIterator(i, iterator));
         }
         return MergeIterator.of(peekIterators, EntryKeyComparator.INSTANCE);
     }
 
-    private Iterator<BaseEntry<byte[]>> diskIterator(Path ssTable, Path ssIndex, byte[] from, byte[] to)
+    private Iterator<EntryWithTimestamp> diskIterator(Path ssTable, Path ssIndex, byte[] from, byte[] to)
             throws IOException {
         long indexSize = tablesSizes.get(ssIndex);
         FileIterator fileIterator = new FileIterator(ssTable, ssIndex, from, to, indexSize);
@@ -74,7 +74,7 @@ public class FileOperations {
         long high = indexSize - 1;
         long mid = (low + high) / 2;
         while (low <= high) {
-            BaseEntry<byte[]> current = getCurrent(mid, channelTable, channelIndex);
+            BaseEntry<byte[]> current = getCurrent(mid, channelTable, channelIndex).getEntry();
             int compare = Arrays.compare(key, current.key());
             if (compare > 0) {
                 low = mid + 1;
@@ -88,7 +88,7 @@ public class FileOperations {
         return low;
     }
 
-    void compact(Iterator<BaseEntry<byte[]>> iterator, boolean hasPairs) throws IOException {
+    void compact(Iterator<EntryWithTimestamp> iterator, boolean hasPairs) throws IOException {
         if (filesCount <= 1 && !hasPairs) {
             return;
         }
@@ -133,6 +133,10 @@ public class FileOperations {
     }
 
     static void writePair(FileChannel channel, Map.Entry<byte[], BaseEntry<byte[]>> pair) throws IOException {
+        ByteBuffer longBuffer = ByteBuffer.allocate(Long.BYTES);
+        longBuffer.putLong(System.currentTimeMillis());
+        longBuffer.flip();
+        channel.write(longBuffer);
         ByteBuffer intBuffer = ByteBuffer.allocate(Integer.BYTES);
         intBuffer.putInt(pair.getKey().length);
         intBuffer.flip();
@@ -170,9 +174,9 @@ public class FileOperations {
         ByteBuffer longBuffer = ByteBuffer.allocate(Long.BYTES);
         long result = size;
         if (pair.getValue().value() == null) {
-            result += 2 * Integer.BYTES + pair.getKey().length;
+            result += 2 * Integer.BYTES + Long.BYTES + pair.getKey().length;
         } else {
-            result += 2 * Integer.BYTES + pair.getKey().length + pair.getValue().value().length;
+            result += 2 * Integer.BYTES + Long.BYTES + pair.getKey().length + pair.getValue().value().length;
         }
         longBuffer.putLong(result);
         longBuffer.flip();
@@ -189,8 +193,8 @@ public class FileOperations {
         return size;
     }
 
-    static BaseEntry<byte[]> getCurrent(long pos, FileChannel channelTable,
-                                        FileChannel channelIndex) throws IOException {
+    static EntryWithTimestamp getCurrent(long pos, FileChannel channelTable,
+                                         FileChannel channelIndex) throws IOException {
         long position;
         channelIndex.position((pos + 1) * Long.BYTES);
         ByteBuffer buffLong = ByteBuffer.allocate(Long.BYTES);
@@ -198,6 +202,10 @@ public class FileOperations {
         buffLong.flip();
         position = buffLong.getLong();
         channelTable.position(position);
+        buffLong.clear();
+        channelTable.read(buffLong);
+        buffLong.flip();
+        long timestamp = buffLong.getLong();
         ByteBuffer buffInt = ByteBuffer.allocate(Integer.BYTES);
         channelTable.read(buffInt);
         buffInt.flip();
@@ -209,11 +217,11 @@ public class FileOperations {
         buffInt.flip();
         int valueLength = buffInt.getInt();
         if (valueLength == -1) {
-            return new BaseEntry<>(currentKey.array(), null);
+            return new EntryWithTimestamp(new BaseEntry<>(currentKey.array(), null), timestamp);
         }
         ByteBuffer currentValue = ByteBuffer.allocate(valueLength);
         channelTable.read(currentValue);
-        return new BaseEntry<>(currentKey.array(), currentValue.array());
+        return new EntryWithTimestamp(new BaseEntry<>(currentKey.array(), currentValue.array()), timestamp);
     }
 
     public void clearFileIterators() throws IOException {

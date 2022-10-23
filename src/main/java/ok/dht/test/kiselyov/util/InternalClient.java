@@ -38,6 +38,9 @@ public class InternalClient {
                 throw new InternalError("Unsupported request method: " + request.getMethodName());
             }
         }
+        if (request.getHeader("fromCoordinator") != null) {
+            builder.setHeader("fromCoordinator", "1");
+        }
         return builder.build();
     }
 }

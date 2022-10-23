@@ -5,6 +5,7 @@ import ok.dht.test.kiselyov.dao.Config;
 import ok.dht.test.kiselyov.dao.Dao;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
@@ -21,19 +22,33 @@ public class PersistentDao implements Dao<byte[], BaseEntry<byte[]>> {
     }
 
     @Override
-    public Iterator<BaseEntry<byte[]>> get(byte[] from, byte[] to) throws IOException {
-        Iterator<BaseEntry<byte[]>> memoryIterator;
+    public Iterator<EntryWithTimestamp> get(byte[] from, byte[] to) throws IOException {
+        Iterator<EntryWithTimestamp> memoryIterator;
+        List<EntryWithTimestamp> pairValues;
         if (from == null && to == null) {
-            memoryIterator = pairs.values().iterator();
+            pairValues = new ArrayList<>(pairs.values().size());
+            for (BaseEntry<byte[]> pair : pairs.values()) {
+                pairValues.add(new EntryWithTimestamp(pair, System.currentTimeMillis()));
+            }
         } else if (from == null) {
-            memoryIterator = pairs.headMap(to).values().iterator();
+            pairValues = new ArrayList<>(pairs.headMap(to).values().size());
+            for (BaseEntry<byte[]> pair : pairs.headMap(to).values()) {
+                pairValues.add(new EntryWithTimestamp(pair, System.currentTimeMillis()));
+            }
         } else if (to == null) {
-            memoryIterator = pairs.tailMap(from).values().iterator();
+            pairValues = new ArrayList<>(pairs.tailMap(from).values().size());
+            for (BaseEntry<byte[]> pair : pairs.tailMap(from).values()) {
+                pairValues.add(new EntryWithTimestamp(pair, System.currentTimeMillis()));
+            }
         } else {
-            memoryIterator = pairs.subMap(from, to).values().iterator();
+            pairValues = new ArrayList<>(pairs.subMap(from, to).values().size());
+            for (BaseEntry<byte[]> pair : pairs.subMap(from, to).values()) {
+                pairValues.add(new EntryWithTimestamp(pair, System.currentTimeMillis()));
+            }
         }
-        Iterator<BaseEntry<byte[]>> diskIterator = fileOperations.diskIterator(from, to);
-        Iterator<BaseEntry<byte[]>> mergeIterator = MergeIterator.of(
+        memoryIterator = pairValues.iterator();
+        Iterator<EntryWithTimestamp> diskIterator = fileOperations.diskIterator(from, to);
+        Iterator<EntryWithTimestamp> mergeIterator = MergeIterator.of(
                 List.of(
                         new IndexedPeekIterator(0, memoryIterator),
                         new IndexedPeekIterator(1, diskIterator)
@@ -44,13 +59,13 @@ public class PersistentDao implements Dao<byte[], BaseEntry<byte[]>> {
     }
 
     @Override
-    public BaseEntry<byte[]> get(byte[] key) throws IOException {
-        Iterator<BaseEntry<byte[]>> iterator = get(key, null);
+    public EntryWithTimestamp get(byte[] key) throws IOException {
+        Iterator<EntryWithTimestamp> iterator = get(key, null);
         if (!iterator.hasNext()) {
             return null;
         }
-        BaseEntry<byte[]> next = iterator.next();
-        if (Arrays.equals(key, next.key())) {
+        EntryWithTimestamp next = iterator.next();
+        if (Arrays.equals(key, next.getEntry().key())) {
             return next;
         }
         return null;
@@ -71,7 +86,7 @@ public class PersistentDao implements Dao<byte[], BaseEntry<byte[]>> {
 
     @Override
     public void compact() throws IOException {
-        Iterator<BaseEntry<byte[]>> iterator = get(null, null);
+        Iterator<EntryWithTimestamp> iterator = get(null, null);
         if (!iterator.hasNext()) {
             return;
         }

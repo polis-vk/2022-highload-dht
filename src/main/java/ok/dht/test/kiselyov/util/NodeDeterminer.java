@@ -2,6 +2,8 @@ package ok.dht.test.kiselyov.util;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.PriorityQueue;
 
 import static one.nio.util.Hash.murmur3;
 
@@ -15,8 +17,17 @@ public class NodeDeterminer {
         }
     }
 
-    public ClusterNode getNodeUrl(String key) {
-        int max = 0;
+    public List<ClusterNode> getNodeUrls(String key, int count) {
+        PriorityQueue<NodeWithHash> hashNodes = new PriorityQueue<>(new NodesHashComparator());
+        for (int i = 0; i < clusterNodes.size(); i++) {
+            hashNodes.add(new NodeWithHash(clusterNodes.get(i), hash(key, i)));
+        }
+        List<ClusterNode> maxNodes = new ArrayList<>(count);
+        for (int j = 0; j < count; j++) {
+            maxNodes.add(Objects.requireNonNull(hashNodes.poll()).getNode());
+        }
+        return maxNodes;
+        /*int max = 0;
         int maxNode = 0;
         for (int i = 0; i < clusterNodes.size(); i++) {
             int hashSum = hash(key, i);
@@ -25,7 +36,7 @@ public class NodeDeterminer {
                 maxNode = i;
             }
         }
-        return clusterNodes.get(maxNode);
+        return clusterNodes.get(maxNode);*/
     }
 
     private int hash(String key, Integer clusterNodeNum) {

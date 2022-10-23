@@ -1,20 +1,19 @@
 package ok.dht.test.kiselyov.dao.impl;
 
-import ok.dht.test.kiselyov.dao.BaseEntry;
 
 import java.util.Arrays;
 import java.util.Comparator;
 
-public final class EntryKeyComparator implements Comparator<BaseEntry<byte[]>> {
+public final class EntryKeyComparator implements Comparator<EntryWithTimestamp> {
 
-    public static final Comparator<BaseEntry<byte[]>> INSTANCE = new EntryKeyComparator();
+    public static final Comparator<EntryWithTimestamp> INSTANCE = new EntryKeyComparator();
 
     private EntryKeyComparator() {
 
     }
 
     @Override
-    public int compare(BaseEntry<byte[]> o1, BaseEntry<byte[]> o2) {
-        return Arrays.compare(o1.key(), o2.key());
+    public int compare(EntryWithTimestamp o1, EntryWithTimestamp o2) {
+        return Arrays.compare(o1.getEntry().key(), o2.getEntry().key());
     }
 }
