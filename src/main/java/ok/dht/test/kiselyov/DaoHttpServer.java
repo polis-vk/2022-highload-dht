@@ -132,8 +132,10 @@ public class DaoHttpServer extends HttpServer {
         }
         ByteBuffer timestamp = ByteBuffer.allocate(Long.BYTES);
         timestamp.putLong(result.getTimestamp());
-        if (result.getEntry().value() == null || result.getEntry().value().length == 0) {
-            return new Response(Response.OK, timestamp.array());
+        ByteBuffer tombstone = ByteBuffer.allocate(Integer.BYTES);
+        tombstone.putInt(-1);
+        if (result.getEntry().value() == null) {
+            return new Response(Response.OK, Bytes.concat(timestamp.array(), tombstone.array()));
         }
         return new Response(Response.OK, Bytes.concat(timestamp.array(), result.getEntry().value()));
     }
@@ -276,9 +278,9 @@ public class DaoHttpServer extends HttpServer {
                     while (buffer.position() < buffer.capacity()) {
                         body = Bytes.concat(body, new byte[] {buffer.get()});
                     }
-                    /*if (body.length == 0) {
+                    if (body.length == Integer.BYTES && ByteBuffer.wrap(body).getInt() == -1) {
                         body = null;
-                    }*/
+                    }
                     maxTimestamp = currentTimestamp;
                 }
             }

@@ -55,7 +55,7 @@ public class PersistentDao implements Dao<byte[], BaseEntry<byte[]>> {
                 ),
                 EntryKeyComparator.INSTANCE
         );
-        return new SkipNullValuesIterator(new IndexedPeekIterator(0, mergeIterator));
+        return new IndexedPeekIterator(0, mergeIterator);
     }
 
     @Override
