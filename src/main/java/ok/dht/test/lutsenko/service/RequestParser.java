@@ -9,9 +9,9 @@ import java.util.List;
 public class RequestParser {
 
     public static final String REQUEST_PATH = "/v0/entity";
-    public static final String ID_PARAM = "id=";
-    public static final String ACK_PARAM = "ack=";
-    public static final String FROM_PARAM = "from=";
+    public static final String ID_PARAM_NAME = "id=";
+    public static final String ACK_PARAM_NAME = "ack=";
+    public static final String FROM_PARAM_NAME = "from=";
     private final Request request;
     private boolean isFailed = false;
     private String failStatus;
@@ -52,7 +52,7 @@ public class RequestParser {
         if (isFailed) {
             return this;
         }
-        id = request.getParameter(ID_PARAM);
+        id = request.getParameter(ID_PARAM_NAME);
         if (id == null || id.isBlank()) {
             setFailedWithStatus(Response.BAD_REQUEST);
         }
@@ -64,8 +64,8 @@ public class RequestParser {
         if (isFailed) {
             return this;
         }
-        String ackString = request.getParameter(ACK_PARAM);
-        String fromString = request.getParameter(FROM_PARAM);
+        String ackString = request.getParameter(ACK_PARAM_NAME);
+        String fromString = request.getParameter(FROM_PARAM_NAME);
         try {
             if (ackString != null && fromString != null) {
                 ack = Integer.parseInt(ackString);

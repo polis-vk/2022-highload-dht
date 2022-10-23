@@ -123,9 +123,18 @@ public class DemoService implements Service {
                                          List<CompletableFuture<Response>> replicasResponsesFutures,
                                          List<Integer> successStatuses,
                                          int ack,
-                                         int from) {
-        AtomicInteger totalCounter = new AtomicInteger(0);
+                                         int from
+    ) {
+        // Может возникнуть вопрос зачем нужны счетчики, ведь можно использовать размер мапы responses?
+        // Чтобы не класть в мапу лишние значения, если requestTime не важен, например при PUT и DELETE.
+        // Также при GET запросах с помощью CustomHeaders.REQUEST_TIME различается ситуации когда ключ не найден, тогда
+        // requestTime невозможно записать, так как в dao его нет и в мапу такие ответы не кладутся, но successCounter
+        // увеличивается. Когда найдена могила, то requestTime указывается и значение в мапу добавляется.
+        // Если мапа пустая и CustomHeaders.REQUEST_TIME отсутствует, то requestTime принимаем за 0 и делаем одну
+        // запись в мапу. Также счетчики позволяют прервать выполнение запросов к другим репликам если
+        // кворум уже набран или количество отказов гарантированно не позволит его собрать.
         AtomicInteger failsCounter = new AtomicInteger(0);
+        AtomicInteger successCounter = new AtomicInteger(0);
         NavigableMap<Long, Response> responses = new ConcurrentSkipListMap<>();
         for (CompletableFuture<Response> replicaResponseFuture : replicasResponsesFutures) {
             replicasResponsesExecutor.execute(() -> {
@@ -138,24 +147,18 @@ public class DemoService implements Service {
                         } else if (responses.isEmpty()) {
                             responses.put(0L, response);
                         }
+                        if (successCounter.incrementAndGet() == ack) {
+                            ServiceUtils.sendResponse(session, responses.lastEntry().getValue());
+                            cancelFutures(replicasResponsesFutures);
+                        }
                     } else if (failsCounter.incrementAndGet() == from - ack + 1) {
                         ServiceUtils.sendResponse(session, new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
-                        for (CompletableFuture<Response> replicasResponsesFuture : replicasResponsesFutures) {
-                            replicasResponsesFuture.cancel(true);
-                        }
-                    }
-                    if (totalCounter.incrementAndGet() == from && failsCounter.get() <= from - ack) {
-                        ServiceUtils.sendResponse(session, responses.lastEntry().getValue());
+                        cancelFutures(replicasResponsesFutures);
                     }
                 } catch (InterruptedException | ExecutionException e) {
                     if (failsCounter.incrementAndGet() == from - ack + 1) {
                         ServiceUtils.sendResponse(session, new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
-                        for (CompletableFuture<Response> replicasResponsesFuture : replicasResponsesFutures) {
-                            replicasResponsesFuture.cancel(true);
-                        }
-                    }
-                    if (totalCounter.incrementAndGet() == from && failsCounter.get() <= from - ack) {
-                        ServiceUtils.sendResponse(session, responses.lastEntry().getValue());
+                        cancelFutures(replicasResponsesFutures);
                     }
                 }
             });
@@ -181,7 +184,7 @@ public class DemoService implements Service {
             return false;
         }
         long requestTime = Long.parseLong(proxyRequestTimeHeaderValue);
-        daoHandler.handle(request.getParameter(RequestParser.ID_PARAM), request, session, requestTime);
+        daoHandler.handle(request.getParameter(RequestParser.ID_PARAM_NAME), request, session, requestTime);
         return true;
     }
 
@@ -229,6 +232,12 @@ public class DemoService implements Service {
             if (replicaNodesPositions.size() == from) {
                 break;
             }
+        }
+    }
+
+    private static void cancelFutures(List<CompletableFuture<Response>> replicasResponsesFutures) {
+        for (CompletableFuture<Response> replicasResponsesFuture : replicasResponsesFutures) {
+            replicasResponsesFuture.cancel(true);
         }
     }
 
