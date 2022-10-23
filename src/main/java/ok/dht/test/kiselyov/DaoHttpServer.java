@@ -19,23 +19,18 @@ import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
-import one.nio.util.ByteArrayBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
-import java.net.http.HttpHeaders;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
-import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
 
 public class DaoHttpServer extends HttpServer {
     private final NodeDeterminer nodeDeterminer;
@@ -58,49 +53,47 @@ public class DaoHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        try {
-            executorService.submit(() -> {
-                try {
-                    String id = request.getParameter("id=");
-                    if (id == null || id.isBlank()) {
-                        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                        return;
-                    }
-                    int ack;
-                    int from;
-                    String replicasParam = request.getParameter("replicas=");
-                    if (replicasParam == null) {
-                        from = config.clusterUrls().size();
-                        ack = from / 2 + 1;
-                    } else {
-                        String[] replicasParams = replicasParam.split("/");
-                        ack = Integer.parseInt(replicasParams[0]);
-                        from = Integer.parseInt(replicasParams[1]);
-                    }
-                    String fromCoordinator = request.getHeader("fromCoordinator");
-                    if (fromCoordinator == null) {
-                        coordinateRequest(request, session, id, ack, from);
-                    } else {
-                        switch (request.getMethodName()) {
-                            case "PUT" -> session.sendResponse(handlePut(id, request));
-                            case "GET" -> session.sendResponse(handleGet(id));
-                            case "DELETE" -> session.sendResponse(handleDelete(id));
-                            default -> {
-                                LOGGER.error("Unsupported request method: {}", request.getMethodName());
-                                handleDefault(request, session);
-                                throw new UnsupportedOperationException("Unsupported request method: "
-                                        + request.getMethodName());
-                            }
+        String id = request.getParameter("id=");
+        if (id == null || id.isBlank()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+        int ack;
+        int from;
+        String fromParam = request.getParameter("from=");
+        if (fromParam == null) {
+            from = config.clusterUrls().size();
+            ack = from / 2 + 1;
+        } else {
+            from = Integer.parseInt(fromParam);
+            ack = Integer.parseInt(request.getParameter("ack="));
+        }
+        if (ack > from || ack == 0) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+        String fromCoordinator = request.getHeader("fromCoordinator");
+        executorService.submit(() -> {
+            try {
+                if (fromCoordinator == null) {
+                    coordinateRequest(request, session, id, ack, from);
+                } else {
+                    switch (request.getMethodName()) {
+                        case "PUT" -> session.sendResponse(handlePut(id, request));
+                        case "GET" -> session.sendResponse(handleGet(id));
+                        case "DELETE" -> session.sendResponse(handleDelete(id));
+                        default -> {
+                            LOGGER.error("Unsupported request method: {}", request.getMethodName());
+                            handleDefault(request, session);
+                            throw new UnsupportedOperationException("Unsupported request method: "
+                                    + request.getMethodName());
                         }
                     }
-                } catch (IOException e) {
-                    LOGGER.error("Error handling request.", e);
                 }
-            });
-        } catch (RejectedExecutionException e) {
-            LOGGER.error("Cannot execute task: ", e);
-            session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
-        }
+            } catch (IOException e) {
+                LOGGER.error("Error handling request.", e);
+            }
+        });
     }
 
     @Override
@@ -137,16 +130,12 @@ public class DaoHttpServer extends HttpServer {
         if (result == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
-        /*Response okResponse = new Response(Response.OK, result.getEntry().value());
-        okResponse.addHeader("Timestamp " + result.getTimestamp());
-        return okResponse;*/
         ByteBuffer timestamp = ByteBuffer.allocate(Long.BYTES);
         timestamp.putLong(result.getTimestamp());
-        return new Response(Response.OK,
-                Bytes.concat(timestamp.array(),
-                        result.getEntry().value()
-                )
-        );
+        if (result.getEntry().value() == null || result.getEntry().value().length == 0) {
+            return new Response(Response.OK, timestamp.array());
+        }
+        return new Response(Response.OK, Bytes.concat(timestamp.array(), result.getEntry().value()));
     }
 
     @Path("/v0/entity")
@@ -190,13 +179,13 @@ public class DaoHttpServer extends HttpServer {
                     }
                 }
             } else {
-                responses.add(sendResponse(request, session, id, targetClusterNode));
+                responses.add(sendResponse(request, id, targetClusterNode));
             }
         }
         replicationDecision(responses, ack, request.getMethodName(), session);
     }
 
-    private Response sendResponse(Request request, HttpSession session, String id, ClusterNode targetClusterNode) {
+    private Response sendResponse(Request request, String id, ClusterNode targetClusterNode) {
         HttpResponse<byte[]> getResponse;
         try {
             request.addHeader("fromCoordinator 1");
@@ -204,24 +193,13 @@ public class DaoHttpServer extends HttpServer {
             switch (request.getMethod()) {
                 case Request.METHOD_GET -> {
                     if (getResponse.statusCode() == HttpURLConnection.HTTP_OK) {
-                        Response okResponse = new Response(getResponseCode(getResponse.statusCode()),
-                                getResponse.body());
-                        /*HttpHeaders headers = getResponse.previousResponse().get().headers();
-                        okResponse.addHeader("Timestamp " + headers.allValues("Timestamp").get(0));
-                        return okResponse;*/
                         return new Response(getResponseCode(getResponse.statusCode()), getResponse.body());
-                        //session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
-                        //        getResponse.body()));
                     } else {
                         return new Response(getResponseCode(getResponse.statusCode()), Response.EMPTY);
-                        //session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
-                        //        Response.EMPTY));
                     }
                 }
                 case Request.METHOD_PUT, Request.METHOD_DELETE -> {
                     return new Response(getResponseCode(getResponse.statusCode()), Response.EMPTY);
-                    //session.sendResponse(new Response(String.valueOf(getResponse.statusCode()),
-                    //        Response.EMPTY));
                 }
                 default -> {
                     LOGGER.error("Unsupported request method: {}", request.getMethodName());
@@ -232,18 +210,12 @@ public class DaoHttpServer extends HttpServer {
         } catch (URISyntaxException e) {
             LOGGER.error("URI error.", e);
             return new Response(Response.BAD_GATEWAY, Response.EMPTY);
-            //session.sendResponse(new Response(Response.BAD_GATEWAY, Response.EMPTY));
-            //throw new RuntimeException(e);
         } catch (IOException e) {
             LOGGER.error("Error handling request.", e);
             return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
-            //session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-            //throw new RuntimeException(e);
         } catch (InterruptedException e) {
             LOGGER.error("Error while getting response.", e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-            //session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-            //throw new RuntimeException(e);
         }
     }
 
@@ -251,7 +223,7 @@ public class DaoHttpServer extends HttpServer {
         int successResponses = 0;
         for (Response response : responses) {
             int responseStatus = response.getStatus();
-            if (responseStatus >= 200 && responseStatus <= 202) {
+            if (responseStatus >= 200 && responseStatus <= 202 || responseStatus == 404) {
                 successResponses++;
             }
         }
@@ -261,7 +233,7 @@ public class DaoHttpServer extends HttpServer {
                     byte[] body = getBody(responses);
                     if (successResponses >= ack && body != null) {
                         session.sendResponse(new Response(Response.OK, body));
-                    } else if (body == null) {
+                    } else if (successResponses >= ack) {
                         session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
                     } else {
                         session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
@@ -296,11 +268,6 @@ public class DaoHttpServer extends HttpServer {
         long maxTimestamp = -1L;
         for (Response response : responses) {
             if (response.getStatus() == 200) {
-                /*long currentTimestamp = Long.parseLong(response.getHeader("Timestamp"));
-                if (currentTimestamp > maxTimestamp) {
-                    body = response.getBody();
-                    maxTimestamp = currentTimestamp;
-                }*/
                 ByteBuffer buffer = ByteBuffer.wrap(response.getBody());
                 long currentTimestamp = buffer.getLong();
                 if (currentTimestamp > maxTimestamp) {
@@ -309,6 +276,9 @@ public class DaoHttpServer extends HttpServer {
                     while (buffer.position() < buffer.capacity()) {
                         body = Bytes.concat(body, new byte[] {buffer.get()});
                     }
+                    /*if (body.length == 0) {
+                        body = null;
+                    }*/
                     maxTimestamp = currentTimestamp;
                 }
             }
