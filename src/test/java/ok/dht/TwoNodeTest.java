@@ -176,7 +176,7 @@ class TwoNodeTest extends TestBase {
 
             // Check
             {
-                HttpResponse<byte[]> response = nodes.get(i).get(key, 1, 2);
+                HttpResponse<byte[]> response = nodes.get(i).get(key, 2, 2);
                 assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
                 assertArrayEquals(value, response.body());
             }
