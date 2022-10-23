@@ -7,11 +7,14 @@ import java.util.StringJoiner;
 public final class Shard {
     private final String url;
     private final boolean isSelf;
+    private final int shardIndex;
 
     public Shard(@Nonnull final String url,
-                 final boolean isSelf) {
+                 final boolean isSelf,
+                 final int shardIndex) {
         this.url = url;
         this.isSelf = isSelf;
+        this.shardIndex = shardIndex;
     }
 
     public String getUrl() {
@@ -22,6 +25,10 @@ public final class Shard {
         return isSelf;
     }
 
+    public int getShardIndex() {
+        return shardIndex;
+    }
+
     @Override
     public boolean equals(final Object o) {
         if (this == o) return true;
@@ -29,22 +36,20 @@ public final class Shard {
 
         final Shard shard = (Shard) o;
 
-        if (isSelf != shard.isSelf) return false;
-        return url.equals(shard.url);
+        return shardIndex == shard.shardIndex;
     }
 
     @Override
     public int hashCode() {
-        int result = url.hashCode();
-        result = 31 * result + (isSelf ? 1 : 0);
-        return result;
+        return shardIndex;
     }
 
     @Override
     public String toString() {
-        return new StringJoiner(", ", Shard.class.getSimpleName() + "[", "]")
+        return new StringJoiner(", ", "Shard[", "]")
                 .add("url='" + url + "'")
                 .add("isSelf=" + isSelf)
+                .add("shardIndex=" + shardIndex)
                 .toString();
     }
 }

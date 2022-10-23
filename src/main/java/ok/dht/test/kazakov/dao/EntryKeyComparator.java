@@ -13,6 +13,6 @@ public final class EntryKeyComparator implements Comparator<Entry<MemorySegment>
 
     @Override
     public int compare(Entry<MemorySegment> o1, Entry<MemorySegment> o2) {
-        return MemorySegmentComparator.INSTANCE.compare(o1.key(), o2.key());
+        return MemorySegmentComparator.INSTANCE.compare(o1.getKey(), o2.getKey());
     }
 }

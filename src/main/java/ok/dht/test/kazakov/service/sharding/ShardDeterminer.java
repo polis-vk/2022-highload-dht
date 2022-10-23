@@ -4,4 +4,8 @@ import javax.annotation.Nonnull;
 
 public interface ShardDeterminer<T> {
     Shard determineShard(@Nonnull final T object);
+
+    int getTotalShards();
+
+    Shard getNextShardToReplicate(@Nonnull final Shard shard);
 }

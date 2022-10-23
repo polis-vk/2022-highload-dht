@@ -44,18 +44,17 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     public Iterator<Entry<MemorySegment>> get(final MemorySegment from, final MemorySegment to) {
         final MemorySegment internalFrom;
         internalFrom = Objects.requireNonNullElse(from, VERY_FIRST_KEY);
-        return getTombstoneFilteringIterator(internalFrom, to);
+        return getInternal(internalFrom, to);
     }
 
-    private TombstoneFilteringIterator getTombstoneFilteringIterator(final MemorySegment from, final MemorySegment to) {
+    private Iterator<Entry<MemorySegment>> getInternal(final MemorySegment from, final MemorySegment to) {
         final DaoState freezedState = accessState();
 
         final List<Iterator<Entry<MemorySegment>>> iterators = freezedState.storage.iterate(from, to);
         iterators.add(freezedState.flushing.get(from, to));
         iterators.add(freezedState.memory.get(from, to));
 
-        final Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
-        return new TombstoneFilteringIterator(mergeIterator);
+        return MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
     }
 
     @Override
@@ -70,7 +69,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             result = freezedState.storage.get(key);
         }
 
-        return (result == null || result.isTombstone()) ? null : result;
+        return result;
     }
 
     // we do not want to wait for background flush here, so future is ignored
@@ -84,7 +83,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         // it is intentionally the read lock!!!
         upsertLock.readLock().lock();
         try {
-            runFlush = freezedState.memory.put(entry.key(), entry);
+            runFlush = freezedState.memory.put(entry.getKey(), entry);
         } finally {
             upsertLock.readLock().unlock();
         }

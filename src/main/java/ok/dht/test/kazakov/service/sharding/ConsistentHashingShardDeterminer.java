@@ -1,9 +1,7 @@
 package ok.dht.test.kazakov.service.sharding;
 
 import javax.annotation.Nonnull;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.List;
 
 public class ConsistentHashingShardDeterminer<T> implements ShardDeterminer<T> {
@@ -11,18 +9,18 @@ public class ConsistentHashingShardDeterminer<T> implements ShardDeterminer<T> {
     private static final int POINTS_PER_SHARD = 3;
     public static final int PRIME_HASH_MULTIPLIER = 1234567891;
 
+    private final int totalShards;
     private final int[] hashPositions;
     private final Shard[] shards;
 
-    public ConsistentHashingShardDeterminer(final List<Shard> shards) {
-        if (shards.size() == 1) {
+    public ConsistentHashingShardDeterminer(final List<Shard> sortedShards) {
+        this.totalShards = sortedShards.size();
+
+        if (sortedShards.size() == 1) {
             this.hashPositions = new int[]{Integer.MAX_VALUE};
-            this.shards = new Shard[]{shards.get(0)};
+            this.shards = new Shard[]{sortedShards.get(0)};
             return;
         }
-
-        final ArrayList<Shard> sortedShards = new ArrayList<>(shards);
-        sortedShards.sort(Comparator.comparing(Shard::getUrl));
 
         final int pointsSize = sortedShards.size() * POINTS_PER_SHARD;
         this.hashPositions = new int[pointsSize];
@@ -35,13 +33,15 @@ public class ConsistentHashingShardDeterminer<T> implements ShardDeterminer<T> {
             shardRangeSize++;
         }
 
-        for (int i = 1; i <= pointsSize; i++) {
+        for (int i = 0; i < pointsSize; i++) {
             final Shard shard = sortedShards.get(i % sortedShards.size());
-            final int shardHashPosition = Integer.MIN_VALUE + shardRangeSize * i + Math.min(i, shardRangeAdditions);
-            this.hashPositions[i - 1] = shardHashPosition;
-            this.shards[i - 1] = shard;
+            final int shardHashPosition = Integer.MIN_VALUE
+                    + shardRangeSize * (i + 1)
+                    + Math.min(i + 1, shardRangeAdditions);
+            this.hashPositions[i] = shardHashPosition;
+            this.shards[i] = shard;
 
-            if (i - 2 >= 0 && shardHashPosition < this.hashPositions[i - 2]) {
+            if (i - 1 >= 0 && shardHashPosition < this.hashPositions[i - 1]) {
                 throwOnFailedInvariant("Expected hashPositions to be a sorted array.");
             }
         }
@@ -72,5 +72,16 @@ public class ConsistentHashingShardDeterminer<T> implements ShardDeterminer<T> {
 
         final int insertionPoint = -pointIndex - 1;
         return shards[insertionPoint];
+    }
+
+    @Override
+    public int getTotalShards() {
+        return totalShards;
+    }
+
+    @Override
+    public Shard getNextShardToReplicate(@Nonnull final Shard shard) {
+        // works because vnodes are has same order as shards
+        return shards[(shard.getShardIndex() + 1) % totalShards];
     }
 }

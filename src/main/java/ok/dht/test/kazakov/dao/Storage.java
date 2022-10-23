@@ -83,7 +83,7 @@ class Storage implements Closeable {
     }
 
     // file structure:
-    // (fileVersion)(entryCount)((entryPosition)...)|((keySize/key/valueSize/value)...)
+    // (fileVersion)(entryCount)((entryPosition)...)|((keySize/key/timestamp/valueSize/value)...)
     private long entryIndex(final MemorySegment sstable, final MemorySegment key) {
         final long fileVersion = MemoryAccess.getLongAtOffset(sstable, 0);
         if (fileVersion != 0) {
@@ -123,11 +123,12 @@ class Storage implements Closeable {
             final long offset = MemoryAccess.getLongAtOffset(sstable,
                     StorageHelper.INDEX_HEADER_SIZE + keyIndex * StorageHelper.INDEX_RECORD_SIZE);
             final long keySize = MemoryAccess.getLongAtOffset(sstable, offset);
-            final long valueOffset = offset + Long.BYTES + keySize;
+            final long valueOffset = offset + Long.BYTES + keySize + Long.BYTES;
             final long valueSize = MemoryAccess.getLongAtOffset(sstable, valueOffset);
-            return new BaseEntry<>(
+            return new MemorySegmentEntry(
                     sstable.asSlice(offset + Long.BYTES, keySize),
-                    valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize)
+                    valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize),
+                    MemoryAccess.getLongAtOffset(sstable, offset + Long.BYTES + keySize)
             );
         } catch (final IllegalStateException e) {
             throw checkForClose(e);
