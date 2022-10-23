@@ -48,14 +48,13 @@ public class PersistentDao implements Dao<byte[], BaseEntry<byte[]>> {
         }
         memoryIterator = pairValues.iterator();
         Iterator<EntryWithTimestamp> diskIterator = fileOperations.diskIterator(from, to);
-        Iterator<EntryWithTimestamp> mergeIterator = MergeIterator.of(
+        return MergeIterator.of(
                 List.of(
                         new IndexedPeekIterator(0, memoryIterator),
                         new IndexedPeekIterator(1, diskIterator)
                 ),
                 EntryKeyComparator.INSTANCE
         );
-        return new IndexedPeekIterator(0, mergeIterator);
     }
 
     @Override
