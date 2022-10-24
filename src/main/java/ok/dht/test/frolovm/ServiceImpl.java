@@ -30,9 +30,9 @@ import java.util.concurrent.TimeUnit;
 
 public class ServiceImpl implements Service {
 
-    public static final int FLUSH_THRESHOLD_BYTES = 1_048_576;
-    public static final String PATH_ENTITY = "/v0/entity";
-    public static final String PARAM_ID_NAME = "id=";
+    private static final int FLUSH_THRESHOLD_BYTES = 1_048_576;
+    private static final String PATH_ENTITY = "/v0/entity";
+    private static final String PARAM_ID_NAME = "id=";
     private static final int CORE_POLL_SIZE = Runtime.getRuntime().availableProcessors() * 2;
     private static final int KEEP_ALIVE_TIME = 0;
     private static final int QUEUE_CAPACITY = 128;
