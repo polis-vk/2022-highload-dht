@@ -47,8 +47,9 @@ class TwoNodeTest extends TestBase {
 
     @ServiceTest(stage = 4, clusterSize = 2)
     void postNotSupportedTest(List<ServiceInfo> nodes) throws Exception {
-        assertEquals(HttpURLConnection.HTTP_BAD_METHOD, nodes.get(0).post(randomId(), randomValue(), 1, 0).statusCode());
-        assertEquals(HttpURLConnection.HTTP_BAD_METHOD, nodes.get(1).post(randomId(), randomValue(), 2, 1).statusCode());
+
+        assertEquals(HttpURLConnection.HTTP_BAD_METHOD, nodes.get(0).post(randomId(), randomValue(), 1, 1).statusCode());
+        assertEquals(HttpURLConnection.HTTP_BAD_METHOD, nodes.get(1).post(randomId(), randomValue(), 2, 2).statusCode());
     }
 
     @ServiceTest(stage = 4, clusterSize = 2)
