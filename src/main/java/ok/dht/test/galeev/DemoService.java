@@ -111,14 +111,16 @@ public class DemoService implements Service {
         List<Node> routerNode = consistentHashRouter.getNode(key, from);
         for (Node node : routerNode) {
             node.get(key).thenAccept((entry) -> {
-                if (entry == null)
+                if (entry == null) {
                     if (unsuccessfulResponses.incrementAndGet() >= (from - ack + 1)) {
                         continueBarrier.countDown();
-                } else
+                    }
+                } else {
                     updateNewestEntry(newestEntry, entry);
                     if (successfulResponses.incrementAndGet() >= ack) {
                         continueBarrier.countDown();
                     }
+                }
             });
         }
 
