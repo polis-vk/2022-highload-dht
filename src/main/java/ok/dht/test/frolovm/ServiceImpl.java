@@ -18,15 +18,30 @@ import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.io.IOException;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class ServiceImpl implements Service {
 
     public static final int FLUSH_THRESHOLD_BYTES = 1_048_576;
+    public static final String PATH_ENTITY = "/v0/entity";
+    public static final String PARAM_ID_NAME = "id=";
+    private static final int CORE_POLL_SIZE = Runtime.getRuntime().availableProcessors() * 2;
+    private static final int KEEP_ALIVE_TIME = 0;
+    private static final int QUEUE_CAPACITY = 128;
     private static final String BAD_ID = "Given id is bad.";
     private static final String NO_SUCH_METHOD = "No such method.";
+    private static final Logger LOGGER = LoggerFactory.getLogger(ServiceImpl.class);
     private final ServiceConfig config;
+    private ExecutorService requestService;
+
     private MemorySegmentDao dao;
     private HttpServer server;
 
@@ -73,11 +88,43 @@ public class ServiceImpl implements Service {
     public CompletableFuture<?> start() throws IOException {
         if (dao == null) {
             createDao();
+            requestService = new ThreadPoolExecutor(
+                    CORE_POLL_SIZE,
+                    CORE_POLL_SIZE,
+                    KEEP_ALIVE_TIME,
+                    TimeUnit.SECONDS,
+                    new ArrayBlockingQueue<>(QUEUE_CAPACITY)
+            );
         }
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
                 session.sendResponse(emptyResponse(Response.BAD_REQUEST));
+            }
+
+            @Override
+            public void handleRequest(Request request, HttpSession session) {
+                Runnable handleTask = () -> {
+                    try {
+                        super.handleRequest(request, session);
+                    } catch (IOException e) {
+                        sessionSendError(session, e);
+                    }
+                };
+                try {
+                    requestService.execute(handleTask);
+                } catch (RejectedExecutionException exception) {
+                    LOGGER.error("If this task cannot be accepted for execution", exception);
+                }
+            }
+
+            private void sessionSendError(HttpSession session, IOException e) {
+                try {
+                    session.sendError(Response.BAD_REQUEST, e.getMessage());
+                    LOGGER.error("Can't handle request", e);
+                } catch (IOException exception) {
+                    LOGGER.error("Can't send error message to Bad Request", exception);
+                }
             }
 
             @Override
@@ -106,8 +153,8 @@ public class ServiceImpl implements Service {
         }
     }
 
-    @Path("/v0/entity")
-    public Response entityHandler(@Param(value = "id", required = true) String id, Request request) {
+    @Path(PATH_ENTITY)
+    public Response entityHandler(@Param(PARAM_ID_NAME) String id, Request request) {
         if (!checkId(id)) {
             return new Response(Response.BAD_REQUEST, Utf8.toBytes(BAD_ID));
         }
@@ -129,6 +176,21 @@ public class ServiceImpl implements Service {
         return emptyResponse(Response.CREATED);
     }
 
+    private void closeExecutorPool(ExecutorService pool) {
+        pool.shutdown();
+        try {
+            if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
+                pool.shutdownNow();
+                if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
+                    LOGGER.error("Pool didn't terminate");
+                }
+            }
+        } catch (InterruptedException ie) {
+            pool.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private Response deleteHandler(String id) {
         dao.upsert(new Entry(stringToSegment(id), null));
         return emptyResponse(Response.ACCEPTED);
@@ -137,12 +199,13 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
+        closeExecutorPool(requestService);
         dao.close();
         dao = null;
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
