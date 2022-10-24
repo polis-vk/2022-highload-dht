@@ -28,7 +28,7 @@ public class StringTimestampByteConverter implements MSConverter<String, Entry<T
         }
         MemorySegment ms = inMs.asReadOnly();
 
-        Timestamp timestamp = new Timestamp(MemoryAccess.getLongAtOffset(ms, 0, BIG_ENDIAN));
+        Timestamp timestamp = new Timestamp(MemoryAccess.getLongAtOffset(ms,0, BIG_ENDIAN));
         int bodyLength = MemoryAccess.getIntAtOffset(ms, Long.BYTES,  BIG_ENDIAN);
         if (bodyLength == -1) {
             return new BaseEntry<>(timestamp, null);

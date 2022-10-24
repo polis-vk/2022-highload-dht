@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ConsistentHashRouter {
     private static final int AMOUNT_OF_V_NODES = 7;
     private final SortedMap<Integer, VNode> ring = new TreeMap<>();
-    private AtomicInteger amountOfPhysicalNodes = new AtomicInteger(0);
+    private final AtomicInteger amountOfPhysicalNodes = new AtomicInteger(0);
 
     public void addPhysicalNode(Node physicalName) {
         amountOfPhysicalNodes.incrementAndGet();
@@ -45,7 +45,7 @@ public class ConsistentHashRouter {
 
     public List<Node> getNode(String key, int from) {
         if (key == null) {
-            return null;
+            return Collections.emptyList();
         }
         if (ring.isEmpty()) {
             return Collections.emptyList();
@@ -56,24 +56,24 @@ public class ConsistentHashRouter {
         int firstNodeHashVal = tailMap.isEmpty() ? ring.firstKey() : tailMap.firstKey();
 
         List<Node> nodeList = new ArrayList<>(from);
-        for (VNode vNode : tailMap.values()) {
+        for (VNode vnode : tailMap.values()) {
             // Add only unique Nodes (we have VNodes)
-            if (!nodeList.contains(vNode.getPhysicalNode())) {
-                nodeList.add(vNode.getPhysicalNode());
+            if (!nodeList.contains(vnode.getPhysicalNode())) {
+                nodeList.add(vnode.getPhysicalNode());
             }
             if (nodeList.size() == from) {
                 return nodeList;
             }
         }
         // If in tailMap contains not enough of Nodes -> we start from beginning
-        for (Map.Entry<Integer, VNode> vNodeEntry : ring.entrySet()) {
-            if (!nodeList.contains(vNodeEntry.getValue().getPhysicalNode())) {
-                nodeList.add(vNodeEntry.getValue().getPhysicalNode());
+        for (Map.Entry<Integer, VNode> vnodeEntry : ring.entrySet()) {
+            if (!nodeList.contains(vnodeEntry.getValue().getPhysicalNode())) {
+                nodeList.add(vnodeEntry.getValue().getPhysicalNode());
             }
             if (nodeList.size() == from) {
                 return nodeList;
             }
-            if (vNodeEntry.getKey() == firstNodeHashVal) {
+            if (vnodeEntry.getKey() == firstNodeHashVal) {
                 // We have checked all Nodes
                 break;
             }

@@ -57,8 +57,6 @@ public abstract class Node {
 
     public abstract CompletableFuture<Boolean> delete(String key, Timestamp timestamp);
 
-    public abstract void stop() throws IOException;
-
     public static class LocalNode extends Node {
         public static final int FLUSH_THRESHOLD_BYTES = 16777216; // 16MB
         private final DaoMiddleLayer<String, Entry<Timestamp, byte[]>> dao;
@@ -70,8 +68,8 @@ public abstract class Node {
 
         @Override
         public CompletableFuture<Entry<Timestamp, byte[]>> get(String key) {
-            Entry<Timestamp, byte[]> dao = getDao(key);
-            return CompletableFuture.completedFuture(dao);
+            Entry<Timestamp, byte[]> entry = getDao(key);
+            return CompletableFuture.completedFuture(entry);
         }
 
         public Entry<Timestamp, byte[]> getDao(String key) {
@@ -107,7 +105,6 @@ public abstract class Node {
             dao.upsert(new BaseEntry<>(key, new BaseEntry<>(timestamp, null)));
         }
 
-        @Override
         public void stop() throws IOException {
             dao.stop();
         }
@@ -221,10 +218,6 @@ public abstract class Node {
                 ), e);
                 return Boolean.FALSE;
             });
-        }
-
-        @Override
-        public void stop() throws IOException {
         }
 
         public static Entry<Timestamp, byte[]> getEntryFromByteArray(byte[] body) {

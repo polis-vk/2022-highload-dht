@@ -33,6 +33,8 @@ public class DemoService implements Service {
     public static final String LOCAL_PATH = "/v0/local/entity";
     public static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     public static final String FROM_PARAMETR = "from=";
+    public static final String ID_PARAMETR = "id=";
+    public static final String ACK_PARAMETR = "ack=";
     private final ServiceConfig config;
     private final SkipOldExecutorFactory skipOldThreadExecutorFactory = new SkipOldExecutorFactory();
     private ExecutorService proxyExecutor;
@@ -88,11 +90,12 @@ public class DemoService implements Service {
     }
 
     public void handleGet(Request request, HttpSession session) throws IOException {
-        final String key = request.getParameter("id=");
-        final String ackString = request.getParameter("ack=");
+        final String key = request.getParameter(ID_PARAMETR);
+        final String ackString = request.getParameter(ACK_PARAMETR);
         final String fromString = request.getParameter(FROM_PARAMETR);
 
-        final int from = (fromString == null) ? consistentHashRouter.getAmountOfPhysicalNodes() : Integer.parseInt(fromString);
+        final int from = (fromString == null) ? consistentHashRouter.getAmountOfPhysicalNodes()
+                : Integer.parseInt(fromString);
         final int ack = (ackString == null) ? from / 2 + 1 : Integer.parseInt(ackString);
 
         if (ack > from || ack <= 0) {
@@ -125,6 +128,7 @@ public class DemoService implements Service {
         } catch (InterruptedException e) {
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             LOGGER.error(String.format("%nInterrupted while awaiting GET responses key: %s%n", key), e);
+            Thread.currentThread().interrupt();
         }
 
         Entry<Timestamp, byte[]> entry = newestEntry.get();
@@ -138,7 +142,7 @@ public class DemoService implements Service {
     }
 
     public void localHandleGet(Request request, HttpSession session) throws IOException {
-        String key = request.getParameter("id=");
+        String key = request.getParameter(ID_PARAMETR);
 
         Entry<Timestamp, byte[]> entry = localNode.getDao(key);
         session.sendResponse(
@@ -149,11 +153,12 @@ public class DemoService implements Service {
     public void handlePut(Request request, HttpSession session) throws IOException {
         final Timestamp currentTime = new Timestamp(System.currentTimeMillis());
 
-        final String key = request.getParameter("id=");
-        final String ackString = request.getParameter("ack=");
+        final String key = request.getParameter(ID_PARAMETR);
+        final String ackString = request.getParameter(ACK_PARAMETR);
         final String fromString = request.getParameter(FROM_PARAMETR);
 
-        final int from = (fromString == null) ? consistentHashRouter.getAmountOfPhysicalNodes() : Integer.parseInt(fromString);
+        final int from = (fromString == null) ? consistentHashRouter.getAmountOfPhysicalNodes()
+                : Integer.parseInt(fromString);
         final int ack = (ackString == null) ? from / 2 + 1 : Integer.parseInt(ackString);
 
         if (ack > from || ack <= 0) {
@@ -184,6 +189,7 @@ public class DemoService implements Service {
         } catch (InterruptedException e) {
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             LOGGER.error(String.format("%nInterrupted while awaiting PUT responses key: %s%n", key), e);
+            Thread.currentThread().interrupt();
         }
 
         if (successfulResponses.get() >= ack) {
@@ -196,11 +202,12 @@ public class DemoService implements Service {
     public void handleDelete(Request request, HttpSession session) throws IOException {
         final Timestamp currentTime = new Timestamp(System.currentTimeMillis());
 
-        final String key = request.getParameter("id=");
-        final String ackString = request.getParameter("ack=");
+        final String key = request.getParameter(ID_PARAMETR);
+        final String ackString = request.getParameter(ACK_PARAMETR);
         final String fromString = request.getParameter(FROM_PARAMETR);
 
-        final int from = (fromString == null) ? consistentHashRouter.getAmountOfPhysicalNodes() : Integer.parseInt(fromString);
+        final int from = (fromString == null) ? consistentHashRouter.getAmountOfPhysicalNodes()
+                : Integer.parseInt(fromString);
         final int ack = (ackString == null) ? from / 2 + 1 : Integer.parseInt(ackString);
 
         if (ack > from || ack <= 0) {
@@ -231,6 +238,7 @@ public class DemoService implements Service {
         } catch (InterruptedException e) {
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             LOGGER.error(String.format("%nInterrupted while awaiting DELETE responses key: %s%n", key), e);
+            Thread.currentThread().interrupt();
         }
 
         if (successfulResponses.get() >= ack) {
@@ -241,7 +249,7 @@ public class DemoService implements Service {
     }
 
     public void localHandlePutDelete(Request request, HttpSession session) throws IOException {
-        String key = request.getParameter("id=");
+        String key = request.getParameter(ID_PARAMETR);
         Entry<Timestamp, byte[]> entry = Node.ClusterNode.getEntryFromByteArray(request.getBody());
 
         localNode.putDao(key, entry);
