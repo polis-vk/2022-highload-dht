@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 10px; background-color: #ffffff}
+	h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {margin: 5px 0 5px 0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {overflow: hidden; white-space: nowrap}
+	#match {overflow: hidden; white-space: nowrap; display: none; float: right; text-align: right}
+	#reset {cursor: pointer}
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+<h1>Flame Graph</h1>
+<header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
+<header style='text-align: right'>Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a></header>
+<canvas id='canvas' style='width: 100%; height: 352px'></canvas>
+<div id='hl'><span></span></div>
+<p id='match'>Matched: <span id='matchval'></span> <span id='reset' title='Clear'>&#x274c;</span></p>
+<p id='status'>&nbsp;</p>
+<script>
+	// Copyright 2020 Andrei Pangin
+	// Licensed under the Apache License, Version 2.0.
+	'use strict';
+	var root, rootLevel, px, pattern;
+	var reverse = false;
+	const levels = Array(22);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	const c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	const canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+	const palette = [
+		[0x50e150, 30, 30, 30],
+		[0x50bebe, 30, 30, 30],
+		[0xe17d00, 30, 30,  0],
+		[0xc8c83c, 30, 30, 10],
+		[0xe15a5a, 30, 40, 40],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(level, left, width, type, title) {
+		levels[level].push({left: left, width: width, color: getColor(palette[type]), title: title});
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+	function search(r) {
+		if (r && (r = prompt('Enter regexp to search:', '')) === null) {
+			return;
+		}
+
+		pattern = r ? RegExp(r) : undefined;
+		const matched = render(root, rootLevel);
+		document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+		document.getElementById('match').style.display = r ? 'inherit' : 'none';
+	}
+
+	function render(newRoot, newLevel) {
+		if (root) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+		const marked = [];
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			for (let x in marked) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			}
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+				c.fillStyle = pattern && f.title.match(pattern) && mark(f) ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+
+				if (f.width * px >= 21) {
+					const chars = Math.floor(f.width * px / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, f.width * px - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+				}
+			}
+		}
+
+		for (let h = 0; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				canvas.title = f.title + '\n(' + samples(f.width) + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f != root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.textContent = '\xa0';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = '';
+	}
+
+	document.getElementById('reverse').onclick = function() {
+		reverse = !reverse;
+		render();
+	}
+
+	document.getElementById('search').onclick = function() {
+		search(true);
+	}
+
+	document.getElementById('reset').onclick = function() {
+		search(false);
+	}
+
+	window.onkeydown = function() {
+		if (event.ctrlKey && event.keyCode === 70) {
+			event.preventDefault();
+			search(true);
+		} else if (event.keyCode === 27) {
+			search(false);
+		}
+	}
+f(0,0,6610,4,'all')
+f(1,0,3717,0,'java/lang/Thread.run')
+f(2,0,3717,0,'java/util/concurrent/ThreadPoolExecutor$Worker.run')
+f(3,0,3717,0,'java/util/concurrent/ThreadPoolExecutor.runWorker')
+f(4,0,3717,0,'java/util/concurrent/FutureTask.run')
+f(5,0,3717,0,'ok/dht/test/kazakov/dao/MemorySegmentDao$$Lambda$176.0x0000000800d4b990.call')
+f(6,0,3717,0,'ok/dht/test/kazakov/dao/MemorySegmentDao.lambda$flushInBg$1')
+f(7,0,3715,0,'ok/dht/test/kazakov/dao/Storage.load')
+f(8,0,177,0,'java/lang/invoke/Invokers$Holder.linkToTargetMethod')
+f(9,0,177,0,'java/lang/invoke/LambdaForm$MH.0x0000000800c91400.invoke')
+f(10,0,93,0,'java/lang/invoke/DirectMethodHandle$Holder.invokeStatic')
+f(11,0,93,0,'java/lang/StringConcatHelper.newString')
+f(12,0,93,0,'java/lang/String.new')
+f(10,93,84,0,'java/lang/invoke/LambdaForm$MH.0x0000000800c0d000.invoke')
+f(11,93,84,0,'java/lang/invoke/DirectMethodHandle$Holder.invokeStatic')
+f(12,93,84,0,'java/lang/StringConcatHelper.newArrayWithSuffix')
+f(13,93,84,0,'java/lang/StringConcatHelper.newArray')
+f(14,93,84,0,'jdk/internal/misc/Unsafe.allocateUninitializedArray')
+f(15,93,84,0,'[B.new')
+f(8,177,417,0,'java/nio/file/Path.resolve')
+f(9,177,43,0,'[Ljava/lang/String;.new')
+f(9,220,101,0,'sun/nio/fs/UnixFileSystem.getPath')
+f(10,220,101,0,'sun/nio/fs/UnixPath.new')
+f(9,321,273,0,'sun/nio/fs/UnixPath.resolve')
+f(10,321,273,0,'sun/nio/fs/UnixPath.resolve')
+f(11,321,136,0,'sun/nio/fs/UnixPath.new')
+f(11,457,137,0,'sun/nio/fs/UnixPath.resolve')
+f(12,457,137,0,'[B.new')
+f(8,594,42,0,'java/util/ArrayList.add')
+f(9,594,42,0,'java/util/ArrayList.add')
+f(10,594,42,0,'java/util/ArrayList.grow')
+f(11,594,42,0,'java/util/ArrayList.grow')
+f(12,594,42,0,'java/util/Arrays.copyOf')
+f(13,594,42,0,'[Ljava/lang/Object;.new')
+f(8,636,3079,0,'ok/dht/test/kazakov/dao/Storage.mapForRead')
+f(9,636,530,0,'java/nio/file/Files.size')
+f(10,636,36,0,'[Ljava/nio/file/LinkOption;.new')
+f(10,672,494,0,'java/nio/file/Files.readAttributes')
+f(11,672,494,0,'sun/nio/fs/LinuxFileSystemProvider.readAttributes')
+f(12,672,494,0,'sun/nio/fs/UnixFileSystemProvider.readAttributes')
+f(13,672,494,0,'sun/nio/fs/UnixFileAttributeViews$Basic.readAttributes')
+f(14,672,50,0,'sun/nio/fs/UnixFileAttributes.asBasicFileAttributes')
+f(15,672,50,0,'sun/nio/fs/UnixFileAttributes$UnixAsBasicFileAttributes.wrap')
+f(16,672,50,0,'sun/nio/fs/UnixFileAttributes$UnixAsBasicFileAttributes.new')
+f(14,722,444,0,'sun/nio/fs/UnixFileAttributes.get')
+f(15,722,444,0,'sun/nio/fs/UnixFileAttributes.new')
+f(9,1166,2549,0,'jdk/incubator/foreign/MemorySegment.mapFile')
+f(10,1166,2549,0,'jdk/internal/foreign/MappedMemorySegmentImpl.makeMappedSegment')
+f(11,1166,2005,0,'java/nio/channels/FileChannel.open')
+f(12,1166,1441,0,'java/nio/channels/FileChannel.open')
+f(13,1166,1441,0,'sun/nio/fs/UnixFileSystemProvider.newFileChannel')
+f(14,1166,1441,0,'sun/nio/fs/UnixChannelFactory.newFileChannel')
+f(15,1166,1441,0,'sun/nio/fs/UnixChannelFactory.newFileChannel')
+f(16,1166,797,0,'sun/nio/ch/FileChannelImpl.open')
+f(17,1166,596,0,'sun/nio/ch/FileChannelImpl.<init>')
+f(18,1166,78,0,'java/lang/Object.new')
+f(18,1244,189,0,'java/lang/ref/Cleaner.register')
+f(19,1244,189,0,'jdk/internal/ref/CleanerImpl$PhantomCleanableRef.new')
+f(18,1433,94,0,'java/nio/channels/FileChannel.<init>')
+f(19,1433,94,0,'java/nio/channels/spi/AbstractInterruptibleChannel.<init>')
+f(20,1433,94,0,'java/lang/Object.new')
+f(18,1527,60,0,'sun/nio/ch/FileChannelImpl$Closer.new')
+f(18,1587,39,0,'sun/nio/ch/FileDispatcherImpl.new')
+f(18,1626,94,0,'sun/nio/ch/NativeThreadSet.<init>')
+f(19,1626,94,0,'[J.new')
+f(18,1720,42,0,'sun/nio/ch/NativeThreadSet.new')
+f(17,1762,201,0,'sun/nio/ch/FileChannelImpl.new')
+f(16,1963,368,0,'sun/nio/fs/UnixChannelFactory$Flags.toFlags')
+f(17,1963,266,0,'java/util/HashSet.iterator')
+f(18,1963,207,0,'java/util/HashMap$KeySet.iterator')
+f(19,1963,207,0,'java/util/HashMap$KeyIterator.new')
+f(18,2170,59,0,'java/util/HashMap.keySet')
+f(19,2170,59,0,'java/util/HashMap$KeySet.new')
+f(17,2229,102,0,'sun/nio/fs/UnixChannelFactory$Flags.new')
+f(16,2331,110,0,'sun/nio/fs/UnixChannelFactory.open')
+f(17,2331,110,0,'java/io/FileDescriptor.new')
+f(16,2441,166,0,'sun/nio/fs/UnixPath.toString')
+f(17,2441,166,0,'sun/nio/fs/Util.toString')
+f(18,2441,121,0,'java/lang/String.<init>')
+f(19,2441,121,0,'java/lang/String.<init>')
+f(20,2441,121,0,'java/util/Arrays.copyOfRange')
+f(21,2441,121,0,'[B.new')
+f(18,2562,45,0,'java/lang/String.new')
+f(12,2607,362,0,'java/util/Collections.addAll')
+f(13,2607,362,0,'java/util/HashSet.add')
+f(14,2607,362,0,'java/util/HashMap.put')
+f(15,2607,362,0,'java/util/HashMap.putVal')
+f(16,2607,75,0,'java/util/HashMap.newNode')
+f(17,2607,75,0,'java/util/HashMap$Node.new')
+f(16,2682,287,0,'java/util/HashMap.resize')
+f(17,2682,287,0,'[Ljava/util/HashMap$Node;.new')
+f(12,2969,139,0,'java/util/HashSet.<init>')
+f(13,2969,139,0,'java/util/HashMap.new')
+f(12,3108,63,0,'java/util/HashSet.new')
+f(11,3171,58,0,'jdk/internal/foreign/MappedMemorySegmentImpl$1.new')
+f(11,3229,145,0,'jdk/internal/foreign/MappedMemorySegmentImpl.new')
+f(11,3374,341,0,'sun/nio/ch/FileChannelImpl.mapInternal')
+f(12,3374,341,0,'sun/nio/ch/FileChannelImpl.mapInternal')
+f(13,3374,157,0,'sun/nio/ch/FileChannelImpl$DefaultUnmapper.new')
+f(13,3531,30,0,'sun/nio/ch/FileChannelImpl.beginBlocking')
+f(14,3531,30,0,'java/nio/channels/spi/AbstractInterruptibleChannel.begin')
+f(15,3531,30,0,'java/nio/channels/spi/AbstractInterruptibleChannel$1.new')
+f(13,3561,154,0,'sun/nio/ch/FileDispatcherImpl.duplicateForMapping')
+f(14,3561,154,0,'java/io/FileDescriptor.new')
+f(7,3715,2,0,'ok/dht/test/kazakov/dao/Storage.save')
+f(8,3715,1,0,'java/nio/file/Path.resolve')
+f(9,3715,1,0,'sun/nio/fs/UnixPath.resolve')
+f(10,3715,1,0,'sun/nio/fs/UnixPath.resolve')
+f(11,3715,1,0,'sun/nio/fs/UnixPath.resolve')
+f(12,3715,1,0,'[B.new')
+f(8,3716,1,0,'ok/dht/test/kazakov/dao/Storage.save')
+f(9,3716,1,0,'jdk/incubator/foreign/MemorySegment.mapFile')
+f(10,3716,1,0,'jdk/internal/foreign/MappedMemorySegmentImpl.makeMappedSegment')
+f(11,3716,1,0,'java/nio/channels/FileChannel.open')
+f(12,3716,1,0,'java/nio/channels/FileChannel.open')
+f(13,3716,1,0,'sun/nio/fs/UnixFileSystemProvider.newFileChannel')
+f(14,3716,1,0,'sun/nio/fs/UnixChannelFactory.newFileChannel')
+f(15,3716,1,0,'sun/nio/fs/UnixChannelFactory.newFileChannel')
+f(16,3716,1,0,'sun/nio/fs/UnixChannelFactory.open')
+f(17,3716,1,0,'java/io/FileDescriptor.new')
+f(1,3717,2893,0,'one/nio/server/SelectorThread.run')
+f(2,3717,82,0,'one/nio/net/NativeSelector.select')
+f(3,3717,82,0,'one/nio/net/NativeSelector$2.new')
+f(2,3799,2811,0,'one/nio/net/Session.process')
+f(3,3799,2811,0,'one/nio/http/HttpSession.processRead')
+f(4,3799,2811,0,'one/nio/http/HttpSession.processHttpBuffer')
+f(5,3799,1698,0,'one/nio/http/HttpSession.handleParsedRequest')
+f(6,3799,1698,0,'ok/dht/test/kazakov/service/http/DaoHttpServer.handleRequest')
+f(7,3799,1586,0,'one/nio/http/HttpServer.handleRequest')
+f(8,3799,1475,0,'RequestHandler1_handlePut.handleRequest')
+f(9,3799,1101,0,'ok/dht/test/kazakov/service/DaoWebService.handlePut')
+f(10,3799,822,0,'ok/dht/test/kazakov/service/DaoService.upsert')
+f(11,3799,81,0,'ok/dht/BaseEntry.new')
+f(11,3880,113,0,'ok/dht/test/kazakov/dao/MemorySegmentDao.upsert')
+f(12,3880,75,0,'ok/dht/test/kazakov/dao/MemorySegmentDao$Memory.put')
+f(13,3880,75,0,'java/util/concurrent/ConcurrentSkipListMap.put')
+f(14,3880,75,0,'java/util/concurrent/ConcurrentSkipListMap.doPut')
+f(15,3880,16,0,'java/util/concurrent/ConcurrentSkipListMap$Index.new')
+f(15,3896,59,0,'java/util/concurrent/ConcurrentSkipListMap$Node.new')
+f(12,3955,38,0,'ok/dht/test/kazakov/dao/MemorySegmentDao.flushInBg')
+f(13,3955,1,0,'java/util/concurrent/Executors$DelegatedExecutorService.submit')
+f(14,3955,1,0,'java/util/concurrent/AbstractExecutorService.submit')
+f(15,3955,1,0,'java/util/concurrent/ThreadPoolExecutor.execute')
+f(16,3955,1,0,'java/util/concurrent/LinkedBlockingQueue.offer')
+f(17,3955,1,0,'java/util/concurrent/LinkedBlockingQueue$Node.new')
+f(13,3956,32,0,'java/util/concurrent/locks/ReentrantReadWriteLock$WriteLock.lock')
+f(14,3956,32,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(15,3956,32,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(16,3956,32,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer$ExclusiveNode.new')
+f(13,3988,5,0,'ok/dht/test/kazakov/dao/MemorySegmentDao$State.prepareForFlush')
+f(14,3988,5,0,'ok/dht/test/kazakov/dao/MemorySegmentDao$State.new')
+f(11,3993,628,0,'ok/dht/test/kazakov/service/DaoService.toMemorySegment')
+f(12,3993,371,0,'java/util/Arrays.copyOf')
+f(13,3993,371,0,'[B.new')
+f(12,4364,68,0,'jdk/incubator/foreign/MemorySegment.ofArray')
+f(13,4364,68,0,'jdk/internal/foreign/HeapMemorySegmentImpl$OfByte.fromArray')
+f(14,4364,68,0,'jdk/internal/foreign/HeapMemorySegmentImpl$OfByte.new')
+f(12,4432,138,0,'ok/dht/test/kazakov/service/DaoService.toMemorySegment')
+f(13,4432,70,0,'java/util/Arrays.copyOf')
+f(14,4432,70,0,'[B.new')
+f(13,4502,68,0,'jdk/incubator/foreign/MemorySegment.ofArray')
+f(14,4502,68,0,'jdk/internal/foreign/HeapMemorySegmentImpl$OfByte.fromArray')
+f(15,4502,68,0,'jdk/internal/foreign/HeapMemorySegmentImpl$OfByte.new')
+f(12,4570,51,0,'one/nio/util/Utf8.toBytes')
+f(13,4570,51,0,'[B.new')
+f(10,4621,221,0,'one/nio/http/Response.<init>')
+f(11,4621,104,0,'[B.new')
+f(11,4725,71,0,'[Ljava/lang/String;.new')
+f(11,4796,46,0,'java/lang/String.new')
+f(10,4842,58,0,'one/nio/http/Response.new')
+f(9,4900,249,0,'one/nio/http/HttpSession.sendResponse')
+f(10,4900,249,0,'one/nio/http/HttpSession.writeResponse')
+f(11,4900,175,0,'one/nio/http/Response.toBytes')
+f(12,4900,175,0,'one/nio/util/ByteArrayBuilder.<init>')
+f(13,4900,175,0,'[B.new')
+f(11,5075,74,0,'one/nio/net/Session.write')
+f(12,5075,74,0,'one/nio/net/Session$ArrayQueueItem.new')
+f(9,5149,125,0,'one/nio/http/Request.getParameter')
+f(10,5149,125,0,'java/lang/String.substring')
+f(11,5149,125,0,'java/lang/String.substring')
+f(12,5149,125,0,'java/lang/StringLatin1.newString')
+f(13,5149,58,0,'java/lang/String.new')
+f(13,5207,67,0,'java/util/Arrays.copyOfRange')
+f(14,5207,67,0,'[B.new')
+f(8,5274,111,0,'one/nio/http/Request.getPath')
+f(9,5274,111,0,'java/lang/String.substring')
+f(10,5274,111,0,'java/lang/StringLatin1.newString')
+f(11,5274,50,0,'java/lang/String.new')
+f(11,5324,61,0,'java/util/Arrays.copyOfRange')
+f(12,5324,61,0,'[B.new')
+f(7,5385,112,0,'one/nio/http/Request.getPath')
+f(8,5385,112,0,'java/lang/String.substring')
+f(9,5385,112,0,'java/lang/StringLatin1.newString')
+f(10,5385,48,0,'java/lang/String.new')
+f(10,5433,64,0,'java/util/Arrays.copyOfRange')
+f(11,5433,64,0,'[B.new')
+f(5,5497,397,0,'one/nio/http/HttpSession.parseRequest')
+f(6,5497,163,0,'one/nio/http/Request.<init>')
+f(7,5497,163,0,'[Ljava/lang/String;.new')
+f(6,5660,95,0,'one/nio/http/Request.new')
+f(6,5755,139,0,'one/nio/util/Utf8.read')
+f(7,5755,139,0,'one/nio/util/Utf8.read')
+f(8,5755,139,0,'one/nio/util/Utf8.toAsciiString')
+f(9,5755,81,0,'[B.new')
+f(9,5836,58,0,'java/lang/invoke/LambdaForm$MH.0x0000000800d4c800.invokeExact_MT')
+f(10,5836,58,0,'java/lang/invoke/LambdaForm$DMH.0x0000000800d4dc00.newInvokeSpecial')
+f(11,5836,58,0,'java/lang/invoke/DirectMethodHandle.allocateInstance')
+f(12,5836,58,0,'java/lang/String.new')
+f(5,5894,341,0,'one/nio/http/HttpSession.startParsingRequestBody')
+f(6,5894,341,0,'[B.new')
+f(5,6235,115,0,'one/nio/http/Request.getHeader')
+f(6,6235,115,0,'one/nio/http/Request.trim')
+f(7,6235,115,0,'java/lang/String.substring')
+f(8,6235,115,0,'java/lang/StringLatin1.newString')
+f(9,6235,53,0,'java/lang/String.new')
+f(9,6288,62,0,'java/util/Arrays.copyOfRange')
+f(10,6288,62,0,'[B.new')
+f(5,6350,260,0,'one/nio/util/Utf8.read')
+f(6,6350,260,0,'one/nio/util/Utf8.read')
+f(7,6350,260,0,'one/nio/util/Utf8.toAsciiString')
+f(8,6350,158,0,'[B.new')
+f(8,6508,102,0,'java/lang/invoke/LambdaForm$MH.0x0000000800d4c800.invokeExact_MT')
+f(9,6508,102,0,'java/lang/invoke/LambdaForm$DMH.0x0000000800d4dc00.newInvokeSpecial')
+f(10,6508,102,0,'java/lang/invoke/DirectMethodHandle.allocateInstance')
+f(11,6508,102,0,'java/lang/String.new')
+render();
+</script></body></html>
