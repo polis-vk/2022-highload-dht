@@ -41,7 +41,7 @@ public class DaoHttpServer extends HttpServer {
     );
 
     // as one-nio does not define it
-    private static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
+    public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
 
     private final PathMapper pathMapper;
 

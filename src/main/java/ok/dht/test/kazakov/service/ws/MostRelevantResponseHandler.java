@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.net.http.HttpTimeoutException;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -16,6 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /* package-private */ class MostRelevantResponseHandler {
 
     private static final Logger LOG = LoggerFactory.getLogger(MostRelevantResponseHandler.class);
+    public static final String UNEXPECTED_ERROR_ON_RESPONSE_HANDLING_MESSAGE = "Unexpected error on response handling";
 
     private final AtomicInteger successfulResponses;
     private final AtomicInteger totalResponses;
@@ -35,15 +37,7 @@ import java.util.concurrent.atomic.AtomicReference;
     public void handleResponse(@Nonnull final HttpSession session,
                                @Nullable final ResponseHolder currentResponseHolder,
                                @Nullable final Throwable throwable) {
-        if (throwable != null) {
-            LOG.error("Unexpected error on response handling", throwable);
-        }
-        LOG.debug(
-                "Handling response with currentResponseHolder={}, successfulResponses={}, totalResponses={}",
-                currentResponseHolder,
-                successfulResponses,
-                totalResponses
-        );
+        logResponse(currentResponseHolder, throwable);
 
         if (isResponseSuccessful(currentResponseHolder)) {
             ResponseHolder bestResponse = responseHolder.get();
@@ -74,6 +68,29 @@ import java.util.concurrent.atomic.AtomicReference;
         if (currentTotalResponses == totalRequests && successfulResponses.get() < needAcknowledgements) {
             respondToClient(session, null);
         }
+    }
+
+    private void logResponse(final ResponseHolder currentResponseHolder,
+                             final Throwable throwable) {
+        if (throwable != null) {
+            if (throwable.getCause() instanceof HttpTimeoutException) {
+                LOG.debug(UNEXPECTED_ERROR_ON_RESPONSE_HANDLING_MESSAGE, throwable);
+                LOG.warn("Unexpected request timeout");
+            } else {
+                LOG.error(UNEXPECTED_ERROR_ON_RESPONSE_HANDLING_MESSAGE, throwable);
+            }
+        }
+
+        LOG.debug(
+                "Handling response with currentResponseHolder={}, successfulResponses={}, totalResponses={}",
+                currentResponseHolder,
+                successfulResponses,
+                totalResponses
+        );
+    }
+
+    public boolean isRespondedToClient() {
+        return successfulResponses.get() == needAcknowledgements || totalResponses.get() == totalRequests;
     }
 
     private static boolean isResponseSuccessful(@Nullable final ResponseHolder responseHolder) {

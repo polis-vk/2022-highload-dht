@@ -80,6 +80,14 @@ public class DaoWebService {
             ack = validator.getParsedInt1();
         }
 
+        handleParsedRequest(request, session, id, from, ack);
+    }
+
+    private void handleParsedRequest(@Nonnull final Request request,
+                                     @Nonnull final HttpSession session,
+                                     @Nonnull final String id,
+                                     final int from,
+                                     final int ack) {
         Shard shard = shardDeterminer.determineShard(id);
         boolean shouldDoSelfRequest = false;
         final MostRelevantResponseHandler responseHandler = new MostRelevantResponseHandler(ack, from);
@@ -94,6 +102,10 @@ public class DaoWebService {
             }
 
             shard = shardDeterminer.getNextShardToReplicate(shard);
+
+            if (request.getMethod() == Request.METHOD_GET && responseHandler.isRespondedToClient()) {
+                return;
+            }
         }
 
         if (shouldDoSelfRequest) {

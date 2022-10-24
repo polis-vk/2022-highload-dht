@@ -22,6 +22,7 @@ public class InternalHttpClient {
     private static final Logger LOG = LoggerFactory.getLogger(InternalHttpClient.class);
 
     private static final Duration INTERNAL_API_RESPONSE_TIMEOUT = Duration.ofSeconds(2);
+    public static final int TOO_MANY_REQUESTS_CODE = 429;
 
     private final HttpClient client;
     private final Executor requestExecutor;
@@ -118,6 +119,7 @@ public class InternalHttpClient {
             case HttpURLConnection.HTTP_UNAVAILABLE -> Response.SERVICE_UNAVAILABLE;
             case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> Response.GATEWAY_TIMEOUT;
             case HttpURLConnection.HTTP_VERSION -> Response.HTTP_VERSION_NOT_SUPPORTED;
+            case TOO_MANY_REQUESTS_CODE -> DaoHttpServer.TOO_MANY_REQUESTS;
             default -> throw new IllegalArgumentException("Unsupported http code " + statusCode);
         };
     }
