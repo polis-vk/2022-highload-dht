@@ -59,6 +59,17 @@ public class HighLoadService implements Service {
             }
 
             @Override
+            public void handleRequest(Request request, HttpSession session) throws IOException {
+                if (request.getMethod() != Request.METHOD_GET
+                        && request.getMethod() != Request.METHOD_DELETE
+                        && request.getMethod() != Request.METHOD_PUT) {
+                    session.sendResponse(emptyResponse(Response.METHOD_NOT_ALLOWED));
+                } else {
+                    super.handleRequest(request, session);
+                }
+            }
+
+            @Override
             public synchronized void stop() {
                 for (SelectorThread selectorThread : selectors) {
                     for (Session session : selectorThread.selector) {
