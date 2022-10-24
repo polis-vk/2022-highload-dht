@@ -90,7 +90,12 @@ public class ServiceImpl implements Service {
     }
 
     @Path("/v0/entity")
-    public Response handleEntity(final Request request, @Param(value = "id", required = true) final String id) {
+    public Response handleEntity(
+            final Request request,
+            @Param(value = "id", required = true) final String id,
+            @Param(value = "from") final String from,
+            @Param(value = "ack") final String ack
+    ) {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, "Id is empty".getBytes(StandardCharsets.UTF_8));
         }
@@ -164,7 +169,7 @@ public class ServiceImpl implements Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
