@@ -21,19 +21,24 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 public class Service implements ok.dht.Service {
     private static final Logger LOG = LoggerFactory.getLogger(Service.class);
     private static final String PATH = "/v0/entity";
-    private static final Set<Integer> ALLOWED_METHODS = Set.of(
-        Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
-    );
+    private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
+    private static final int THREAD_POOL_QUEUE_CAPACITY = 1024 * 1024;
 
     private final ServiceConfig config;
     private DB levelDb;
     private HttpServer server;
+    private ExecutorService executorService;
 
     public Service(ServiceConfig config) {
         this.config = config;
@@ -43,13 +48,26 @@ public class Service implements ok.dht.Service {
     public CompletableFuture<?> start() throws IOException {
         levelDb = new DbImpl(new Options(), config.workingDir().toFile());
         LOG.info("Started DB in directory {}", config.workingDir());
+
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
-            public void handleDefault(Request request, HttpSession session) throws IOException {
-                if (PATH.equals(request.getPath()) && !ALLOWED_METHODS.contains(request.getMethod())) {
-                    session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-                } else {
+            public void handleRequest(Request request, HttpSession session) throws IOException {
+                if (!PATH.equals(request.getPath())) {
                     session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
+                }
+
+                String idParameter = request.getParameter("id=");
+                if (idParameter == null || idParameter.isEmpty()) {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
+                }
+
+                switch (request.getMethod()) {
+                    case Request.METHOD_GET -> execute(session, () -> getEntity(idParameter));
+                    case Request.METHOD_PUT -> execute(session, () -> upsertEntity(idParameter, request));
+                    case Request.METHOD_DELETE -> execute(session, () -> deleteEntity(idParameter));
+                    default -> execute(session, () -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
                 }
             }
 
@@ -63,10 +81,39 @@ public class Service implements ok.dht.Service {
                 super.stop();
             }
         };
+
+        executorService = new ThreadPoolExecutor(
+            AVAILABLE_PROCESSORS, AVAILABLE_PROCESSORS,
+            0L, TimeUnit.MILLISECONDS,
+            new LinkedBlockingQueue<>(THREAD_POOL_QUEUE_CAPACITY)
+        );
         server.addRequestHandlers(this);
         server.start();
-        LOG.info("Service started on {}", config.selfUrl());
+        LOG.info("Service started on {}, executor threads: {}", config.selfUrl(), AVAILABLE_PROCESSORS);
         return CompletableFuture.completedFuture(null);
+    }
+
+    private void execute(HttpSession session, Supplier<Response> supplier) {
+        try {
+            executorService.execute(() -> sendResponse(session, supplier.get()));
+        } catch (RejectedExecutionException e) {
+            LOG.error("Cannot execute task", e);
+            sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        }
+    }
+
+    private void sendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e1) {
+            LOG.error("I/O error while sending response", e1);
+            try {
+                session.close();
+            } catch (Exception e2) {
+                e2.addSuppressed(e1);
+                LOG.error("Exception while closing session", e2);
+            }
+        }
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -75,6 +122,7 @@ public class Service implements ok.dht.Service {
         acceptorConfig.port = port;
         acceptorConfig.reusePort = true;
         httpServerConfig.acceptors = new AcceptorConfig[]{acceptorConfig};
+        httpServerConfig.selectors = AVAILABLE_PROCESSORS;
         return httpServerConfig;
     }
 
@@ -82,6 +130,7 @@ public class Service implements ok.dht.Service {
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
         levelDb.close();
+        executorService.shutdown();
         return CompletableFuture.completedFuture(null);
     }
 
@@ -145,7 +194,7 @@ public class Service implements ok.dht.Service {
         );
     }
 
-    @ServiceFactory(stage = 1, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public ok.dht.Service create(ServiceConfig config) {
