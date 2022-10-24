@@ -4,6 +4,7 @@ import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.shashulovskiy.hashing.MD5Hasher;
+import ok.dht.test.shashulovskiy.metainfo.MetadataUtils;
 import ok.dht.test.shashulovskiy.sharding.CircuitBreaker;
 import ok.dht.test.shashulovskiy.sharding.ConsistentHashingShardingManager;
 import ok.dht.test.shashulovskiy.sharding.Shard;
@@ -29,6 +30,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
+import java.util.IllegalFormatException;
 import java.util.concurrent.CompletableFuture;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
@@ -37,6 +40,9 @@ public class ServiceImpl implements Service {
 
     private static final Logger LOG = LoggerFactory.getLogger(ServiceImpl.class);
     private static final int VNODES_COUNT = 5;
+    private static final String INTERNAL_PREFIX = "/internal";
+
+    private static final String NOT_ENOUGH_REPLICAS_RESPONSE = "504 Not Enough Replicas";
 
     private static final Duration REQUEST_TIMEOUT = Duration.of(2, ChronoUnit.SECONDS);
     private CircuitBreaker circuitBreaker;
@@ -49,6 +55,10 @@ public class ServiceImpl implements Service {
 
     private final ShardingManager shardingManager;
 
+    private final int defaultAck;
+    private final int defaultFrom;
+    private final int totalShards;
+
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
         this.shardingManager = new ConsistentHashingShardingManager(
@@ -57,6 +67,9 @@ public class ServiceImpl implements Service {
                 VNODES_COUNT,
                 new MD5Hasher()
         );
+        this.defaultFrom = config.clusterUrls().size();
+        this.defaultAck = defaultFrom / 2 + 1;
+        this.totalShards = defaultFrom;
     }
 
     @Override
@@ -85,91 +98,191 @@ public class ServiceImpl implements Service {
 
     @Path("/v0/entity")
     public Response handle(Request request) {
-        String id = request.getParameter("id=");
-        if (id == null) {
-            return new Response(
-                    Response.BAD_REQUEST,
-                    Utf8.toBytes("No id provided")
-            );
-        } else if (id.isEmpty()) {
-            return new Response(
-                    Response.BAD_REQUEST,
-                    Utf8.toBytes("Empty id")
-            );
-        }
+        try {
+            String id = request.getParameter("id=");
 
-        byte[] idBytes = Utf8.toBytes(id);
+            if (id == null) {
+                return new Response(
+                        Response.BAD_REQUEST,
+                        Utf8.toBytes("No id provided")
+                );
+            } else if (id.isEmpty()) {
+                return new Response(
+                        Response.BAD_REQUEST,
+                        Utf8.toBytes("Empty id")
+                );
+            }
 
-        Shard shard = shardingManager.getShard(idBytes);
+            String ackString = request.getParameter("ack=");
+            String fromString = request.getParameter("from=");
 
-        if (shard == null) {
-            try {
+            int ack;
+            int from;
+
+            if (ackString == null) {
+                ack = defaultAck;
+            } else {
+                try {
+                    ack = Integer.parseInt(ackString);
+                } catch (NumberFormatException e) {
+                    LOG.error("Unable to parse ack", e);
+                    return new Response(Response.BAD_REQUEST, Response.EMPTY);
+                }
+            }
+
+            if (fromString == null) {
+                from = defaultFrom;
+            } else {
+                try {
+                    from = Integer.parseInt(fromString);
+                } catch (NumberFormatException e) {
+                    LOG.error("Unable to parse from", e);
+                    return new Response(Response.BAD_REQUEST, Response.EMPTY);
+                }
+            }
+
+            if (ack <= 0 || from < ack || from > config.clusterUrls().size()) {
+                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
+
+            byte[] idBytes = Utf8.toBytes(id);
+            byte[] body = request.getMethod() == Request.METHOD_PUT
+                    ? MetadataUtils.wrapWithMetadata(request.getBody(), false) : new byte[0];
+
+            // TODO excess Shard class?
+            int firstShard = shardingManager.getShard(idBytes).getNodeId();
+            int acksCount = 0;
+
+            Response[] responses = new Response[from];
+
+            for (int shard = firstShard; shard < firstShard + from; ++shard) {
+                Response response;
+                if (config.selfUrl().equals(config.clusterUrls().get(shard % totalShards))) {
+                    response = handleDbOperation(request, idBytes, body);
+                } else {
+                    response = handleProxyOperation(request, shard % totalShards, body);
+                }
+                responses[shard - firstShard] = response;
+                if (response != null) {
+                    acksCount++;
+                }
+            }
+
+            if (acksCount >= ack) {
                 switch (request.getMethod()) {
                     case Request.METHOD_GET -> {
-                        byte[] result = dao.get(idBytes);
-                        if (result == null) {
+                        int successCount = 0;
+                        long lastTimestamp = 0;
+                        byte[] lastResponse = new byte[0];
+
+                        for (var response : responses) {
+                            if (response.getStatus() == 200) {
+                                successCount++;
+                                long currentResponseTimestamp = MetadataUtils.extractTimestamp(response.getBody());
+
+                                if (currentResponseTimestamp > lastTimestamp) {
+                                    lastTimestamp = currentResponseTimestamp;
+                                    lastResponse = response.getBody();
+                                }
+                            }
+                        }
+
+                        if (successCount == 0 || MetadataUtils.isTombstone(lastResponse)) {
                             return new Response(Response.NOT_FOUND, Response.EMPTY);
                         } else {
-                            return new Response(Response.OK, result);
+                            return new Response(Response.OK, MetadataUtils.extractData(lastResponse));
                         }
                     }
                     case Request.METHOD_PUT -> {
-                        dao.put(idBytes, request.getBody());
-
                         return new Response(Response.CREATED, Response.EMPTY);
                     }
                     case Request.METHOD_DELETE -> {
-                        dao.delete(idBytes);
-
                         return new Response(Response.ACCEPTED, Response.EMPTY);
                     }
                     default -> {
                         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
                     }
                 }
-            } catch (DBException exception) {
-                LOG.error("Internal dao exception occurred on " + request.getPath(), exception);
-                return new Response(
-                        Response.INTERNAL_ERROR,
-                        Response.EMPTY
-                );
+            } else {
+                return new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY);
             }
-        } else {
-            try {
-                if (circuitBreaker.isActive(shard.getNodeId())) {
-                    HttpResponse<byte[]> response = client.send(
-                            HttpRequest
-                                    .newBuilder()
-                                    .method(request.getMethodName(),
-                                            HttpRequest.BodyPublishers.ofByteArray(request.getBody() == null
-                                                    ? Response.EMPTY : request.getBody()))
-                                    .uri(URI.create(shard.getShardUrl() + request.getURI()))
-                                    .timeout(REQUEST_TIMEOUT).build(),
-                            HttpResponse.BodyHandlers.ofByteArray()
-                    );
-
-                    circuitBreaker.successOn(shard.getNodeId());
-                    return new Response(Integer.toString(response.statusCode()), response.body());
-                } else {
-                    return new Response(
-                            Response.SERVICE_UNAVAILABLE,
-                            Response.EMPTY
-                    );
-                }
-            } catch (IOException e) {
-                return new Response(
-                        Response.SERVICE_UNAVAILABLE,
-                        Response.EMPTY
-                );
-            } catch (InterruptedException e) {
-                circuitBreaker.failOn(shard.getNodeId());
-                return new Response(
-                        Response.SERVICE_UNAVAILABLE,
-                        Response.EMPTY
-                );
-            }
+        } catch (Exception e) {
+            System.err.println(e.getMessage());
+            System.err.println(Arrays.toString(e.getStackTrace()));
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
+
+    private Response handleProxyOperation(Request request, int shardId, byte[] body) {
+        try {
+            if (circuitBreaker.isActive(shardId)) {
+                HttpResponse<byte[]> response = client.send(
+                        HttpRequest
+                                .newBuilder()
+                                .method(request.getMethodName(),
+                                        HttpRequest.BodyPublishers.ofByteArray(request.getBody() == null
+                                                ? Response.EMPTY : body))
+                                .uri(URI.create(config.clusterUrls().get(shardId) + INTERNAL_PREFIX + request.getURI()))
+                                .timeout(REQUEST_TIMEOUT).build(),
+                        HttpResponse.BodyHandlers.ofByteArray()
+                );
+
+                circuitBreaker.successOn(shardId);
+                return new Response(Integer.toString(response.statusCode()), response.body());
+            } else {
+                return null;
+            }
+        } catch (IOException | InterruptedException e) {
+            circuitBreaker.failOn(shardId);
+            return null;
+        }
+    }
+
+    private Response handleDbOperation(Request request, byte[] idBytes, byte[] body) {
+        try {
+            switch (request.getMethod()) {
+                case Request.METHOD_GET -> {
+                    byte[] result = dao.get(idBytes);
+                    if (result == null) {
+                        return new Response(Response.NOT_FOUND, Response.EMPTY);
+                    } else {
+                        return new Response(Response.OK, result);
+                    }
+                }
+                case Request.METHOD_PUT -> {
+                    dao.put(idBytes, body);
+
+                    return new Response(Response.CREATED, Response.EMPTY);
+                }
+                case Request.METHOD_DELETE -> {
+                    dao.put(idBytes, MetadataUtils.wrapWithMetadata(new byte[0], true));
+
+                    return new Response(Response.ACCEPTED, Response.EMPTY);
+                }
+                default -> {
+                    return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                }
+            }
+        } catch (DBException exception) {
+            LOG.error("Internal dao exception occurred on " + request.getPath(), exception);
+            return null;
+        }
+    }
+
+    @Path(INTERNAL_PREFIX + "/v0/entity")
+    public Response handleInternal(Request request) {
+        // No additional validations on internal api
+        String id = request.getParameter("id=");
+
+        Response response = handleDbOperation(request, Utf8.toBytes(id), request.getBody());
+
+        if (response == null) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        } else {
+            return response;
+        }
+    }
+
 
     @Path("/stats/handledKeys")
     @RequestMethod(Request.METHOD_GET)
@@ -186,7 +299,7 @@ public class ServiceImpl implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 3, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
+    @ServiceFactory(stage = 4, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

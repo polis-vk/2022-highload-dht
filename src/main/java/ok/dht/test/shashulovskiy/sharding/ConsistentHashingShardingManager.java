@@ -37,11 +37,10 @@ public class ConsistentHashingShardingManager implements ShardingManager {
 
         var shard = hashToShard.get(virtualShards[shardInd]);
         if (thisShardUrl.equals(shard.getShardUrl())) {
-            handledKeys++;
-            return null;
-        } else {
-            return shard;
+            ++handledKeys;
         }
+
+        return shard;
     }
 
     @Override
