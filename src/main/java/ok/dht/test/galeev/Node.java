@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public abstract class Node {
     private static final Logger LOGGER = LoggerFactory.getLogger(Node.class);
-    private static final Duration CLIENT_TIMEOUT = Duration.of(30000, ChronoUnit.MILLIS);
+    private static final Duration CLIENT_TIMEOUT = Duration.of(300, ChronoUnit.MILLIS);
     public static final int FATAL_ERROR_AMOUNT = 7;
     public final AtomicInteger errorCount;
     public final String nodeAddress;

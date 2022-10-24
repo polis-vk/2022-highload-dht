@@ -77,6 +77,7 @@ public class DemoService implements Service {
         server.addRequestHandlers(LOCAL_PATH, new int[]{Request.METHOD_GET}, this::localHandleGet);
         server.addRequestHandlers(LOCAL_PATH, new int[]{Request.METHOD_PUT}, this::localHandlePutDelete);
         server.start();
+        LOGGER.debug(this.getClass().getName() + " Has started");
         return CompletableFuture.completedFuture(null);
     }
 
@@ -123,13 +124,8 @@ public class DemoService implements Service {
             });
         }
 
-        try {
-            continueBarrier.await();
-        } catch (InterruptedException e) {
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-            LOGGER.error(String.format("%nInterrupted while awaiting GET responses key: %s%n", key), e);
-            Thread.currentThread().interrupt();
-        }
+        waitContinueBarrier(continueBarrier, session,
+                String.format("%nInterrupted while awaiting GET responses key: %s%n", key));
 
         Entry<Timestamp, byte[]> entry = newestEntry.get();
         if (successfulResponses.get() < ack) {
@@ -184,18 +180,23 @@ public class DemoService implements Service {
             });
         }
 
-        try {
-            continueBarrier.await();
-        } catch (InterruptedException e) {
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-            LOGGER.error(String.format("%nInterrupted while awaiting PUT responses key: %s%n", key), e);
-            Thread.currentThread().interrupt();
-        }
+        waitContinueBarrier(continueBarrier, session,
+                String.format("%nInterrupted while awaiting PUT responses key: %s%n", key));
 
         if (successfulResponses.get() >= ack) {
             session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
         } else {
             session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+        }
+    }
+
+    private static void waitContinueBarrier(CountDownLatch continueBarrier, HttpSession session, String msg) throws IOException {
+        try {
+            continueBarrier.await();
+        } catch (InterruptedException e) {
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            LOGGER.error(msg, e);
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -233,13 +234,8 @@ public class DemoService implements Service {
             });
         }
 
-        try {
-            continueBarrier.await();
-        } catch (InterruptedException e) {
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-            LOGGER.error(String.format("%nInterrupted while awaiting DELETE responses key: %s%n", key), e);
-            Thread.currentThread().interrupt();
-        }
+        waitContinueBarrier(continueBarrier, session,
+                String.format("%nInterrupted while awaiting DELETE responses key: %s%n", key));
 
         if (successfulResponses.get() >= ack) {
             session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
