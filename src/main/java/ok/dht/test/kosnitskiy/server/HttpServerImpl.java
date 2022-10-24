@@ -25,6 +25,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.temporal.Temporal;
+import java.time.temporal.TemporalUnit;
 import java.util.List;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -80,6 +83,7 @@ public class HttpServerImpl extends HttpServer {
                                             .BodyPublishers
                                             .ofByteArray(request.getBody() == null ? Response.EMPTY : request.getBody())
                             )
+                            .timeout(Duration.ofMillis(100))
                             .build();
                     HttpResponse<byte[]> response = httpClient.send(proxyRequest,
                             HttpResponse.BodyHandlers.ofByteArray());
