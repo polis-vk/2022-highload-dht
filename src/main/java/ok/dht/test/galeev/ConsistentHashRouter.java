@@ -2,6 +2,9 @@ package ok.dht.test.galeev;
 
 import one.nio.util.Hash;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -9,8 +12,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ConsistentHashRouter {
     private static final int AMOUNT_OF_V_NODES = 7;
     private final SortedMap<Integer, VNode> ring = new TreeMap<>();
+    private AtomicInteger amountOfPhysicalNodes = new AtomicInteger(0);
 
     public void addPhysicalNode(Node physicalName) {
+        amountOfPhysicalNodes.incrementAndGet();
         int amount = getAmountOfVNodes(physicalName);
         int collisionCounter = 0;
         for (int i = 1; i <= AMOUNT_OF_V_NODES; i++) {
@@ -33,7 +38,11 @@ public class ConsistentHashRouter {
         return amount;
     }
 
-    public Node getNode(String key) {
+    public int getAmountOfPhysicalNodes() {
+        return amountOfPhysicalNodes.get();
+    }
+
+    public List<Node> getNode(String key, int from) {
         if (key == null) {
             return null;
         }
@@ -41,9 +50,34 @@ public class ConsistentHashRouter {
             return null;
         }
         int hash = Hash.murmur3(key);
+
         SortedMap<Integer,VNode> tailMap = ring.tailMap(hash);
-        int nodeHashVal = tailMap.isEmpty() ? ring.firstKey() : tailMap.firstKey();
-        return ring.get(nodeHashVal).getPhysicalNode();
+        int firstNodeHashVal = tailMap.isEmpty() ? ring.firstKey() : tailMap.firstKey();
+
+        List<Node> nodeList = new ArrayList<>(from);
+        for (VNode vNode : tailMap.values()) {
+            // Add only unique Nodes (we have VNodes)
+            if (!nodeList.contains(vNode.getPhysicalNode())) {
+                nodeList.add(vNode.getPhysicalNode());
+            }
+            if (nodeList.size() == from) {
+                return nodeList;
+            }
+        }
+        // If in tailMap contains not enough of Nodes -> we start from beginning
+        for (Map.Entry<Integer, VNode> vNodeEntry : ring.entrySet()) {
+            if (!nodeList.contains(vNodeEntry.getValue().getPhysicalNode())) {
+                nodeList.add(vNodeEntry.getValue().getPhysicalNode());
+            }
+            if (nodeList.size() == from) {
+                return nodeList;
+            }
+            if (vNodeEntry.getKey() == firstNodeHashVal) {
+                // We have checked all Nodes
+                break;
+            }
+        }
+        throw new IndexOutOfBoundsException();
     }
 
     public static class VNode {
@@ -65,18 +99,6 @@ public class ConsistentHashRouter {
 
         public Node getPhysicalNode() {
             return physicalNode;
-        }
-    }
-
-    public static class Node {
-        public final AtomicInteger errorCount;
-        public final String nodeAddress;
-        public volatile boolean isAlive;
-
-        public Node(String nodeAddress) {
-            this.isAlive = true;
-            this.nodeAddress = nodeAddress;
-            this.errorCount = new AtomicInteger(0);
         }
     }
 }
