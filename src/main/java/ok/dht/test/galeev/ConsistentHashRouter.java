@@ -73,10 +73,6 @@ public class ConsistentHashRouter {
             if (nodeList.size() == from) {
                 return nodeList;
             }
-            if (vnodeEntry.getKey() == firstNodeHashVal) {
-                // We have checked all Nodes
-                break;
-            }
         }
         throw new IndexOutOfBoundsException();
     }
