@@ -49,9 +49,9 @@ class TwoNodeTest extends TestBase {
     void unreachableRF(List<ServiceInfo> nodes) throws Exception {
         nodes.get(0).stop();
 
-        assertEquals(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, nodes.get(1).get(randomId(), 3, 2).statusCode());
-        assertEquals(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, nodes.get(1).upsert(randomId(), randomValue(), 3, 2).statusCode());
-        assertEquals(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, nodes.get(1).delete(randomId(), 3, 2).statusCode());
+        assertEquals(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, nodes.get(1).get(randomId(), 2, 2).statusCode());
+        assertEquals(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, nodes.get(1).upsert(randomId(), randomValue(), 2, 2).statusCode());
+        assertEquals(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, nodes.get(1).delete(randomId(), 2, 2).statusCode());
     }
 
     @ServiceTest(stage = 4, clusterSize = 2)
@@ -79,7 +79,7 @@ class TwoNodeTest extends TestBase {
 
         // Insert value2
         byte[] value2 = randomValue();
-        assertEquals(HttpURLConnection.HTTP_CREATED, nodes.get(1).upsert(key, value1, 1, 2).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, nodes.get(1).upsert(key, value2, 1, 2).statusCode());
 
         // Check
         {
@@ -119,7 +119,7 @@ class TwoNodeTest extends TestBase {
 
         // Insert value2
         byte[] value2 = randomValue();
-        assertEquals(HttpURLConnection.HTTP_CREATED, nodes.get(1).upsert(key, value1, 2, 2).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, nodes.get(1).upsert(key, value2, 2, 2).statusCode());
 
         // Check
         {
@@ -176,7 +176,7 @@ class TwoNodeTest extends TestBase {
 
             // Check
             {
-                HttpResponse<byte[]> response = nodes.get(i).get(key, 1, 2);
+                HttpResponse<byte[]> response = nodes.get(i).get(key, 2, 2);
                 assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
                 assertArrayEquals(value, response.body());
             }
@@ -271,7 +271,9 @@ class TwoNodeTest extends TestBase {
 
             // Insert value2
             byte[] value2 = randomValue();
-            assertEquals(HttpURLConnection.HTTP_CREATED, nodes.get(i).upsert(key, value1, 1, 2).statusCode());
+            // nodes.get(i) -> nodes.get((i + 1) % nodes.size()) because we stopped i node
+            // and if we try to connect this node as main node, but it already stopped
+            assertEquals(HttpURLConnection.HTTP_CREATED, nodes.get((i + 1) % nodes.size()).upsert(key, value2, 1, 2).statusCode());
 
             // Start node
             nodes.get(i).start();
@@ -303,7 +305,9 @@ class TwoNodeTest extends TestBase {
 
             // Check
             {
-                HttpResponse<byte[]> response = nodes.get(i).get(key, 1, 2);
+                // nodes.get(i) -> nodes.get((i + 1) % nodes.size()) because we stopped i node
+                // and if we try to connect this node as main node, but it already stopped
+                HttpResponse<byte[]> response = nodes.get((i + 1) % nodes.size()).get(key, 1, 2);
                 assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
                 assertArrayEquals(value, response.body());
             }
