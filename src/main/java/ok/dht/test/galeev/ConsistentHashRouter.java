@@ -3,6 +3,7 @@ package ok.dht.test.galeev;
 import one.nio.util.Hash;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
@@ -47,7 +48,7 @@ public class ConsistentHashRouter {
             return null;
         }
         if (ring.isEmpty()) {
-            return null;
+            return Collections.emptyList();
         }
         int hash = Hash.murmur3(key);
 

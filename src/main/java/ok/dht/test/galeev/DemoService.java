@@ -32,7 +32,7 @@ public class DemoService implements Service {
     public static final String DEFAULT_PATH = "/v0/entity";
     public static final String LOCAL_PATH = "/v0/local/entity";
     public static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
-    private final String loggerPrefix;
+    public static final String FROM_PARAMETR = "from=";
     private final ServiceConfig config;
     private final SkipOldExecutorFactory skipOldThreadExecutorFactory = new SkipOldExecutorFactory();
     private ExecutorService proxyExecutor;
@@ -43,7 +43,6 @@ public class DemoService implements Service {
 
     public DemoService(ServiceConfig config) {
         this.config = config;
-        loggerPrefix = config.selfUrl() + ": ";
     }
 
     @Override
@@ -70,31 +69,11 @@ public class DemoService implements Service {
         }
 
         server = new CustomHttpServer(createConfigFromPort(config.selfPort()), workersExecutor);
-        server.addRequestHandlers(
-                DEFAULT_PATH,
-                new int[]{Request.METHOD_GET},
-                this::handleGet
-        );
-        server.addRequestHandlers(
-                DEFAULT_PATH,
-                new int[]{Request.METHOD_PUT},
-                this::handlePut
-        );
-        server.addRequestHandlers(
-                DEFAULT_PATH,
-                new int[]{Request.METHOD_DELETE},
-                this::handleDelete
-        );
-        server.addRequestHandlers(
-                LOCAL_PATH,
-                new int[]{Request.METHOD_GET},
-                this::localHandleGet
-        );
-        server.addRequestHandlers(
-                LOCAL_PATH,
-                new int[]{Request.METHOD_PUT},
-                this::localHandlePutDelete
-        );
+        server.addRequestHandlers(DEFAULT_PATH, new int[]{Request.METHOD_GET}, this::handleGet);
+        server.addRequestHandlers(DEFAULT_PATH, new int[]{Request.METHOD_PUT}, this::handlePut);
+        server.addRequestHandlers(DEFAULT_PATH, new int[]{Request.METHOD_DELETE}, this::handleDelete);
+        server.addRequestHandlers(LOCAL_PATH, new int[]{Request.METHOD_GET}, this::localHandleGet);
+        server.addRequestHandlers(LOCAL_PATH, new int[]{Request.METHOD_PUT}, this::localHandlePutDelete);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -109,24 +88,12 @@ public class DemoService implements Service {
     }
 
     public void handleGet(Request request, HttpSession session) throws IOException {
-        String key = request.getParameter("id=");
-        String ackString = request.getParameter("ack=");
-        String fromString = request.getParameter("from=");
+        final String key = request.getParameter("id=");
+        final String ackString = request.getParameter("ack=");
+        final String fromString = request.getParameter(FROM_PARAMETR);
 
-        final int from;
-        final int ack;
-
-        if (fromString == null) {
-            from = consistentHashRouter.getAmountOfPhysicalNodes();
-        } else {
-            from = Integer.parseInt(fromString);
-        }
-
-        if (ackString == null) {
-            ack = from / 2 + 1;
-        } else {
-            ack = Integer.parseInt(ackString);
-        }
+        final int from = (fromString == null) ? consistentHashRouter.getAmountOfPhysicalNodes() : Integer.parseInt(fromString);
+        final int ack = (ackString == null) ? from / 2 + 1 : Integer.parseInt(ackString);
 
         if (ack > from || ack <= 0) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
@@ -140,15 +107,13 @@ public class DemoService implements Service {
         List<Node> routerNode = consistentHashRouter.getNode(key, from);
         for (Node node : routerNode) {
             node.get(key).thenAccept((entry) -> {
-                Node node1 = node;
-                LOGGER.debug(String.format("Finished GET"));
-                if (entry != null) {
-                    updateNewestEntry(newestEntry, entry);
-                    if (successfulResponses.incrementAndGet() >= ack) {
+                if (entry == null) {
+                    if (unsuccessfulResponses.incrementAndGet() >= (from - ack + 1)) {
                         continueBarrier.countDown();
                     }
                 } else {
-                    if (unsuccessfulResponses.incrementAndGet() >= (from - ack + 1)) {
+                    updateNewestEntry(newestEntry, entry);
+                    if (successfulResponses.incrementAndGet() >= ack) {
                         continueBarrier.countDown();
                     }
                 }
@@ -182,26 +147,14 @@ public class DemoService implements Service {
     }
 
     public void handlePut(Request request, HttpSession session) throws IOException {
-        Timestamp currentTime = new Timestamp(System.currentTimeMillis());
+        final Timestamp currentTime = new Timestamp(System.currentTimeMillis());
 
-        String key = request.getParameter("id=");
-        String ackString = request.getParameter("ack=");
-        String fromString = request.getParameter("from=");
+        final String key = request.getParameter("id=");
+        final String ackString = request.getParameter("ack=");
+        final String fromString = request.getParameter(FROM_PARAMETR);
 
-        final int from;
-        final int ack;
-
-        if (fromString == null) {
-            from = consistentHashRouter.getAmountOfPhysicalNodes();
-        } else {
-            from = Integer.parseInt(fromString);
-        }
-
-        if (ackString == null) {
-            ack = from / 2 + 1;
-        } else {
-            ack = Integer.parseInt(ackString);
-        }
+        final int from = (fromString == null) ? consistentHashRouter.getAmountOfPhysicalNodes() : Integer.parseInt(fromString);
+        final int ack = (ackString == null) ? from / 2 + 1 : Integer.parseInt(ackString);
 
         if (ack > from || ack <= 0) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
@@ -241,27 +194,14 @@ public class DemoService implements Service {
     }
 
     public void handleDelete(Request request, HttpSession session) throws IOException {
-        Timestamp currentTime = new Timestamp(System.currentTimeMillis());
+        final Timestamp currentTime = new Timestamp(System.currentTimeMillis());
 
-        String key = request.getParameter("id=");
-        String ackString = request.getParameter("ack=");
-        String fromString = request.getParameter("from=");
+        final String key = request.getParameter("id=");
+        final String ackString = request.getParameter("ack=");
+        final String fromString = request.getParameter(FROM_PARAMETR);
 
-
-        final int from;
-        final int ack;
-
-        if (fromString == null) {
-            from = consistentHashRouter.getAmountOfPhysicalNodes();
-        } else {
-            from = Integer.parseInt(fromString);
-        }
-
-        if (ackString == null) {
-            ack = from / 2 + 1;
-        } else {
-            ack = Integer.parseInt(ackString);
-        }
+        final int from = (fromString == null) ? consistentHashRouter.getAmountOfPhysicalNodes() : Integer.parseInt(fromString);
+        final int ack = (ackString == null) ? from / 2 + 1 : Integer.parseInt(ackString);
 
         if (ack > from || ack <= 0) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
@@ -274,7 +214,6 @@ public class DemoService implements Service {
         List<Node> routerNode = consistentHashRouter.getNode(key, from);
         for (Node node : routerNode) {
             node.delete(key, currentTime).thenAccept((isSuccessful) -> {
-                Node node1 = node;
                 if (isSuccessful) {
                     if (successfulResponses.incrementAndGet() >= ack) {
                         continueBarrier.countDown();

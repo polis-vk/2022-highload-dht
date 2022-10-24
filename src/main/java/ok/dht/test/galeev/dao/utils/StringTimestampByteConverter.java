@@ -22,11 +22,11 @@ public class StringTimestampByteConverter implements MSConverter<String, Entry<T
     }
 
     @Override
-    public Entry<Timestamp, byte[]> getValFromMS(MemorySegment ms) {
-        if (ms == null) {
+    public Entry<Timestamp, byte[]> getValFromMS(MemorySegment inMs) {
+        if (inMs == null) {
             return null;
         }
-        ms = ms.asReadOnly();
+        MemorySegment ms = inMs.asReadOnly();
 
         Timestamp timestamp = new Timestamp(MemoryAccess.getLongAtOffset(ms, 0, BIG_ENDIAN));
         int bodyLength = MemoryAccess.getIntAtOffset(ms, Long.BYTES,  BIG_ENDIAN);

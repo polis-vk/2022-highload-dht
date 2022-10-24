@@ -70,7 +70,6 @@ public abstract class Node {
 
         @Override
         public CompletableFuture<Entry<Timestamp, byte[]>> get(String key) {
-            LOGGER.debug(String.format("Local GET"));
             Entry<Timestamp, byte[]> dao = getDao(key);
             return CompletableFuture.completedFuture(dao);
         }
@@ -86,7 +85,6 @@ public abstract class Node {
 
         @Override
         public CompletableFuture<Boolean> put(String key, Timestamp timestamp, byte[] body) {
-            LOGGER.debug(String.format("Local PUT"));
             putDao(key, timestamp, body);
             return CompletableFuture.completedFuture(true);
         }
@@ -101,8 +99,6 @@ public abstract class Node {
 
         @Override
         public CompletableFuture<Boolean> delete(String key, Timestamp timestamp) {
-            LOGGER.debug(String.format("Local DELETE"));
-
             deleteDao(key, timestamp);
             return CompletableFuture.completedFuture(true);
         }
@@ -171,8 +167,6 @@ public abstract class Node {
 
         @Override
         public CompletableFuture<Boolean> put(String key, Timestamp timestamp, byte[] body) {
-            LOGGER.debug(String.format("Cluster PUT"));
-
             if (!isAlive) {
                 return CompletableFuture.completedFuture(Boolean.FALSE);
             }
@@ -202,8 +196,6 @@ public abstract class Node {
 
         @Override
         public CompletableFuture<Boolean> delete(String key, Timestamp timestamp) {
-            LOGGER.debug(String.format("Cluster DELETE"));
-
             if (!isAlive) {
                 return CompletableFuture.completedFuture(Boolean.FALSE);
             }
@@ -233,7 +225,6 @@ public abstract class Node {
 
         @Override
         public void stop() throws IOException {
-
         }
 
         public static Entry<Timestamp, byte[]> getEntryFromByteArray(byte[] body) {
