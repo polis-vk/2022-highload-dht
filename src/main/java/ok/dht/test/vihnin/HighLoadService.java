@@ -58,11 +58,15 @@ public class HighLoadService implements Service {
                 session.sendResponse(emptyResponse(Response.BAD_REQUEST));
             }
 
+            private boolean isMethodAllowed(int method) {
+                return method == Request.METHOD_GET
+                        || method == Request.METHOD_DELETE
+                        || method == Request.METHOD_PUT;
+            }
+
             @Override
             public void handleRequest(Request request, HttpSession session) throws IOException {
-                if (request.getMethod() != Request.METHOD_GET
-                        && request.getMethod() != Request.METHOD_DELETE
-                        && request.getMethod() != Request.METHOD_PUT) {
+                if (!isMethodAllowed(request.getMethod())) {
                     session.sendResponse(emptyResponse(Response.METHOD_NOT_ALLOWED));
                 } else {
                     super.handleRequest(request, session);
