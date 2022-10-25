@@ -7,7 +7,6 @@ import ok.dht.test.shashulovskiy.hashing.MD5Hasher;
 import ok.dht.test.shashulovskiy.metainfo.MetadataUtils;
 import ok.dht.test.shashulovskiy.sharding.CircuitBreaker;
 import ok.dht.test.shashulovskiy.sharding.ConsistentHashingShardingManager;
-import ok.dht.test.shashulovskiy.sharding.Shard;
 import ok.dht.test.shashulovskiy.sharding.ShardingManager;
 import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
@@ -25,10 +24,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
-import java.util.Arrays;
-import java.util.IllegalFormatException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
@@ -150,7 +146,6 @@ public class ServiceImpl implements Service {
             byte[] body = request.getMethod() == Request.METHOD_PUT
                     ? MetadataUtils.wrapWithMetadata(request.getBody(), false) : new byte[0];
 
-            // TODO excess Shard class?
             int firstShard = shardingManager.getShard(idBytes).getNodeId();
             int acksCount = 0;
 
@@ -182,15 +177,8 @@ public class ServiceImpl implements Service {
             if (!responded) {
                 session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
             }
-            // TODO!!!
-        } catch (Exception e) {
-            System.err.println(e.getMessage());
-            System.err.println(Arrays.toString(e.getStackTrace()));
-            try {
-                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-            } catch (IOException ex) {
-                LOG.error("TODO", e);
-            }
+        } catch (IOException e) {
+            LOG.error("IOException occurred when sending response", e);
         }
     }
 
@@ -294,7 +282,6 @@ public class ServiceImpl implements Service {
             return response;
         }
     }
-
 
     @Path("/stats/handledKeys")
     @RequestMethod(Request.METHOD_GET)

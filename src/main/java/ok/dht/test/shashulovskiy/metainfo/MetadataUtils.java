@@ -1,9 +1,6 @@
 package ok.dht.test.shashulovskiy.metainfo;
 
-import com.google.common.primitives.Bytes;
 import com.google.common.primitives.Longs;
-import one.nio.util.JavaInternals;
-import one.nio.util.Utf8;
 
 public final class MetadataUtils {
 
