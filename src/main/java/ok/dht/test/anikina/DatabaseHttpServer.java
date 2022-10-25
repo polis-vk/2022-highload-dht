@@ -1,6 +1,9 @@
 package ok.dht.test.anikina;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.anikina.replication.ReplicationParameters;
+import ok.dht.test.anikina.replication.SynchronizationHandler;
+import ok.dht.test.anikina.utils.Utils;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -14,11 +17,9 @@ import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpConnectTimeoutException;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -31,6 +32,13 @@ public class DatabaseHttpServer extends HttpServer {
     private static final int THREAD_MAX = 3;
     private static final int MAX_QUEUE_SIZE = 128;
     private static final int TERMINATION_TIMEOUT_MS = 800;
+    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
+
+    private static final Set<Integer> SUPPORTED_METHODS = Set.of(
+            Request.METHOD_GET,
+            Request.METHOD_PUT,
+            Request.METHOD_DELETE
+    );
 
     private final ExecutorService executorService =
             new ThreadPoolExecutor(
@@ -42,16 +50,18 @@ public class DatabaseHttpServer extends HttpServer {
                     new ThreadPoolExecutor.AbortPolicy()
             );
     private final String selfUrl;
-    private final HttpClient client;
     private final ConsistentHashingImpl consistentHashing;
     private final DatabaseRequestHandler requestHandler;
+    private final int numberOfNodes;
+    private final SynchronizationHandler synchronizationHandler;
 
     public DatabaseHttpServer(ServiceConfig config) throws IOException {
         super(createHttpServerConfig(config.selfPort()));
-        this.client = HttpClient.newHttpClient();
         this.selfUrl = config.selfUrl();
         this.consistentHashing = new ConsistentHashingImpl(config.clusterUrls());
         this.requestHandler = new DatabaseRequestHandler(config.workingDir());
+        this.numberOfNodes = config.clusterUrls().size();
+        this.synchronizationHandler = new SynchronizationHandler();
     }
 
     private static HttpServerConfig createHttpServerConfig(int port) {
@@ -68,25 +78,90 @@ public class DatabaseHttpServer extends HttpServer {
         executorService.execute(() -> {
             try {
                 String key = request.getParameter("id=");
-                if (!request.getPath().equals("/v0/entity") || key == null || key.isEmpty()) {
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+
+                if (request.getPath().equals("/synchronization")) {
+                    byte[] timestamp = Arrays.copyOfRange(request.getBody(), 0, Long.BYTES);
+                    byte[] body = Arrays.copyOfRange(request.getBody(), Long.BYTES, request.getBody().length);
+                    session.sendResponse(requestHandler.handle(request.getMethod(), key, body, timestamp));
                     return;
                 }
 
-                String shard = consistentHashing.getShardByKey(key);
-                Response response;
-                if (shard.equals(selfUrl)) {
-                    response = requestHandler.handle(key, request);
-                } else {
-                    response = proxyRequest(shard, request);
+                String from = request.getParameter("from=");
+                String ack = request.getParameter("ack=");
+                ReplicationParameters parameters = ReplicationParameters.parse(from, ack, this.numberOfNodes);
+
+                if (!request.getPath().equals("/v0/entity")
+                        || key == null
+                        || key.isEmpty()
+                        || parameters.getNumberOfAcks() == 0
+                        || parameters.getNumberOfAcks() > parameters.getNumberOfReplicas()
+                ) {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
                 }
-                session.sendResponse(response);
+                if (!SUPPORTED_METHODS.contains(request.getMethod())) {
+                    session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+                    return;
+                }
+
+                long timestamp = System.currentTimeMillis();
+                List<String> nodes = consistentHashing.getNodesByKey(key, parameters.getNumberOfReplicas());
+
+                boolean saveToCurrentNode = nodes.remove(selfUrl);
+                List<Response> responses = synchronizationHandler.forwardRequest(key, request, nodes, timestamp);
+                if (saveToCurrentNode) {
+                    Response selfResponse =
+                            requestHandler.handle(
+                                    request.getMethod(), key, request.getBody(), Utils.toByteArray(timestamp));
+                    responses.add(selfResponse);
+                }
+
+                if (responses.size() < parameters.getNumberOfAcks()) {
+                    session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+                } else {
+                    session.sendResponse(finalizeResponse(request.getMethod(), responses));
+                }
             } catch (IOException e) {
                 if (log.isDebugEnabled()) {
                     log.debug(e.getMessage());
                 }
             }
         });
+    }
+
+    private Response finalizeResponse(int method, List<Response> responses) {
+        if (method != Request.METHOD_GET) {
+            return responses.get(0);
+        }
+
+        long maxTombstoneTimestamp = -1;
+        int responsesWithValue = 0;
+        long maxValueTimestamp = -1;
+        byte[] value = new byte[0];
+
+        for (Response response : responses) {
+            byte[] body = response.getBody();
+            if (response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND
+                    && body.length > 0) {
+                long timestamp = Utils.longFromByteArray(body);
+                maxTombstoneTimestamp = Math.max(maxTombstoneTimestamp, timestamp);
+            }
+            if (response.getStatus() == HttpURLConnection.HTTP_OK) {
+                responsesWithValue++;
+                long timestamp =
+                        Utils.longFromByteArray(
+                                Arrays.copyOfRange(body, 0, Long.BYTES));
+                if (timestamp > maxValueTimestamp) {
+                    maxValueTimestamp = timestamp;
+                    value = Arrays.copyOfRange(body, Long.BYTES, body.length);
+                }
+            }
+        }
+        if (responsesWithValue == 0 || maxTombstoneTimestamp > maxValueTimestamp) {
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
+        } else {
+            return new Response(Response.OK, value);
+        }
     }
 
     @Override
@@ -114,36 +189,5 @@ public class DatabaseHttpServer extends HttpServer {
         }
 
         requestHandler.close();
-    }
-
-    private Response proxyRequest(String serverUrl, Request request) {
-        HttpRequest httpRequest =
-                HttpRequest.newBuilder(URI.create(serverUrl + request.getURI()))
-                        .method(
-                                request.getMethodName(),
-                                HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                        .build();
-        try {
-            HttpResponse<byte[]> httpResponse =
-                    client.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-            String status = switch (httpResponse.statusCode()) {
-                case HttpURLConnection.HTTP_OK -> Response.OK;
-                case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
-                case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
-                case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
-                case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
-                case HttpURLConnection.HTTP_BAD_METHOD -> Response.METHOD_NOT_ALLOWED;
-                case HttpURLConnection.HTTP_INTERNAL_ERROR -> Response.INTERNAL_ERROR;
-                default -> throw new IllegalStateException("Unexpected status code: " + httpResponse.statusCode());
-            };
-            return new Response(status, httpResponse.body());
-        } catch (HttpConnectTimeoutException e) {
-            return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
-        } catch (Exception e) {
-            if (log.isDebugEnabled()) {
-                log.debug("Error while proxying request happened", e);
-            }
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
     }
 }

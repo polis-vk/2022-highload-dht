@@ -65,7 +65,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             result = daoState.storage.get(key);
         }
 
-        return (result == null || result.isTombstone()) ? null : result;
+        return result;
     }
 
     @Override
