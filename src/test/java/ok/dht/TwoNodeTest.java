@@ -298,7 +298,9 @@ class TwoNodeTest extends TestBase {
 
             // Insert into node
             byte[] value = randomValue();
-            assertEquals(HttpURLConnection.HTTP_CREATED, nodes.get(i).upsert(key, value, 2, 2).statusCode());
+            int actual = nodes.get(i).upsert(key, value, 2, 2).statusCode();
+            System.err.println(actual);
+            assertEquals(HttpURLConnection.HTTP_CREATED, actual);
 
             // Stop node
             nodes.get(i).stop();
