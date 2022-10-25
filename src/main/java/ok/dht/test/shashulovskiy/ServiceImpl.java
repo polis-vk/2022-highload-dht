@@ -9,12 +9,7 @@ import ok.dht.test.shashulovskiy.sharding.CircuitBreaker;
 import ok.dht.test.shashulovskiy.sharding.ConsistentHashingShardingManager;
 import ok.dht.test.shashulovskiy.sharding.Shard;
 import ok.dht.test.shashulovskiy.sharding.ShardingManager;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
+import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
 import org.iq80.leveldb.DB;
@@ -33,6 +28,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.IllegalFormatException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
@@ -97,20 +93,22 @@ public class ServiceImpl implements Service {
     }
 
     @Path("/v0/entity")
-    public Response handle(Request request) {
+    public void handle(Request request, HttpSession session) {
         try {
             String id = request.getParameter("id=");
 
             if (id == null) {
-                return new Response(
+                session.sendResponse(new Response(
                         Response.BAD_REQUEST,
                         Utf8.toBytes("No id provided")
-                );
+                ));
+                return;
             } else if (id.isEmpty()) {
-                return new Response(
+                session.sendResponse(new Response(
                         Response.BAD_REQUEST,
                         Utf8.toBytes("Empty id")
-                );
+                ));
+                return;
             }
 
             String ackString = request.getParameter("ack=");
@@ -126,7 +124,8 @@ public class ServiceImpl implements Service {
                     ack = Integer.parseInt(ackString);
                 } catch (NumberFormatException e) {
                     LOG.error("Unable to parse ack", e);
-                    return new Response(Response.BAD_REQUEST, Response.EMPTY);
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
                 }
             }
 
@@ -137,12 +136,14 @@ public class ServiceImpl implements Service {
                     from = Integer.parseInt(fromString);
                 } catch (NumberFormatException e) {
                     LOG.error("Unable to parse from", e);
-                    return new Response(Response.BAD_REQUEST, Response.EMPTY);
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
                 }
             }
 
             if (ack <= 0 || from < ack || from > config.clusterUrls().size()) {
-                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
             }
 
             byte[] idBytes = Utf8.toBytes(id);
@@ -154,6 +155,7 @@ public class ServiceImpl implements Service {
             int acksCount = 0;
 
             Response[] responses = new Response[from];
+            boolean responded = false;
 
             for (int shard = firstShard; shard < firstShard + from; ++shard) {
                 Response response;
@@ -166,50 +168,60 @@ public class ServiceImpl implements Service {
                 if (response != null) {
                     acksCount++;
                 }
-            }
 
-            if (acksCount >= ack) {
-                switch (request.getMethod()) {
-                    case Request.METHOD_GET -> {
-                        int successCount = 0;
-                        long lastTimestamp = 0;
-                        byte[] lastResponse = new byte[0];
+                if (!responded && acksCount >= ack) {
+                    onAcksCollected(request, session, responses);
+                    responded = true;
 
-                        for (var response : responses) {
-                            if (response.getStatus() == 200) {
-                                successCount++;
-                                long currentResponseTimestamp = MetadataUtils.extractTimestamp(response.getBody());
-
-                                if (currentResponseTimestamp > lastTimestamp) {
-                                    lastTimestamp = currentResponseTimestamp;
-                                    lastResponse = response.getBody();
-                                }
-                            }
-                        }
-
-                        if (successCount == 0 || MetadataUtils.isTombstone(lastResponse)) {
-                            return new Response(Response.NOT_FOUND, Response.EMPTY);
-                        } else {
-                            return new Response(Response.OK, MetadataUtils.extractData(lastResponse));
-                        }
-                    }
-                    case Request.METHOD_PUT -> {
-                        return new Response(Response.CREATED, Response.EMPTY);
-                    }
-                    case Request.METHOD_DELETE -> {
-                        return new Response(Response.ACCEPTED, Response.EMPTY);
-                    }
-                    default -> {
-                        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                    if (request.getMethod() == Request.METHOD_GET) {
+                        return;
                     }
                 }
-            } else {
-                return new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY);
             }
+
+            if (!responded) {
+                session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
+            }
+            // TODO!!!
         } catch (Exception e) {
             System.err.println(e.getMessage());
             System.err.println(Arrays.toString(e.getStackTrace()));
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            try {
+                session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            } catch (IOException ex) {
+                LOG.error("TODO", e);
+            }
+        }
+    }
+
+    private void onAcksCollected(Request request, HttpSession session, Response[] responses) throws IOException {
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> {
+                int successCount = 0;
+                long lastTimestamp = 0;
+                byte[] lastResponse = new byte[0];
+
+                for (var response : responses) {
+                    if (response != null && response.getStatus() == 200) {
+                        successCount++;
+                        long currentResponseTimestamp = MetadataUtils.extractTimestamp(response.getBody());
+
+                        if (currentResponseTimestamp > lastTimestamp) {
+                            lastTimestamp = currentResponseTimestamp;
+                            lastResponse = response.getBody();
+                        }
+                    }
+                }
+
+                if (successCount == 0 || MetadataUtils.isTombstone(lastResponse)) {
+                    session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
+                } else {
+                    session.sendResponse(new Response(Response.OK, MetadataUtils.extractData(lastResponse)));
+                }
+            }
+            case Request.METHOD_PUT -> session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
+            case Request.METHOD_DELETE -> session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
+            default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
     }
 
