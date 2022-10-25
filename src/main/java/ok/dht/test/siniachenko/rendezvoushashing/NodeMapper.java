@@ -1,5 +1,6 @@
 package ok.dht.test.siniachenko.rendezvoushashing;
 
+import java.util.Arrays;
 import java.util.List;
 
 public class NodeMapper {
@@ -11,17 +12,23 @@ public class NodeMapper {
         mod = nodeUrls.size() * 1000;
     }
 
-    public String getNodeUrlByKey(byte[] key) {
-        int maxHash = Integer.MIN_VALUE;
-        String maxHashNodeUrl = nodeUrls.get(0);
-        for (final String nodeUrl : nodeUrls) {
-            int tempHash = hash(key, nodeUrl);
-            if (maxHash < tempHash) {
-                maxHash = tempHash;
-                maxHashNodeUrl = nodeUrl;
-            }
+    public List<String> getNodeUrls() {
+        return nodeUrls;
+    }
+
+    // TODO: think very hard about replacing rendezvous hash with consistent hash
+    // because of memory and concurrency improvements
+    public int[] getNodeUrlsByKey(byte[] key) {
+//        if (nodeCount < 1 || nodeCount >= nodeUrls.size()) {
+//            throw new IllegalArgumentException("count must be > 0 and < " + nodeUrls.size() + ", but was " + nodeCount);
+//        }
+        int[] hashes = new int[nodeUrls.size()];
+        for (int i = 0; i < nodeUrls.size(); i++) {
+            String nodeUrl = nodeUrls.get(i);
+            hashes[i] = hash(key, nodeUrl);
         }
-        return maxHashNodeUrl;
+        Arrays.sort(hashes);
+        return hashes;
     }
 
     private int hash(byte[] key, String node) {
