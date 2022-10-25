@@ -108,17 +108,7 @@ public class DatabaseHttpServer extends HttpServer {
                     return;
                 }
 
-                long timestamp = System.currentTimeMillis();
-                Set<String> nodes = consistentHashing.getNodesByKey(key, parameters.getNumberOfReplicas());
-
-                boolean saveToDao = nodes.remove(selfUrl);
-                List<Response> responses = synchronizationHandler.forwardRequest(key, request, nodes, timestamp);
-                if (saveToDao) {
-                    Response selfResponse =
-                            requestHandler.handle(
-                                    request.getMethod(), key, request.getBody(), Utils.toByteArray(timestamp));
-                    responses.add(selfResponse);
-                }
+                List<Response> responses = aggregateResponsesFromReplicas(parameters, key, request);
 
                 if (responses.size() < parameters.getNumberOfAcks()) {
                     session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
@@ -137,6 +127,23 @@ public class DatabaseHttpServer extends HttpServer {
         byte[] timestamp = Arrays.copyOfRange(request.getBody(), 0, Long.BYTES);
         byte[] body = Arrays.copyOfRange(request.getBody(), Long.BYTES, request.getBody().length);
         return requestHandler.handle(request.getMethod(), key, body, timestamp);
+    }
+
+    private List<Response> aggregateResponsesFromReplicas(
+            ReplicationParameters parameters, String key, Request request) {
+        long timestamp = System.currentTimeMillis();
+        Set<String> nodes = consistentHashing.getNodesByKey(key, parameters.getNumberOfReplicas());
+
+        boolean saveToDao = nodes.remove(selfUrl);
+        List<Response> responses = synchronizationHandler.forwardRequest(key, request, nodes, timestamp);
+        if (saveToDao) {
+            Response selfResponse =
+                    requestHandler.handle(
+                            request.getMethod(), key, request.getBody(), Utils.toByteArray(timestamp));
+            responses.add(selfResponse);
+        }
+
+        return responses;
     }
 
     private Response finalizeResponse(int method, List<Response> responses) {
