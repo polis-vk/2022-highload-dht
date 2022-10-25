@@ -1,9 +1,8 @@
-package ok.dht.test.anikina;
+package ok.dht.test.anikina.consistenthashing;
 
 import one.nio.util.Hash;
 import one.nio.util.Utf8;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -11,13 +10,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-class ConsistentHashingImpl {
+public class ConsistentHashingImpl {
     private static final int VIRTUAL_NODES_COUNT = 3;
 
     private final long[] hashes;
     private final Map<Long, String> hashToShard = new HashMap<>();
 
-    ConsistentHashingImpl(List<String> clusterUrls) {
+    public ConsistentHashingImpl(List<String> clusterUrls) {
         hashes = new long[clusterUrls.size() * VIRTUAL_NODES_COUNT];
 
         for (int i = 0; i < clusterUrls.size(); i++) {
@@ -38,7 +37,7 @@ class ConsistentHashingImpl {
         return Hash.xxhash(keyBytes, 0, keyBytes.length);
     }
 
-    Set<String> getNodesByKey(String key, int replicas) {
+    public Set<String> getNodesByKey(String key, int replicas) {
         long hash = hashForKey(key);
 
         int shardIndex = Arrays.binarySearch(hashes, hash);
