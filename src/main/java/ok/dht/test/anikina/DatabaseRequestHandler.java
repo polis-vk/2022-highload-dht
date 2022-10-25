@@ -5,7 +5,7 @@ import ok.dht.test.anikina.dao.BaseEntry;
 import ok.dht.test.anikina.dao.Config;
 import ok.dht.test.anikina.dao.Entry;
 import ok.dht.test.anikina.dao.MemorySegmentDao;
-import ok.dht.test.anikina.utils.MemorySegmentUtils;
+import ok.dht.test.anikina.utils.Utils;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
@@ -26,38 +26,44 @@ class DatabaseRequestHandler {
         dao.close();
     }
 
-    Response handle(String key, Request request) {
-        switch (request.getMethod()) {
+    Response handle(int method, String key, byte[] body, byte[] timestamp) {
+        switch (method) {
             case Request.METHOD_GET -> {
-                byte[] value = getFromDao(key);
-                if (value == null) {
+                Entry<MemorySegment> entry = dao.get(Utils.memorySegmentFromString(key));
+                if (entry == null) {
                     return new Response(Response.NOT_FOUND, Response.EMPTY);
                 }
-                return new Response(Response.OK, value);
+                if (entry.value() == null) {
+                    return new Response(Response.NOT_FOUND, entry.timestamp().toByteArray());
+                }
+                byte[] value = entry.value().toByteArray();
+                byte[] responseBody =
+                        Utils.toByteArray(
+                                entry.timestamp().toByteArray(),
+                                value
+                        );
+                return new Response(Response.OK, responseBody);
             }
             case Request.METHOD_PUT -> {
-                insertIntoDao(key, request.getBody());
+                insertIntoDao(key, body, timestamp);
                 return new Response(Response.CREATED, Response.EMPTY);
             }
             case Request.METHOD_DELETE -> {
-                insertIntoDao(key, null);
+                insertIntoDao(key, null, timestamp);
                 return new Response(Response.ACCEPTED, Response.EMPTY);
             }
-            default -> {
-                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            }
+            default -> throw new IllegalArgumentException("Request method not supported.");
         }
     }
 
-    private byte[] getFromDao(String key) {
-        Entry<MemorySegment> entry = dao.get(MemorySegmentUtils.fromString(key));
-        return entry == null ? null : MemorySegmentUtils.toBytes(entry.value());
-    }
-
-    private void insertIntoDao(String key, byte[] bytes) {
-        dao.upsert(new BaseEntry<>(
-                MemorySegmentUtils.fromString(key),
-                MemorySegmentUtils.fromBytes(bytes))
+    // TODO: change timestamp type to long in Entry.
+    private void insertIntoDao(String key, byte[] bytes, byte[] timestamp) {
+        dao.upsert(
+                new BaseEntry<>(
+                        Utils.memorySegmentFromString(key),
+                        Utils.memorySegmentFromBytes(bytes),
+                        MemorySegment.ofArray(timestamp)
+                )
         );
     }
 }

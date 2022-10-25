@@ -3,6 +3,7 @@ package ok.dht.test.anikina;
 import one.nio.util.Hash;
 import one.nio.util.Utf8;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -33,7 +34,7 @@ class ConsistentHashingImpl {
         return Hash.xxhash(keyBytes, 0, keyBytes.length);
     }
 
-    String getShardByKey(String key) {
+    List<String> getNodesByKey(String key, int replicas) {
         long hash = hashForKey(key);
         int shardIndex = Arrays.binarySearch(hashes, hash);
         if (shardIndex < 0) {
@@ -42,6 +43,13 @@ class ConsistentHashingImpl {
         if (shardIndex == 0 || shardIndex == hashes.length) {
             shardIndex = 0;
         }
-        return hashToShard.get(hashes[shardIndex]);
+
+        List<String> shards = new ArrayList<>();
+        for (int i = 0; i < replicas; i++) {
+            int index = (shardIndex + i) % hashes.length;
+            shards.add(hashToShard.get(hashes[index]));
+        }
+
+        return shards;
     }
 }
