@@ -1,4 +1,4 @@
-package ok.dht.test.armenakyan.sharding;
+package ok.dht.test.armenakyan.distribution;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
@@ -11,18 +11,29 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.*;
 
-public class ProxyShardHandler implements ShardRequestHandler {
-    private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+public class ProxyNodeHandler implements NodeRequestHandler {
     private static final String REQUEST_PATH = "/v0/entity?id=";
-
-    private static final Duration TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration TIMEOUT = Duration.ofSeconds(2);
+    private static final int MAX_QUEUE_SIZE = 5000;
+    private static final int MAX_POOL_WORKERS = Runtime.getRuntime().availableProcessors();
+    private static final int CORE_POOL_WORKERS = Math.min(2, MAX_POOL_WORKERS);
+    private static final long KEEP_ALIVE_TIME_SEC = 3;
+    private final ExecutorService clientPool;
+    private final HttpClient httpClient;
     private final String fullPath;
 
-    public ProxyShardHandler(String shardUrl) {
-        this.fullPath = shardUrl + REQUEST_PATH;
+    public ProxyNodeHandler(String nodeUrl) {
+        this.fullPath = nodeUrl + REQUEST_PATH;
+        this.clientPool = new ThreadPoolExecutor(
+                CORE_POOL_WORKERS, MAX_POOL_WORKERS,
+                KEEP_ALIVE_TIME_SEC, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(MAX_QUEUE_SIZE)
+        );
+        this.httpClient = HttpClient.newBuilder()
+                .executor(clientPool)
+                .build();
     }
 
     @Override
@@ -45,7 +56,7 @@ public class ProxyShardHandler implements ShardRequestHandler {
             } catch (IOException e) {
                 session.close();
             }
-        });
+        }, clientPool);
     }
 
     private CompletableFuture<Response> handleAsync(String key, Request request) {
@@ -53,7 +64,7 @@ public class ProxyShardHandler implements ShardRequestHandler {
                 .timeout(TIMEOUT)
                 .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
                 .build();
-        return HTTP_CLIENT
+        return httpClient
                 .sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
                 .handleAsync((resp, ex) -> {
                     if (ex == null) {
@@ -65,6 +76,6 @@ public class ProxyShardHandler implements ShardRequestHandler {
                     } else {
                         return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
                     }
-                });
+                }, clientPool);
     }
 }

@@ -3,10 +3,10 @@ package ok.dht.test.armenakyan;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.armenakyan.sharding.ClusterCoordinatorShardHandler;
-import ok.dht.test.armenakyan.sharding.SelfShardHandler;
-import ok.dht.test.armenakyan.sharding.ShardRequestHandler;
-import ok.dht.test.armenakyan.sharding.hashing.MD5KeyHasher;
+import ok.dht.test.armenakyan.distribution.ClusterCoordinatorNodeHandler;
+import ok.dht.test.armenakyan.distribution.SelfNodeHandler;
+import ok.dht.test.armenakyan.distribution.NodeRequestHandler;
+import ok.dht.test.armenakyan.distribution.hashing.MD5KeyHasher;
 import ok.dht.test.armenakyan.util.ServiceUtils;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
@@ -27,7 +27,7 @@ public class DhtService implements Service {
 
     private final ServiceConfig serviceConfig;
     private HttpServer httpServer;
-    private ShardRequestHandler requestHandler;
+    private NodeRequestHandler requestHandler;
 
     public DhtService(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
@@ -39,9 +39,9 @@ public class DhtService implements Service {
                 ServiceUtils.createConfigFromPort(serviceConfig.selfPort()),
                 this);
 
-        SelfShardHandler daoHandler = new SelfShardHandler(serviceConfig.workingDir());
+        SelfNodeHandler daoHandler = new SelfNodeHandler(serviceConfig.workingDir());
 
-        requestHandler = new ClusterCoordinatorShardHandler(
+        requestHandler = new ClusterCoordinatorNodeHandler(
                 serviceConfig.selfUrl(),
                 daoHandler,
                 serviceConfig.clusterUrls(),
@@ -77,7 +77,7 @@ public class DhtService implements Service {
        requestHandler.handleForKey(id, request, session);
     }
 
-    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig serviceConfig) {

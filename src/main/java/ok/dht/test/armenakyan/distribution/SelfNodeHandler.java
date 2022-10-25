@@ -1,4 +1,4 @@
-package ok.dht.test.armenakyan.sharding;
+package ok.dht.test.armenakyan.distribution;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
@@ -11,7 +11,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-public class SelfShardHandler implements ShardRequestHandler {
+public class SelfNodeHandler implements NodeRequestHandler {
     private static final String DB_NAME = "rocks";
     private final RocksDB rocksDB;
 
@@ -19,7 +19,7 @@ public class SelfShardHandler implements ShardRequestHandler {
         RocksDB.loadLibrary();
     }
 
-    public SelfShardHandler(Path dbWorkingDir) throws IOException {
+    public SelfNodeHandler(Path dbWorkingDir) throws IOException {
         Files.createDirectories(dbWorkingDir);
         try {
             rocksDB = RocksDB.open(dbWorkingDir.resolve(DB_NAME).toString());

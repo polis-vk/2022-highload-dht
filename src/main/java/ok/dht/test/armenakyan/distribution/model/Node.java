@@ -1,12 +1,12 @@
-package ok.dht.test.armenakyan.sharding.model;
+package ok.dht.test.armenakyan.distribution.model;
 
-import ok.dht.test.armenakyan.sharding.ShardRequestHandler;
+import ok.dht.test.armenakyan.distribution.NodeRequestHandler;
 
-public class Shard {
+public class Node {
     private final String url;
-    private final ShardRequestHandler requestHandler;
+    private final NodeRequestHandler requestHandler;
 
-    public Shard(String url, ShardRequestHandler requestHandler) {
+    public Node(String url, NodeRequestHandler requestHandler) {
         this.url = url;
         this.requestHandler = requestHandler;
     }
@@ -15,7 +15,7 @@ public class Shard {
         return url;
     }
 
-    public ShardRequestHandler requestHandler() {
+    public NodeRequestHandler requestHandler() {
         return requestHandler;
     }
 
@@ -34,6 +34,6 @@ public class Shard {
             return false;
         }
 
-        return url.equals(((Shard) o).url);
+        return url.equals(((Node) o).url);
     }
 }

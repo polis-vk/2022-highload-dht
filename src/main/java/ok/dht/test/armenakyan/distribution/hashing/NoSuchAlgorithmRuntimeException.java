@@ -1,4 +1,4 @@
-package ok.dht.test.armenakyan.sharding.hashing;
+package ok.dht.test.armenakyan.distribution.hashing;
 
 public class NoSuchAlgorithmRuntimeException extends RuntimeException {
     public NoSuchAlgorithmRuntimeException() {
