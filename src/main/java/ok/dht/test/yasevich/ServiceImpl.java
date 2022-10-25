@@ -1,14 +1,10 @@
 package ok.dht.test.yasevich;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.yasevich.artyomdrozdov.MemorySegmentDao;
-import ok.dht.test.yasevich.dao.BaseEntry;
 import ok.dht.test.yasevich.dao.Config;
-import ok.dht.test.yasevich.dao.Dao;
-import ok.dht.test.yasevich.dao.Entry;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -21,7 +17,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
-import java.net.http.HttpResponse;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -35,20 +30,20 @@ public class ServiceImpl implements Service {
     private static final int FLUSH_THRESHOLD = 5 * 1024 * 1024;
     private static final int POOL_QUEUE_SIZE = 1000;
     private static final int FIFO_RARENESS = 3;
-    private static final Log LOGGER = LogFactory.getLog(ServiceImpl.class);
+    static final Log LOGGER = LogFactory.getLog(ServiceImpl.class);
 
-    private final ServiceConfig config;
-    private Dao<MemorySegment, Entry<MemorySegment>> dao;
+    private final ServiceConfig serviceConfig;
+    private TimeStampingDao timeStampingDao;
     private HttpServer server;
 
     public ServiceImpl(ServiceConfig config) {
-        this.config = config;
+        this.serviceConfig = config;
     }
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD));
-        server = new CustomHttpServer(createConfigFromPort(config.selfPort()), dao);
+        timeStampingDao = new TimeStampingDao(new MemorySegmentDao(new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD)));
+        server = new CustomHttpServer(createConfigFromPort(serviceConfig.selfPort()), timeStampingDao);
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
@@ -59,8 +54,8 @@ public class ServiceImpl implements Service {
         if (server != null) {
             server.stop();
         }
-        if (dao != null) {
-            dao.close();
+        if (timeStampingDao != null) {
+            timeStampingDao.close();
         }
         return CompletableFuture.completedFuture(null);
     }
@@ -74,89 +69,77 @@ public class ServiceImpl implements Service {
         return httpConfig;
     }
 
-    private static MemorySegment fromString(String data) {
-        return MemorySegment.ofArray(data.toCharArray());
-    }
-
     private class CustomHttpServer extends HttpServer {
         private static final int CPUs = Runtime.getRuntime().availableProcessors();
 
-        private final Dao<MemorySegment, Entry<MemorySegment>> dao;
         private final BlockingQueue<Runnable> queue = new AlmostLifoQueue(POOL_QUEUE_SIZE, FIFO_RARENESS);
         private final ExecutorService workersPool = new ThreadPoolExecutor(CPUs, CPUs, 0L,
                 TimeUnit.MILLISECONDS, queue);
-        private final ShardingRouter shardingRouter = new ShardingRouter(config.clusterUrls());
+        private final ReplicasManager replicasManager;
 
         public CustomHttpServer(
                 HttpServerConfig config,
-                Dao<MemorySegment, Entry<MemorySegment>> dao,
                 Object... routers) throws IOException {
 
             super(config, routers);
-            this.dao = dao;
+            RandevouzHashingRouter shardingRouter = new RandevouzHashingRouter(serviceConfig.clusterUrls());
+            this.replicasManager = new ReplicasManager(timeStampingDao, shardingRouter, serviceConfig.selfUrl());
         }
 
         @Override
         public void handleRequest(Request request, HttpSession session) throws IOException {
+            if (!request.getPath().equals("/v0/entity")) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            }
             String key = request.getParameter("id=");
+            String innerRequest = request.getParameter("inner=");
+            if (innerRequest != null) {
+                try {
+                    workersPool.execute(() -> {
+                        try {
+                            Response response = handleInnerRequest(request, key);
+                            ReplicasManager.sendResponse(session, response);
+                        } catch (IOException e) {
+                            ReplicasManager.sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                        }
+                    });
+                } catch (RejectedExecutionException e) {
+                    session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                }
+                return;
+            }
+
+            String replicasParam = request.getParameter("replicas=");
+            String ackParam = request.getParameter("ack=");
+            String fromParam = request.getParameter("from=");
+
+            String[] replicasParams = replicasParam == null ? null : replicasParam.split("/");
+
+            final int from = replicasParams != null ? Integer.parseInt(replicasParams[1]) :
+                    fromParam != null ? Integer.parseInt(fromParam) : serviceConfig.clusterUrls().size();
+
+            final int ack = replicasParams != null ? Integer.parseInt(replicasParams[0]) :
+                    ackParam != null ? Integer.parseInt(ackParam) :
+                            from / 2 + 1 <= serviceConfig.clusterUrls().size() ? from / 2 + 1 : from;
+
+            if (ack > from || ack <= 0) {
+                ReplicasManager.sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+            }
+
             try {
                 workersPool.execute(() -> {
                     if (key == null || key.isEmpty()) {
-                        sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                        ReplicasManager.sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                         return;
                     }
-                    if (shardingRouter.isUrlResponsibleForKey(config.selfUrl(), key)) {
-                        try {
-                            Response response = handleRequest(request, key);
-                            sendResponse(session, response);
-                        } catch (Exception e) {
-                            handleFailure(session, request, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                        }
-                    } else {
-                        shardingRouter.routedRequestFuture(request, key)
-                                .completeOnTimeout(null, ROUTED_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                                .thenAccept(httpResponse -> {
-                                    if (httpResponse == null) {
-                                        handleRoutingFailure(request, session, key);
-                                        return;
-                                    }
-                                    sendResponse(session, responseOf(httpResponse));
-                                })
-                                .exceptionally(throwable -> {
-                                    handleRoutingFailure(request, session, key);
-                                    return null;
-                                });
-                    }
+                    replicasManager.handleReplicatingRequest(session, request, key, ack, from);
                 });
             } catch (RejectedExecutionException e) {
                 session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
             }
         }
 
-        private void handleRoutingFailure(Request request, HttpSession session, String key) {
-            shardingRouter.informAboutFail(key);
-            handleFailure(session, request, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-        }
-
-        private static void handleFailure(HttpSession session, Request request, Response response) {
-            sendResponse(session, response);
-            LOGGER.error("Error when making response to " + request);
-        }
-
-        private static Response responseOf(HttpResponse<byte[]> httpResponse) {
-            return new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
-        }
-
-        private static void sendResponse(HttpSession session, Response response) {
-            try {
-                session.sendResponse(response);
-            } catch (IOException e) {
-                LOGGER.error("Error when sending " + response.getStatus());
-                session.close();
-            }
-        }
-
-        private Response handleRequest(Request request, String id) throws IOException {
+        private Response handleInnerRequest(Request request, String id) throws IOException {
             return switch (request.getMethod()) {
                 case Request.METHOD_GET -> handleGet(id);
                 case Request.METHOD_PUT -> handlePut(id, request);
@@ -166,20 +149,20 @@ public class ServiceImpl implements Service {
         }
 
         private Response handleGet(String id) throws IOException {
-            Entry<MemorySegment> entry = dao.get(fromString(id));
-            if (entry == null) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
+            TimeStampingDao.TimeStampedValue entry = timeStampingDao.get(id);
+            if (entry.value == null) {
+                return new Response(Response.NOT_FOUND, entry.wholeToBytes());
             }
-            return new Response(Response.OK, entry.value().toByteArray());
+            return new Response(Response.OK, entry.wholeToBytes());
         }
 
         private Response handleDelete(String id) {
-            dao.upsert(new BaseEntry<>(fromString(id), null));
+            timeStampingDao.upsertTimeStamped(id, null);
             return new Response(Response.ACCEPTED, Response.EMPTY);
         }
 
         private Response handlePut(String id, Request request) {
-            dao.upsert(new BaseEntry<>(fromString(id), MemorySegment.ofArray(request.getBody())));
+            timeStampingDao.upsertTimeStamped(id, request.getBody());
             return new Response(Response.CREATED, Response.EMPTY);
         }
 
@@ -199,7 +182,7 @@ public class ServiceImpl implements Service {
 
     }
 
-    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
