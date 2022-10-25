@@ -178,7 +178,7 @@ public class CustomHttpServer extends HttpServer {
             case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
             case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
             case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
-            default -> throw new IllegalStateException("Unexpected value: " + code);
+            default -> throw new IllegalStateException("Unexpected value:" + code);
         };
     }
 
