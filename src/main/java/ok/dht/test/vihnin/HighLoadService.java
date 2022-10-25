@@ -66,10 +66,10 @@ public class HighLoadService implements Service {
 
             @Override
             public void handleRequest(Request request, HttpSession session) throws IOException {
-                if (!isMethodAllowed(request.getMethod())) {
-                    session.sendResponse(emptyResponse(Response.METHOD_NOT_ALLOWED));
-                } else {
+                if (isMethodAllowed(request.getMethod())) {
                     super.handleRequest(request, session);
+                } else {
+                    session.sendResponse(emptyResponse(Response.METHOD_NOT_ALLOWED));
                 }
             }
 
