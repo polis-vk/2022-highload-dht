@@ -1,6 +1,7 @@
 package ok.dht.test.anikina;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.anikina.consistenthashing.ConsistentHashingImpl;
 import ok.dht.test.anikina.replication.ReplicationParameters;
 import ok.dht.test.anikina.replication.SynchronizationHandler;
 import ok.dht.test.anikina.utils.Utils;
@@ -90,9 +91,12 @@ public class DatabaseHttpServer extends HttpServer {
                     return;
                 }
 
-                String from = request.getParameter("from=");
-                String ack = request.getParameter("ack=");
-                ReplicationParameters parameters = ReplicationParameters.parse(from, ack, this.numberOfNodes);
+                ReplicationParameters parameters =
+                        ReplicationParameters.parse(
+                                request.getParameter("from="),
+                                request.getParameter("ack="),
+                                this.numberOfNodes
+                        );
 
                 if (!request.getPath().equals(QUERY_PATH)
                         || key == null
