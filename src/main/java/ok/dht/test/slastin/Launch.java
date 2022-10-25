@@ -52,7 +52,7 @@ public final class Launch {
 
             for (var config : getServiceConfigs(serverDirectory)) {
                 var serviceBuilder = new SladkiiServiceBuilder(config);
-                serviceBuilder.setDbOptionsSupplier(SladkiiService.DEFAULT_OPTIONS_SUPPLIER);
+                serviceBuilder.setDbOptionsSupplier(SladkiiService.DEFAULT_OPTIONS_WITH_BLOOM_SUPPLIER);
                 serviceBuilder.build().start().get(1, TimeUnit.SECONDS);
                 log.info("Server started {}", config.selfUrl());
             }

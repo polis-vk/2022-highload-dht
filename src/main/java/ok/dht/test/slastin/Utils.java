@@ -48,4 +48,36 @@ public class Utils {
             default -> throw new RuntimeException("unknown status code: " + statusCode);
         };
     }
+
+    public static Response serviceUnavailable() {
+        return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+    }
+
+    public static Response badMethod() {
+        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+    }
+
+    public static Response badRequest() {
+        return new Response(Response.BAD_REQUEST, Response.EMPTY);
+    }
+
+    public static Response internalError() {
+        return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+    }
+
+    public static Response notFound() {
+        return new Response(Response.NOT_FOUND, Response.EMPTY);
+    }
+
+    public static Response created() {
+        return new Response(Response.CREATED, Response.EMPTY);
+    }
+
+    public static Response accepted() {
+        return new Response(Response.ACCEPTED, Response.EMPTY);
+    }
+
+    public static Response notEnoughReplicas() {
+        return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+    }
 }
