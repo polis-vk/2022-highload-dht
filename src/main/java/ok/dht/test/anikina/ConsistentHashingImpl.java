@@ -6,8 +6,10 @@ import one.nio.util.Utf8;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 class ConsistentHashingImpl {
     private static final int VIRTUAL_NODES_COUNT = 3;
@@ -17,6 +19,7 @@ class ConsistentHashingImpl {
 
     ConsistentHashingImpl(List<String> clusterUrls) {
         hashes = new long[clusterUrls.size() * VIRTUAL_NODES_COUNT];
+
         for (int i = 0; i < clusterUrls.size(); i++) {
             String serverUrl = clusterUrls.get(i);
             for (int j = 0; j < VIRTUAL_NODES_COUNT; j++) {
@@ -26,6 +29,7 @@ class ConsistentHashingImpl {
                 hashToShard.put(hash, serverUrl);
             }
         }
+
         Arrays.sort(hashes);
     }
 
@@ -34,22 +38,22 @@ class ConsistentHashingImpl {
         return Hash.xxhash(keyBytes, 0, keyBytes.length);
     }
 
-    List<String> getNodesByKey(String key, int replicas) {
+    Set<String> getNodesByKey(String key, int replicas) {
         long hash = hashForKey(key);
+
         int shardIndex = Arrays.binarySearch(hashes, hash);
         if (shardIndex < 0) {
             shardIndex = -shardIndex - 1;
         }
-        if (shardIndex == 0 || shardIndex == hashes.length) {
-            shardIndex = 0;
-        }
 
-        List<String> shards = new ArrayList<>();
-        for (int i = 0; i < replicas; i++) {
-            int index = (shardIndex + i) % hashes.length;
-            shards.add(hashToShard.get(hashes[index]));
+        Set<String> nodes = new HashSet<>();
+        for (int i = 0; i < hashes.length; i++) {
+            long currHash = hashes[(shardIndex + i) % hashes.length];
+            nodes.add(hashToShard.get(currHash));
+            if (nodes.size() == replicas) {
+                break;
+            }
         }
-
-        return shards;
+        return nodes;
     }
 }
