@@ -8,7 +8,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class ConsistentHashing implements KeyManager {
     private MessageDigest md;
@@ -22,6 +24,7 @@ public class ConsistentHashing implements KeyManager {
     private static final int KEY_SEED = 288729359;
     private static final Logger LOG = LoggerFactory.getLogger(ConsistentHashing.class);
     private final List<Entry> entries = new ArrayList<>();
+    private int nodes = 0;
 
     public ConsistentHashing() {
         try {
@@ -38,6 +41,7 @@ public class ConsistentHashing implements KeyManager {
                 .toList();
         entries.addAll(newEntries);
         entries.sort(Entry::compareTo);
+        ++nodes;
     }
 
     @Override
@@ -46,13 +50,24 @@ public class ConsistentHashing implements KeyManager {
     }
 
     @Override
-    public String getNodeIdByKey(String key) {
+    public List<String> getNodeIdsByKey(String key, int n) {
+        if (n > nodes) {
+            throw new IllegalArgumentException("n must be less then number of nodes in cluster");
+        }
         int hash = hash(key, KEY_SEED);
         int i = 0;
         while (i < entries.size() && hash > entries.get(i).getHash()) {
             i++;
         }
-        return entries.get(i % entries.size()).getNodeId();
+        List<String> result = new ArrayList<>(n);
+        while (result.size() < n) {
+            String nodeId = entries.get(i % entries.size()).getNodeId();
+            if (!result.contains(nodeId)) {
+                result.add(nodeId);
+                i = (i + 1) % entries.size();
+            }
+        }
+        return result;
     }
 
     private int hash(String id, int seed) {
