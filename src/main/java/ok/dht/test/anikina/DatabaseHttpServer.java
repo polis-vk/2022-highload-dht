@@ -31,8 +31,8 @@ import static ok.dht.test.anikina.replication.SynchronizationHandler.SYNCHRONIZA
 public class DatabaseHttpServer extends HttpServer {
     private static final Log log = LogFactory.getLog(DatabaseHttpServer.class);
 
-    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final String QUERY_PATH = "/v0/entity";
+    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
     private static final int THREADS_MIN = 2;
     private static final int THREAD_MAX = 3;
@@ -85,9 +85,7 @@ public class DatabaseHttpServer extends HttpServer {
                 String key = request.getParameter("id=");
 
                 if (request.getPath().equals(SYNCHRONIZATION_PATH)) {
-                    byte[] timestamp = Arrays.copyOfRange(request.getBody(), 0, Long.BYTES);
-                    byte[] body = Arrays.copyOfRange(request.getBody(), Long.BYTES, request.getBody().length);
-                    session.sendResponse(requestHandler.handle(request.getMethod(), key, body, timestamp));
+                    session.sendResponse(processSynchronizationRequest(key, request));
                     return;
                 }
 
@@ -135,6 +133,12 @@ public class DatabaseHttpServer extends HttpServer {
                 }
             }
         });
+    }
+
+    private Response processSynchronizationRequest(String key, Request request) {
+        byte[] timestamp = Arrays.copyOfRange(request.getBody(), 0, Long.BYTES);
+        byte[] body = Arrays.copyOfRange(request.getBody(), Long.BYTES, request.getBody().length);
+        return requestHandler.handle(request.getMethod(), key, body, timestamp);
     }
 
     private Response finalizeResponse(int method, List<Response> responses) {
