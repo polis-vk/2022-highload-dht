@@ -17,6 +17,10 @@ public class ReplicationParameters {
         return numberOfReplicas;
     }
 
+    public boolean areInvalid() {
+        return numberOfAcks == 0 || numberOfAcks > numberOfReplicas;
+    }
+
     public static ReplicationParameters parse(String from, String ack, int numberOfNodes) {
         int numberOfAcks;
         int numberOfReplicas;

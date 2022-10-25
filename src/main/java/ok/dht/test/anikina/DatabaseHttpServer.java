@@ -96,17 +96,15 @@ public class DatabaseHttpServer extends HttpServer {
                                 this.numberOfNodes
                         );
 
-                if (!request.getPath().equals(QUERY_PATH)
-                        || key == null
-                        || key.isEmpty()
-                        || parameters.getNumberOfAcks() == 0
-                        || parameters.getNumberOfAcks() > parameters.getNumberOfReplicas()
-                ) {
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                    return;
-                }
                 if (!SUPPORTED_METHODS.contains(request.getMethod())) {
                     session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+                    return;
+                }
+
+                if (!request.getPath().equals(QUERY_PATH)
+                        || invalidKey(key)
+                        || parameters.areInvalid()) {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                     return;
                 }
 
@@ -174,6 +172,10 @@ public class DatabaseHttpServer extends HttpServer {
         }
     }
 
+    private boolean invalidKey(String key) {
+        return key == null || key.isEmpty();
+    }
+
     @Override
     public synchronized void stop() {
         for (SelectorThread selectorThread : selectors) {
@@ -195,6 +197,7 @@ public class DatabaseHttpServer extends HttpServer {
                 executorService.shutdownNow();
             }
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             executorService.shutdownNow();
         }
 
