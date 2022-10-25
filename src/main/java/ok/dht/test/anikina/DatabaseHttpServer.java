@@ -1,7 +1,5 @@
 package ok.dht.test.anikina;
 
-import static ok.dht.test.anikina.replication.SynchronizationHandler.SYNCHRONIZATION_PATH;
-
 import ok.dht.ServiceConfig;
 import ok.dht.test.anikina.replication.ReplicationParameters;
 import ok.dht.test.anikina.replication.SynchronizationHandler;
@@ -26,6 +24,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+
+import static ok.dht.test.anikina.replication.SynchronizationHandler.SYNCHRONIZATION_PATH;
 
 public class DatabaseHttpServer extends HttpServer {
     private static final Log log = LogFactory.getLog(DatabaseHttpServer.class);
