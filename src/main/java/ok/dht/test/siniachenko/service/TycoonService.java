@@ -20,6 +20,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.Buffer;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -239,6 +240,24 @@ public class TycoonService implements ok.dht.Service {
             LOG.error("Error in DB", e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
+    }
+
+    private byte[] withCurrentTimestamp(byte[] value) {
+        byte[] newValue = new byte[value.length + 8];
+        System.arraycopy(value, 0, newValue, 0, value.length);
+        long currentTimeMillis = System.currentTimeMillis();
+        for (int i = 0; i < 8; ++ i) {
+            newValue[value.length + i] = (byte) (currentTimeMillis << (8 * i));
+        }
+        return newValue;
+    }
+
+    private long readTimeMillisFromLastBytes(byte[] value) {
+        long timeMillisFromLastBytes = 0;
+        for (int i = 0; i < 8; ++ i) {
+            timeMillisFromLastBytes += ((long) value[value.length - 8 + i]) >> (8 * i);
+        }
+        return timeMillisFromLastBytes;
     }
 
     @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
