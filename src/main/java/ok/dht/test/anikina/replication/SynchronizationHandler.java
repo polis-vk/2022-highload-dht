@@ -18,9 +18,10 @@ import java.util.List;
 import java.util.Set;
 
 public class SynchronizationHandler {
+    public static final String SYNCHRONIZATION_PATH = "/synchronization";
     private static final Log log = LogFactory.getLog(DatabaseHttpServer.class);
 
-    private static final int CONNECTION_TIMEOUT_MS = 100;
+    private static final int CONNECTION_TIMEOUT_MS = 1000;
     private static final Set<Integer> EXPECTED_STATUS_CODES = Set.of(
             200,
             201,
@@ -30,16 +31,16 @@ public class SynchronizationHandler {
     private final HttpClient client;
 
     public SynchronizationHandler() {
-        this.client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofMillis(CONNECTION_TIMEOUT_MS))
-                .build();
+        this.client = HttpClient.newHttpClient();
     }
 
-    public List<Response> forwardRequest(String key, Request request, List<String> nodes, long timestamp) {
+    public List<Response> forwardRequest(String key, Request request, Set<String> nodes, long timestamp) {
+        log.debug(nodes);
         List<Response> responses = new ArrayList<>();
         for (String node : nodes) {
             try {
                 HttpResponse<byte[]> httpResponse = proxyRequest(node, key, request, timestamp);
+                log.debug(httpResponse.statusCode());
                 if (EXPECTED_STATUS_CODES.contains(httpResponse.statusCode())) {
                     responses.add(
                             new Response(
@@ -63,12 +64,13 @@ public class SynchronizationHandler {
         } else {
             body = Utils.toByteArray(timestamp);
         }
-        String requestPath = "/synchronization?id=" + key;
+        String requestPath = SYNCHRONIZATION_PATH + "?id=" + key;
         HttpRequest httpRequest =
                 HttpRequest.newBuilder(URI.create(serverUrl + requestPath))
                         .method(
                                 request.getMethodName(),
                                 HttpRequest.BodyPublishers.ofByteArray(body))
+                        .timeout(Duration.ofMillis(CONNECTION_TIMEOUT_MS))
                         .build();
         return client.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
     }

@@ -52,8 +52,9 @@ public final class StorageUtils {
             for (Entry<MemorySegment> entry : entries) {
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
                 offset += writeRecord(nextSSTable, offset, entry.key());
+                nextSSTable.asSlice(offset, Long.BYTES).copyFrom(entry.timestamp());
+                offset += Long.BYTES;
                 offset += writeRecord(nextSSTable, offset, entry.value());
-                offset += writeRecord(nextSSTable, offset, entry.timestamp());
                 index++;
             }
 
@@ -66,9 +67,7 @@ public final class StorageUtils {
     }
 
     static long getSize(Entry<MemorySegment> entry) {
-        long size = Long.BYTES + entry.key().byteSize()
-                + Long.BYTES + entry.timestamp().byteSize()
-                + Long.BYTES;
+        long size = Long.BYTES + entry.key().byteSize() + Long.BYTES + Long.BYTES;
         return entry.value() == null ? size : size + entry.value().byteSize();
     }
 

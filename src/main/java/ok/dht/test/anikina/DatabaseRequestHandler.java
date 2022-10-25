@@ -37,11 +37,7 @@ class DatabaseRequestHandler {
                     return new Response(Response.NOT_FOUND, entry.timestamp().toByteArray());
                 }
                 byte[] value = entry.value().toByteArray();
-                byte[] responseBody =
-                        Utils.toByteArray(
-                                entry.timestamp().toByteArray(),
-                                value
-                        );
+                byte[] responseBody = Utils.toByteArray(entry.timestamp().toByteArray(), value);
                 return new Response(Response.OK, responseBody);
             }
             case Request.METHOD_PUT -> {
@@ -56,7 +52,6 @@ class DatabaseRequestHandler {
         }
     }
 
-    // TODO: change timestamp type to long in Entry.
     private void insertIntoDao(String key, byte[] bytes, byte[] timestamp) {
         dao.upsert(
                 new BaseEntry<>(

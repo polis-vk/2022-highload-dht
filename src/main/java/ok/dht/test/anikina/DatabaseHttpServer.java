@@ -1,5 +1,7 @@
 package ok.dht.test.anikina;
 
+import static ok.dht.test.anikina.replication.SynchronizationHandler.SYNCHRONIZATION_PATH;
+
 import ok.dht.ServiceConfig;
 import ok.dht.test.anikina.replication.ReplicationParameters;
 import ok.dht.test.anikina.replication.SynchronizationHandler;
@@ -28,11 +30,13 @@ import java.util.concurrent.TimeUnit;
 public class DatabaseHttpServer extends HttpServer {
     private static final Log log = LogFactory.getLog(DatabaseHttpServer.class);
 
+    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
+    private static final String QUERY_PATH = "/v0/entity";
+
     private static final int THREADS_MIN = 2;
     private static final int THREAD_MAX = 3;
     private static final int MAX_QUEUE_SIZE = 128;
     private static final int TERMINATION_TIMEOUT_MS = 800;
-    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
     private static final Set<Integer> SUPPORTED_METHODS = Set.of(
             Request.METHOD_GET,
@@ -79,7 +83,7 @@ public class DatabaseHttpServer extends HttpServer {
             try {
                 String key = request.getParameter("id=");
 
-                if (request.getPath().equals("/synchronization")) {
+                if (request.getPath().equals(SYNCHRONIZATION_PATH)) {
                     byte[] timestamp = Arrays.copyOfRange(request.getBody(), 0, Long.BYTES);
                     byte[] body = Arrays.copyOfRange(request.getBody(), Long.BYTES, request.getBody().length);
                     session.sendResponse(requestHandler.handle(request.getMethod(), key, body, timestamp));
@@ -90,7 +94,7 @@ public class DatabaseHttpServer extends HttpServer {
                 String ack = request.getParameter("ack=");
                 ReplicationParameters parameters = ReplicationParameters.parse(from, ack, this.numberOfNodes);
 
-                if (!request.getPath().equals("/v0/entity")
+                if (!request.getPath().equals(QUERY_PATH)
                         || key == null
                         || key.isEmpty()
                         || parameters.getNumberOfAcks() == 0
@@ -105,11 +109,11 @@ public class DatabaseHttpServer extends HttpServer {
                 }
 
                 long timestamp = System.currentTimeMillis();
-                List<String> nodes = consistentHashing.getNodesByKey(key, parameters.getNumberOfReplicas());
+                Set<String> nodes = consistentHashing.getNodesByKey(key, parameters.getNumberOfReplicas());
 
-                boolean saveToCurrentNode = nodes.remove(selfUrl);
+                boolean saveToDao = nodes.remove(selfUrl);
                 List<Response> responses = synchronizationHandler.forwardRequest(key, request, nodes, timestamp);
-                if (saveToCurrentNode) {
+                if (saveToDao) {
                     Response selfResponse =
                             requestHandler.handle(
                                     request.getMethod(), key, request.getBody(), Utils.toByteArray(timestamp));
@@ -135,7 +139,6 @@ public class DatabaseHttpServer extends HttpServer {
         }
 
         long maxTombstoneTimestamp = -1;
-        int responsesWithValue = 0;
         long maxValueTimestamp = -1;
         byte[] value = new byte[0];
 
@@ -147,7 +150,6 @@ public class DatabaseHttpServer extends HttpServer {
                 maxTombstoneTimestamp = Math.max(maxTombstoneTimestamp, timestamp);
             }
             if (response.getStatus() == HttpURLConnection.HTTP_OK) {
-                responsesWithValue++;
                 long timestamp =
                         Utils.longFromByteArray(
                                 Arrays.copyOfRange(body, 0, Long.BYTES));
@@ -157,7 +159,7 @@ public class DatabaseHttpServer extends HttpServer {
                 }
             }
         }
-        if (responsesWithValue == 0 || maxTombstoneTimestamp > maxValueTimestamp) {
+        if (maxValueTimestamp == -1 || maxTombstoneTimestamp > maxValueTimestamp) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         } else {
             return new Response(Response.OK, value);
