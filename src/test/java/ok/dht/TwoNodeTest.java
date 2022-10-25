@@ -17,6 +17,7 @@
 package ok.dht;
 
 import java.net.HttpURLConnection;
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Arrays;
 import java.util.List;
@@ -40,9 +41,64 @@ class TwoNodeTest extends TestBase {
 
     @ServiceTest(stage = 4, clusterSize = 2)
     void tooBigRF(List<ServiceInfo> nodes) throws Exception {
-        assertEquals(HttpURLConnection.HTTP_BAD_REQUEST, nodes.get(0).get(randomId(), 3, 2).statusCode());
-        assertEquals(HttpURLConnection.HTTP_BAD_REQUEST, nodes.get(0).upsert(randomId(), randomValue(), 3, 2).statusCode());
-        assertEquals(HttpURLConnection.HTTP_BAD_REQUEST, nodes.get(0).delete(randomId(), 3, 2).statusCode());
+        // from > cluster size
+        assertEquals(HttpURLConnection.HTTP_BAD_REQUEST, nodes.get(0).get(randomId(), 2, 3).statusCode());
+        assertEquals(HttpURLConnection.HTTP_BAD_REQUEST, nodes.get(0).upsert(randomId(), randomValue(), 2, 3).statusCode());
+        assertEquals(HttpURLConnection.HTTP_BAD_REQUEST, nodes.get(0).delete(randomId(), 2, 3).statusCode());
+    }
+
+    @ServiceTest(stage = 4, clusterSize = 2)
+    void ackBiggerThanFrom(List<ServiceInfo> nodes) throws Exception {
+        // ack > from
+        assertEquals(HttpURLConnection.HTTP_BAD_REQUEST, nodes.get(0).get(randomId(), 2, 1).statusCode());
+        assertEquals(HttpURLConnection.HTTP_BAD_REQUEST, nodes.get(0).upsert(randomId(), randomValue(), 2, 1).statusCode());
+        assertEquals(HttpURLConnection.HTTP_BAD_REQUEST, nodes.get(0).delete(randomId(), 2, 1).statusCode());
+    }
+
+    private void assertBadRequests(List<ServiceInfo> nodes, String[] requests) throws Exception {
+        for (String request : requests) {
+            assertEquals(
+                    HttpURLConnection.HTTP_BAD_REQUEST,
+                    client.send(
+                            nodes.get(0).request(request).GET().build(),
+                            HttpResponse.BodyHandlers.ofByteArray()
+                    ).statusCode()
+            );
+            assertEquals(
+                    HttpURLConnection.HTTP_BAD_REQUEST,
+                    client.send(
+                            nodes.get(0).request(request)
+                                    .PUT(HttpRequest.BodyPublishers.ofByteArray(randomValue())).build(),
+                            HttpResponse.BodyHandlers.ofByteArray()
+                    ).statusCode()
+            );
+            assertEquals(
+                    HttpURLConnection.HTTP_BAD_REQUEST,
+                    client.send(
+                            nodes.get(0).request(request).DELETE().build(),
+                            HttpResponse.BodyHandlers.ofByteArray()
+                    ).statusCode()
+            );
+        }
+    }
+
+    @ServiceTest(stage = 4, clusterSize = 2)
+    void notANumberRF(List<ServiceInfo> nodes) throws Exception {
+        String[] requests = new String[] {
+                "/v0/entity?id=1&ack=abracadabra&from=abracadabra",
+                "/v0/entity?id=1&ack=abracadabra&from=2",
+                "/v0/entity?id=1&ack=2&from=abracadabra"
+        };
+        assertBadRequests(nodes, requests);
+    }
+
+    @ServiceTest(stage = 4, clusterSize = 2)
+    void partialRF(List<ServiceInfo> nodes) throws Exception {
+        String[] requests = new String[] {
+                "/v0/entity?id=1&ack=2",
+                "/v0/entity?id=1&from=2"
+        };
+        assertBadRequests(nodes, requests);
     }
 
     @ServiceTest(stage = 4, clusterSize = 2)
