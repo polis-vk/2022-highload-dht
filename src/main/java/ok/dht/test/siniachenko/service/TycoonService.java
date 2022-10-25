@@ -20,6 +20,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -37,8 +38,11 @@ public class TycoonService implements ok.dht.Service {
     public static final int DEFAULT_TIMEOUT_MILLIS = 1000;
     public static final int MIN_TIMEOUT_MILLIS = 300;
     public static final int MAX_TIMEOUT_MILLIS = 2000;
+
     private final ServiceConfig config;
     private final NodeMapper nodeMapper;
+    private final int defaultReplicasCount;
+    private final int defaultFromCount;
     private DB levelDb;
     private TycoonHttpServer server;
     private ExecutorService executorService;
@@ -48,6 +52,8 @@ public class TycoonService implements ok.dht.Service {
     public TycoonService(ServiceConfig config) {
         this.config = config;
         this.nodeMapper = new NodeMapper(config.clusterUrls());
+        this.defaultReplicasCount = config.clusterUrls().size();
+        this.defaultFromCount = (config.clusterUrls().size() + 1) / 2;
         this.nodeRequestsTimeouts = new ConcurrentHashMap<>();
     }
 
@@ -103,7 +109,31 @@ public class TycoonService implements ok.dht.Service {
             return;
         }
 
-        String nodeUrlByKey = nodeMapper.getNodeUrlByKey(Utf8.toBytes(idParameter));
+        final int from, replicas;
+        String replicasParameter = request.getParameter("replicas=");
+        if (replicasParameter == null || replicasParameter.isEmpty()) {
+            replicas = defaultReplicasCount;
+            from = defaultFromCount;
+        } else {
+            int sepIndex = replicasParameter.indexOf("/");
+            if (sepIndex == -1) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
+            String replicasString = replicasParameter.substring(0, sepIndex);
+            String fromString = replicasParameter.substring(sepIndex + 1);
+            try {
+                replicas = Integer.parseInt(replicasString);
+                from = Integer.parseInt(fromString);
+            } catch (NumberFormatException e) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
+        }
+
+        // TODO: send <replicas> messages
+        int[] nodeUrls = nodeMapper.getNodeUrlsByKey(Utf8.toBytes(idParameter));
+        String nodeUrlByKey = nodeMapper.getNodeUrls().get(nodeUrls[0]);
         if (config.selfUrl().equals(nodeUrlByKey)) {
             executeLocal(session, request, idParameter);
         } else {
