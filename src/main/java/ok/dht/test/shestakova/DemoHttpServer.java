@@ -75,51 +75,10 @@ public class DemoHttpServer extends HttpServer {
             return;
         }
 
-        List<String> targetNodes = getClustersByRendezvousHashing(key, ack);
+        List<String> targetNodes = getClustersByRendezvousHashing(key);
         workersPool.execute(() -> {
             try {
-                if (request.getHeader("internal") != null || request.getPath().contains("/service/message")) {
-                    Response response = handleInternalRequest(request, session);
-                    if (response != null) {
-                        session.sendResponse(response);
-                    }
-                    return;
-                }
-
-                List<HttpRequest> httpRequests = getHttpRequests(request, key, targetNodes);
-                List<Response> responses = getResponses(request, session, ack, httpRequests);
-
-                if (responses.size() < ack) {
-                    tryToSendResponseWithEmptyBody(session, RESPONSE_NOT_ENOUGH_REPLICAS);
-                    return;
-                }
-
-                if (request.getMethod() != Request.METHOD_GET) {
-                    session.sendResponse(responses.get(0));
-                    return;
-                }
-
-                byte[] body = null;
-                int notFoundResponsesCount = 0;
-                long maxTimestamp = Long.MIN_VALUE;
-                for (Response response : responses) {
-                    if (response.getStatus() == NOT_FOUND_CODE) {
-                        notFoundResponsesCount++;
-                        continue;
-                    }
-                    ByteBuffer bodyBB = ByteBuffer.wrap(response.getBody());
-                    long timestamp = bodyBB.getLong();
-                    if (maxTimestamp < timestamp) {
-                        maxTimestamp = timestamp;
-                        body = getBody(bodyBB);
-                    }
-                }
-
-                boolean cond = body != null && notFoundResponsesCount != responses.size();
-                session.sendResponse(new Response(
-                        cond ? Response.OK : Response.NOT_FOUND,
-                        cond ? body : Response.EMPTY
-                ));
+                executeHandlingRequest(request, session, key, ack, targetNodes);
             } catch (MethodNotAllowedException e) {
                 LOGGER.error("Method not allowed {} method: {}", serviceConfig.selfUrl(), request.getMethod());
                 tryToSendResponseWithEmptyBody(session, Response.METHOD_NOT_ALLOWED);
@@ -128,6 +87,52 @@ public class DemoHttpServer extends HttpServer {
                 tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
             }
         });
+    }
+
+    private void executeHandlingRequest(Request request, HttpSession session, String key, int ack,
+                                           List<String> targetNodes) throws IOException, InterruptedException {
+        if (request.getHeader("internal") != null || request.getPath().contains("/service/message")) {
+            Response response = handleInternalRequest(request, session);
+            if (response != null) {
+                session.sendResponse(response);
+            }
+            return;
+        }
+
+        List<HttpRequest> httpRequests = getHttpRequests(request, key, targetNodes);
+        List<Response> responses = getResponses(request, session, ack, httpRequests);
+
+        if (responses.size() < ack) {
+            tryToSendResponseWithEmptyBody(session, RESPONSE_NOT_ENOUGH_REPLICAS);
+            return;
+        }
+
+        if (request.getMethod() != Request.METHOD_GET) {
+            session.sendResponse(responses.get(0));
+            return;
+        }
+
+        byte[] body = null;
+        int notFoundResponsesCount = 0;
+        long maxTimestamp = Long.MIN_VALUE;
+        for (Response response : responses) {
+            if (response.getStatus() == NOT_FOUND_CODE) {
+                notFoundResponsesCount++;
+                continue;
+            }
+            ByteBuffer bodyBB = ByteBuffer.wrap(response.getBody());
+            long timestamp = bodyBB.getLong();
+            if (maxTimestamp < timestamp) {
+                maxTimestamp = timestamp;
+                body = getBody(bodyBB);
+            }
+        }
+
+        boolean cond = body != null && notFoundResponsesCount != responses.size();
+        session.sendResponse(new Response(
+                cond ? Response.OK : Response.NOT_FOUND,
+                cond ? body : Response.EMPTY
+        ));
     }
 
     private List<HttpRequest> getHttpRequests(Request request, String key, List<String> targetNodes) {
@@ -204,7 +209,7 @@ public class DemoHttpServer extends HttpServer {
         } else if (methodNum == Request.METHOD_PUT) {
             String requestPath = request.getPath();
             if (requestPath.contains("/service/message")) {
-                putNodesIllnessInfo(Arrays.toString(request.getBody()), requestPath.equals("/service/message/ill"));
+                putNodesIllnessInfo(Arrays.toString(request.getBody()), "/service/message/ill".equals(requestPath));
                 tryToSendResponseWithEmptyBody(session, Response.SERVICE_UNAVAILABLE);
                 return null;
             }
@@ -328,7 +333,7 @@ public class DemoHttpServer extends HttpServer {
         return null;
     }
 
-    private List<String> getClustersByRendezvousHashing(String key, int ack) {
+    private List<String> getClustersByRendezvousHashing(String key) {
         Map<Integer, String> nodesHashes = new TreeMap<>();
 
         for (String nodeUrl : serviceConfig.clusterUrls()) {
