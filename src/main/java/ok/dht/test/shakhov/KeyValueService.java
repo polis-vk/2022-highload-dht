@@ -30,9 +30,7 @@ import java.util.concurrent.CompletableFuture;
 public class KeyValueService implements Service {
     private static final Logger log = LoggerFactory.getLogger(KeyValueService.class);
 
-    private static final String UNEXPECTED_ERROR = "Unexpected error";
     private static final int FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024; // 4 mb
-    private static final String ENDPOINT = "/v0/entity";
 
     private final ServiceConfig serviceConfig;
     private HttpServer server;
