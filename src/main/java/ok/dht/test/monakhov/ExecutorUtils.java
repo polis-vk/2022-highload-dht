@@ -5,7 +5,7 @@ import org.apache.commons.logging.Log;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public class ExecutorUtils {
+public final class ExecutorUtils {
 
     private ExecutorUtils() {
     }

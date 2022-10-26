@@ -142,7 +142,6 @@ public class DbService implements Service {
         return executeDaoOperation(id, request, Timestamp.valueOf(timestamp));
     }
 
-
     private List<Future<Response>> multicast(Request request, String id, String[] nodeUrls) {
         List<Future<Response>> responses = new ArrayList<>();
         Timestamp timestamp = new Timestamp(System.currentTimeMillis());
