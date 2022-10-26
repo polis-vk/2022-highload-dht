@@ -1,5 +1,7 @@
 package ok.dht.test.kiselyov.dao.impl;
 
+import ok.dht.test.kiselyov.dao.BaseEntry;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -8,7 +10,7 @@ import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-public class FileIterator implements Iterator<EntryWithTimestamp>, Closeable {
+public class FileIterator implements Iterator<BaseEntry<byte[], Long>>, Closeable {
 
     private final FileChannel channelTable;
     private final FileChannel channelIndex;
@@ -32,8 +34,8 @@ public class FileIterator implements Iterator<EntryWithTimestamp>, Closeable {
     }
 
     @Override
-    public EntryWithTimestamp next() {
-        EntryWithTimestamp entry;
+    public BaseEntry<byte[], Long> next() {
+        BaseEntry<byte[], Long> entry;
         try {
             entry = FileOperations.getCurrent(pos, channelTable, channelIndex);
         } catch (IOException e) {

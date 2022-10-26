@@ -3,7 +3,6 @@ package ok.dht.test.kiselyov;
 import com.google.common.primitives.Bytes;
 import ok.dht.ServiceConfig;
 import ok.dht.test.kiselyov.dao.BaseEntry;
-import ok.dht.test.kiselyov.dao.impl.EntryWithTimestamp;
 import ok.dht.test.kiselyov.dao.impl.PersistentDao;
 import ok.dht.test.kiselyov.util.ClusterNode;
 import ok.dht.test.kiselyov.util.InternalClient;
@@ -120,7 +119,7 @@ public class DaoHttpServer extends HttpServer {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(@Param(value = "id") String id) {
-        EntryWithTimestamp result;
+        BaseEntry<byte[], Long> result;
         try {
             result = dao.get(id.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
@@ -131,20 +130,21 @@ public class DaoHttpServer extends HttpServer {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
         ByteBuffer timestamp = ByteBuffer.allocate(Long.BYTES);
-        timestamp.putLong(result.getTimestamp());
+        timestamp.putLong(result.timestamp());
         ByteBuffer tombstone = ByteBuffer.allocate(Integer.BYTES);
         tombstone.putInt(-1);
-        if (result.getEntry().value() == null) {
+        if (result.value() == null) {
             return new Response(Response.OK, Bytes.concat(timestamp.array(), tombstone.array()));
         }
-        return new Response(Response.OK, Bytes.concat(timestamp.array(), result.getEntry().value()));
+        return new Response(Response.OK, Bytes.concat(timestamp.array(), result.value()));
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(@Param(value = "id") String id, Request putRequest) {
         try {
-            dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), putRequest.getBody()));
+            long timestamp = System.currentTimeMillis();
+            dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), putRequest.getBody(), timestamp));
         } catch (Exception e) {
             LOGGER.error("UPSERT operation with id {} from PUT request failed.", id, e);
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));
@@ -156,7 +156,8 @@ public class DaoHttpServer extends HttpServer {
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(@Param(value = "id") String id) {
         try {
-            dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), null));
+            long timestamp = System.currentTimeMillis();
+            dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), null, timestamp));
         } catch (Exception e) {
             LOGGER.error("UPSERT operation with id {} from DELETE request failed.", id, e);
             return new Response(Response.INTERNAL_ERROR, e.getMessage().getBytes(StandardCharsets.UTF_8));

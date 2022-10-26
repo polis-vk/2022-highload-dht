@@ -1,14 +1,16 @@
 package ok.dht.test.kiselyov.dao.impl;
 
+import ok.dht.test.kiselyov.dao.BaseEntry;
+
 import java.util.Iterator;
 
-public class IndexedPeekIterator implements Iterator<EntryWithTimestamp> {
+public class IndexedPeekIterator implements Iterator<BaseEntry<byte[], Long>> {
 
     private final int index;
-    protected final Iterator<EntryWithTimestamp> delegate;
-    protected EntryWithTimestamp peek;
+    protected final Iterator<BaseEntry<byte[], Long>> delegate;
+    protected BaseEntry<byte[], Long> peek;
 
-    public IndexedPeekIterator(int index, Iterator<EntryWithTimestamp> delegate) {
+    public IndexedPeekIterator(int index, Iterator<BaseEntry<byte[], Long>> delegate) {
         this.index = index;
         this.delegate = delegate;
     }
@@ -17,7 +19,7 @@ public class IndexedPeekIterator implements Iterator<EntryWithTimestamp> {
         return index;
     }
 
-    public EntryWithTimestamp peek() {
+    public BaseEntry<byte[], Long> peek() {
         if (peek == null && delegate.hasNext()) {
             peek = delegate.next();
         }
@@ -30,8 +32,8 @@ public class IndexedPeekIterator implements Iterator<EntryWithTimestamp> {
     }
 
     @Override
-    public EntryWithTimestamp next() {
-        EntryWithTimestamp result = peek();
+    public BaseEntry<byte[], Long> next() {
+        BaseEntry<byte[], Long> result = peek();
         peek = null;
         return result;
     }

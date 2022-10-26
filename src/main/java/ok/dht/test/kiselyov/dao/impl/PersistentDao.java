@@ -12,8 +12,8 @@ import java.util.List;
 import java.util.NavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
-public class PersistentDao implements Dao<byte[], BaseEntry<byte[]>> {
-    private final NavigableMap<byte[], BaseEntry<byte[]>> pairs;
+public class PersistentDao implements Dao<byte[], Long, BaseEntry<byte[], Long>> {
+    private final NavigableMap<byte[], BaseEntry<byte[], Long>> pairs;
     private final FileOperations fileOperations;
 
     public PersistentDao(Config config) throws IOException {
@@ -22,32 +22,24 @@ public class PersistentDao implements Dao<byte[], BaseEntry<byte[]>> {
     }
 
     @Override
-    public Iterator<EntryWithTimestamp> get(byte[] from, byte[] to) throws IOException {
-        Iterator<EntryWithTimestamp> memoryIterator;
-        List<EntryWithTimestamp> pairValues;
+    public Iterator<BaseEntry<byte[], Long>> get(byte[] from, byte[] to) throws IOException {
+        Iterator<BaseEntry<byte[], Long>> memoryIterator;
+        List<BaseEntry<byte[], Long>> pairValues;
         if (from == null && to == null) {
             pairValues = new ArrayList<>(pairs.values().size());
-            for (BaseEntry<byte[]> pair : pairs.values()) {
-                pairValues.add(new EntryWithTimestamp(pair, System.currentTimeMillis()));
-            }
+            pairValues.addAll(pairs.values());
         } else if (from == null) {
             pairValues = new ArrayList<>(pairs.headMap(to).values().size());
-            for (BaseEntry<byte[]> pair : pairs.headMap(to).values()) {
-                pairValues.add(new EntryWithTimestamp(pair, System.currentTimeMillis()));
-            }
+            pairValues.addAll(pairs.headMap(to).values());
         } else if (to == null) {
             pairValues = new ArrayList<>(pairs.tailMap(from).values().size());
-            for (BaseEntry<byte[]> pair : pairs.tailMap(from).values()) {
-                pairValues.add(new EntryWithTimestamp(pair, System.currentTimeMillis()));
-            }
+            pairValues.addAll(pairs.tailMap(from).values());
         } else {
             pairValues = new ArrayList<>(pairs.subMap(from, to).values().size());
-            for (BaseEntry<byte[]> pair : pairs.subMap(from, to).values()) {
-                pairValues.add(new EntryWithTimestamp(pair, System.currentTimeMillis()));
-            }
+            pairValues.addAll(pairs.subMap(from, to).values());
         }
         memoryIterator = pairValues.iterator();
-        Iterator<EntryWithTimestamp> diskIterator = fileOperations.diskIterator(from, to);
+        Iterator<BaseEntry<byte[], Long>> diskIterator = fileOperations.diskIterator(from, to);
         return MergeIterator.of(
                 List.of(
                         new IndexedPeekIterator(0, memoryIterator),
@@ -58,20 +50,20 @@ public class PersistentDao implements Dao<byte[], BaseEntry<byte[]>> {
     }
 
     @Override
-    public EntryWithTimestamp get(byte[] key) throws IOException {
-        Iterator<EntryWithTimestamp> iterator = get(key, null);
+    public BaseEntry<byte[], Long> get(byte[] key) throws IOException {
+        Iterator<BaseEntry<byte[], Long>> iterator = get(key, null);
         if (!iterator.hasNext()) {
             return null;
         }
-        EntryWithTimestamp next = iterator.next();
-        if (Arrays.equals(key, next.getEntry().key())) {
+        BaseEntry<byte[], Long> next = iterator.next();
+        if (Arrays.equals(key, next.key())) {
             return next;
         }
         return null;
     }
 
     @Override
-    public void upsert(BaseEntry<byte[]> entry) {
+    public void upsert(BaseEntry<byte[], Long> entry) {
         pairs.put(entry.key(), entry);
     }
 
@@ -85,7 +77,7 @@ public class PersistentDao implements Dao<byte[], BaseEntry<byte[]>> {
 
     @Override
     public void compact() throws IOException {
-        Iterator<EntryWithTimestamp> iterator = get(null, null);
+        Iterator<BaseEntry<byte[], Long>> iterator = get(null, null);
         if (!iterator.hasNext()) {
             return;
         }

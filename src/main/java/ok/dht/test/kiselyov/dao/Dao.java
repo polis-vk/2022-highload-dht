@@ -1,12 +1,10 @@
 package ok.dht.test.kiselyov.dao;
 
-import ok.dht.test.kiselyov.dao.impl.EntryWithTimestamp;
-
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Iterator;
 
-public interface Dao<D, E extends Entry<D>> extends Closeable {
+public interface Dao<D, E, En extends Entry<D, E>> extends Closeable {
 
     /**
      * Returns ordered iterator of entries with keys between from (inclusive) and to (exclusive).
@@ -15,7 +13,7 @@ public interface Dao<D, E extends Entry<D>> extends Closeable {
      * @param to   upper bound of range (exclusive)
      * @return entries [from;to)
      */
-    Iterator<EntryWithTimestamp> get(D from, D to) throws IOException;
+    Iterator<En> get(D from, D to) throws IOException;
 
     /**
      * Returns entry by key. Note: default implementation is far from optimal.
@@ -23,13 +21,13 @@ public interface Dao<D, E extends Entry<D>> extends Closeable {
      * @param key entry`s key
      * @return entry
      */
-    default EntryWithTimestamp get(D key) throws IOException {
-        Iterator<EntryWithTimestamp> iterator = get(key, null);
+    default Entry<D, E> get(D key) throws IOException {
+        Iterator<En> iterator = get(key, null);
         if (!iterator.hasNext()) {
             return null;
         }
-        EntryWithTimestamp next = iterator.next();
-        if (next.getEntry().key().equals(key)) {
+        Entry<D, E> next = iterator.next();
+        if (next.key().equals(key)) {
             return next;
         }
         return null;
@@ -40,7 +38,7 @@ public interface Dao<D, E extends Entry<D>> extends Closeable {
      * @param from lower bound of range (inclusive)
      * @return entries with key >= from
      */
-    default Iterator<EntryWithTimestamp> allFrom(D from) throws IOException {
+    default Iterator<En> allFrom(D from) throws IOException {
         return get(from, null);
     }
 
@@ -49,7 +47,7 @@ public interface Dao<D, E extends Entry<D>> extends Closeable {
      * @param to upper bound of range (exclusive)
      * @return entries with key < to
      */
-    default Iterator<EntryWithTimestamp> allTo(D to) throws IOException {
+    default Iterator<En> allTo(D to) throws IOException {
         return get(null, to);
     }
 
@@ -57,7 +55,7 @@ public interface Dao<D, E extends Entry<D>> extends Closeable {
      * Returns ordered iterator of all entries.
      * @return all entries
      */
-    default Iterator<EntryWithTimestamp> all() throws IOException {
+    default Iterator<En> all() throws IOException {
         return get(null, null);
     }
 
@@ -65,7 +63,7 @@ public interface Dao<D, E extends Entry<D>> extends Closeable {
      * Inserts of replaces entry.
      * @param entry element to upsert
      */
-    void upsert(E entry);
+    void upsert(En entry);
 
     /**
      * Persists data (no-op by default).
