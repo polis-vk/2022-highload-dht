@@ -13,7 +13,6 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
-import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,12 +22,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -75,7 +71,8 @@ public class DemoHttpServer extends HttpServer {
             return;
         }
 
-        List<String> targetNodes = getClustersByRendezvousHashing(key);
+        List<String> targetNodes = HttpServerUtils.INSTANCE.getClustersByRendezvousHashing(key, circuitBreaker,
+                serviceConfig);
         workersPool.execute(() -> {
             try {
                 executeHandlingRequest(request, session, key, ack, targetNodes);
@@ -124,7 +121,7 @@ public class DemoHttpServer extends HttpServer {
             long timestamp = bodyBB.getLong();
             if (maxTimestamp < timestamp) {
                 maxTimestamp = timestamp;
-                body = getBody(bodyBB);
+                body = HttpServerUtils.INSTANCE.getBody(bodyBB);
             }
         }
 
@@ -176,19 +173,6 @@ public class DemoHttpServer extends HttpServer {
         return responses;
     }
 
-    private byte[] getBody(ByteBuffer bodyBB) {
-        byte[] body;
-        bodyBB.position(Long.BYTES);
-        int valueLength = bodyBB.getInt();
-        if (valueLength == -1) {
-            body = null;
-        } else {
-            body = new byte[valueLength];
-            bodyBB.get(body, 0, valueLength);
-        }
-        return body;
-    }
-
     private void tryToSendResponseWithEmptyBody(HttpSession session, String resultCode) {
         try {
             session.sendResponse(new Response(
@@ -226,7 +210,7 @@ public class DemoHttpServer extends HttpServer {
     }
 
     private Response handleGet(@Param(value = "id") String id) {
-        BaseEntry<MemorySegment> entry = dao.get(fromString(id));
+        BaseEntry<MemorySegment> entry = dao.get(HttpServerUtils.INSTANCE.fromString(id));
         if (entry == null) {
             return new Response(
                     Response.NOT_FOUND,
@@ -255,7 +239,7 @@ public class DemoHttpServer extends HttpServer {
 
     private Response handlePut(Request request, @Param(value = "id") String id) {
         dao.upsert(new BaseEntry<>(
-                fromString(id),
+                HttpServerUtils.INSTANCE.fromString(id),
                 MemorySegment.ofArray(request.getBody()),
                 System.currentTimeMillis()
         ));
@@ -267,7 +251,7 @@ public class DemoHttpServer extends HttpServer {
 
     private Response handleDelete(@Param(value = "id") String id) {
         dao.upsert(new BaseEntry<>(
-                fromString(id),
+                HttpServerUtils.INSTANCE.fromString(id),
                 null,
                 System.currentTimeMillis()
         ));
@@ -331,21 +315,5 @@ public class DemoHttpServer extends HttpServer {
             LOGGER.error("Error while working with response in {}", serviceConfig.selfUrl());
         }
         return null;
-    }
-
-    private List<String> getClustersByRendezvousHashing(String key) {
-        Map<Integer, String> nodesHashes = new TreeMap<>();
-
-        for (String nodeUrl : serviceConfig.clusterUrls()) {
-            if (circuitBreaker.isNodeIll(nodeUrl)) {
-                continue;
-            }
-            nodesHashes.put(Hash.murmur3(nodeUrl + key), nodeUrl);
-        }
-        return nodesHashes.values().stream().toList();
-    }
-
-    private MemorySegment fromString(String data) {
-        return data == null ? null : MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 }
