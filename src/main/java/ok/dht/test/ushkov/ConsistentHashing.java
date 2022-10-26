@@ -64,8 +64,8 @@ public class ConsistentHashing implements KeyManager {
             String nodeId = entries.get(i % entries.size()).getNodeId();
             if (!result.contains(nodeId)) {
                 result.add(nodeId);
-                i = (i + 1) % entries.size();
             }
+            i = (i + 1) % entries.size();
         }
         return result;
     }
