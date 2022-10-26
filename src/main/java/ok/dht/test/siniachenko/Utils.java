@@ -2,7 +2,7 @@ package ok.dht.test.siniachenko;
 
 import java.nio.ByteBuffer;
 
-public class Utils {
+public final class Utils {
     private Utils() {
 
     }

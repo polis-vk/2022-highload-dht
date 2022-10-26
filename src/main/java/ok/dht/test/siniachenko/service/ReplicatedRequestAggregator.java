@@ -4,6 +4,7 @@ import ok.dht.test.siniachenko.Utils;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ReplicatedRequestAggregator {
@@ -31,7 +32,10 @@ public class ReplicatedRequestAggregator {
                 return null;
             }
             if (ackReceivedRef.compareAndSet(ackReceived, ackReceived + 1)) {
-                bodies[ackReceived] = value;
+                if (value != null) {
+                    bodies[ackReceived] = new byte[value.length];
+                    System.arraycopy(value, 0, bodies[ackReceived], 0, value.length);
+                }
                 break;
             }
         }
