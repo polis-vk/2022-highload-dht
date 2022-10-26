@@ -27,16 +27,6 @@ public class NodeDeterminer {
             maxNodes.add(Objects.requireNonNull(hashNodes.poll()).getNode());
         }
         return maxNodes;
-        /*int max = 0;
-        int maxNode = 0;
-        for (int i = 0; i < clusterNodes.size(); i++) {
-            int hashSum = hash(key, i);
-            if (hashSum > max) {
-                max = hashSum;
-                maxNode = i;
-            }
-        }
-        return clusterNodes.get(maxNode);*/
     }
 
     private int hash(String key, Integer clusterNodeNum) {

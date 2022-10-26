@@ -1,6 +1,5 @@
 package ok.dht.test.kiselyov.dao.impl;
 
-
 import ok.dht.test.kiselyov.dao.BaseEntry;
 
 import java.util.Arrays;

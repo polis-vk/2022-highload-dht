@@ -13,7 +13,8 @@ public final class MergeIterator implements Iterator<BaseEntry<byte[], Long>> {
     private final PriorityQueue<IndexedPeekIterator> iterators;
     private final Comparator<BaseEntry<byte[], Long>> comparator;
 
-    private MergeIterator(PriorityQueue<IndexedPeekIterator> iterators, Comparator<BaseEntry<byte[], Long>> comparator) {
+    private MergeIterator(PriorityQueue<IndexedPeekIterator> iterators,
+                          Comparator<BaseEntry<byte[], Long>> comparator) {
         this.iterators = iterators;
         this.comparator = comparator;
     }
