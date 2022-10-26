@@ -1,14 +1,11 @@
 package ok.dht.test.shestakova;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
 import ok.dht.test.shestakova.dao.MemorySegmentDao;
-import ok.dht.test.shestakova.dao.base.BaseEntry;
 import ok.dht.test.shestakova.exceptions.MethodNotAllowedException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
@@ -17,7 +14,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -41,6 +37,7 @@ public class DemoHttpServer extends HttpServer {
     private final ExecutorService workersPool;
     private final CircuitBreakerImpl circuitBreaker;
     private final MemorySegmentDao dao;
+    private final RequestsHandler requestsHandler;
 
     public DemoHttpServer(HttpServerConfig config, HttpClient httpClient, ExecutorService workersPool,
                           ServiceConfig serviceConfig, MemorySegmentDao dao, Object... routers) throws IOException {
@@ -50,6 +47,7 @@ public class DemoHttpServer extends HttpServer {
         this.workersPool = workersPool;
         this.circuitBreaker = new CircuitBreakerImpl(serviceConfig, httpClient);
         this.dao = dao;
+        this.requestsHandler = new RequestsHandler(this.dao);
     }
 
     @Override
@@ -96,7 +94,7 @@ public class DemoHttpServer extends HttpServer {
             return;
         }
 
-        List<HttpRequest> httpRequests = getHttpRequests(request, key, targetNodes);
+        List<HttpRequest> httpRequests = requestsHandler.getHttpRequests(request, key, targetNodes, serviceConfig);
         List<Response> responses = getResponses(request, session, ack, httpRequests);
 
         if (responses.size() < ack) {
@@ -109,6 +107,10 @@ public class DemoHttpServer extends HttpServer {
             return;
         }
 
+        sendResponseToUser(session, responses);
+    }
+
+    private void sendResponseToUser(HttpSession session, List<Response> responses) throws IOException {
         byte[] body = null;
         int notFoundResponsesCount = 0;
         long maxTimestamp = Long.MIN_VALUE;
@@ -130,19 +132,6 @@ public class DemoHttpServer extends HttpServer {
                 cond ? Response.OK : Response.NOT_FOUND,
                 cond ? body : Response.EMPTY
         ));
-    }
-
-    private List<HttpRequest> getHttpRequests(Request request, String key, List<String> targetNodes) {
-        List<HttpRequest> httpRequests = new ArrayList<>();
-        for (String node : targetNodes) {
-            if (node.equals(serviceConfig.selfUrl())) {
-                httpRequests.add(null);
-                continue;
-            }
-            HttpRequest tmpRequest = buildHttpRequest(key, node, request);
-            httpRequests.add(tmpRequest);
-        }
-        return httpRequests;
     }
 
     private List<Response> getResponses(Request request, HttpSession session, int ack, List<HttpRequest> httpRequests)
@@ -189,17 +178,18 @@ public class DemoHttpServer extends HttpServer {
         Response response;
         String id = request.getParameter("id");
         if (methodNum == Request.METHOD_GET) {
-            response = handleGet(id);
+            response = requestsHandler.handleGet(id);
         } else if (methodNum == Request.METHOD_PUT) {
             String requestPath = request.getPath();
             if (requestPath.contains("/service/message")) {
-                putNodesIllnessInfo(Arrays.toString(request.getBody()), "/service/message/ill".equals(requestPath));
+                circuitBreaker.putNodesIllnessInfo(Arrays.toString(request.getBody()),
+                        "/service/message/ill".equals(requestPath));
                 tryToSendResponseWithEmptyBody(session, Response.SERVICE_UNAVAILABLE);
                 return null;
             }
-            response = handlePut(request, id);
+            response = requestsHandler.handlePut(request, id);
         } else if (methodNum == Request.METHOD_DELETE) {
-            response = handleDelete(id);
+            response = requestsHandler.handleDelete(id);
         } else {
             response = new Response(
                     Response.METHOD_NOT_ALLOWED,
@@ -207,58 +197,6 @@ public class DemoHttpServer extends HttpServer {
             );
         }
         return response;
-    }
-
-    private Response handleGet(@Param(value = "id") String id) {
-        BaseEntry<MemorySegment> entry = dao.get(HttpServerUtils.INSTANCE.fromString(id));
-        if (entry == null) {
-            return new Response(
-                    Response.NOT_FOUND,
-                    Response.EMPTY
-            );
-        }
-        boolean cond = entry.value() == null;
-        ByteBuffer timestamp = ByteBuffer
-                .allocate(Long.BYTES)
-                .putLong(entry.timestamp());
-        ByteBuffer value = ByteBuffer
-                .allocate(cond ? 0 : (int) entry.value().byteSize());
-        if (!cond) {
-            value.put(entry.value().toByteArray());
-        }
-        return new Response(
-                Response.OK,
-                ByteBuffer
-                        .allocate(timestamp.capacity() + value.capacity() + Integer.BYTES)
-                        .put(timestamp.array())
-                        .putInt(cond ? -1 : (int) entry.value().byteSize())
-                        .put(value.array())
-                        .array()
-        );
-    }
-
-    private Response handlePut(Request request, @Param(value = "id") String id) {
-        dao.upsert(new BaseEntry<>(
-                HttpServerUtils.INSTANCE.fromString(id),
-                MemorySegment.ofArray(request.getBody()),
-                System.currentTimeMillis()
-        ));
-        return new Response(
-                Response.CREATED,
-                Response.EMPTY
-        );
-    }
-
-    private Response handleDelete(@Param(value = "id") String id) {
-        dao.upsert(new BaseEntry<>(
-                HttpServerUtils.INSTANCE.fromString(id),
-                null,
-                System.currentTimeMillis()
-        ));
-        return new Response(
-                Response.ACCEPTED,
-                Response.EMPTY
-        );
     }
 
     @Override
@@ -273,38 +211,6 @@ public class DemoHttpServer extends HttpServer {
         }
         circuitBreaker.doShutdownNow();
         super.stop();
-    }
-
-    private void putNodesIllnessInfo(String node, boolean isIll) {
-        circuitBreaker.putNodesIllnessInfo(node, isIll);
-    }
-
-    private HttpRequest.Builder request(String nodeUrl, String path) {
-        return HttpRequest.newBuilder(URI.create(nodeUrl + path));
-    }
-
-    private HttpRequest.Builder requestForKey(String nodeUrl, String key) {
-        return request(nodeUrl, "/v0/entity?id=" + key);
-    }
-
-    private HttpRequest buildHttpRequest(String key, String targetCluster, Request request)
-            throws MethodNotAllowedException {
-        if (request.getMethod() != Request.METHOD_GET && request.getMethod() != Request.METHOD_PUT
-                && request.getMethod() != Request.METHOD_DELETE) {
-            throw new MethodNotAllowedException();
-        }
-
-        HttpRequest.Builder httpRequest = requestForKey(targetCluster, key);
-        int requestMethod = request.getMethod();
-        if (requestMethod == Request.METHOD_GET) {
-            httpRequest.GET();
-        } else if (requestMethod == Request.METHOD_PUT) {
-            httpRequest.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
-        } else if (requestMethod == Request.METHOD_DELETE) {
-            httpRequest.DELETE();
-        }
-        httpRequest.setHeader("internal", "true");
-        return httpRequest.build();
     }
 
     private HttpResponse<byte[]> getResponseOrNull(CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture)
