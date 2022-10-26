@@ -101,7 +101,7 @@ public class ParallelHttpServer extends HttpServer {
         String ackRaw = request.getParameter("ack=");
         String fromRaw = request.getParameter("from=");
 
-        if (id == null) {
+        if (id == null || id.isEmpty()) {
             session.sendResponse(emptyResponse(Response.BAD_REQUEST));
             return;
         }
