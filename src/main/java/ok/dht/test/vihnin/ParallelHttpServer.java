@@ -138,7 +138,7 @@ public class ParallelHttpServer extends HttpServer {
         try {
             if (innerHeaderValue == null) {
                 internalRequestService.submit(() -> {
-                    requestTask(request, session, destinationShardId, ack);
+                    requestTask(request, session, destinationShardId, ack, from);
                 });
             } else {
                 executorService.submit(() -> {
@@ -191,7 +191,7 @@ public class ParallelHttpServer extends HttpServer {
         return shardHelper.getShardByKey(key);
     }
 
-    private void requestTask(Request request, HttpSession session, int destinationShardId, int ack) {
+    private void requestTask(Request request, HttpSession session, int destinationShardId, int ack, int from) {
         long currentTime = System.currentTimeMillis();
         request.addHeader(TIME_HEADER_NAME + ": " + currentTime);
 
@@ -201,7 +201,7 @@ public class ParallelHttpServer extends HttpServer {
 
         int actualAck = 0;
 
-        for (var neighbor : clusterManager.getNeighbours(destinationShardId)) {
+        for (var neighbor : clusterManager.getNeighbours(destinationShardId).subList(0, from)) {
             Response handleSuccess = neighbor.equals(clusterManager.getUrlByShard(shard))
                     ? responseManager.handleRequest(request)
                     : handleAckRequest(request, neighbor);
@@ -217,9 +217,6 @@ public class ParallelHttpServer extends HttpServer {
                     }
                 }
                 actualAck += 1;
-            }
-            if (actualAck == ack) {
-                break;
             }
         }
 
