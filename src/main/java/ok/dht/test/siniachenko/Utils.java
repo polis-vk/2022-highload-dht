@@ -3,6 +3,10 @@ package ok.dht.test.siniachenko;
 import java.nio.ByteBuffer;
 
 public class Utils {
+    private Utils() {
+
+    }
+
     public static byte[] withCurrentTimestampAndFlagDeleted(byte[] value, boolean flagDeleted) {
         ByteBuffer byteBuffer = ByteBuffer.allocate(value.length + 9);
         byte flag;

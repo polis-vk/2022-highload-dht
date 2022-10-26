@@ -1,24 +1,34 @@
 package ok.dht.test.siniachenko.service;
 
-import ok.dht.test.siniachenko.TycoonHttpServer;
 import ok.dht.test.siniachenko.Utils;
-import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ReplicatedRequestAggregator {
-    public void addResultAndAggregateIfNeed(
-        HttpSession session, int ack, byte[][] bodies,
-        AtomicInteger ackReceivedRef, byte[] value, int method
+    public boolean filterSuccessfulStatusCode(int method, int statusCode) {
+        if (method == Request.METHOD_GET) {
+            return statusCode == 200 || statusCode == 410 || statusCode == 404;
+        }
+        if (method == Request.METHOD_PUT) {
+            return statusCode == 201;
+        }
+        if (method == Request.METHOD_DELETE) {
+            return statusCode == 202;
+        }
+        return false;
+    }
+
+    public Response addResultAndAggregateIfNeed(
+        int ack, byte[][] bodies, AtomicInteger ackReceivedRef, byte[] value, int method
     ) {
         // saving received body and status code
         int ackReceived;
         while (true) {
             ackReceived = ackReceivedRef.get();
             if (ackReceived >= ack) {
-                return;
+                return null;
             }
             if (ackReceivedRef.compareAndSet(ackReceived, ackReceived + 1)) {
                 bodies[ackReceived] = value;
@@ -29,18 +39,19 @@ public class ReplicatedRequestAggregator {
         // aggregating results after receiving enough replicas
         if (ackReceived + 1 == ack) {
             if (method == Request.METHOD_GET) {
-                aggregateGet(session, ack, bodies);
+                return aggregateGet(ack, bodies);
             }
             if (method == Request.METHOD_PUT) {
-                TycoonHttpServer.sendResponse(session, new Response(Response.CREATED, Response.EMPTY));
+                return new Response(Response.CREATED, Response.EMPTY);
             }
             if (method == Request.METHOD_DELETE) {
-                TycoonHttpServer.sendResponse(session, new Response(Response.ACCEPTED, Response.EMPTY));
+                return new Response(Response.ACCEPTED, Response.EMPTY);
             }
         }
+        return null;
     }
 
-    public void aggregateGet(HttpSession session, int ack, byte[][] bodies) {
+    public Response aggregateGet(int ack, byte[][] bodies) {
         int maxTimeStampReplica = -1;
         long maxTimeMillis = 0;
         for (int replicaAnswered = 0; replicaAnswered < ack; replicaAnswered++) {
@@ -56,10 +67,10 @@ public class ReplicatedRequestAggregator {
             maxTimeStampReplica == -1 || bodies[maxTimeStampReplica] == null
                 || Utils.readFlagDeletedFromBytes(bodies[maxTimeStampReplica])
         ) {
-            TycoonHttpServer.sendResponse(session, new Response(Response.NOT_FOUND, Response.EMPTY));
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
         } else {
             byte[] realValue = Utils.readValueFromBytes(bodies[maxTimeStampReplica]);
-            TycoonHttpServer.sendResponse(session, new Response(Response.OK, realValue));
+            return new Response(Response.OK, realValue);
         }
     }
 }

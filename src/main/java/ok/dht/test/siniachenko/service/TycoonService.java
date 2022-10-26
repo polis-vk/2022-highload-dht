@@ -109,7 +109,8 @@ public class TycoonService implements ok.dht.Service, Serializable {
     }
 
     public void executeRequest(Request request, HttpSession session, String id) throws IOException {
-        final int ack, from;
+        final int ack;
+        final int from;
         String fromParameter = request.getParameter("from=");
         try {
             if (fromParameter == null || fromParameter.isEmpty()) {
@@ -159,20 +160,17 @@ public class TycoonService implements ok.dht.Service, Serializable {
             } else {
                 proxyRequest(request, id, nodeUrlByKey).thenAccept(
                     response -> {
-                        int statusCode = response.statusCode();
-//                        // TODO: different logic for filtering requests via status code
-//                        if (statusCode != 404 && statusCode != 410 && statusCode != 200) {
-//                            LOG.error(
-//                                "Unexpected status {} code requesting node {}", statusCode, nodeUrlByKey
-//                            );
-//                            checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
-//                            return;
-//                        }
-
                         try {
-                            replicatedRequestAggregator.addResultAndAggregateIfNeed(
-                                session, ack, bodies, ackReceivedRef, response.body(), request.getMethod()
-                            );
+                            if (replicatedRequestAggregator.filterSuccessfulStatusCode(
+                                request.getMethod(), response.statusCode()
+                            )) {
+                                Response responseGot = replicatedRequestAggregator.addResultAndAggregateIfNeed(
+                                    ack, bodies, ackReceivedRef, response.body(), request.getMethod()
+                                );
+                                if (responseGot != null) {
+                                    TycoonHttpServer.sendResponse(session, responseGot);
+                                }
+                            }
                         } finally {
                             checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
                         }
@@ -197,9 +195,12 @@ public class TycoonService implements ok.dht.Service, Serializable {
                         return;
                     }
                 }
-                replicatedRequestAggregator.addResultAndAggregateIfNeed(
-                    session, ack, bodies, ackReceivedRef, value, request.getMethod()
+                Response responseGot = replicatedRequestAggregator.addResultAndAggregateIfNeed(
+                    ack, bodies, ackReceivedRef, value, request.getMethod()
                 );
+                if (responseGot != null) {
+                    TycoonHttpServer.sendResponse(session, responseGot);
+                }
             } catch (DBException e) {
                 LOG.error("Error in DB", e);
             } finally {
