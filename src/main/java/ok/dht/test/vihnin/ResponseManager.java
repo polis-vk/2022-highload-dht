@@ -13,7 +13,7 @@ import static ok.dht.test.vihnin.ServiceUtils.emptyResponse;
 
 public class ResponseManager {
 
-    private static final byte TOMBSTONE = (byte) 0xFF;
+    private static final byte TOMBSTONE = (byte) 0xFFL;
     private final DataBase<String, byte[]> storage;
 
     public ResponseManager(DataBase<String, byte[]> storage) {
@@ -96,10 +96,8 @@ public class ResponseManager {
     private static byte[] convertData(byte[] data, long timestamp) {
         byte[] timeBytes = new byte[9];
         // 1 + 8
-        long timestampCope = timestamp;
         for (int i = 0; i < 8; i++) {
-            timeBytes[8 - i] = (byte) timestampCope;
-            timestampCope >>= 8;
+            timeBytes[1 + i] = (byte) (timestamp >> (i * 8));
         }
         byte[] actualBytes = new byte[data.length + timeBytes.length];
         System.arraycopy(timeBytes, 0, actualBytes, 0, timeBytes.length);
@@ -110,8 +108,7 @@ public class ResponseManager {
     private static long parseTimeFromData(byte[] data) {
         long timestamp = 0;
         for (int i = 0; i < 8; i++) {
-            timestamp <<= 8;
-            timestamp += data[i + 1];
+            timestamp |= (data[i + 1] & 0xFFL) << (i * 8);
         }
         return timestamp;
     }

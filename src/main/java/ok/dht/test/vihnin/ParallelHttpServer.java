@@ -210,7 +210,7 @@ public class ParallelHttpServer extends HttpServer {
                 if (value != null) {
                     long currTime = Long.parseLong(value);
 
-                    if (currTime > freshestTime) {
+                    if (currTime >= freshestTime) {
                         freshestData = handleSuccess.getBody();
                         freshestStatus = handleSuccess.getStatus();
                         freshestTime = currTime;
