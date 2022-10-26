@@ -8,9 +8,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 public class ConsistentHashing implements KeyManager {
     private MessageDigest md;
@@ -24,7 +22,7 @@ public class ConsistentHashing implements KeyManager {
     private static final int KEY_SEED = 288729359;
     private static final Logger LOG = LoggerFactory.getLogger(ConsistentHashing.class);
     private final List<Entry> entries = new ArrayList<>();
-    private int nodes = 0;
+    private int nodes;
 
     public ConsistentHashing() {
         try {

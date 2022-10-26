@@ -2,6 +2,8 @@ package ok.dht.test.ushkov;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -17,8 +19,9 @@ public class ReplicatedRequest {
 
     private final List<Response> responses = new ArrayList<>();
     private final AtomicInteger finishedTasks = new AtomicInteger(0);
-    private boolean responseSent = false;
-    private Response response = null;
+    private boolean responseSent;
+
+    private final Logger LOG = LoggerFactory.getLogger(ReplicatedRequest.class);
 
     public ReplicatedRequest(int ack, int from) {
         this.ack = ack;
@@ -33,14 +36,14 @@ public class ReplicatedRequest {
             try {
                 session.sendResponse(findLatest());
             } catch (IOException e) {
-                // No ops.
+                LOG.error("Could not send response to client", e);
             }
         } else if (!responseSent && isAckCouldNotBeReached()) {
             responseSent = true;
             try {
                 session.sendResponse(new Response("504 Not Enough Replicas", Response.EMPTY));
             } catch (IOException e) {
-                // No ops.
+                LOG.error("Could not send response to client", e);
             }
         }
     }
@@ -52,13 +55,9 @@ public class ReplicatedRequest {
             try {
                 session.sendResponse(new Response("504 Not Enough Replicas", Response.EMPTY));
             } catch (IOException e) {
-                // No ops.
+                LOG.error("Could not send response to client", e);
             }
         }
-    }
-
-    public Response getResponse() {
-        return response;
     }
 
     private boolean isAckReached() {

@@ -187,7 +187,8 @@ public class RocksDBService implements Service {
         }
     }
 
-    private void entityGet(Request request, HttpSession session) throws InvalidParamsException, IOException, RocksDBException {
+    private void entityGet(Request request, HttpSession session)
+            throws InvalidParamsException, IOException, RocksDBException {
         String key = request.getParameter("id=");
         if (key == null || key.isEmpty()) {
             throw new InvalidParamsException();
@@ -233,7 +234,8 @@ public class RocksDBService implements Service {
         }
     }
 
-    private void entityPut(Request request, HttpSession session) throws InvalidParamsException, IOException, RocksDBException {
+    private void entityPut(Request request, HttpSession session)
+            throws InvalidParamsException, IOException, RocksDBException {
         String key = request.getParameter("id=");
         if (key == null || key.isEmpty()) {
             throw new InvalidParamsException();
@@ -265,7 +267,8 @@ public class RocksDBService implements Service {
         }
     }
 
-    private void entityDelete(Request request, HttpSession session) throws IOException, RocksDBException, InvalidParamsException {
+    private void entityDelete(Request request, HttpSession session)
+            throws IOException, RocksDBException, InvalidParamsException {
         String key = request.getParameter("id=");
         if (key == null || key.isEmpty()) {
             throw new InvalidParamsException();
