@@ -1,6 +1,5 @@
 package ok.dht.test.monakhov;
 
-
 import com.google.common.primitives.SignedBytes;
 import one.nio.http.Request;
 
@@ -18,12 +17,6 @@ public class EntryWrapper implements Comparable<EntryWrapper>, Serializable {
         this.timestamp = timestamp;
     }
 
-    public EntryWrapper(byte[] bytes, Timestamp timestamp, boolean isTombstone) {
-        this.bytes = bytes;
-        this.timestamp = timestamp;
-        this.isTombstone = isTombstone;
-    }
-
     @Override
     public int compareTo(EntryWrapper o) {
         int c = timestamp.compareTo(o.timestamp);
@@ -35,7 +28,7 @@ public class EntryWrapper implements Comparable<EntryWrapper>, Serializable {
                 return 1;
             }
             if (o.isTombstone) {
-                return  -1;
+                return -1;
             }
             return SignedBytes.lexicographicalComparator().compare(bytes, o.bytes);
         }

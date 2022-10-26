@@ -1,25 +1,34 @@
 package ok.dht.test.monakhov;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import ok.dht.ServiceConfig;
+import one.nio.server.AcceptorConfig;
 
-public class ServiceUtils {
+public final class ServiceUtils {
+    public static final String TIMESTAMP_HEADER = "TimeStamp: ";
+    public static String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
+    public static final int QUEUE_SIZE = 1000;
 
-    public static byte[] serialize(Object object) throws IOException {
-        try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
-             ObjectOutputStream out = new ObjectOutputStream(bos)) {
-            out.writeObject(object);
-            return bos.toByteArray();
-        }
+    private ServiceUtils() {
     }
 
-    public static Object deserialize(byte[] bytes) throws IOException, ClassNotFoundException {
-        try (ByteArrayInputStream bis = new ByteArrayInputStream(bytes);
-             ObjectInputStream in = new ObjectInputStream(bis)) {
-            return in.readObject();
-        }
+    public static <T extends Comparable<T>> T max(T a, T b) {
+        return a.compareTo(b) >= 0 ? a : b;
+    }
+
+    public static boolean isInvalidReplica(String ack, String from) {
+        return (ack == null && from != null) || (ack != null && from == null);
+    }
+
+    public static AsyncHttpServerConfig createConfigFromPort(ServiceConfig serviceConfig) {
+        AsyncHttpServerConfig httpConfig = new AsyncHttpServerConfig();
+        httpConfig.clusterUrls = serviceConfig.clusterUrls();
+        httpConfig.selfUrl = serviceConfig.selfUrl();
+        httpConfig.workersNumber = Runtime.getRuntime().availableProcessors();
+        httpConfig.queueSize = QUEUE_SIZE;
+        AcceptorConfig acceptor = new AcceptorConfig();
+        acceptor.port = serviceConfig.selfPort();
+        acceptor.reusePort = true;
+        httpConfig.acceptors = new AcceptorConfig[] {acceptor};
+        return httpConfig;
     }
 }

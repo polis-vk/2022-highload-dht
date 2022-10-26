@@ -1,12 +1,11 @@
 package ok.dht.test.monakhov;
 
 import org.apache.commons.logging.Log;
-import org.slf4j.Logger;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public final class ExecutorUtils {
+public class ExecutorUtils {
 
     private ExecutorUtils() {
     }

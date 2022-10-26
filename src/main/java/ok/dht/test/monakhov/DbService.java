@@ -13,7 +13,6 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.ConnectionString;
 import one.nio.pool.PoolException;
-import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -37,15 +36,16 @@ import java.util.concurrent.TimeUnit;
 import static java.net.HttpURLConnection.HTTP_ACCEPTED;
 import static java.net.HttpURLConnection.HTTP_CREATED;
 import static java.net.HttpURLConnection.HTTP_OK;
+import static ok.dht.test.monakhov.ServiceUtils.NOT_ENOUGH_REPLICAS;
+import static ok.dht.test.monakhov.ServiceUtils.TIMESTAMP_HEADER;
+import static ok.dht.test.monakhov.ServiceUtils.createConfigFromPort;
+import static ok.dht.test.monakhov.ServiceUtils.isInvalidReplica;
+import static ok.dht.test.monakhov.ServiceUtils.max;
 import static one.nio.serial.Serializer.deserialize;
 import static one.nio.serial.Serializer.serialize;
 
 public class DbService implements Service {
-    private static final String TIMESTAMP_HEADER = "TimeStamp: ";
-    public static String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
-
     private static final Log log = LogFactory.getLog(DbService.class);
-    private static final int QUEUE_SIZE = 1000;
     private final ServiceConfig serviceConfig;
     private final NodesRouter nodesRouter;
     private ScheduledThreadPoolExecutor monitoringExecutor;
@@ -59,22 +59,9 @@ public class DbService implements Service {
         nodesRouter = new JumpingNodesRouter(serviceConfig.clusterUrls());
     }
 
-    private AsyncHttpServerConfig createConfigFromPort(int port) {
-        AsyncHttpServerConfig httpConfig = new AsyncHttpServerConfig();
-        httpConfig.clusterUrls = serviceConfig.clusterUrls();
-        httpConfig.selfUrl = serviceConfig.selfUrl();
-        httpConfig.workersNumber = Runtime.getRuntime().availableProcessors();
-        httpConfig.queueSize = QUEUE_SIZE;
-        AcceptorConfig acceptor = new AcceptorConfig();
-        acceptor.port = port;
-        acceptor.reusePort = true;
-        httpConfig.acceptors = new AcceptorConfig[] {acceptor};
-        return httpConfig;
-    }
-
     @Override
     public CompletableFuture<?> start() throws IOException {
-        server = new AsyncHttpServer(createConfigFromPort(serviceConfig.selfPort()));
+        server = new AsyncHttpServer(createConfigFromPort(serviceConfig));
         try {
             dao = RocksDB.open(serviceConfig.workingDir().toString());
         } catch (RocksDBException e) {
@@ -125,8 +112,7 @@ public class DbService implements Service {
     public Response manageRequest(
         @Param(value = "id") String id, @Param(value = "from") String fromParam,
         @Param(value = "ack") String ackParam, Request request
-    )
-    {
+    ) {
         if (id == null || id.isBlank() || isInvalidReplica(ackParam, fromParam)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
@@ -156,9 +142,6 @@ public class DbService implements Service {
         return executeDaoOperation(id, request, Timestamp.valueOf(timestamp));
     }
 
-    private boolean isInvalidReplica(String ack, String from) {
-        return (ack == null && from != null) || (ack != null && from == null);
-    }
 
     private List<Future<Response>> multicast(Request request, String id, String[] nodeUrls) {
         List<Future<Response>> responses = new ArrayList<>();
@@ -273,29 +256,6 @@ public class DbService implements Service {
         }
     }
 
-
-    public static <T extends Comparable<T>> T max(T a, T b) {
-        return a.compareTo(b) >= 0 ? a : b;
-    }
-
-    private void createMonitoringTask(String nodeUrl, AsyncHttpClient client) {
-        if (client.available().compareAndSet(true, false)) {
-            Runnable monitoringTask = new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        client.connect(nodeUrl);
-                        client.available().compareAndSet(false, true);
-                    } catch (InterruptedException | PoolException | IOException | HttpException ex) {
-                        log.debug("Impossible to establish connection to node: " + nodeUrl, ex);
-                        monitoringExecutor.schedule(this, 5L, TimeUnit.SECONDS);
-                    }
-                }
-            };
-            monitoringExecutor.schedule(monitoringTask, 0L, TimeUnit.SECONDS);
-        }
-    }
-
     public Response getEntity(String id) throws RocksDBException {
         final var entry = dao.get(Utf8.toBytes(id));
 
@@ -318,9 +278,27 @@ public class DbService implements Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
+    private void createMonitoringTask(String nodeUrl, AsyncHttpClient client) {
+        if (client.available().compareAndSet(true, false)) {
+            Runnable monitoringTask = new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        client.connect(nodeUrl);
+                        client.available().compareAndSet(false, true);
+                    } catch (InterruptedException | PoolException | IOException | HttpException ex) {
+                        log.debug("Impossible to establish connection to node: " + nodeUrl, ex);
+                        monitoringExecutor.schedule(this, 5L, TimeUnit.SECONDS);
+                    }
+                }
+            };
+            monitoringExecutor.schedule(monitoringTask, 0L, TimeUnit.SECONDS);
+        }
+    }
 
     @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
+
         @Override
         public Service create(ServiceConfig config) {
             return new DbService(config);
