@@ -11,19 +11,19 @@ public class DaoEntry implements Comparable<DaoEntry>, Serializable {
 
     public DaoEntry(Long timestamp, byte[] value) {
         this.timestamp = timestamp;
-        if (value != null) {
-            this.value = Arrays.copyOf(value, value.length);
-        } else {
+        if (value == null) {
             this.value = new byte[0];
+        } else {
+            this.value = Arrays.copyOf(value, value.length);
         }
     }
 
     public DaoEntry(Long timestamp, byte[] value, boolean isTombstone) {
         this.timestamp = timestamp;
-        if (value != null) {
-            this.value = Arrays.copyOf(value, value.length);
-        } else {
+        if (value == null) {
             this.value = new byte[0];
+        } else {
+            this.value = Arrays.copyOf(value, value.length);
         }
         this.isTombstone = isTombstone;
     }
