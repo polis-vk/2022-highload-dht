@@ -128,6 +128,14 @@ public class TycoonService implements ok.dht.Service, Serializable {
             try {
                 from = Integer.parseInt(fromString);
                 ack = Integer.parseInt(ackString);
+                if (!(
+                    0 < from && from <= config.clusterUrls().size()
+                        && 0 < ack && ack <= config.clusterUrls().size()
+                        && ack <= from
+                )) {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
+                }
             } catch (NumberFormatException e) {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
@@ -278,12 +286,12 @@ public class TycoonService implements ok.dht.Service, Serializable {
     private CompletableFuture<HttpResponse<byte[]>> proxyRequest(HttpSession session, Request request, String idParameter, String nodeUrl) {
         Integer timeout = nodeRequestsTimeouts.computeIfAbsent(nodeUrl, s -> DEFAULT_TIMEOUT_MILLIS);
         return httpClient.sendAsync(
-                HttpRequest.newBuilder()
-                    .uri(URI.create(nodeUrl + PATH + "?id=" + idParameter))
-                    .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                    .build(),
-                HttpResponse.BodyHandlers.ofByteArray()
-            ).orTimeout(timeout, TimeUnit.MILLISECONDS);
+            HttpRequest.newBuilder()
+                .uri(URI.create(nodeUrl + PATH + "?id=" + idParameter))
+                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .build(),
+            HttpResponse.BodyHandlers.ofByteArray()
+        ).orTimeout(timeout, TimeUnit.MILLISECONDS);
     }
 
     private void sendResponse(HttpSession session, Response response) {
