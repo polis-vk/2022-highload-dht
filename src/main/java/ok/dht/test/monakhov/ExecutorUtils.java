@@ -17,9 +17,9 @@ public final class ExecutorUtils {
     public static void shutdownGracefully(ExecutorService executor, Log log) {
         executor.shutdown();
         try {
-            if (!executor.awaitTermination(1, TimeUnit.SECONDS)) {
+            if (!executor.awaitTermination(10, TimeUnit.MILLISECONDS)) {
                 executor.shutdownNow();
-                if (!executor.awaitTermination(1, TimeUnit.SECONDS) && log != null) {
+                if (!executor.awaitTermination(10, TimeUnit.MILLISECONDS) && log != null) {
                     log.error("Unable to shutdown executor service: " + executor);
                 }
             }
