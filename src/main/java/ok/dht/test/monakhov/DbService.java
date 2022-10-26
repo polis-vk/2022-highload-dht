@@ -30,13 +30,16 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import static java.net.HttpURLConnection.HTTP_ACCEPTED;
 import static java.net.HttpURLConnection.HTTP_CREATED;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static ok.dht.test.monakhov.ServiceUtils.NOT_ENOUGH_REPLICAS;
+import static ok.dht.test.monakhov.ServiceUtils.QUEUE_SIZE;
 import static ok.dht.test.monakhov.ServiceUtils.TIMESTAMP_HEADER;
 import static ok.dht.test.monakhov.ServiceUtils.createConfigFromPort;
 import static ok.dht.test.monakhov.ServiceUtils.isInvalidReplica;
@@ -76,8 +79,10 @@ public class DbService implements Service {
             Math.max(1, serviceConfig.clusterUrls().size() / 100)
         );
 
-        connectionExecutor = Executors.newFixedThreadPool(
-            Math.max(4, serviceConfig.clusterUrls().size() / 2)
+        int nThreads = Math.max(4, serviceConfig.clusterUrls().size() / 2);
+        connectionExecutor = new ThreadPoolExecutor(nThreads, nThreads,
+            0L, TimeUnit.MILLISECONDS,
+            new LinkedBlockingQueue<Runnable>(QUEUE_SIZE)
         );
 
         server.addRequestHandlers(this);
@@ -162,7 +167,7 @@ public class DbService implements Service {
                         return client.invoke(request);
                     } catch (PoolException | SocketTimeoutException e) {
                         log.debug("Timeout connection to node:" + nodeUrl, e);
-                        createMonitoringTask(nodeUrl, client);
+                        // createMonitoringTask(nodeUrl, client);
                         throw e;
                     }
                 }));
