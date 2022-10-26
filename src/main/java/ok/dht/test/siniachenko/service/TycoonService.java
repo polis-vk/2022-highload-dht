@@ -39,16 +39,17 @@ public class TycoonService implements ok.dht.Service, Serializable {
     public static final int DEFAULT_TIMEOUT_MILLIS = 1000;
     public static final int MIN_TIMEOUT_MILLIS = 300;
     public static final int MAX_TIMEOUT_MILLIS = 2000;
+    public static final String NOT_ENOUGH_REPLICAS_RESULT_CODE = "504 Not Enough Replicas";
 
     private final ServiceConfig config;
     private final NodeMapper nodeMapper;
+    private final ConcurrentMap<String, Integer> nodeRequestsTimeouts;
     private final int defaultFromCount;
     private final int defaultAckCount;
     private DB levelDb;
     private TycoonHttpServer server;
     private ExecutorService executorService;
     private HttpClient httpClient;
-    private ConcurrentMap<String, Integer> nodeRequestsTimeouts;
 
     public TycoonService(ServiceConfig config) {
         this.config = config;
@@ -140,6 +141,7 @@ public class TycoonService implements ok.dht.Service, Serializable {
             int[] statusCodes = new int[ack];
             byte[][] bodies = new byte[ack][];
             AtomicInteger ackReceivedRef = new AtomicInteger();
+            AtomicInteger finishedOrFailedRef = new AtomicInteger();
 
             boolean needLocalWork = false;
             for (int replicaToSend = 0; replicaToSend < from; ++replicaToSend) {
@@ -154,33 +156,59 @@ public class TycoonService implements ok.dht.Service, Serializable {
                                 LOG.error(
                                     "Unexpected status {} code requesting node {}", statusCode, nodeUrlByKey
                                 );
-                                // TODO: add check not enough replicas !!!!!!
+                                checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
                                 return;
                             }
 
-                            addResultAndAggregateIfNeed(
-                                session, ack, statusCodes, bodies, ackReceivedRef, response.body(), statusCode
-                            );
-                            // TODO: add check not enough replicas !!!!!!
+                            try {
+                                addResultAndAggregateIfNeed(
+                                    session, ack, statusCodes, bodies, ackReceivedRef, response.body(), statusCode
+                                );
+                            } finally {
+                                checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
+                            }
                         }
-                    );
+                    ).exceptionally(ex -> {
+                        nodeRequestsTimeouts.compute(nodeUrlByKey, (url, t) -> Math.min(t / 2, MAX_TIMEOUT_MILLIS));
+                        LOG.error("Error after proxy request to {}", nodeUrlByKey, ex);
+                        checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
+                        return null;
+                    });
                 }
             }
             if (needLocalWork) {
-                byte[] value = get(idParameter);
-                int statusCode;
-                if (value == null) {
-                    statusCode = 404;
-                } else {
-                    boolean deleted = readFlagDeletedFromBytes(value);
-                    if (deleted) {
-                        statusCode = 410;
+                try {
+                    byte[] value = get(idParameter);
+                    int statusCode;
+                    if (value == null) {
+                        statusCode = 404;
                     } else {
-                        statusCode = 200;
+                        boolean deleted = readFlagDeletedFromBytes(value);
+                        if (deleted) {
+                            statusCode = 410;
+                        } else {
+                            statusCode = 200;
+                        }
                     }
+                    addResultAndAggregateIfNeed(session, ack, statusCodes, bodies, ackReceivedRef, value, statusCode);
+                } catch (DBException e) {
+                    LOG.error("Error in DB", e);
+                } finally {
+                    checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
                 }
-                addResultAndAggregateIfNeed(session, ack, statusCodes, bodies, ackReceivedRef, value, statusCode);
-                // TODO: add check not enough replicas !!!!!!
+            }
+        }
+    }
+
+    private void checkAllFinishedOrFailed(
+        HttpSession session, int ack, int from, AtomicInteger ackReceivedRef, AtomicInteger finishedOrFailedRef
+    ) {
+        int finishedOrFailed = finishedOrFailedRef.incrementAndGet();
+        if (finishedOrFailed == from) {
+            if (ackReceivedRef.get() < ack) {
+                sendResponse(
+                    session, new Response(NOT_ENOUGH_REPLICAS_RESULT_CODE, Response.EMPTY)
+                );
             }
         }
     }
@@ -225,7 +253,7 @@ public class TycoonService implements ok.dht.Service, Serializable {
         }
     }
 
-    private byte[] get(String id) {
+    private byte[] get(String id) throws DBException {
         return levelDb.get(Utf8.toBytes(id));
     }
 
@@ -255,14 +283,7 @@ public class TycoonService implements ok.dht.Service, Serializable {
                     .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
                     .build(),
                 HttpResponse.BodyHandlers.ofByteArray()
-            ).orTimeout(timeout, TimeUnit.MILLISECONDS)
-            .exceptionally(ex -> {
-                nodeRequestsTimeouts.compute(nodeUrl, (url, t) -> Math.min(t / 2, MAX_TIMEOUT_MILLIS));
-                LOG.error("Error after proxy request to {}", nodeUrl, ex);
-                Response proxyResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-                sendResponse(session, proxyResponse);
-                return null;
-            });
+            ).orTimeout(timeout, TimeUnit.MILLISECONDS);
     }
 
     private void sendResponse(HttpSession session, Response response) {
