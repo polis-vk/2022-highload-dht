@@ -6,6 +6,7 @@ import org.apache.commons.logging.LogFactory;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -82,7 +83,11 @@ public class ConsistentHash {
             nodes.add(nodeIndex[i]);
             i = (i + 1) % nodeIndex.length;
         }
-        return nodes.stream().map(clusterUrls::get).collect(Collectors.toList());
+        List<String> result = new ArrayList<>(nodesCount);
+        for (int nodeId : nodes) {
+            result.add(clusterUrls.get(nodeId));
+        }
+        return result;
     }
 
     private int convertToIntHash(byte[] sha256) {

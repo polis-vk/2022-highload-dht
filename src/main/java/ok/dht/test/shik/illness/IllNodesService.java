@@ -75,6 +75,10 @@ public class IllNodesService {
         }
     }
 
+    public boolean isIllNode(String url) {
+        return nodeIllness[clusterUrlToIndex.get(url)].get();
+    }
+
     public int getIllNodesCount(List<String> shardUrls) {
         int illNodes = 0;
         for (String shardUrl : shardUrls) {

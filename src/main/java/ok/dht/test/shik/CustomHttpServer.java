@@ -131,10 +131,12 @@ public class CustomHttpServer extends HttpServer {
 
         RequestState state = new LeaderRequestState(requestedReplicas, requiredReplicas, request, session, id);
         for (String shardUrl : shardUrls) {
-            if (selfUrl.equals(shardUrl)) {
-                handleCurrentShardRequest(state);
-            } else {
-                handleProxyRequest(state, shardUrl);
+            if (!illNodesService.isIllNode(shardUrl)) {
+                if (selfUrl.equals(shardUrl)) {
+                    handleCurrentShardRequest(state);
+                } else {
+                    handleProxyRequest(state, shardUrl);
+                }
             }
         }
 
