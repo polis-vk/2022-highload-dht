@@ -78,8 +78,8 @@ public class DbService implements Service {
             Math.max(1, serviceConfig.clusterUrls().size() / 100)
         );
 
-        int nThreads = Math.max(4, serviceConfig.clusterUrls().size() / 2);
-        connectionExecutor = new ThreadPoolExecutor(nThreads, nThreads,
+        int n = Math.max(4, serviceConfig.clusterUrls().size() / 2);
+        connectionExecutor = new ThreadPoolExecutor(n, n,
             0L, TimeUnit.MILLISECONDS,
             new LinkedBlockingQueue<Runnable>(QUEUE_SIZE)
         );
@@ -118,8 +118,7 @@ public class DbService implements Service {
     public Response manageRequest(
         @Param(value = "id") String id, @Param(value = "from") String fromParam,
         @Param(value = "ack") String ackParam, Request request
-    )
-    {
+    ) {
         if (id == null || id.isBlank() || isInvalidReplica(ackParam, fromParam)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
@@ -200,8 +199,7 @@ public class DbService implements Service {
         case Request.METHOD_GET -> {
 
             if (ack <= responses.stream()
-                .filter(r -> r.getStatus() == HTTP_OK || r.getStatus() == HTTP_NOT_FOUND).count())
-            {
+                .filter(r -> r.getStatus() == HTTP_OK || r.getStatus() == HTTP_NOT_FOUND).count()) {
 
                 EntryWrapper result = null;
                 for (var res : responses) {
