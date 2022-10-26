@@ -19,11 +19,9 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class DemoService implements Service {
@@ -32,9 +30,6 @@ public class DemoService implements Service {
     public static final String DEFAULT_PATH = "/v0/entity";
     public static final String LOCAL_PATH = "/v0/local/entity";
     public static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
-    public static final String FROM_PARAMETR = "from=";
-    public static final String ID_PARAMETR = "id=";
-    public static final String ACK_PARAMETR = "ack=";
     private final ServiceConfig config;
     private final SkipOldExecutorFactory skipOldThreadExecutorFactory = new SkipOldExecutorFactory();
     private ExecutorService proxyExecutor;
@@ -91,44 +86,31 @@ public class DemoService implements Service {
     }
 
     public void handleGet(Request request, HttpSession session) throws IOException {
-        final String key = request.getParameter(ID_PARAMETR);
-        final String ackString = request.getParameter(ACK_PARAMETR);
-        final String fromString = request.getParameter(FROM_PARAMETR);
-
-        final int from = (fromString == null) ? consistentHashRouter.getAmountOfPhysicalNodes()
-                : Integer.parseInt(fromString);
-        final int ack = (ackString == null) ? from / 2 + 1 : Integer.parseInt(ackString);
-
-        if (ack > from || ack <= 0) {
+        Header header = new Header(request, consistentHashRouter.getAmountOfPhysicalNodes());
+        if (!header.isOk()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
         }
 
-        AtomicInteger successfulResponses = new AtomicInteger(0);
-        AtomicInteger unsuccessfulResponses = new AtomicInteger(0);
-        CountDownLatch continueBarrier = new CountDownLatch(1);
+        AckBarrier barrier = new AckBarrier(header.getAck(), header.getFrom());
         AtomicReference<Entry<Timestamp, byte[]>> newestEntry = new AtomicReference<>();
 
-        List<Node> routerNode = consistentHashRouter.getNode(key, from);
+        List<Node> routerNode = consistentHashRouter.getNode(header.getKey(), header.getFrom());
         for (Node node : routerNode) {
-            node.get(key).thenAccept((entry) -> {
+            node.get(header.getKey()).thenAccept((entry) -> {
                 if (entry == null) {
-                    if (unsuccessfulResponses.incrementAndGet() >= (from - ack + 1)) {
-                        continueBarrier.countDown();
-                    }
+                    barrier.unSuccess();
                 } else {
                     updateNewestEntry(newestEntry, entry);
-                    if (successfulResponses.incrementAndGet() >= ack) {
-                        continueBarrier.countDown();
-                    }
+                    barrier.success();
                 }
             });
         }
 
-        waitContinueBarrier(continueBarrier, session,
-                String.format("%nInterrupted while awaiting GET responses key: %s%n", key));
+        barrier.waitContinueBarrier(session,
+                String.format("%nInterrupted while awaiting GET responses key: %s%n", header.getKey()));
 
         Entry<Timestamp, byte[]> entry = newestEntry.get();
-        if (successfulResponses.get() < ack) {
+        if (!barrier.isAckAchieved()) {
             session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
         } else if (entry.key() == null || entry.value() == null) {
             session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
@@ -138,7 +120,7 @@ public class DemoService implements Service {
     }
 
     public void localHandleGet(Request request, HttpSession session) throws IOException {
-        String key = request.getParameter(ID_PARAMETR);
+        String key = request.getParameter(Header.ID_PARAMETR);
 
         Entry<Timestamp, byte[]> entry = localNode.getDao(key);
         session.sendResponse(
@@ -149,96 +131,59 @@ public class DemoService implements Service {
     public void handlePut(Request request, HttpSession session) throws IOException {
         final Timestamp currentTime = new Timestamp(System.currentTimeMillis());
 
-        final String key = request.getParameter(ID_PARAMETR);
-        final String ackString = request.getParameter(ACK_PARAMETR);
-        final String fromString = request.getParameter(FROM_PARAMETR);
-
-        final int from = (fromString == null) ? consistentHashRouter.getAmountOfPhysicalNodes()
-                : Integer.parseInt(fromString);
-        final int ack = (ackString == null) ? from / 2 + 1 : Integer.parseInt(ackString);
-
-        if (ack > from || ack <= 0) {
+        Header header = new Header(request, consistentHashRouter.getAmountOfPhysicalNodes());
+        if (!header.isOk()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
         }
 
-        AtomicInteger successfulResponses = new AtomicInteger(0);
-        AtomicInteger unsuccessfulResponses = new AtomicInteger(0);
-        CountDownLatch continueBarrier = new CountDownLatch(1);
+        AckBarrier barrier = new AckBarrier(header.getAck(), header.getFrom());
 
-        List<Node> routerNode = consistentHashRouter.getNode(key, from);
+        List<Node> routerNode = consistentHashRouter.getNode(header.getKey(), header.getFrom());
         for (Node node : routerNode) {
-            node.put(key, currentTime, request.getBody()).thenAccept((isSuccessful) -> {
+            node.put(header.getKey(), currentTime, request.getBody()).thenAccept((isSuccessful) -> {
                 if (isSuccessful) {
-                    if (successfulResponses.incrementAndGet() >= ack) {
-                        continueBarrier.countDown();
-                    }
+                    barrier.success();
                 } else {
-                    if (unsuccessfulResponses.incrementAndGet() >= (from - ack + 1)) {
-                        continueBarrier.countDown();
-                    }
+                    barrier.unSuccess();
                 }
             });
         }
 
-        waitContinueBarrier(continueBarrier, session,
-                String.format("%nInterrupted while awaiting PUT responses key: %s%n", key));
+        barrier.waitContinueBarrier(session,
+                String.format("%nInterrupted while awaiting GET responses key: %s%n", header.getKey()));
 
-        if (successfulResponses.get() >= ack) {
+        if (barrier.isAckAchieved()) {
             session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
         } else {
             session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
         }
     }
 
-    private static void waitContinueBarrier(CountDownLatch continueBarrier,
-                                            HttpSession session, String msg) throws IOException {
-        try {
-            continueBarrier.await();
-        } catch (InterruptedException e) {
-            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-            LOGGER.error(msg, e);
-            Thread.currentThread().interrupt();
-        }
-    }
-
     public void handleDelete(Request request, HttpSession session) throws IOException {
         final Timestamp currentTime = new Timestamp(System.currentTimeMillis());
 
-        final String key = request.getParameter(ID_PARAMETR);
-        final String ackString = request.getParameter(ACK_PARAMETR);
-        final String fromString = request.getParameter(FROM_PARAMETR);
-
-        final int from = (fromString == null) ? consistentHashRouter.getAmountOfPhysicalNodes()
-                : Integer.parseInt(fromString);
-        final int ack = (ackString == null) ? from / 2 + 1 : Integer.parseInt(ackString);
-
-        if (ack > from || ack <= 0) {
+        Header header = new Header(request, consistentHashRouter.getAmountOfPhysicalNodes());
+        if (!header.isOk()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
         }
 
-        AtomicInteger successfulResponses = new AtomicInteger(0);
-        AtomicInteger unsuccessfulResponses = new AtomicInteger(0);
-        CountDownLatch continueBarrier = new CountDownLatch(1);
+        AckBarrier barrier = new AckBarrier(header.getAck(), header.getFrom());
 
-        List<Node> routerNode = consistentHashRouter.getNode(key, from);
+        List<Node> routerNode = consistentHashRouter.getNode(header.getKey(), header.getFrom());
         for (Node node : routerNode) {
-            node.delete(key, currentTime).thenAccept((isSuccessful) -> {
+            node.delete(header.getKey(), currentTime).thenAccept((isSuccessful) -> {
                 if (isSuccessful) {
-                    if (successfulResponses.incrementAndGet() >= ack) {
-                        continueBarrier.countDown();
-                    }
+                    barrier.success();
                 } else {
-                    if (unsuccessfulResponses.incrementAndGet() >= (from - ack + 1)) {
-                        continueBarrier.countDown();
-                    }
+                    barrier.unSuccess();
                 }
             });
         }
 
-        waitContinueBarrier(continueBarrier, session,
-                String.format("%nInterrupted while awaiting DELETE responses key: %s%n", key));
+        barrier.waitContinueBarrier(session,
+                String.format("%nInterrupted while awaiting GET responses key: %s%n", header.getKey()));
 
-        if (successfulResponses.get() >= ack) {
+        if (barrier.isAckAchieved()) {
             session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
         } else {
             session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
@@ -246,7 +191,7 @@ public class DemoService implements Service {
     }
 
     public void localHandlePutDelete(Request request, HttpSession session) throws IOException {
-        String key = request.getParameter(ID_PARAMETR);
+        String key = request.getParameter(Header.ID_PARAMETR);
         Entry<Timestamp, byte[]> entry = Node.ClusterNode.getEntryFromByteArray(request.getBody());
 
         localNode.putDao(key, entry);
@@ -263,12 +208,14 @@ public class DemoService implements Service {
         Entry<Timestamp, byte[]> currentNewestEntry = newestEntry.get();
         if (entry.key() == null) {
             // If response was Not Found -> set entry only if there was nothing else.
-            // When notFound entry is (null,null)
+            // When NotFound entry is (null,null)
             newestEntry.compareAndSet(null, entry);
         } else {
             while ((currentNewestEntry == null // If there is absolutely no entry
                     || currentNewestEntry.key() == null // It there is NotFound
-                    || entry.key().after(currentNewestEntry.key()))
+                    || entry.key().after(currentNewestEntry.key()) // If new is more fresh
+                    || (entry.key().equals(currentNewestEntry.key()) && entry.isTombstone())) // If time is the same ->
+                                                                                              // -> better use tombstone
                     && !newestEntry.compareAndSet(currentNewestEntry, entry)) {
                 currentNewestEntry = newestEntry.get();
             }

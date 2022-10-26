@@ -53,7 +53,6 @@ public class ConsistentHashRouter {
         int hash = Hash.murmur3(key);
 
         SortedMap<Integer,VNode> tailMap = ring.tailMap(hash);
-        int firstNodeHashVal = tailMap.isEmpty() ? ring.firstKey() : tailMap.firstKey();
 
         List<Node> nodeList = new ArrayList<>(from);
         for (VNode vnode : tailMap.values()) {
