@@ -12,7 +12,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class ProxyNodeHandler implements NodeRequestHandler {
     private static final String REQUEST_PATH = "/v0/entity?id=";
@@ -59,9 +63,9 @@ public class ProxyNodeHandler implements NodeRequestHandler {
                 .header(ServiceUtils.TIMESTAMP_HEADER, String.valueOf(timestamp))
                 .method(
                         request.getMethodName(),
-                        request.getBody() != null
-                        ? HttpRequest.BodyPublishers.ofByteArray(request.getBody())
-                        : HttpRequest.BodyPublishers.noBody()
+                        request.getBody() == null
+                                ? HttpRequest.BodyPublishers.noBody()
+                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
                 )
                 .build();
         return httpClient

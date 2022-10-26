@@ -6,5 +6,6 @@ import java.util.Set;
 
 public interface Hashing {
     Node nodeByKey(String key);
+
     Set<Node> nodesByKey(String key, int nodeCount);
 }

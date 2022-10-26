@@ -30,6 +30,7 @@ public class SelfNodeHandler implements NodeRequestHandler {
             throw new IOException(e);
         }
     }
+
     @Override
     public void handleForKey(String key, Request request, HttpSession session, long timestamp) throws IOException {
         session.sendResponse(handleForKey(key, request, timestamp));
@@ -70,7 +71,6 @@ public class SelfNodeHandler implements NodeRequestHandler {
 
     public Response get(String id, long timestamp) throws RocksDBException {
         byte[] bytes = rocksDB.get(Utf8.toBytes(id));
-
 
         if (bytes == null) {
             return new Response(Response.NOT_FOUND, Value.tombstone(timestamp).toBytes());

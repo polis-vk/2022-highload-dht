@@ -1,21 +1,21 @@
 package ok.dht.test.armenakyan.distribution.model;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 public class Value {
     private final long timestamp;
     private final boolean isTombstone;
-    private final byte[] value;
+    private final byte[] data;
 
-
-    private Value(byte[] value, long timestamp, boolean isTombstone) {
-        this.value = value;
+    private Value(byte[] data, long timestamp, boolean isTombstone) {
+        this.data = data == null ? null : Arrays.copyOf(data, data.length);
         this.timestamp = timestamp;
         this.isTombstone = isTombstone;
     }
 
-    public Value(byte[] value, long timestamp) {
-        this(value, timestamp, false);
+    public Value(byte[] data, long timestamp) {
+        this(data, timestamp, false);
     }
 
     public static Value tombstone(long timestamp) {
@@ -38,19 +38,19 @@ public class Value {
 
     public byte[] toBytes() {
         ByteBuffer buffer =
-                ByteBuffer.allocate(Long.BYTES + Byte.BYTES + (value == null ? 0 : value.length))
+                ByteBuffer.allocate(Long.BYTES + Byte.BYTES + (data == null ? 0 : data.length))
                         .putLong(timestamp)
                         .put((byte) (isTombstone ? 1 : 0));
 
-        if (value != null) {
-            buffer.put(value);
+        if (data != null) {
+            buffer.put(data);
         }
 
         return buffer.array();
     }
 
     public byte[] value() {
-        return value;
+        return data;
     }
 
     public long timestamp() {

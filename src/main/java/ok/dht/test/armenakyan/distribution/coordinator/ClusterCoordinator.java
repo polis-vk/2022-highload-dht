@@ -13,7 +13,10 @@ import one.nio.http.Response;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -95,7 +98,7 @@ public class ClusterCoordinator implements Closeable {
         int ackNumber = acquireContext.ackNumber();
 
         switch (acquireContext.request().getMethod()) {
-            case Request.METHOD_GET ->  {
+            case Request.METHOD_GET -> {
                 Value okValue = codeToValue.get(200);
                 int okCount = codeCount.getOrDefault(200, 0);
                 if (okCount >= ackNumber) {
@@ -103,13 +106,17 @@ public class ClusterCoordinator implements Closeable {
                 }
 
                 int notFoundCount = codeCount.getOrDefault(404, 0);
-                Value latestValue = latestValue(codeToValue.get(404), okValue);
+                if (notFoundCount + okCount >= ackNumber) {
+                    Value latestValue = latestValue(codeToValue.get(404), okValue);
 
-                if (notFoundCount + okCount >= ackNumber && latestValue != null && latestValue.isTombstone()) {
-                    return new Response(Response.NOT_FOUND, Response.EMPTY);
+                    if (latestValue != null && !latestValue.isTombstone()) {
+                        return new Response(Response.OK, latestValue.value());
+                    } else {
+                        return new Response(Response.NOT_FOUND, Response.EMPTY);
+                    }
                 }
             }
-            case Request.METHOD_PUT ->  {
+            case Request.METHOD_PUT -> {
                 if (codeCount.getOrDefault(201, 0) >= ackNumber) {
                     return new Response(Response.CREATED, Response.EMPTY);
                 }
@@ -118,6 +125,9 @@ public class ClusterCoordinator implements Closeable {
                 if (codeCount.getOrDefault(202, 0) >= ackNumber) {
                     return new Response(Response.ACCEPTED, Response.EMPTY);
                 }
+            }
+            default -> {
+                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             }
         }
         return new Response(ServiceUtils.NOT_ENOUGH_REPLICAS, Response.EMPTY);

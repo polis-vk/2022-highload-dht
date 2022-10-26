@@ -3,8 +3,8 @@ package ok.dht.test.armenakyan;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.armenakyan.distribution.coordinator.ClusterCoordinator;
 import ok.dht.test.armenakyan.distribution.SelfNodeHandler;
+import ok.dht.test.armenakyan.distribution.coordinator.ClusterCoordinator;
 import ok.dht.test.armenakyan.distribution.hashing.MD5KeyHasher;
 import ok.dht.test.armenakyan.util.ServiceUtils;
 import one.nio.http.HttpServer;
@@ -110,7 +110,7 @@ public class DhtService implements Service {
             return;
         }
 
-       coordinator.replicate(id, request, session, ack, from);
+        coordinator.replicate(id, request, session, ack, from);
     }
 
     @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
