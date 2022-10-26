@@ -83,7 +83,7 @@ public class DemoService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 3, week = 1)
+    @ServiceFactory(stage = 4, week = 1)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

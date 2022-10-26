@@ -22,8 +22,13 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -33,6 +38,8 @@ import java.util.concurrent.TimeoutException;
 public class DemoHttpServer extends HttpServer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DemoHttpServer.class);
+    private static final String RESPONSE_NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
+    private static final int NOT_FOUND_CODE = 404;
     private final HttpClient httpClient;
     private final ServiceConfig serviceConfig;
     private final ExecutorService workersPool;
@@ -53,75 +60,153 @@ public class DemoHttpServer extends HttpServer {
     public void handleRequest(Request request, HttpSession session) {
         String key = request.getParameter("id=");
         if (key == null || key.isEmpty()) {
-            tryToSendErrorResponse(session, Response.BAD_REQUEST);
+            tryToSendResponseWithEmptyBody(session, Response.BAD_REQUEST);
             return;
         }
 
-        String targetNode = getClusterByRendezvousHashing(key);
-        if (targetNode == null) {
-            LOGGER.error("There are no available nodes in the cluster!");
+        String fromString = request.getParameter("from=");
+        String ackString = request.getParameter("ack=");
+        int from = fromString == null || fromString.isEmpty() ? serviceConfig.clusterUrls().size()
+                : Integer.parseInt(fromString);
+        int ack = ackString == null || ackString.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackString);
+
+        if (ack == 0 || ack > from || from > serviceConfig.clusterUrls().size()) {
+            tryToSendResponseWithEmptyBody(session, Response.BAD_REQUEST);
             return;
         }
-        if (!targetNode.equals(serviceConfig.selfUrl())) {
-            HttpRequest httpRequest;
-            try {
-                httpRequest = buildHttpRequest(key, targetNode, request);
-            } catch (MethodNotAllowedException e) {
-                LOGGER.error("Method not allowed {} method: {}", serviceConfig.selfUrl(), request.getMethod());
-                tryToSendErrorResponse(session, Response.METHOD_NOT_ALLOWED);
-                return;
-            }
-            try {
-                CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture = httpClient
-                        .sendAsync(
-                                httpRequest,
-                                HttpResponse.BodyHandlers.ofByteArray()
-                        );
-                getResponse(responseCompletableFuture, session);
-                return;
-            } catch (InterruptedException | IOException e) {
-                LOGGER.error("Error while working with response in server {}", serviceConfig.selfUrl());
-                tryToSendErrorResponse(session, Response.INTERNAL_ERROR);
-                return;
-            }
-        }
 
+        List<String> targetNodes = getClustersByRendezvousHashing(key, ack);
         workersPool.execute(() -> {
             try {
-                handleInternalRequest(request, session);
-            } catch (IOException e) {
-                LOGGER.error("Error while handling request in {}", serviceConfig.selfUrl());
-                circuitBreaker.incrementFallenRequestsCount();
-                tryToSendErrorResponse(session, Response.SERVICE_UNAVAILABLE);
+                if (request.getHeader("internal") != null || request.getPath().contains("/service/message")) {
+                    Response response = handleInternalRequest(request, session);
+                    if (response != null) {
+                        session.sendResponse(response);
+                    }
+                    return;
+                }
+
+                List<HttpRequest> httpRequests = getHttpRequests(request, key, targetNodes);
+                List<Response> httpResponses = getResponses(request, session, ack, httpRequests);
+
+                if (httpResponses.size() < ack) {
+                    tryToSendResponseWithEmptyBody(session, RESPONSE_NOT_ENOUGH_REPLICAS);
+                    return;
+                }
+
+                if (request.getMethod() != Request.METHOD_GET) {
+                    session.sendResponse(httpResponses.get(0));
+                    return;
+                }
+
+                byte[] body = null;
+                int notFoundResponsesCount = 0;
+                long maxTimestamp = Long.MIN_VALUE;
+                for (Response response : httpResponses) {
+                    if (response.getStatus() == NOT_FOUND_CODE) {
+                        notFoundResponsesCount++;
+                        continue;
+                    }
+                    ByteBuffer bodyBB = ByteBuffer.wrap(response.getBody());
+                    long timestamp = bodyBB.getLong();
+                    if (maxTimestamp < timestamp) {
+                        maxTimestamp = timestamp;
+                        body = getBody(bodyBB);
+                    }
+                }
+
+                boolean cond = body != null && notFoundResponsesCount != httpResponses.size();
+                session.sendResponse(new Response(
+                        cond ? Response.OK : Response.NOT_FOUND,
+                        cond ? body : Response.EMPTY
+                ));
+            } catch (MethodNotAllowedException e) {
+                LOGGER.error("Method not allowed {} method: {}", serviceConfig.selfUrl(), request.getMethod());
+                tryToSendResponseWithEmptyBody(session, Response.METHOD_NOT_ALLOWED);
+            } catch (InterruptedException | IOException e) {
+                LOGGER.error("Internal error in server {}", serviceConfig.selfUrl());
+                tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
             }
         });
     }
 
-    private void tryToSendErrorResponse(HttpSession session, String resultCode) {
-        Response response = new Response(
-                resultCode,
-                Response.EMPTY
-        );
+    private List<HttpRequest> getHttpRequests(Request request, String key, List<String> targetNodes) {
+        List<HttpRequest> httpRequests = new ArrayList<>();
+        for (String node : targetNodes) {
+            if (node.equals(serviceConfig.selfUrl())) {
+                httpRequests.add(null);
+                continue;
+            }
+            HttpRequest tmpRequest = buildHttpRequest(key, node, request);
+            httpRequests.add(tmpRequest);
+        }
+        return httpRequests;
+    }
+
+    private List<Response> getResponses(Request request, HttpSession session, int ack, List<HttpRequest> httpRequests)
+            throws InterruptedException {
+        List<Response> httpResponses = new ArrayList<>();
+        for (HttpRequest httpRequest : httpRequests) {
+            if (httpResponses.size() == ack) {
+                break;
+            }
+            if (httpRequest == null) {
+                Response response = handleInternalRequest(request, session);
+                httpResponses.add(response);
+                continue;
+            }
+            CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture = httpClient
+                    .sendAsync(
+                            httpRequest,
+                            HttpResponse.BodyHandlers.ofByteArray()
+                    );
+            HttpResponse<byte[]> httpResponse = getResponseOrNull(responseCompletableFuture);
+            if (httpResponse != null) {
+                httpResponses.add(new Response(
+                        StatusCodes.statuses.getOrDefault(httpResponse.statusCode(), "UNKNOWN ERROR"),
+                        httpResponse.body()
+                ));
+            }
+        }
+        return httpResponses;
+    }
+
+    private byte[] getBody(ByteBuffer bodyBB) {
+        byte[] body;
+        bodyBB.position(Long.BYTES);
+        int valueLength = bodyBB.getInt();
+        if (valueLength == -1) {
+            body = null;
+        } else {
+            body = new byte[valueLength];
+            bodyBB.get(body, 0, valueLength);
+        }
+        return body;
+    }
+
+    private void tryToSendResponseWithEmptyBody(HttpSession session, String resultCode) {
         try {
-            session.sendResponse(response);
-        } catch (IOException ex) {
+            session.sendResponse(new Response(
+                    resultCode,
+                    Response.EMPTY
+            ));
+        } catch (IOException e) {
             LOGGER.error("Error while sending response in server {}", serviceConfig.selfUrl());
         }
     }
 
-    private void handleInternalRequest(Request request, HttpSession session) throws IOException {
+    private Response handleInternalRequest(Request request, HttpSession session) {
         int methodNum = request.getMethod();
         Response response;
         String id = request.getParameter("id");
         if (methodNum == Request.METHOD_GET) {
             response = handleGet(id);
         } else if (methodNum == Request.METHOD_PUT) {
-            if (request.getPath().equals("/service/message/ill")) {
-                putNodesIllnessInfo(Arrays.toString(request.getBody()), true);
-                return;
-            } else if (request.getPath().equals("/service/message/healthy")) {
-                putNodesIllnessInfo(Arrays.toString(request.getBody()), false);
-                return;
+            String requestPath = request.getPath();
+            if (requestPath.contains("/service/message")) {
+                putNodesIllnessInfo(Arrays.toString(request.getBody()), requestPath.equals("/service/message/ill"));
+                tryToSendResponseWithEmptyBody(session, Response.SERVICE_UNAVAILABLE);
+                return null;
             }
             response = handlePut(request, id);
         } else if (methodNum == Request.METHOD_DELETE) {
@@ -132,7 +217,7 @@ public class DemoHttpServer extends HttpServer {
                     Response.EMPTY
             );
         }
-        session.sendResponse(response);
+        return response;
     }
 
     private Response handleGet(@Param(value = "id") String id) {
@@ -143,16 +228,31 @@ public class DemoHttpServer extends HttpServer {
                     Response.EMPTY
             );
         }
+        boolean cond = entry.value() == null;
+        ByteBuffer timestamp = ByteBuffer
+                .allocate(Long.BYTES)
+                .putLong(entry.timestamp());
+        ByteBuffer value = ByteBuffer
+                .allocate(cond ? 0 : (int) entry.value().byteSize());
+        if (!cond) {
+            value.put(entry.value().toByteArray());
+        }
         return new Response(
                 Response.OK,
-                entry.value().toByteArray()
+                ByteBuffer
+                        .allocate(timestamp.capacity() + value.capacity() + Integer.BYTES)
+                        .put(timestamp.array())
+                        .putInt(cond ? -1 : (int) entry.value().byteSize())
+                        .put(value.array())
+                        .array()
         );
     }
 
     private Response handlePut(Request request, @Param(value = "id") String id) {
         dao.upsert(new BaseEntry<>(
                 fromString(id),
-                MemorySegment.ofArray(request.getBody())
+                MemorySegment.ofArray(request.getBody()),
+                System.currentTimeMillis()
         ));
         return new Response(
                 Response.CREATED,
@@ -163,7 +263,8 @@ public class DemoHttpServer extends HttpServer {
     private Response handleDelete(@Param(value = "id") String id) {
         dao.upsert(new BaseEntry<>(
                 fromString(id),
-                null
+                null,
+                System.currentTimeMillis()
         ));
         return new Response(
                 Response.ACCEPTED,
@@ -213,41 +314,30 @@ public class DemoHttpServer extends HttpServer {
         } else if (requestMethod == Request.METHOD_DELETE) {
             httpRequest.DELETE();
         }
+        httpRequest.setHeader("internal", "true");
         return httpRequest.build();
     }
 
-    private void getResponse(CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture, HttpSession session)
-            throws InterruptedException, IOException {
+    private HttpResponse<byte[]> getResponseOrNull(CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture)
+            throws InterruptedException {
         try {
-            HttpResponse<byte[]> response = responseCompletableFuture.get(1, TimeUnit.SECONDS);
-            session.sendResponse(new Response(
-                    StatusCodes.statuses.getOrDefault(response.statusCode(), "UNKNOWN ERROR"),
-                    response.body()
-            ));
+            return responseCompletableFuture.get(1, TimeUnit.SECONDS);
         } catch (ExecutionException | TimeoutException e) {
             LOGGER.error("Error while working with response in {}", serviceConfig.selfUrl());
-            session.sendResponse(new Response(
-                    Response.SERVICE_UNAVAILABLE,
-                    Response.EMPTY
-            ));
         }
+        return null;
     }
 
-    private String getClusterByRendezvousHashing(String key) {
-        long hashVal = Integer.MIN_VALUE;
-        String cluster = null;
+    private List<String> getClustersByRendezvousHashing(String key, int ack) {
+        Map<Integer, String> nodesHashes = new TreeMap<>();
 
         for (String nodeUrl : serviceConfig.clusterUrls()) {
             if (circuitBreaker.isNodeIll(nodeUrl)) {
                 continue;
             }
-            int tmpHash = Hash.murmur3(nodeUrl + key);
-            if (cluster == null || tmpHash > hashVal) {
-                hashVal = tmpHash;
-                cluster = nodeUrl;
-            }
+            nodesHashes.put(Hash.murmur3(nodeUrl + key), nodeUrl);
         }
-        return cluster;
+        return nodesHashes.values().stream().toList();
     }
 
     private MemorySegment fromString(String data) {
