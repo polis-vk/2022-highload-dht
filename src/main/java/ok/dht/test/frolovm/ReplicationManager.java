@@ -96,14 +96,12 @@ public class ReplicationManager {
                     LOGGER.error("Node is unavailable right now");
                 }
             }
-            if (countAck >= ack && request.getMethod() == Request.METHOD_GET) {
+            if (countAck >= ack && (request.getMethod() == Request.METHOD_GET || i + 1 == from)) {
                 return generateResult(collectedResponses, request.getMethod());
             }
             shardIndex = (shardIndex + 1) % algorithm.getShards().size();
         }
-        if (countAck >= ack) {
-            return generateResult(collectedResponses, request.getMethod());
-        }
+
         return new Response(Response.GATEWAY_TIMEOUT, Utils.stringToByte(NOT_ENOUGH_REPLICAS));
     }
 
