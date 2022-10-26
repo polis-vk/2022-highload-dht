@@ -26,16 +26,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 public final class HttpApi extends HttpServer {
-    public static final int FLUSH_THRESHOLD_BYTES = 8 * 1024 * 1024;
+    private static final int FLUSH_THRESHOLD_BYTES = 8 * 1024 * 1024;
     private static final Logger LOG = LoggerFactory.getLogger(HttpApi.class);
     private final HashMap<String, HttpClient> httpClients = new HashMap<>();
     private final ConsistentHash shards;
@@ -60,11 +63,11 @@ public final class HttpApi extends HttpServer {
         this.config = config;
     }
 
-    private static void ioExceptionHandler(HttpSession session, IOException e) {
+    private static void ioExceptionHandler(HttpSession session) {
         try {
             session.sendResponse(getEmptyResponse(Response.INTERNAL_ERROR));
         } catch (IOException ex) {
-            LOG.error("IOException during error reporting: " + e.getMessage());
+            LOG.error("IOException during error reporting: " + ex.getMessage());
         }
     }
 
@@ -83,6 +86,32 @@ public final class HttpApi extends HttpServer {
         acceptor.reusePort = true;
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
         return httpConfig;
+    }
+
+    private static Response appendTs(final Response response, final long ts) {
+        response.addHeader("Timestamp: " + ts);
+        return response;
+    }
+
+    private static byte[] prefixWrite(final byte[] bytes) {
+        final long ts = System.currentTimeMillis();
+        final boolean isEmpty = bytes == null;
+        final ByteBuffer bb = ByteBuffer.allocate(Long.BYTES + 1 + (isEmpty ? 0 : bytes.length));
+        bb.putLong(ts);
+        if (isEmpty) {
+            bb.put((byte) 0);
+        } else {
+            bb.put((byte) 1);
+            bb.put(bytes);
+        }
+        return bb.array();
+    }
+
+    private static int toIntOrDefault(final String str) {
+        if (str == null) {
+            return 1;
+        }
+        return Integer.parseInt(str);
     }
 
     @Override
@@ -111,7 +140,7 @@ public final class HttpApi extends HttpServer {
             }
         }
 
-        for (final HashMap.Entry<String, HttpClient> entry : httpClients.entrySet()) {
+        for (final Map.Entry<String, HttpClient> entry : httpClients.entrySet()) {
             entry.getValue().close();
         }
         httpClients.clear();
@@ -126,7 +155,7 @@ public final class HttpApi extends HttpServer {
     }
 
     // Taken from javadoc
-    private void shutdownAndAwaitTermination(ExecutorService pool) {
+    private static void shutdownAndAwaitTermination(ExecutorService pool) {
         pool.shutdown(); // Disable new tasks from being submitted
         try {
             // Wait a while for existing tasks to terminate
@@ -148,7 +177,7 @@ public final class HttpApi extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            threadPool.submit(() -> jobHandler(request, session));
+            threadPool.execute(() -> jobHandler(request, session));
         } catch (RejectedExecutionException e) {
             session.sendResponse(getEmptyResponse(Response.SERVICE_UNAVAILABLE));
             LOG.error("RejectedExecutionException during job submission: " + e.getMessage());
@@ -160,30 +189,43 @@ public final class HttpApi extends HttpServer {
             super.handleRequest(request, session);
         } catch (IOException e) {
             LOG.error("IOException during request handling: " + e.getMessage());
-            ioExceptionHandler(session, e);
+            ioExceptionHandler(session);
         } catch (Exception e) {
             LOG.error("Exception during request handling: " + e.getMessage());
-            genericExceptionHandler(request, session, e);
+            genericExceptionHandler(request, session);
         }
     }
 
-    private Response forwardRequestByKey(final Request request, final String key) {
-        Response response;
-        Request redirectedRequest = new Request(request);
-        try {
-            response = httpClients.get(shards.getShardByKey(key)).invoke(redirectedRequest, 500);
-        } catch (Exception e1) {
-            response = new Response(Response.BAD_GATEWAY, Response.EMPTY);
+    private void forwardRequestByKey(final Request request,
+                                     final HttpSession session,
+                                     final String key,
+                                     final int acks,
+                                     final int froms) {
+        final List<String> targetShards = shards.getShards(key, froms);
+        final RequestGather gather = new RequestGather(acks, froms);
+        for (final String shard : targetShards) {
+            threadPool.execute(() -> {
+                Request redirectedRequest = new Request(request);
+                redirectedRequest.addHeader("Proxy: true");
+                try {
+                    final Response response = httpClients.get(shard).invoke(redirectedRequest, 500);
+                    switch (response.getStatus()) {
+                        case 200, 201, 202, 404 -> gather.submitGoodResponse(session, response);
+                        default -> gather.submitFailure(session);
+                    }
+                } catch (Exception e) {
+                    LOG.error("Exception during forwarding", e);
+                    gather.submitFailure(session);
+                }
+            });
         }
-        final String code = response.getHeaders()[0];
-        return new Response(code, response.getBody());
     }
 
-    private void genericExceptionHandler(Request request, HttpSession session, Exception e) {
+    private void genericExceptionHandler(Request request, HttpSession session) {
         try {
             handleDefault(request, session);
         } catch (IOException ex) {
-            LOG.error("IOException during error reporting: " + e.getMessage());
+            LOG.error("IOException during error reporting: " + ex.getMessage());
         }
     }
 
@@ -197,52 +239,84 @@ public final class HttpApi extends HttpServer {
         session.sendResponse(getEmptyResponse(code));
     }
 
-    private boolean isForeignKey(final String key) {
-        final var targetShard = shards.getShardByKey(key);
-        return !targetShard.equals(config.selfUrl());
-    }
-
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true)final String key,
-                              final Request req) throws IOException {
+    public void handleGet(@Param(value = "id", required = true) final String key,
+                          @Param(value = "ack") final String ack,
+                          @Param(value = "from") final String from,
+                          final Request req,
+                          final HttpSession session) throws IOException {
         if (key.isEmpty()) {
-            return getEmptyResponse(Response.BAD_REQUEST);
+            session.sendResponse(getEmptyResponse(Response.BAD_REQUEST));
+            return;
         }
-        if (isForeignKey(key)) {
-            return forwardRequestByKey(req, key);
-        }
-        Entry<MemorySegment> result = dao.get(fromString(key));
+        if (shouldBeForwarded(key, ack, from, req, session)) return;
+        final Entry<MemorySegment> result = dao.get(fromString(key));
         if (result == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
+            session.sendResponse(appendTs(new Response(Response.NOT_FOUND, Response.EMPTY), 0));
         } else {
-            return Response.ok(result.value().toByteArray());
+            final var storedValue = ByteBuffer.wrap(result.value().toByteArray());
+            final long ts = storedValue.getLong();
+            final byte hasData = storedValue.get();
+
+            if (hasData == 1) {
+                byte[] realValue = new byte[storedValue.remaining()];
+                storedValue.get(realValue);
+                session.sendResponse(appendTs(Response.ok(realValue), ts));
+            } else {
+                session.sendResponse(appendTs(new Response(Response.NOT_FOUND, Response.EMPTY), ts));
+            }
         }
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(@Param(value = "id", required = true) final String key, final Request req) {
+    public void handlePut(@Param(value = "id", required = true) final String key,
+                          @Param(value = "ack") final String ack,
+                          @Param(value = "from") final String from,
+                          final Request req,
+                          final HttpSession session) throws IOException {
         if (key.isEmpty()) {
-            return getEmptyResponse(Response.BAD_REQUEST);
+            session.sendResponse(getEmptyResponse(Response.BAD_REQUEST));
+            return;
         }
-        if (isForeignKey(key)) {
-            return forwardRequestByKey(req, key);
-        }
-        dao.upsert(new BaseEntry<>(fromString(key), MemorySegment.ofArray(req.getBody())));
-        return getEmptyResponse(Response.CREATED);
+        if (shouldBeForwarded(key, ack, from, req, session)) return;
+        dao.upsert(new BaseEntry<>(fromString(key), MemorySegment.ofArray(prefixWrite(req.getBody()))));
+        session.sendResponse(getEmptyResponse(Response.CREATED));
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) final String key, final Request req) {
+    public void handleDelete(@Param(value = "id", required = true) final String key,
+                             @Param(value = "ack") final String ack,
+                             @Param(value = "from") final String from,
+                             final Request req,
+                             final HttpSession session) throws IOException {
         if (key.isEmpty()) {
-            return getEmptyResponse(Response.BAD_REQUEST);
+            session.sendResponse(getEmptyResponse(Response.BAD_REQUEST));
+            return;
         }
-        if (isForeignKey(key)) {
-            return forwardRequestByKey(req, key);
+        if (shouldBeForwarded(key, ack, from, req, session)) return;
+        dao.upsert(new BaseEntry<>(fromString(key), MemorySegment.ofArray(prefixWrite(null))));
+        session.sendResponse(getEmptyResponse(Response.ACCEPTED));
+    }
+
+    private boolean shouldBeForwarded(final String key,
+                                      final String ack,
+                                      final String from,
+                                      final Request req,
+                                      final HttpSession session) throws IOException {
+        final int acks = toIntOrDefault(ack);
+        final int froms = toIntOrDefault(from);
+        if (acks < 1 || froms < 1 || acks > froms || froms > config.clusterUrls().size()) {
+            session.sendResponse(getEmptyResponse(Response.BAD_REQUEST));
+            return true;
         }
-        dao.upsert(new BaseEntry<>(fromString(key), null));
-        return getEmptyResponse(Response.ACCEPTED);
+        if ((shards.getShard(key).equals(config.selfUrl()) && acks == 1 && froms == 1)
+                || req.getHeader("Proxy: ") != null) {
+            return false;
+        }
+        forwardRequestByKey(req, session, key, acks, froms);
+        return true;
     }
 }
