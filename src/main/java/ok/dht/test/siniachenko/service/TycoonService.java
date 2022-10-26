@@ -225,7 +225,6 @@ public class TycoonService implements ok.dht.Service, Serializable {
 
     private CompletableFuture<HttpResponse<byte[]>> proxyRequest(Request request, String idParameter, String nodeUrl) {
         Integer timeout = nodeRequestsTimeouts.computeIfAbsent(nodeUrl, s -> DEFAULT_TIMEOUT_MILLIS);
-        System.out.println(Arrays.toString(request.getBody()));
         return httpClient.sendAsync(
             HttpRequest.newBuilder()
                 .uri(URI.create(nodeUrl + TycoonHttpServer.PATH + "?id=" + idParameter))
