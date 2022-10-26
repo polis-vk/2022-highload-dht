@@ -224,6 +224,7 @@ public class ReplicasManager {
         switch (request.getMethod()) {
             case Request.METHOD_PUT -> dao.upsertTimeStamped(key, request.getBody());
             case Request.METHOD_DELETE -> dao.upsertTimeStamped(key, null);
+            default -> throw new IllegalArgumentException();
         }
     }
 
