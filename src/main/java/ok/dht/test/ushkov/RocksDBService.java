@@ -232,7 +232,7 @@ public class RocksDBService implements Service {
             throw new InvalidParamsException();
         }
 
-        if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl())) {
+        if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl()) || request.getHeader("Proxy: ") != null) {
             byte[] value = db.get(Utf8.toBytes(key));
 
             if (value == null) {
@@ -304,7 +304,7 @@ public class RocksDBService implements Service {
             throw new InvalidParamsException();
         }
 
-        if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl())) {
+        if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl()) || request.getHeader("Proxy: ") != null) {
             long timestamp = System.currentTimeMillis() / 1000L;
             byte[] body = request.getBody();
 
@@ -362,7 +362,7 @@ public class RocksDBService implements Service {
             throw new InvalidParamsException();
         }
 
-        if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl())) {
+        if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl()) || request.getHeader("Proxy: ") != null) {
             long timestamp = System.currentTimeMillis() / 1000L;
 
             ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES + 1);
@@ -382,12 +382,9 @@ public class RocksDBService implements Service {
     }
 
     private void replicateRequest(Request request, HttpSession session, String key, int ack, int from, Predicate<Response> predicate) throws IOException {
-        List<String> urls = null;
-        try {
-            urls = keyManager.getNodeIdsByKey(key, from);
-        } catch (Exception e) {
-            System.out.println(e);
-        }
+        LOG.info("{} start replica request, method {}", config.selfUrl(), request.getMethod());
+
+        List<String> urls = keyManager.getNodeIdsByKey(key, from);
 
         ReplicatedRequest replicatedRequest = new ReplicatedRequest(ack, from);
 
@@ -402,23 +399,23 @@ public class RocksDBService implements Service {
             }
 
             nodeQueue.tasks.offer(() -> {
-                Request newRequest = new Request(request.getMethod(),
-                        request.getPath() + "?id=" + key + "&ack=1&from=1", true);
-                for (int i = 0; i < request.getHeaderCount(); ++i) {
-                    newRequest.addHeader(request.getHeaders()[i]);
-                }
-//                newRequest.addHeader("Host" + request.getHeader("Host"));
-                newRequest.setBody(request.getBody());
-                // TODO: if url == selfUrl
+//                Request newRequest = new Request(request.getMethod(),
+//                        request.getPath() + "?id=" + key + "&ack=1&from=1", true);
+//                for (int i = 0; i < request.getHeaderCount(); ++i) {
+//                    newRequest.addHeader(request.getHeaders()[i]);
+//                }
+//                newRequest.setBody(request.getBody());
+                Request newRequest = new Request(request);
+                newRequest.addHeader("Proxy: 1");
                 try {
-                    Response response = clientPool.get(url).invoke(newRequest);
+                    LOG.info("from {} to {}", config.selfUrl(), url);
+                    Response response = clientPool.get(url).invoke(newRequest, 3000);
                     if (predicate.test(response)) {
                         replicatedRequest.onSuccess(session, response);
                     } else {
                         replicatedRequest.onFailure(session);
                     }
                 } catch (Exception e1) {
-                    e1.printStackTrace();
                     replicatedRequest.onFailure(session);
                 }
             });
