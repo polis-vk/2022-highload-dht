@@ -1,6 +1,11 @@
 package ok.dht.test.ilin.servers;
 
 import ok.dht.test.ilin.config.ExpandableHttpServerConfig;
+import ok.dht.test.ilin.domain.Headers;
+import ok.dht.test.ilin.domain.ReplicasInfo;
+import ok.dht.test.ilin.hashing.impl.ConsistentHashing;
+import ok.dht.test.ilin.replica.ReplicasHandler;
+import ok.dht.test.ilin.service.EntityService;
 import ok.dht.test.ilin.sharding.ShardHandler;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
@@ -12,6 +17,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -20,11 +26,13 @@ import java.util.concurrent.TimeUnit;
 
 public class ExpandableHttpServer extends HttpServer {
     private final ExecutorService executorService;
-    private final ShardHandler shardHandler;
+    private final ReplicasHandler replicasHandler;
     private final Logger logger = LoggerFactory.getLogger(ExpandableHttpServer.class);
+    private final int nodesSize;
 
     public ExpandableHttpServer(
-        ShardHandler shardHandler,
+        ReplicasHandler replicasHandler,
+        int nodesSize,
         ExpandableHttpServerConfig config,
         Object... routers
     ) throws IOException {
@@ -37,7 +45,8 @@ public class ExpandableHttpServer extends HttpServer {
             TimeUnit.MILLISECONDS,
             queue
         );
-        this.shardHandler = shardHandler;
+        this.replicasHandler = replicasHandler;
+        this.nodesSize = nodesSize;
     }
 
     @Override
@@ -54,17 +63,45 @@ public class ExpandableHttpServer extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         String key = request.getParameter("id=");
-        if (key == null) {
+        if (key == null || key.isEmpty()) {
             handleDefault(request, session);
             return;
         }
-        if (shardHandler.isForSelf(key)) {
+
+        String ack = request.getParameter("ack=");
+        String from = request.getParameter("from=");
+
+        ReplicasInfo replicasInfo;
+        try {
+            if (ack == null || from == null) {
+                replicasInfo = new ReplicasInfo(nodesSize);
+            } else {
+                replicasInfo = new ReplicasInfo(Integer.parseInt(ack), Integer.parseInt(from));
+            }
+        } catch (NumberFormatException e) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        if (replicasInfo.ack() > replicasInfo.from() || replicasInfo.ack() == 0) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        String timestamp = request.getHeader(Headers.TIMESTAMP_HEADER);
+        boolean isController = false;
+        if (timestamp == null) {
+            isController = true;
+            request.addHeader(Headers.TIMESTAMP_HEADER + System.currentTimeMillis());
+        }
+
+        if (!isController) {
             try {
                 executorService.execute(() -> {
                     try {
-                        super.handleRequest(request, session);
+                        session.sendResponse(replicasHandler.selfExecute(key, request));
                     } catch (Exception e) {
-                        logger.error("failed to handle request: {}", e.getMessage());
+                        logger.error("failed to send request: {}", e.getMessage());
                         sendBadRequest(session);
                     }
                 });
@@ -73,13 +110,18 @@ public class ExpandableHttpServer extends HttpServer {
                 sendServiceUnavailable(session);
             }
         } else {
-            executorService.execute(() -> {
-                try {
-                    session.sendResponse(shardHandler.executeRequest(key, request));
-                } catch (IOException e) {
-                    logger.error("failed to send response: {}", e.getMessage());
-                }
-            });
+            try {
+                executorService.execute(() -> {
+                    try {
+                        session.sendResponse(replicasHandler.execute(key, replicasInfo, request));
+                    } catch (IOException e) {
+                        logger.error("failed to send response: {}", e.getMessage());
+                    }
+                });
+            } catch (RejectedExecutionException e) {
+                logger.error("Failed to run execution: {}", e.getMessage());
+                sendServiceUnavailable(session);
+            }
         }
     }
 

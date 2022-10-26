@@ -1,5 +1,6 @@
 package ok.dht.test.ilin.sharding;
 
+import ok.dht.test.ilin.domain.Headers;
 import ok.dht.test.ilin.hashing.impl.ConsistentHashing;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -32,9 +33,14 @@ public class ShardHandler {
 
     public Response executeRequest(String key, Request request) {
         final String address = consistentHashing.getServerAddressFromKey(key);
+        return executeOnAddress(address, key, request);
+    }
+
+    public Response executeOnAddress(String address, String key, Request request) {
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
             .uri(URI.create(address.concat("/v0/entity?id=").concat(key)))
-            .timeout(DEFAULT_TIMEOUT);
+            .timeout(DEFAULT_TIMEOUT)
+            .header(Headers.JAVA_NET_TIMESTAMP_HEADER, request.getHeader(Headers.TIMESTAMP_HEADER));
         try {
             return switch (request.getMethod()) {
                 case Request.METHOD_GET -> {
@@ -42,7 +48,14 @@ public class ShardHandler {
                         requestBuilder.GET().build(),
                         HttpResponse.BodyHandlers.ofByteArray()
                     );
-                    yield new Response(String.valueOf(response.statusCode()), response.body());
+                    Response result = new Response(String.valueOf(response.statusCode()), response.body());
+                    response.headers()
+                        .firstValue(Headers.JAVA_NET_TIMESTAMP_HEADER)
+                        .ifPresent(x -> result.addHeader(Headers.TIMESTAMP_HEADER + x));
+                    response.headers()
+                        .firstValue(Headers.JAVA_NET_TOMBSTONE_HEADER)
+                        .ifPresent(x -> result.addHeader(Headers.TOMBSTONE_HEADER));
+                    yield result;
                 }
                 case Request.METHOD_PUT -> {
                     HttpResponse<byte[]> response = httpClient.send(

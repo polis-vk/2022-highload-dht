@@ -5,14 +5,16 @@ import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.ilin.config.ConsistentHashingConfig;
 import ok.dht.test.ilin.config.ExpandableHttpServerConfig;
+import ok.dht.test.ilin.domain.Entity;
+import ok.dht.test.ilin.domain.Headers;
+import ok.dht.test.ilin.domain.Serializer;
 import ok.dht.test.ilin.hashing.impl.ConsistentHashing;
+import ok.dht.test.ilin.replica.ReplicasHandler;
 import ok.dht.test.ilin.servers.ExpandableHttpServer;
 import ok.dht.test.ilin.sharding.ShardHandler;
+import ok.dht.test.ilin.utils.TimestampUtil;
 import one.nio.http.HttpServer;
-import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.rocksdb.Options;
@@ -21,7 +23,9 @@ import org.rocksdb.RocksDBException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 
@@ -49,7 +53,12 @@ public class EntityService implements Service {
         ConsistentHashingConfig consistentHashingConfig = new ConsistentHashingConfig();
         ConsistentHashing consistentHashing = new ConsistentHashing(config.clusterUrls(), consistentHashingConfig);
         ShardHandler shardHandler = new ShardHandler(config.selfUrl(), consistentHashing);
-        server = new ExpandableHttpServer(shardHandler, createConfigFromPort(config.selfPort()));
+        ReplicasHandler replicasHandler = new ReplicasHandler(config.selfUrl(), this, consistentHashing, shardHandler);
+        server = new ExpandableHttpServer(
+            replicasHandler,
+            config.clusterUrls().size(),
+            createConfigFromPort(config.selfPort())
+        );
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
@@ -62,9 +71,7 @@ public class EntityService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response getEntity(@Param(value = "id", required = true) String id) {
+    public Response getEntity(String id) {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
@@ -73,38 +80,61 @@ public class EntityService implements Service {
             if (result == null) {
                 return new Response(Response.NOT_FOUND, Response.EMPTY);
             }
-            return new Response(Response.OK, result);
+            Entity entity = Serializer.deserializeEntity(result);
+            if (entity == null) {
+                logger.error("Failed to deserialize entity.");
+                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            }
+            if (entity.tombstone()) {
+                Response response = new Response(Response.NOT_FOUND, entity.data());
+                response.addHeader(Headers.TOMBSTONE_HEADER);
+                response.addHeader(Headers.TIMESTAMP_HEADER + entity.timestamp());
+                return response;
+            }
+            Response response = new Response(Response.OK, entity.data());
+            response.addHeader(Headers.TIMESTAMP_HEADER + entity.timestamp());
+            return response;
         } catch (RocksDBException e) {
             logger.error("Error get entry in RocksDB");
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        } catch (IOException | ClassNotFoundException e) {
+            logger.error("Failed to deserialize entity: {}", e.getMessage());
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-        return new Response(Response.NOT_FOUND, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response upsertEntity(@Param(value = "id", required = true) String id, Request request) {
+    public Response upsertEntity(String id, Request request) {
         byte[] body = request.getBody();
         if (id.isEmpty() || body == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         try {
-            rocksDB.put(id.getBytes(StandardCharsets.UTF_8), body);
+            rocksDB.put(
+                id.getBytes(StandardCharsets.UTF_8),
+                Serializer.serializeEntity(new Entity(TimestampUtil.extractTimestamp(request), false, body))
+            );
         } catch (RocksDBException e) {
             logger.error("Error saving entry in RocksDB");
+        } catch (IOException e) {
+            logger.error("Failed to serialize entity: {}", e.getMessage());
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response deleteEntity(@Param(value = "id", required = true) String id) {
+    public Response deleteEntity(String id, Request request) {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         try {
-            rocksDB.delete(id.getBytes(StandardCharsets.UTF_8));
+            rocksDB.put(
+                id.getBytes(StandardCharsets.UTF_8),
+                Serializer.serializeEntity(new Entity(TimestampUtil.extractTimestamp(request), true, new byte[0]))
+            );
         } catch (RocksDBException e) {
             logger.error("Error delete entry in RocksDB");
+        } catch (IOException e) {
+            logger.error("Failed to serialize entity: {}", e.getMessage());
         }
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
@@ -119,7 +149,7 @@ public class EntityService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

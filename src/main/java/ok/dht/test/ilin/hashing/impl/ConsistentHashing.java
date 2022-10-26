@@ -3,8 +3,12 @@ package ok.dht.test.ilin.hashing.impl;
 import ok.dht.test.ilin.config.ConsistentHashingConfig;
 import ok.dht.test.ilin.hashing.HashEvaluator;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.NavigableMap;
+import java.util.Set;
+import java.util.SortedMap;
 import java.util.TreeMap;
 
 public class ConsistentHashing {
@@ -29,6 +33,28 @@ public class ConsistentHashing {
             return virtualNode.address;
         }
         return null;
+    }
+
+    public Set<String> getServerAddressesForKey(String key, int size) {
+        int hash = hashEvaluator.hash(key);
+        var currentNode = virtualNodes.ceilingEntry(hash);
+        Set<String> result = new HashSet<>(size);
+        for (int i = 0; i < size; i++) {
+            if (currentNode == null) {
+                currentNode = virtualNodes.firstEntry();
+            }
+            result.add(currentNode.getValue().address);
+            if (i < size - 1) {
+                while (result.contains(currentNode.getValue().address)) {
+                    currentNode = virtualNodes.higherEntry(currentNode.getKey());
+                    if (currentNode == null) {
+                        currentNode = virtualNodes.firstEntry();
+                    }
+                }
+            }
+        }
+        assert result.size() == size;
+        return result;
     }
 
     private NavigableMap<Integer, VirtualNode> initVirtualNodes(
