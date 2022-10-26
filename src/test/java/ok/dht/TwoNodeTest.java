@@ -199,7 +199,7 @@ class TwoNodeTest extends TestBase {
             nodes.get(i).stop();
 
             // Help implementors with ms precision for conflict resolution
-git            waitForVersionAdvancement();
+            waitForVersionAdvancement();
 
             // Delete
             int statusCode = nodes.get((i + 1) % nodes.size()).delete(key, 1, 2).statusCode();
