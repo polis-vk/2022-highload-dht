@@ -58,7 +58,7 @@ echo "                                                                   "
 
 #rates=(500 1000 2000)
 #rates=(5000)
-rates=(3000)
+rates=(500)
 
 for rate in "${rates[@]}"; do
   type_request="put"

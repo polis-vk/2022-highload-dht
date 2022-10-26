@@ -34,7 +34,7 @@ function run_jfr2flame_lock() {
   cd "$path" || exit
 }
 
-rates=(3000)
+rates=(1000)
 
 for rate in "${rates[@]}"; do
   type_request="put"
