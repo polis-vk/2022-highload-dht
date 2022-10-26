@@ -6,55 +6,55 @@ import java.util.*;
 
 public class ConsistentHashing implements ShardingAlgorithm {
 
-	private static final int SHARD_VNODES = 4;
-	private final List<Shard> shards;
-	private final Hasher hasher;
-	private final Map<Integer, Integer> hashing;
+    private static final int SHARD_VNODES = 4;
+    private final List<Shard> shards;
+    private final Hasher hasher;
+    private final Map<Integer, Integer> hashing;
 
-	private final int[] vnodes;
+    private final int[] vnodes;
 
-	public ConsistentHashing(List<String> shardNames, Hasher hasher) {
-		this.shards = shardNames.stream().map(Shard::new).sorted(Comparator.comparing(Shard::getName)).toList();
-		this.hasher = hasher;
-		this.vnodes = new int[SHARD_VNODES * this.shards.size()];
-		this.hashing = new HashMap<>();
+    public ConsistentHashing(List<String> shardNames, Hasher hasher) {
+        this.shards = shardNames.stream().map(Shard::new).sorted(Comparator.comparing(Shard::getName)).toList();
+        this.hasher = hasher;
+        this.vnodes = new int[SHARD_VNODES * this.shards.size()];
+        this.hashing = new HashMap<>();
 
-		initVnodes(hasher, this.shards);
-	}
+        initVnodes(hasher, this.shards);
+    }
 
-	private void initVnodes(Hasher hasher, List<Shard> shards) {
-		for (int curShard = 0; curShard < this.shards.size(); ++curShard) {
-			for (int nodeInd = 0; nodeInd < SHARD_VNODES; ++nodeInd) {
-				int hash = hasher.hash(shards.get(curShard).getName() + nodeInd);
-				int currentIndexVnode = SHARD_VNODES * curShard + nodeInd;
+    private void initVnodes(Hasher hasher, List<Shard> shards) {
+        for (int curShard = 0; curShard < this.shards.size(); ++curShard) {
+            for (int nodeInd = 0; nodeInd < SHARD_VNODES; ++nodeInd) {
+                int hash = hasher.hash(shards.get(curShard).getName() + nodeInd);
+                int currentIndexVnode = SHARD_VNODES * curShard + nodeInd;
 
-				vnodes[currentIndexVnode] = hash;
-				hashing.put(hash, curShard);
-			}
-		}
-		Arrays.sort(vnodes);
-	}
+                vnodes[currentIndexVnode] = hash;
+                hashing.put(hash, curShard);
+            }
+        }
+        Arrays.sort(vnodes);
+    }
 
-	@Override
-	public int chooseShard(String shard) {
-		int hash = hasher.hash(shard);
-		int index = Arrays.binarySearch(vnodes, hash);
-		int answer;
-		if (index >= 0) {
-			answer = hashing.get(vnodes[index]);
-		} else {
-			answer = hashing.get(vnodes[(-index - 1) % vnodes.length]);
-		}
-		return answer;
-	}
+    @Override
+    public int chooseShard(String shard) {
+        int hash = hasher.hash(shard);
+        int index = Arrays.binarySearch(vnodes, hash);
+        int answer;
+        if (index >= 0) {
+            answer = hashing.get(vnodes[index]);
+        } else {
+            answer = hashing.get(vnodes[(-index - 1) % vnodes.length]);
+        }
+        return answer;
+    }
 
-	@Override
-	public Shard getShardByIndex(int index) {
-		return shards.get(index);
-	}
+    @Override
+    public Shard getShardByIndex(int index) {
+        return shards.get(index);
+    }
 
-	@Override
-	public List<Shard> getShards() {
-		return shards;
-	}
+    @Override
+    public List<Shard> getShards() {
+        return shards;
+    }
 }
