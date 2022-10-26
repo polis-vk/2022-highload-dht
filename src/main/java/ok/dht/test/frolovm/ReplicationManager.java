@@ -106,7 +106,6 @@ public class ReplicationManager {
     private int addSuccessResponse(Request request, List<Response> collectedResponses,
                                    int countAck, Response response) {
         if (isSuccessful(response)) {
-            countAck++;
             if (request.getMethod() == Request.METHOD_GET) {
                 collectedResponses.add(response);
             }
