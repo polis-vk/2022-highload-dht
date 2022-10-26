@@ -18,7 +18,7 @@ public class ServiceImpl implements Service {
     private static final int IN_MEMORY_SIZE = 8388608;
 
     private static final int CORE_POOL_SIZE = Runtime.getRuntime().availableProcessors();
-    private static final int MAX_POOL_SIZE = Runtime.getRuntime().availableProcessors() * 2;
+    private static final int MAX_POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private static final long KEEP_ALIVE_SECS = 60L;
     private static final int MAX_QUEUE_SIZE = MAX_POOL_SIZE * 40;
 
