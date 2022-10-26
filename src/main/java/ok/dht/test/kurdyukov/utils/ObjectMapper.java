@@ -26,7 +26,7 @@ public final class ObjectMapper {
             return out.toByteArray();
         } catch (IOException e) {
             logger.error("Don't serialize obj = " + obj, e);
-            return null;
+            return new byte[0];
         }
     }
 
