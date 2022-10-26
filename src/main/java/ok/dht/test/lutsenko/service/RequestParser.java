@@ -71,14 +71,14 @@ public class RequestParser {
             if (ackString == null && fromString == null) {
                 from = clusterUrlsSize;
                 ack = quorum(from);
-            } else if (ackString != null && fromString != null) {
+            } else if (ackString == null || fromString == null) {
+                setFailedWithStatus(Response.BAD_REQUEST);
+            } else {
                 ack = Integer.parseInt(ackString);
                 from = Integer.parseInt(fromString);
                 if (ack <= 0 || ack > from || from > clusterUrlsSize) {
                     setFailedWithStatus(Response.BAD_REQUEST);
                 }
-            } else {
-                setFailedWithStatus(Response.BAD_REQUEST);
             }
         } catch (NumberFormatException e) {
             setFailedWithStatus(Response.BAD_REQUEST);

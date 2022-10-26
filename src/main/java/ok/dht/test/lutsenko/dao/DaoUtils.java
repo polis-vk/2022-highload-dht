@@ -111,7 +111,7 @@ public final class DaoUtils {
                 BaseEntry<String> baseEntry = iterator.next();
                 byte[] keyBytes = Utf8.toBytes(preprocess(baseEntry.key()));
                 byte[] valueBytes = (baseEntry.value() == null ? null : Utf8.toBytes(preprocess(baseEntry.value())));
-                int entrySize = Long.BYTES  // request time
+                int entrySize = Long.BYTES // request time
                         + Integer.BYTES // размер численного значения для длины ключа
                         + keyBytes.length
                         + Integer.BYTES // размер численного значения для длины значения
@@ -227,13 +227,14 @@ public final class DaoUtils {
     }
 
     public static byte[] toByteArray(long value) {
+        long valueLocal = value;
         byte[] result = new byte[8];
         for (int i = 7; i >= 0; i--) {
-            result[i] = (byte) (value & 0xffL);
+            result[i] = (byte) (valueLocal & 0xffL);
             if (result[i] == NEXT_LINE_BYTE) {
                 result[i] += 1;
             }
-            value >>= 8;
+            valueLocal >>= 8;
         }
         return result;
     }

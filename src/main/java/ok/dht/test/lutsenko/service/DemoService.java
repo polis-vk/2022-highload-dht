@@ -153,44 +153,27 @@ public class DemoService implements Service {
         for (int nodeNumber : getReplicaNodeNumbers(requestParser.id(), requestParser.from())) {
             replicaResponsesTasks.add(() -> {
                 Response replicaResponse = getReplicaResponse(nodeNumber, requestParser, requestTime);
-                handleReplicaResponse(session, requestParser, replicaResponse,
-                        failsCounter, successCounter, responses, replicaResponsesTasks);
+                int ack = requestParser.ack();
+                int failLimit = requestParser.from() - ack + 1;
+                // both proceed() methods wrapped with try / catch Exception
+                if (requestParser.successStatuses().contains(replicaResponse.getStatus())) {
+                    String requestTimeHeaderValue = replicaResponse.getHeader(CustomHeaders.REQUEST_TIME);
+                    if (requestTimeHeaderValue == null && responses.isEmpty()) {
+                        responses.put(0L, replicaResponse);
+                    } else if (requestTimeHeaderValue != null) { // code climate ругается, на != в первом if
+                        responses.put(Long.parseLong(requestTimeHeaderValue), replicaResponse);
+                    }
+                    if (successCounter.incrementAndGet() == ack) {
+                        ServiceUtils.sendResponse(session, responses.lastEntry().getValue());
+                        removeReplicasResponsesTasks(replicaResponsesTasks);
+                    }
+                } else if (failsCounter.incrementAndGet() == failLimit) {
+                    ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);
+                    removeReplicasResponsesTasks(replicaResponsesTasks);
+                }
             });
         }
         return replicaResponsesTasks;
-    }
-
-    private void handleReplicaResponse(HttpSession session, RequestParser requestParser, Response response,
-                                       AtomicInteger failsCounter, AtomicInteger successCounter,
-                                       NavigableMap<Long, Response> responses, List<Runnable> replicaResponsesTasks) {
-        int ack = requestParser.ack();
-        int failLimit = requestParser.from() - ack + 1;
-        try {
-            // both proceed() methods wrapped with try / catch Exception
-            if (requestParser.successStatuses().contains(response.getStatus())) {
-                String requestTimeHeaderValue = response.getHeader(CustomHeaders.REQUEST_TIME);
-                if (requestTimeHeaderValue == null) {
-                    if (responses.isEmpty()) {
-                        responses.put(0L, response);
-                    }
-                } else {
-                    responses.put(Long.parseLong(requestTimeHeaderValue), response);
-                }
-                if (successCounter.incrementAndGet() == ack) {
-                    ServiceUtils.sendResponse(session, responses.lastEntry().getValue());
-                    removeReplicasResponsesTasks(replicaResponsesTasks);
-                }
-            } else if (failsCounter.incrementAndGet() == failLimit) {
-                ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);
-                removeReplicasResponsesTasks(replicaResponsesTasks);
-            }
-        } catch (Exception e) {
-            if (failsCounter.incrementAndGet() == failLimit) {
-                ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);
-                removeReplicasResponsesTasks(replicaResponsesTasks);
-            }
-            LOG.error("Getting response from replica failed", e);
-        }
     }
 
     private Response getReplicaResponse(int nodeNumber, RequestParser requestParser, long requestTime) {
