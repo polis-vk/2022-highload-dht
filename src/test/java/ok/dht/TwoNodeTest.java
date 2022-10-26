@@ -266,6 +266,8 @@ class TwoNodeTest extends TestBase {
             // Stop node
             nodes.get(i).stop();
 
+            Thread.sleep(10);
+
             // Help implementors with ms precision for conflict resolution
             waitForVersionAdvancement();
 
@@ -277,6 +279,8 @@ class TwoNodeTest extends TestBase {
 
             // Start node
             nodes.get(i).start();
+
+            Thread.sleep(10);
 
             // Check value2
             {
