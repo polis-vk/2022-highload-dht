@@ -40,6 +40,9 @@ public class EntityServiceReplica {
     public Response getEntity(String id) {
         try {
             byte[] value = levelDb.get(Utf8.toBytes(id));
+            if (value == null) {
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
+            }
             boolean deleted = Utils.readFlagDeletedFromBytes(value);
             if (deleted) {
                 return new Response(Response.GONE, value);

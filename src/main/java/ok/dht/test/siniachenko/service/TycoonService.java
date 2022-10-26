@@ -23,6 +23,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -224,10 +225,14 @@ public class TycoonService implements ok.dht.Service, Serializable {
 
     private CompletableFuture<HttpResponse<byte[]>> proxyRequest(Request request, String idParameter, String nodeUrl) {
         Integer timeout = nodeRequestsTimeouts.computeIfAbsent(nodeUrl, s -> DEFAULT_TIMEOUT_MILLIS);
+        System.out.println(Arrays.toString(request.getBody()));
         return httpClient.sendAsync(
             HttpRequest.newBuilder()
                 .uri(URI.create(nodeUrl + TycoonHttpServer.PATH + "?id=" + idParameter))
-                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .method(request.getMethodName(),
+                    request.getBody() == null
+                        ? HttpRequest.BodyPublishers.noBody()
+                        : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
                 .timeout(Duration.ofMillis(timeout))
                 .header(TycoonHttpServer.REQUEST_TO_REPLICA_HEADER, "")
                 .build(),

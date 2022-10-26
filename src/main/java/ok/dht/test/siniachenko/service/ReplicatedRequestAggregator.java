@@ -55,7 +55,7 @@ public class ReplicatedRequestAggregator {
         int maxTimeStampReplica = -1;
         long maxTimeMillis = 0;
         for (int replicaAnswered = 0; replicaAnswered < ack; replicaAnswered++) {
-            if (bodies[replicaAnswered] != null) {
+            if (bodies[replicaAnswered] != null && bodies[replicaAnswered].length != 0) {
                 long timeMillis = Utils.readTimeMillisFromBytes(bodies[replicaAnswered]);
                 if (maxTimeMillis < timeMillis) {
                     maxTimeMillis = timeMillis;
