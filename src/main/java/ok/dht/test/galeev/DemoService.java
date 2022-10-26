@@ -110,12 +110,14 @@ public class DemoService implements Service {
                 String.format("%nInterrupted while awaiting GET responses key: %s%n", header.getKey()));
 
         Entry<Timestamp, byte[]> entry = newestEntry.get();
-        if (!barrier.isAckAchieved()) {
-            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
-        } else if (entry.key() == null || entry.value() == null) {
-            session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
+        if (barrier.isAckAchieved()) {
+            if (entry.key() == null || entry.value() == null) {
+                session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
+            } else {
+                session.sendResponse(new Response(Response.OK, entry.value()));
+            }
         } else {
-            session.sendResponse(new Response(Response.OK, entry.value()));
+            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
         }
     }
 
@@ -150,7 +152,7 @@ public class DemoService implements Service {
         }
 
         barrier.waitContinueBarrier(session,
-                String.format("%nInterrupted while awaiting GET responses key: %s%n", header.getKey()));
+                String.format("%nInterrupted while awaiting PUT responses key: %s%n", header.getKey()));
 
         if (barrier.isAckAchieved()) {
             session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
@@ -181,7 +183,7 @@ public class DemoService implements Service {
         }
 
         barrier.waitContinueBarrier(session,
-                String.format("%nInterrupted while awaiting GET responses key: %s%n", header.getKey()));
+                String.format("%nInterrupted while awaiting DELETE responses key: %s%n", header.getKey()));
 
         if (barrier.isAckAchieved()) {
             session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
@@ -206,16 +208,19 @@ public class DemoService implements Service {
             AtomicReference<Entry<Timestamp, byte[]>> newestEntry,
             Entry<Timestamp, byte[]> entry) {
         Entry<Timestamp, byte[]> currentNewestEntry = newestEntry.get();
+        // When NotFound entry is (null,null)
         if (entry.key() == null) {
             // If response was Not Found -> set entry only if there was nothing else.
-            // When NotFound entry is (null,null)
             newestEntry.compareAndSet(null, entry);
-        } else {
-            while ((currentNewestEntry == null // If there is absolutely no entry
-                    || currentNewestEntry.key() == null // It there is NotFound
-                    || entry.key().after(currentNewestEntry.key()) // If new is more fresh
-                    || (entry.key().equals(currentNewestEntry.key()) && entry.isTombstone())) // If time is the same ->
-                                                                                              // -> better use tombstone
+        } else {    // If there is absolutely no entry
+            while ((currentNewestEntry == null
+                    // It there is NotFound
+                    || currentNewestEntry.key() == null
+                    // If new is more fresh
+                    || entry.key().after(currentNewestEntry.key())
+                    // If time is the same -> better use tombstone
+                    || (entry.key().equals(currentNewestEntry.key()) && entry.isTombstone()))
+                    // If everything is ok -> trying to update newestEntry
                     && !newestEntry.compareAndSet(currentNewestEntry, entry)) {
                 currentNewestEntry = newestEntry.get();
             }
