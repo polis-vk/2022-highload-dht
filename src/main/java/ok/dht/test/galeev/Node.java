@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public abstract class Node {
     private static final Logger LOGGER = LoggerFactory.getLogger(Node.class);
-    private static final Duration CLIENT_TIMEOUT = Duration.of(300, ChronoUnit.MILLIS);
+    private static final Duration REQUEST_TIMEOUT = Duration.of(300, ChronoUnit.MILLIS);
     public static final int FATAL_ERROR_AMOUNT = 7;
     public final AtomicInteger errorCount;
     public final String nodeAddress;
@@ -41,8 +41,7 @@ public abstract class Node {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        Node node = (Node) o;
+        if (!(o instanceof Node node)) return false;
         return nodeAddress.equals(node.nodeAddress);
     }
 
@@ -51,10 +50,18 @@ public abstract class Node {
         return Objects.hashCode(nodeAddress);
     }
 
+    // If null was returned -> some error
+    // If (null,null) -> Not Found
+    // If (timestamp, null) -> tombstone
+    // If (timestamp, value) -> everything is OK
     public abstract CompletableFuture<Entry<Timestamp, byte[]>> get(String key);
 
+    // If true -> everything is OK
+    // If false -> smth went wrong
     public abstract CompletableFuture<Boolean> put(String key, Timestamp timestamp, byte[] body);
 
+    // If true -> everything is OK
+    // If false -> smth went wrong
     public abstract CompletableFuture<Boolean> delete(String key, Timestamp timestamp);
 
     public static class LocalNode extends Node {
@@ -251,7 +258,7 @@ public abstract class Node {
         }
 
         private static HttpRequest.Builder requestBuilder(String uri, String path) {
-            return HttpRequest.newBuilder(URI.create(uri + path)).timeout(CLIENT_TIMEOUT);
+            return HttpRequest.newBuilder(URI.create(uri + path)).timeout(REQUEST_TIMEOUT);
         }
 
         private static HttpRequest.Builder requestBuilderForKey(String uri, String key) {

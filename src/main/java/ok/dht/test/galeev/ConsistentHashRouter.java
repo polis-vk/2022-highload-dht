@@ -1,5 +1,6 @@
 package ok.dht.test.galeev;
 
+import com.google.common.collect.ImmutableList;
 import one.nio.util.Hash;
 
 import java.util.ArrayList;
@@ -61,7 +62,7 @@ public class ConsistentHashRouter {
                 nodeList.add(vnode.getPhysicalNode());
             }
             if (nodeList.size() == from) {
-                return nodeList;
+                return ImmutableList.copyOf(nodeList);
             }
         }
         // If in tailMap contains not enough of Nodes -> we start from beginning
@@ -70,7 +71,7 @@ public class ConsistentHashRouter {
                 nodeList.add(vnodeEntry.getValue().getPhysicalNode());
             }
             if (nodeList.size() == from) {
-                return nodeList;
+                return ImmutableList.copyOf(nodeList);
             }
         }
         throw new IndexOutOfBoundsException();

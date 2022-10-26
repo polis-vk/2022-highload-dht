@@ -125,9 +125,13 @@ public class DemoService implements Service {
         String key = request.getParameter(Header.ID_PARAMETR);
 
         Entry<Timestamp, byte[]> entry = localNode.getDao(key);
-        session.sendResponse(
-                new Response(Response.OK, Node.ClusterNode.entryToByteArray(entry.key(), entry.value()))
-        );
+        if (entry.key() == null) {
+            session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
+        } else {
+            session.sendResponse(
+                    new Response(Response.OK, Node.ClusterNode.entryToByteArray(entry.key(), entry.value()))
+            );
+        }
     }
 
     public void handlePut(Request request, HttpSession session) throws IOException {
