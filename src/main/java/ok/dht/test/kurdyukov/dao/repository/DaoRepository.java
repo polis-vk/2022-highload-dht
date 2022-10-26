@@ -13,8 +13,7 @@ public class DaoRepository {
     private static final Logger logger = LoggerFactory.getLogger(DaoRepository.class);
 
     private final DB levelDB;
-
-
+    
     public DaoRepository(DB levelDB) {
         this.levelDB = levelDB;
     }

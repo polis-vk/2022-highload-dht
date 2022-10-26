@@ -35,11 +35,8 @@ public class HttpShardServer extends HttpServer {
     private static final int CREATED = 201;
     private static final int ACCEPTED = 202;
     private static final int NOT_FOUND = 404;
-    private static final Set<Integer> supportMethods = Set.of(
-            Request.METHOD_GET,
-            Request.METHOD_PUT,
-            Request.METHOD_DELETE
-    );
+    private static final Set<Integer> supportMethods = Set
+            .of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
     private static final String ENDPOINT = "/v0/entity";
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
@@ -49,14 +46,8 @@ public class HttpShardServer extends HttpServer {
     private final ExecutorService executorService;
     private final Sharding sharding;
 
-    public HttpShardServer(
-            HttpServerConfig config,
-            List<String> urls,
-            DaoRepository daoRepository,
-            ExecutorService executorService,
-            Sharding sharding,
-            Object... routers
-    ) throws IOException {
+    public HttpShardServer(HttpServerConfig config, List<String> urls, DaoRepository daoRepository,
+                           ExecutorService executorService, Sharding sharding, Object... routers) throws IOException {
         super(config, routers);
         this.clusterSize = urls.size();
         this.daoRepository = daoRepository;
@@ -72,14 +63,12 @@ public class HttpShardServer extends HttpServer {
         }
 
         int method = request.getMethod();
-
         if (!supportMethods.contains(method)) {
             session.sendResponse(responseEmpty(Response.METHOD_NOT_ALLOWED));
             return;
         }
 
         String id = request.getParameter("id=");
-
         if (id == null || id.isBlank()) {
             session.sendResponse(responseEmpty(Response.BAD_REQUEST));
             return;
@@ -130,8 +119,14 @@ public class HttpShardServer extends HttpServer {
             String fromParam = request.getParameter("from=");
             String ackParam = request.getParameter("ack=");
 
-            int from = (fromParam != null) ? Integer.parseInt(fromParam) : clusterSize;
-            int ack = (ackParam != null) ? Integer.parseInt(ackParam) : (from + 1) / 2;
+            int from, ack;
+            try {
+                from = (fromParam != null) ? Integer.parseInt(fromParam) : clusterSize;
+                ack = (ackParam != null) ? Integer.parseInt(ackParam) : (from + 1) / 2;
+            } catch (NumberFormatException e) {
+                session.sendResponse(responseEmpty(Response.BAD_REQUEST));
+                return;
+            }
 
             if (ack <= 0 || ack > from) {
                 session.sendResponse(responseEmpty(Response.BAD_REQUEST));
@@ -139,9 +134,7 @@ public class HttpShardServer extends HttpServer {
             }
 
             final List<String> urlsNode = sharding.getClusterUrlsByCount(id, from);
-
             List<CompletableFuture<HttpResponse<byte[]>>> multicast = multicast(request, urlsNode, method, id);
-
             ArrayList<HttpResponse<byte[]>> responses = new ArrayList<>();
 
             for (var res : multicast) {
@@ -158,12 +151,10 @@ public class HttpShardServer extends HttpServer {
                             .filter(r -> r.statusCode() == OK || r.statusCode() == NOT_FOUND).count()) {
                         DaoEntry result = new DaoEntry(Instant.MIN, Response.EMPTY, true);
 
-
                         for (var res : responses) {
                             if (res.statusCode() == NOT_FOUND) {
                                 continue;
                             }
-
                             DaoEntry current = ObjectMapper.deserialize(res.body());
 
                             if (result.compareTo(current) < 0) {
@@ -194,6 +185,7 @@ public class HttpShardServer extends HttpServer {
                         session.sendResponse(responseEmpty(NOT_ENOUGH_REPLICAS));
                     }
                 }
+                default -> throw new IllegalArgumentException("Unsupported request method: " + method);
             }
         } catch (IOException | URISyntaxException e) {
             throw new RuntimeException(e);
@@ -210,13 +202,8 @@ public class HttpShardServer extends HttpServer {
 
         return urlsNode
                 .stream()
-                .map(urlNode -> clientDao
-                        .requestNode(
-                                String.format("%s%s%s", urlNode, ENDPOINT, "?id=" + id),
-                                method,
-                                timestamp,
-                                request.getBody()
-                        )
+                .map(urlNode -> clientDao.requestNode(
+                        String.format("%s%s%s", urlNode, ENDPOINT, "?id=" + id), method, timestamp, request.getBody())
                 )
                 .collect(Collectors.toList());
     }
@@ -251,6 +238,7 @@ public class HttpShardServer extends HttpServer {
                 daoRepository.put(id, ObjectMapper.serialize(daoEntry));
                 session.sendResponse(responseEmpty(Response.ACCEPTED));
             }
+            default -> throw new IllegalArgumentException("Unsupported request method: " + method);
         }
     }
 

@@ -53,6 +53,17 @@ public class ConsistentHashingSharding extends Sharding {
         return r == sizeVNodes ? circleHashes.get(0).url : circleHashes.get(r).url;
     }
 
-    private record Point(int hash, String url) {
+    private static class Point {
+        private final int hash;
+        private final String url;
+
+        public Point(int hash, String url) {
+            this.hash = hash;
+            this.url = url;
+        }
+
+        public int hash() {
+            return hash;
+        }
     }
 }

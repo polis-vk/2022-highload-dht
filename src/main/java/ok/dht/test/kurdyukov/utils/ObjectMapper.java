@@ -8,7 +8,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 
 @SuppressWarnings("unchecked")
-public class ObjectMapper {
+public final class ObjectMapper {
     private ObjectMapper() {
 
     }
