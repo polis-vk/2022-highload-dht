@@ -102,12 +102,12 @@ public class ReplicationManager {
     private int requestToAnotherNode(Request request, List<Response> collectedResponses, int countAck, Shard shard) {
         try {
             Response response = getResponseFromAnotherNode(request, shard);
-            countAck = addSuccessResponse(request, collectedResponses, countAck, response);
+            return addSuccessResponse(request, collectedResponses, countAck, response);
         } catch (IOException | InterruptedException e) {
             LOGGER.error("Something bad happens when client answer", e);
             circuitBreaker.incrementFail(shard.getName());
+            return countAck;
         }
-        return countAck;
     }
 
     private int addSuccessResponse(Request request, List<Response> collectedResponses,
