@@ -7,6 +7,7 @@ import ok.dht.test.skroba.client.MyClientImpl;
 import ok.dht.test.skroba.dao.MemorySegmentDao;
 import ok.dht.test.skroba.dao.base.BaseEntry;
 import ok.dht.test.skroba.dao.base.Entry;
+import ok.dht.test.skroba.dao.base.TimeEntry;
 import ok.dht.test.skroba.shard.Manager;
 import ok.dht.test.skroba.shard.MyManagerImpl;
 import ok.dht.test.skroba.shard.Node;
@@ -24,6 +25,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.nio.channels.ClosedSelectorException;
+import java.time.Instant;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -217,7 +219,8 @@ public class MyConcurrentHttpServer extends HttpServer {
             String onSuccessStatus
     ) {
         MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
-        BaseEntry<MemorySegment> entry = new BaseEntry<>(key, value);
+        //~TOFO
+        TimeEntry<MemorySegment> entry = new TimeEntry<>(key, value, Instant.now());
         
         try {
             dao.upsert(entry);
