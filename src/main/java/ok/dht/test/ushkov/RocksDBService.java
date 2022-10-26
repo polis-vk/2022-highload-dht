@@ -68,6 +68,7 @@ public class RocksDBService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
+        LOG.debug("start {}", config.selfUrl());
         executor = new ThreadPoolExecutor(
                 N_WORKER_THREADS,
                 N_WORKER_THREADS,
@@ -97,6 +98,7 @@ public class RocksDBService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
+        LOG.debug("stop {}", config.selfUrl());
         if (httpServer == null && db == null) {
             return CompletableFuture.completedFuture(null);
         }
@@ -248,7 +250,7 @@ public class RocksDBService implements Service {
         int from = ackFrom[1];
 
         if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl()) || request.getHeader("Proxy: ") != null) {
-            long timestamp = System.currentTimeMillis() / 1000L;
+            long timestamp = System.currentTimeMillis();
             byte[] body = request.getBody();
 
             ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES + 1 + body.length);
@@ -281,7 +283,7 @@ public class RocksDBService implements Service {
         int from = ackFrom[1];
 
         if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl()) || request.getHeader("Proxy: ") != null) {
-            long timestamp = System.currentTimeMillis() / 1000L;
+            long timestamp = System.currentTimeMillis();
 
             ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES + 1);
             buffer.putLong(timestamp);
@@ -355,27 +357,21 @@ public class RocksDBService implements Service {
                 public void run() {
                     Request newRequest = new Request(request);
                     newRequest.addHeader("Proxy: 1");
-                    try {
+                    try (HttpClient client = new HttpClient(new ConnectionString(url))) {
                         LOG.debug("from {} to {}", config.selfUrl(), url);
-                        Response response = clientPool.get(url).invoke(newRequest, 5000);
+                        Response response = client.invoke(newRequest, 5000);
                         if (succeededResponse.test(response)) {
-                            LOG.debug("success {}", config.selfUrl());
+                            LOG.debug("success {} {} {}", response.getStatus(),
+                                    response.getHeader("Timestamp: "), config.selfUrl());
                             replicatedRequest.onSuccess(session, response);
                         } else {
-                            LOG.debug("failure {}", config.selfUrl());
+                            LOG.debug("failure {} {} {}", response.getStatus(),
+                                    response.getHeader("Timestamp: "), config.selfUrl());
                             replicatedRequest.onFailure(session);
-
-                            nodeQueue.tasks.offer(this);
-                            nodeQueue.tasksCount.incrementAndGet();
                         }
                     } catch (Exception e1) {
-                        LOG.debug("failure {}", config.selfUrl());
+                        LOG.debug("failure {} {}", e1, config.selfUrl());
                         replicatedRequest.onFailure(session);
-
-                        // We do not give away our place in queue and
-                        // retry connect to unhealthy node in future
-                        nodeQueue.tasks.offer(this);
-                        nodeQueue.tasksCount.incrementAndGet();
                     }
                 }
             });
