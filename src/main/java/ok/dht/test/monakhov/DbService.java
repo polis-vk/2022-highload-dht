@@ -190,7 +190,7 @@ public class DbService implements Service {
             } catch (InterruptedException e) {
                 return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             } catch (ExecutionException e) {
-                responses.add(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                // responses.add(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
                 log.error("Exception occurred while redirecting request to another node", e);
             }
         }
@@ -221,7 +221,7 @@ public class DbService implements Service {
                     }
                 }
 
-                if (result.isTombstone) {
+                if (result == null || result.isTombstone) {
                     return new Response(Response.NOT_FOUND, Response.EMPTY);
                 } else {
                     return new Response(Response.OK, result.bytes);
