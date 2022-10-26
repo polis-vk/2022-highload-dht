@@ -73,10 +73,12 @@ public class DbService implements Service {
         }
 
         monitoringExecutor = new ScheduledThreadPoolExecutor(
-            Math.max(1, serviceConfig.clusterUrls().size() / 10)
+            Math.max(1, serviceConfig.clusterUrls().size() / 100)
         );
 
-        connectionExecutor = Executors.newCachedThreadPool();
+        connectionExecutor = Executors.newFixedThreadPool(
+            Math.max(4, serviceConfig.clusterUrls().size() / 2)
+        );
 
         server.addRequestHandlers(this);
         server.start();
