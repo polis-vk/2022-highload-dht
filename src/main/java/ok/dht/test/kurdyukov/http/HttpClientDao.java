@@ -16,14 +16,12 @@ import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class HttpClientDao {
 
     private static final Logger logger = LoggerFactory.getLogger(HttpClientDao.class);
 
     public static final String HEADER_NAME = "HEADER_FROM_CLUSTER";
-    public final AtomicBoolean isNotConnect = new AtomicBoolean(false);
 
     private final ScheduledExecutorService listenerConnect = Executors.newSingleThreadScheduledExecutor();
 
@@ -52,10 +50,11 @@ public class HttpClientDao {
             case Request.METHOD_GET -> builder.GET().build();
             case Request.METHOD_PUT -> {
                 try {
-                    yield builder.PUT(HttpRequest.BodyPublishers.ofByteArray(ObjectMapper.serialize(entry))).build();
+                    yield builder.PUT(HttpRequest
+                            .BodyPublishers
+                            .ofByteArray(ObjectMapper.serialize(entry)))
+                            .build();
                 } catch (IOException e) {
-                    logger.error("Fail serialize!", e);
-
                     throw new RuntimeException(e);
                 }
             }

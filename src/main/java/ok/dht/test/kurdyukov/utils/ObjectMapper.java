@@ -18,14 +18,18 @@ public class ObjectMapper {
         }
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try (ObjectOutputStream os = new ObjectOutputStream(new ByteArrayOutputStream())) {
+        try (ObjectOutputStream os = new ObjectOutputStream(out)) {
             os.writeObject(obj);
             return out.toByteArray();
         }
     }
 
     public static <T> T deserialize(byte[] data) throws IOException, ClassNotFoundException {
-        try (ObjectInputStream is = new ObjectInputStream(new ByteArrayInputStream(data));) {
+        if (data == null) {
+            return null;
+        }
+
+        try (ObjectInputStream is = new ObjectInputStream(new ByteArrayInputStream(data))) {
             return (T) is.readObject();
         }
     }

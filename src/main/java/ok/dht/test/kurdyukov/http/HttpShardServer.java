@@ -34,7 +34,8 @@ public class HttpShardServer extends HttpServer {
     private static final int OK = 200;
     private static final int CREATED = 201;
     private static final int ACCEPTED = 202;
-    private static final int NOT_FOUND = 404;private static final Set<Integer> supportMethods = Set.of(
+    private static final int NOT_FOUND = 404;
+    private static final Set<Integer> supportMethods = Set.of(
             Request.METHOD_GET,
             Request.METHOD_PUT,
             Request.METHOD_DELETE
@@ -132,6 +133,11 @@ public class HttpShardServer extends HttpServer {
             int from = (fromParam != null) ? Integer.parseInt(fromParam) : clusterSize;
             int ack = (ackParam != null) ? Integer.parseInt(ackParam) : (from + 1) / 2;
 
+            if (ack <= 0 || ack > from) {
+                session.sendResponse(responseEmpty(Response.BAD_REQUEST));
+                return;
+            }
+
             final List<String> urlsNode = sharding.getClusterUrlsByCount(id, from);
 
             List<CompletableFuture<HttpResponse<byte[]>>> multicast = multicast(request, urlsNode, method, id);
@@ -140,7 +146,7 @@ public class HttpShardServer extends HttpServer {
 
             for (var res : multicast) {
                 try {
-                    responses.add(res.get());
+                    responses.add(res.join());
                 } catch (Exception e) {
                     logger.error("Fail connect with node", e);
                 }
@@ -232,12 +238,10 @@ public class HttpShardServer extends HttpServer {
             }
             case Request.METHOD_PUT -> {
                 daoRepository.put(id, request.getBody());
-
                 session.sendResponse(responseEmpty(Response.CREATED));
             }
             case Request.METHOD_DELETE -> {
                 daoRepository.put(id, request.getBody());
-
                 session.sendResponse(responseEmpty(Response.ACCEPTED));
             }
         }
