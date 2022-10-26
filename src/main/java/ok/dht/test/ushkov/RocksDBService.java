@@ -350,19 +350,33 @@ public class RocksDBService implements Service {
                 return;
             }
 
-            nodeQueue.tasks.offer(() -> {
-                Request newRequest = new Request(request);
-                newRequest.addHeader("Proxy: 1");
-                try {
-                    LOG.debug("from {} to {}", config.selfUrl(), url);
-                    Response response = clientPool.get(url).invoke(newRequest, 3000);
-                    if (succeededResponse.test(response)) {
-                        replicatedRequest.onSuccess(session, response);
-                    } else {
+            nodeQueue.tasks.offer(new Runnable() {
+                @Override
+                public void run() {
+                    Request newRequest = new Request(request);
+                    newRequest.addHeader("Proxy: 1");
+                    try {
+                        LOG.debug("from {} to {}", config.selfUrl(), url);
+                        Response response = clientPool.get(url).invoke(newRequest, 5000);
+                        if (succeededResponse.test(response)) {
+                            LOG.debug("success {}", config.selfUrl());
+                            replicatedRequest.onSuccess(session, response);
+                        } else {
+                            LOG.debug("failure {}", config.selfUrl());
+                            replicatedRequest.onFailure(session);
+
+                            nodeQueue.tasks.offer(this);
+                            nodeQueue.tasksCount.incrementAndGet();
+                        }
+                    } catch (Exception e1) {
+                        LOG.debug("failure {}", config.selfUrl());
                         replicatedRequest.onFailure(session);
+
+                        // We do not give away our place in queue and
+                        // retry connect to unhealthy node in future
+                        nodeQueue.tasks.offer(this);
+                        nodeQueue.tasksCount.incrementAndGet();
                     }
-                } catch (Exception e1) {
-                    replicatedRequest.onFailure(session);
                 }
             });
 
