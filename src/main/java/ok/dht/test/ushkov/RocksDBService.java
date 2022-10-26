@@ -3,7 +3,6 @@ package ok.dht.test.ushkov;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.pashchenko.DemoService;
 import one.nio.http.HttpClient;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -25,12 +24,10 @@ import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -198,39 +195,9 @@ public class RocksDBService implements Service {
 
         List<String> urls = keyManager.getNodeIdsByKey(key, 1);
 
-//        String replicas = request.getParameter("replicas=");
-//        int ack = replicas != null ? parseAck(replicas) : 1;
-//        int from = replicas != null ? parseFrom(replicas) : 1;
-
-        int ack;
-        try {
-            ack = request.getParameter("ack=") != null
-                    ? Integer.parseInt(request.getParameter("ack="))
-                    : 1;
-        } catch (NumberFormatException e) {
-            throw new InvalidParamsException();
-        }
-        int from;
-        try {
-            from = request.getParameter("from=") != null
-                    ? Integer.parseInt(request.getParameter("from="))
-                    : 1;
-        } catch (NumberFormatException e) {
-            throw new InvalidParamsException();
-        }
-
-        if (ack < 1) {
-            throw new InvalidParamsException();
-        }
-        if (from < 1) {
-            throw new InvalidParamsException();
-        }
-        if (ack > from) {
-            throw new InvalidParamsException();
-        }
-        if (from > config.clusterUrls().size()) {
-            throw new InvalidParamsException();
-        }
+        int[] ackFrom = getAckFrom(request);
+        int ack = ackFrom[0];
+        int from = ackFrom[1];
 
         if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl()) || request.getHeader("Proxy: ") != null) {
             byte[] value = db.get(Utf8.toBytes(key));
@@ -261,8 +228,8 @@ public class RocksDBService implements Service {
             response.addHeader("Timestamp: " + timestamp);
             session.sendResponse(response);
         } else {
-            replicateRequest(request, session, key, ack, from,
-                    response -> Set.of(200, 201, 202, 404).contains(response.getStatus()));
+            replicateRequest(request, session, key, ackFrom,
+                    response -> response.getStatus() == 200 || response.getStatus() == 404);
         }
     }
 
@@ -274,35 +241,9 @@ public class RocksDBService implements Service {
 
         List<String> urls = keyManager.getNodeIdsByKey(key, 1);
 
-        int ack;
-        try {
-            ack = request.getParameter("ack=") != null
-                    ? Integer.parseInt(request.getParameter("ack="))
-                    : 1;
-        } catch (NumberFormatException e) {
-            throw new InvalidParamsException();
-        }
-        int from;
-        try {
-            from = request.getParameter("from=") != null
-                    ? Integer.parseInt(request.getParameter("from="))
-                    : 1;
-        } catch (NumberFormatException e) {
-            throw new InvalidParamsException();
-        }
-
-        if (ack < 1) {
-            throw new InvalidParamsException();
-        }
-        if (from < 1) {
-            throw new InvalidParamsException();
-        }
-        if (ack > from) {
-            throw new InvalidParamsException();
-        }
-        if (from > config.clusterUrls().size()) {
-            throw new InvalidParamsException();
-        }
+        int[] ackFrom = getAckFrom(request);
+        int ack = ackFrom[0];
+        int from = ackFrom[1];
 
         if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl()) || request.getHeader("Proxy: ") != null) {
             long timestamp = System.currentTimeMillis() / 1000L;
@@ -319,8 +260,8 @@ public class RocksDBService implements Service {
             response.addHeader("Timestamp: " + timestamp);
             session.sendResponse(response);
         } else {
-            replicateRequest(request, session, key, ack, from,
-                    response -> Set.of(200, 201, 202, 404).contains(response.getStatus()));
+            replicateRequest(request, session, key, ackFrom,
+                    response -> response.getStatus() == 201);
         }
     }
 
@@ -332,6 +273,30 @@ public class RocksDBService implements Service {
 
         List<String> urls = keyManager.getNodeIdsByKey(key, 1);
 
+        int[] ackFrom = getAckFrom(request);
+        int ack = ackFrom[0];
+        int from = ackFrom[1];
+
+        if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl()) || request.getHeader("Proxy: ") != null) {
+            long timestamp = System.currentTimeMillis() / 1000L;
+
+            ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES + 1);
+            buffer.putLong(timestamp);
+            // tombstone
+            buffer.put((byte) 1);
+
+            db.put(Utf8.toBytes(key), buffer.array());
+
+            Response response = new Response(Response.ACCEPTED, Response.EMPTY);
+            response.addHeader("Timestamp: " + timestamp);
+            session.sendResponse(response);
+        } else {
+            replicateRequest(request, session, key, ackFrom,
+                    response -> response.getStatus() == 202);
+        }
+    }
+
+    private int[] getAckFrom(Request request) throws InvalidParamsException {
         int ack;
         try {
             ack = request.getParameter("ack=") != null
@@ -349,40 +314,24 @@ public class RocksDBService implements Service {
             throw new InvalidParamsException();
         }
 
-        if (ack < 1) {
-            throw new InvalidParamsException();
-        }
-        if (from < 1) {
-            throw new InvalidParamsException();
-        }
-        if (ack > from) {
-            throw new InvalidParamsException();
-        }
-        if (from > config.clusterUrls().size()) {
+        if (ack < 1 || from < 1 || ack > from || from > config.clusterUrls().size()) {
             throw new InvalidParamsException();
         }
 
-        if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl()) || request.getHeader("Proxy: ") != null) {
-            long timestamp = System.currentTimeMillis() / 1000L;
-
-            ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES + 1);
-            buffer.putLong(timestamp);
-            // tombstone
-            buffer.put((byte) 1);
-
-            db.put(Utf8.toBytes(key), buffer.array());
-
-            Response response = new Response(Response.ACCEPTED, Response.EMPTY);
-            response.addHeader("Timestamp: " + timestamp);
-            session.sendResponse(response);
-        } else {
-            replicateRequest(request, session, key, ack, from,
-                    response -> Set.of(200, 201, 202, 404).contains(response.getStatus()));
-        }
+        return new int[]{ack, from};
     }
 
-    private void replicateRequest(Request request, HttpSession session, String key, int ack, int from, Predicate<Response> predicate) throws IOException {
-        LOG.info("{} start replica request, method {}", config.selfUrl(), request.getMethod());
+    private void replicateRequest(
+            Request request,
+            HttpSession session,
+            String key,
+            int[] ackFrom,
+            Predicate<Response> succeededResponse
+    ) throws IOException {
+        int ack = ackFrom[0];
+        int from = ackFrom[1];
+
+        LOG.debug("{} start replica request, method {}", config.selfUrl(), request.getMethod());
 
         List<String> urls = keyManager.getNodeIdsByKey(key, from);
 
@@ -399,18 +348,12 @@ public class RocksDBService implements Service {
             }
 
             nodeQueue.tasks.offer(() -> {
-//                Request newRequest = new Request(request.getMethod(),
-//                        request.getPath() + "?id=" + key + "&ack=1&from=1", true);
-//                for (int i = 0; i < request.getHeaderCount(); ++i) {
-//                    newRequest.addHeader(request.getHeaders()[i]);
-//                }
-//                newRequest.setBody(request.getBody());
                 Request newRequest = new Request(request);
                 newRequest.addHeader("Proxy: 1");
                 try {
-                    LOG.info("from {} to {}", config.selfUrl(), url);
+                    LOG.debug("from {} to {}", config.selfUrl(), url);
                     Response response = clientPool.get(url).invoke(newRequest, 3000);
-                    if (predicate.test(response)) {
+                    if (succeededResponse.test(response)) {
                         replicatedRequest.onSuccess(session, response);
                     } else {
                         replicatedRequest.onFailure(session);
@@ -436,24 +379,6 @@ public class RocksDBService implements Service {
                     }
                 });
             }
-        }
-    }
-
-    private static int parseAck(String replicas) throws InvalidParamsException {
-        int pos = replicas.indexOf('/');
-        try {
-            return Integer.parseInt(replicas.substring(0, pos));
-        } catch (NumberFormatException e) {
-            throw new InvalidParamsException();
-        }
-    }
-
-    private static int parseFrom(String replicas) throws InvalidParamsException {
-        int pos = replicas.indexOf('/');
-        try {
-            return Integer.parseInt(replicas.substring(pos));
-        } catch (NumberFormatException e) {
-            throw new InvalidParamsException();
         }
     }
 
