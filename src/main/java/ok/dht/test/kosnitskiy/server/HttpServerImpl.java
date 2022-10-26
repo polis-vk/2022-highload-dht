@@ -288,16 +288,16 @@ public class HttpServerImpl extends HttpServer {
 
     private void startWorker(String id, Cluster target) {
         if (target.amountOfWorkers.incrementAndGet() <= MAX_THREADS_PER_NODE) {
-            LOG.debug("Added worker {}", target.url);
-            executor.execute(() -> {
-                Runnable task;
-                while (true) {
+            LOG.debug("Added worker to node {}", target.url);
+            executor.execute(new Runnable() {
+                @Override
+                public void run() {
                     LOG.debug("Trying to get task {}", target.url);
-                    task = target.queue.poll();
+                    Runnable task = target.queue.poll();
                     if (task == null) {
                         LOG.debug("No tasks left, kill worker {}", target.url);
                         target.amountOfWorkers.decrementAndGet();
-                        break;
+                        return;
                     }
                     LOG.debug("Got task {}", target.url);
                     LOG.debug("Url {} for id {} (my url is {})", target.url, id, serverUrl);
@@ -307,6 +307,7 @@ public class HttpServerImpl extends HttpServer {
                         LOG.error("Error while executing task");
                     } finally {
                         target.amountOfTasks.decrementAndGet();
+                        executor.execute(this);
                     }
                 }
             });
@@ -341,7 +342,7 @@ public class HttpServerImpl extends HttpServer {
                                 .BodyPublishers
                                 .ofByteArray(request.getBody() == null ? Response.EMPTY : request.getBody())
                 )
-                .timeout(Duration.ofMillis(100))
+                .timeout(Duration.ofMillis(200))
                 .build();
         HttpResponse<byte[]> response = httpClient.send(proxyRequest,
                 HttpResponse.BodyHandlers.ofByteArray());
