@@ -6,8 +6,8 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
@@ -17,7 +17,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class AsyncHttpServer extends HttpServer {
-    private static final Logger log = LoggerFactory.getLogger(AsyncHttpServer.class);
+    private static final Log log = LogFactory.getLog(AsyncHttpServer.class);
     private ExecutorService executor;
     private final AsyncHttpServerConfig config;
 

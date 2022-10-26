@@ -17,6 +17,18 @@ public class JumpingNodesRouter implements NodesRouter {
         return urls.get(getNodeIndex(Hash.murmur3(key)));
     }
 
+    @Override
+    public String[] getNodeUrls(String key, int number) {
+        String[] replicateUrls = new String[number];
+        int start = getNodeIndex(Hash.murmur3(key));
+
+        for (int i = 0; i < number; i++) {
+            replicateUrls[i] = urls.get((start + i) % urls.size());
+        }
+
+        return replicateUrls;
+    }
+
     private int getNodeIndex(int key) {
         var random = new Random();
         random.setSeed(key);
