@@ -1,10 +1,10 @@
 package ok.dht.test.shik.events;
 
-public class HandlerPutRequest extends HandlerRequest {
+public class HandlerTimedRequest extends HandlerRequest {
 
     private long timestamp;
 
-    public HandlerPutRequest(RequestState state, long timestamp) {
+    public HandlerTimedRequest(RequestState state, long timestamp) {
         super(state);
         this.timestamp = timestamp;
     }

@@ -2,10 +2,9 @@ package ok.dht.test.shik;
 
 import ok.dht.ServiceConfig;
 import ok.dht.test.shik.events.FollowerRequestState;
-import ok.dht.test.shik.events.HandlerDeleteRequest;
-import ok.dht.test.shik.events.HandlerPutRequest;
 import ok.dht.test.shik.events.HandlerRequest;
 import ok.dht.test.shik.events.HandlerResponse;
+import ok.dht.test.shik.events.HandlerTimedRequest;
 import ok.dht.test.shik.events.LeaderRequestState;
 import ok.dht.test.shik.events.RequestState;
 import ok.dht.test.shik.illness.IllNodesService;
@@ -242,13 +241,13 @@ public class CustomHttpServer extends HttpServer {
                 ));
                 case Request.METHOD_PUT -> workersService.submitTask(
                     () -> HttpServerUtils.handleConcreteRequest(state,
-                        new HandlerPutRequest(state, System.currentTimeMillis()),
+                        new HandlerTimedRequest(state, System.currentTimeMillis()),
                         handlerResponse,
                         requestHandler::handlePut
                 ));
                 case Request.METHOD_DELETE -> workersService.submitTask(
                     () -> HttpServerUtils.handleConcreteRequest(state,
-                        new HandlerDeleteRequest(state, System.currentTimeMillis()),
+                        new HandlerTimedRequest(state, System.currentTimeMillis()),
                         handlerResponse,
                         requestHandler::handleDelete
                 ));

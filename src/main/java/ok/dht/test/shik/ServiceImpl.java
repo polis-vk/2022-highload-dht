@@ -3,10 +3,9 @@ package ok.dht.test.shik;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.shik.events.HandlerDeleteRequest;
-import ok.dht.test.shik.events.HandlerPutRequest;
 import ok.dht.test.shik.events.HandlerRequest;
 import ok.dht.test.shik.events.HandlerResponse;
+import ok.dht.test.shik.events.HandlerTimedRequest;
 import ok.dht.test.shik.events.LeaderRequestState;
 import ok.dht.test.shik.model.DBValue;
 import ok.dht.test.shik.serialization.ByteArraySerializer;
@@ -114,7 +113,7 @@ public class ServiceImpl implements CustomService {
     }
 
     @Override
-    public void handlePut(HandlerPutRequest request, HandlerResponse response) {
+    public void handlePut(HandlerTimedRequest request, HandlerResponse response) {
         byte[] key = request.getState().getId().getBytes(StandardCharsets.UTF_8);
         byte[] dbValue = serializer.serialize(
             new DBValue(request.getState().getRequest().getBody(), request.getTimestamp()));
@@ -129,7 +128,7 @@ public class ServiceImpl implements CustomService {
     }
 
     @Override
-    public void handleDelete(HandlerDeleteRequest request, HandlerResponse response) {
+    public void handleDelete(HandlerTimedRequest request, HandlerResponse response) {
         byte[] key = request.getState().getId().getBytes(StandardCharsets.UTF_8);
         levelDB.put(key, serializer.serialize(new DBValue(null, request.getTimestamp())));
         response.setResponse(new Response(Response.ACCEPTED, Response.EMPTY));

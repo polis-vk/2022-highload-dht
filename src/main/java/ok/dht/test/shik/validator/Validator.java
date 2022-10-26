@@ -38,6 +38,10 @@ public class Validator {
             return new ValidationResult(HttpURLConnection.HTTP_BAD_REQUEST);
         }
 
+        return validateReplicationParams(request, id);
+    }
+
+    private ValidationResult validateReplicationParams(Request request, String id) {
         int requestedReplicas;
         int requiredReplicas;
         try {
@@ -51,6 +55,11 @@ public class Validator {
             return new ValidationResult(HttpURLConnection.HTTP_BAD_REQUEST);
         }
 
+        return validateRequestMethod(request, id, requestedReplicas, requiredReplicas);
+    }
+
+    private ValidationResult validateRequestMethod(Request request, String id,
+                                                   int requestedReplicas, int requiredReplicas) {
         if (!SUPPORTED_METHODS.contains(request.getMethod())) {
             return new ValidationResult(HttpURLConnection.HTTP_BAD_METHOD);
         }
