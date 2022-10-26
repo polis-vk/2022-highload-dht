@@ -19,7 +19,6 @@ import one.nio.server.SelectorThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -96,6 +95,7 @@ public class HttpServerImpl extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        LOG.debug("{} got request {}", serverUrl, request.getURI());
         String id = request.getParameter("id=");
         if (!isTypeSupported(request)) {
             session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
@@ -123,14 +123,17 @@ public class HttpServerImpl extends HttpServer {
         if (target.amountOfTasks.incrementAndGet() >= MAX_TASKS_PER_NODE) {
             target.amountOfTasks.decrementAndGet();
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            LOG.error("Slave {} is overflown", serverUrl);
             return;
         }
 
         target.queue.add(() -> {
             try {
+                LOG.debug("Slave {} handles request", serverUrl);
                 session.sendResponse(handleSupported(request, id));
             } catch (Exception e) {
                 try {
+                    LOG.error("Slave {} got exception", serverUrl);
                     session.sendResponse(new Response(
                             Response.INTERNAL_ERROR,
                             ("Internal server error has occurred: " + e.getMessage()).getBytes(StandardCharsets.UTF_8)
@@ -141,6 +144,8 @@ public class HttpServerImpl extends HttpServer {
                 }
             }
         });
+
+        LOG.debug("Added slave task {}", target.url);
 
         startWorker(id, target);
     }
@@ -230,9 +235,9 @@ public class HttpServerImpl extends HttpServer {
                 } catch (Exception e) {
                     try {
                         int tr = tried.incrementAndGet();
-                        LOG.error("Internal server error has occurred: " + e.getMessage()
+                        LOG.error("{} Internal server error has occurred: " + e.getMessage()
                                 + " tried: " + tr + " succeeded: " + succeeded.get() + " needed: "
-                                + nodesAnswersRequired + " total: " + nodesAmount);
+                                + nodesAnswersRequired + " total: " + nodesAmount, serverUrl);
                         if (tr == nodesAmount && succeeded.get() < nodesAnswersRequired) {
                             session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
                         }
@@ -242,6 +247,8 @@ public class HttpServerImpl extends HttpServer {
                     }
                 }
             });
+
+            LOG.debug("Added master task {}", target.url);
 
             startWorker(id, target);
         }
@@ -281,14 +288,18 @@ public class HttpServerImpl extends HttpServer {
 
     private void startWorker(String id, Cluster target) {
         if (target.amountOfWorkers.incrementAndGet() <= MAX_THREADS_PER_NODE) {
+            LOG.debug("Added worker {}", target.url);
             executor.execute(() -> {
                 Runnable task;
                 while (true) {
+                    LOG.debug("Trying to get task {}", target.url);
                     task = target.queue.poll();
                     if (task == null) {
+                        LOG.debug("No tasks left, kill worker {}", target.url);
                         target.amountOfWorkers.decrementAndGet();
                         break;
                     }
+                    LOG.debug("Got task {}", target.url);
                     LOG.debug("Url {} for id {} (my url is {})", target.url, id, serverUrl);
                     try {
                         task.run();
@@ -322,7 +333,7 @@ public class HttpServerImpl extends HttpServer {
     }
 
     private Response proxyRequest(Cluster target, Request request) throws IOException, InterruptedException {
-        LOG.debug("Sending request to slave " + serverUrl);
+        LOG.debug("Sending request {} to slave " + serverUrl, target.url + request.getURI() + "&slave=true");
         HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(target.url + request.getURI() + "&slave=true"))
                 .method(
                         request.getMethodName(),
