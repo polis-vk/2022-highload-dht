@@ -77,7 +77,10 @@ public class DemoService implements Service {
         requestExecutor = RequestExecutorService.requestExecutorDiscardOldest();
         daoHandler = new DaoHandler(DaoConfig.defaultConfig(daoPath));
         proxyHandler = new ProxyHandler();
-        replicasResponsesExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(REPLICA_RESPONSES_EXECUTOR_THREADS);
+        replicasResponsesExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(
+                REPLICA_RESPONSES_EXECUTOR_THREADS,
+                r -> new Thread(r, "ReplicasResponsesExecutorThread")
+        );
         server = new HttpServer(ServiceUtils.createConfigFromPort(config.selfPort())) {
 
             @Override
@@ -96,7 +99,7 @@ public class DemoService implements Service {
                         ServiceUtils.sendResponse(session, requestParser.failStatus());
                         return;
                     }
-                    List<Runnable> replicaTasks = createReplicaResponsesTasks(session, requestParser,requestTime);
+                    List<Runnable> replicaTasks = createReplicaResponsesTasks(session, requestParser, requestTime);
                     for (Runnable task : replicaTasks) {
                         replicasResponsesExecutor.execute(task);
                     }
