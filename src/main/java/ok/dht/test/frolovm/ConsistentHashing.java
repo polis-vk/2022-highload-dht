@@ -8,7 +8,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-
 public class ConsistentHashing implements ShardingAlgorithm {
 
     private static final int SHARD_VNODES = 4;

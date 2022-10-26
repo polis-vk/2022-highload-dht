@@ -29,8 +29,12 @@ public class ReplicationManager {
     private final CircuitBreaker circuitBreaker;
     private final HttpClient client;
 
-    public ReplicationManager(ShardingAlgorithm algorithm, String selfUrl, RequestExecutor requestExecutor, CircuitBreaker circuitBreaker,
-                              HttpClient client) {
+    public ReplicationManager(
+            ShardingAlgorithm algorithm,
+            String selfUrl,
+            RequestExecutor requestExecutor,
+            CircuitBreaker circuitBreaker,
+            HttpClient client) {
         this.algorithm = algorithm;
         this.selfUrl = selfUrl;
         this.requestExecutor = requestExecutor;
@@ -77,13 +81,13 @@ public class ReplicationManager {
             Shard shard = algorithm.getShardByIndex(shardIndex);
 
             if (shard.getName().equals(selfUrl)) {
-                Response response = requestExecutor.entityHandlerSelf(id, request, timestamp);
-                countAck = addSuccessResponse(request, collectedResponses, countAck, response);
+                countAck = addSuccessResponse(request, collectedResponses, countAck,
+                        requestExecutor.entityHandlerSelf(id, request, timestamp));
             } else {
                 if (circuitBreaker.isReady(shard.getName())) {
                     try {
-                        Response response = sendResponseToAnotherNode(request, shard);
-                        countAck = addSuccessResponse(request, collectedResponses, countAck, response);
+                        countAck = addSuccessResponse(request, collectedResponses, countAck,
+                                sendResponseToAnotherNode(request, shard));
                     } catch (IOException | InterruptedException e) {
                         LOGGER.error("Something bad happens when client answer", e);
                         circuitBreaker.incrementFail(shard.getName());
