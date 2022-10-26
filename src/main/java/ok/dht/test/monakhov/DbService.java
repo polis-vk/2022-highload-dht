@@ -28,7 +28,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
@@ -42,10 +41,12 @@ import static ok.dht.test.monakhov.ServiceUtils.NOT_ENOUGH_REPLICAS;
 import static ok.dht.test.monakhov.ServiceUtils.QUEUE_SIZE;
 import static ok.dht.test.monakhov.ServiceUtils.TIMESTAMP_HEADER;
 import static ok.dht.test.monakhov.ServiceUtils.createConfigFromPort;
+import static ok.dht.test.monakhov.ServiceUtils.deserialize;
 import static ok.dht.test.monakhov.ServiceUtils.isInvalidReplica;
 import static ok.dht.test.monakhov.ServiceUtils.max;
-import static one.nio.serial.Serializer.deserialize;
-import static one.nio.serial.Serializer.serialize;
+import static ok.dht.test.monakhov.ServiceUtils.serialize;
+// import static one.nio.serial.Serializer.deserialize;
+// import static one.nio.serial.Serializer.serialize;
 
 public class DbService implements Service {
     private static final Log log = LogFactory.getLog(DbService.class);
@@ -119,7 +120,8 @@ public class DbService implements Service {
     public Response manageRequest(
         @Param(value = "id") String id, @Param(value = "from") String fromParam,
         @Param(value = "ack") String ackParam, Request request
-    ) {
+    )
+    {
         if (id == null || id.isBlank() || isInvalidReplica(ackParam, fromParam)) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
@@ -167,8 +169,9 @@ public class DbService implements Service {
                         return client.invoke(request);
                     } catch (PoolException | SocketTimeoutException e) {
                         log.debug("Timeout connection to node:" + nodeUrl, e);
-                        // createMonitoringTask(nodeUrl, client);
                         throw e;
+                        // createMonitoringTask(nodeUrl, client);
+                        // return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
                     }
                 }));
                 // } else {
@@ -203,8 +206,12 @@ public class DbService implements Service {
                     EntryWrapper mostRecent = (EntryWrapper) deserialize(successful.get(0).getBody());
 
                     for (Response response : successful) {
-                        EntryWrapper entry = (EntryWrapper) deserialize(response.getBody());
-                        mostRecent = max(mostRecent, entry);
+                        try {
+                            EntryWrapper entry = (EntryWrapper) deserialize(response.getBody());
+                            mostRecent = max(mostRecent, entry);
+                        } catch (IOException | ClassNotFoundException e) {
+                            log.error("Exception occurred while deserialization", e);
+                        }
                     }
 
                     if (mostRecent.isTombstone) {
