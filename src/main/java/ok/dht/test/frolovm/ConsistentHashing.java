@@ -2,7 +2,12 @@ package ok.dht.test.frolovm;
 
 import ok.dht.test.frolovm.hasher.Hasher;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 
 public class ConsistentHashing implements ShardingAlgorithm {
 
