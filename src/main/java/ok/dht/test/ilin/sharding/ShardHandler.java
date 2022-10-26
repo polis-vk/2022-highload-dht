@@ -1,6 +1,6 @@
 package ok.dht.test.ilin.sharding;
 
-import ok.dht.test.ilin.domain.Headers;
+import ok.dht.test.ilin.domain.HeadersUtils;
 import ok.dht.test.ilin.hashing.impl.ConsistentHashing;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -40,7 +40,7 @@ public class ShardHandler {
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
             .uri(URI.create(address.concat("/v0/entity?id=").concat(key)))
             .timeout(DEFAULT_TIMEOUT)
-            .header(Headers.JAVA_NET_TIMESTAMP_HEADER, request.getHeader(Headers.TIMESTAMP_HEADER));
+            .header(HeadersUtils.JAVA_NET_TIMESTAMP_HEADER, request.getHeader(HeadersUtils.TIMESTAMP_HEADER));
         try {
             return switch (request.getMethod()) {
                 case Request.METHOD_GET -> {
@@ -50,11 +50,11 @@ public class ShardHandler {
                     );
                     Response result = new Response(String.valueOf(response.statusCode()), response.body());
                     response.headers()
-                        .firstValue(Headers.JAVA_NET_TIMESTAMP_HEADER)
-                        .ifPresent(x -> result.addHeader(Headers.TIMESTAMP_HEADER + x));
+                        .firstValue(HeadersUtils.JAVA_NET_TIMESTAMP_HEADER)
+                        .ifPresent(x -> result.addHeader(HeadersUtils.TIMESTAMP_HEADER + x));
                     response.headers()
-                        .firstValue(Headers.JAVA_NET_TOMBSTONE_HEADER)
-                        .ifPresent(x -> result.addHeader(Headers.TOMBSTONE_HEADER));
+                        .firstValue(HeadersUtils.JAVA_NET_TOMBSTONE_HEADER)
+                        .ifPresent(x -> result.addHeader(HeadersUtils.TOMBSTONE_HEADER));
                     yield result;
                 }
                 case Request.METHOD_PUT -> {

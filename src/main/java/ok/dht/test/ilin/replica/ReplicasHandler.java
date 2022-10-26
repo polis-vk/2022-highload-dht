@@ -1,11 +1,11 @@
 package ok.dht.test.ilin.replica;
 
-import ok.dht.test.ilin.domain.Headers;
+import ok.dht.test.ilin.domain.HeadersUtils;
 import ok.dht.test.ilin.domain.ReplicasInfo;
 import ok.dht.test.ilin.hashing.impl.ConsistentHashing;
 import ok.dht.test.ilin.service.EntityService;
 import ok.dht.test.ilin.sharding.ShardHandler;
-import ok.dht.test.ilin.utils.TimestampUtil;
+import ok.dht.test.ilin.utils.TimestampUtils;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
@@ -113,14 +113,14 @@ public class ReplicasHandler {
         for (Response response : responses) {
             if (response.getStatus() == 200 || response.getStatus() == 404) {
                 ack--;
-                long timestamp = TimestampUtil.extractTimestamp(response);
+                long timestamp = TimestampUtils.extractTimestamp(response);
                 if (timestamp > bestTimestamp || result == null) {
                     bestTimestamp = timestamp;
                     result = response;
                     continue;
                 }
                 if (timestamp == bestTimestamp) {
-                    if (response.getHeader(Headers.TOMBSTONE_HEADER) != null) {
+                    if (response.getHeader(HeadersUtils.TOMBSTONE_HEADER) != null) {
                         result = response;
                         isResultTombstone = true;
                     } else if (!isResultTombstone) {

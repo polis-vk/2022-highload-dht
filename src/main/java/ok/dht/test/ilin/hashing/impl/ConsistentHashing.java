@@ -3,12 +3,10 @@ package ok.dht.test.ilin.hashing.impl;
 import ok.dht.test.ilin.config.ConsistentHashingConfig;
 import ok.dht.test.ilin.hashing.HashEvaluator;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.NavigableMap;
 import java.util.Set;
-import java.util.SortedMap;
 import java.util.TreeMap;
 
 public class ConsistentHashing {

@@ -1,7 +1,6 @@
 package ok.dht.test.ilin.config;
 
 import ok.dht.test.ilin.hashing.HashEvaluator;
-import ok.dht.test.ilin.hashing.impl.FNV32HashEvaluator;
 import ok.dht.test.ilin.hashing.impl.Murmur3HashEvaluator;
 
 public class ConsistentHashingConfig {
