@@ -62,6 +62,7 @@ public class ConcurrentHttpServer extends HttpServer {
             try {
                 super.handleRequest(request, session);
             } catch (Exception e) {
+                LOGGER.warn(e.getMessage());
                 try {
                     session.sendError(Response.BAD_REQUEST, e.getMessage());
                 } catch (IOException ioE) {

@@ -50,9 +50,9 @@ public class StorageCompanionObject {
 
     static long getSize(Entry<MemorySegment> entry) {
         if (entry.value() == null) {
-            return Long.BYTES + entry.key().byteSize() + Long.BYTES;
+            return Long.BYTES + Long.BYTES + entry.key().byteSize() + Long.BYTES;
         } else {
-            return Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
+            return Long.BYTES + Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
         }
     }
 
