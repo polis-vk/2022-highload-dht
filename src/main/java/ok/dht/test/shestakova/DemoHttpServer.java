@@ -87,22 +87,22 @@ public class DemoHttpServer extends HttpServer {
                 }
 
                 List<HttpRequest> httpRequests = getHttpRequests(request, key, targetNodes);
-                List<Response> httpResponses = getResponses(request, session, ack, httpRequests);
+                List<Response> responses = getResponses(request, session, ack, httpRequests);
 
-                if (httpResponses.size() < ack) {
+                if (responses.size() < ack) {
                     tryToSendResponseWithEmptyBody(session, RESPONSE_NOT_ENOUGH_REPLICAS);
                     return;
                 }
 
                 if (request.getMethod() != Request.METHOD_GET) {
-                    session.sendResponse(httpResponses.get(0));
+                    session.sendResponse(responses.get(0));
                     return;
                 }
 
                 byte[] body = null;
                 int notFoundResponsesCount = 0;
                 long maxTimestamp = Long.MIN_VALUE;
-                for (Response response : httpResponses) {
+                for (Response response : responses) {
                     if (response.getStatus() == NOT_FOUND_CODE) {
                         notFoundResponsesCount++;
                         continue;
@@ -115,7 +115,7 @@ public class DemoHttpServer extends HttpServer {
                     }
                 }
 
-                boolean cond = body != null && notFoundResponsesCount != httpResponses.size();
+                boolean cond = body != null && notFoundResponsesCount != responses.size();
                 session.sendResponse(new Response(
                         cond ? Response.OK : Response.NOT_FOUND,
                         cond ? body : Response.EMPTY
@@ -145,14 +145,14 @@ public class DemoHttpServer extends HttpServer {
 
     private List<Response> getResponses(Request request, HttpSession session, int ack, List<HttpRequest> httpRequests)
             throws InterruptedException {
-        List<Response> httpResponses = new ArrayList<>();
+        List<Response> responses = new ArrayList<>();
         for (HttpRequest httpRequest : httpRequests) {
-            if (httpResponses.size() == ack) {
+            if (responses.size() == ack) {
                 break;
             }
             if (httpRequest == null) {
                 Response response = handleInternalRequest(request, session);
-                httpResponses.add(response);
+                responses.add(response);
                 continue;
             }
             CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture = httpClient
@@ -162,13 +162,13 @@ public class DemoHttpServer extends HttpServer {
                     );
             HttpResponse<byte[]> httpResponse = getResponseOrNull(responseCompletableFuture);
             if (httpResponse != null) {
-                httpResponses.add(new Response(
+                responses.add(new Response(
                         StatusCodes.statuses.getOrDefault(httpResponse.statusCode(), "UNKNOWN ERROR"),
                         httpResponse.body()
                 ));
             }
         }
-        return httpResponses;
+        return responses;
     }
 
     private byte[] getBody(ByteBuffer bodyBB) {
