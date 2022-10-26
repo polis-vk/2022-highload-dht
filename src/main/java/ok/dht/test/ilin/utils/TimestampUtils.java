@@ -4,7 +4,7 @@ import ok.dht.test.ilin.domain.Headers;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
-public class TimestampUtils {
+public final class TimestampUtils {
     private TimestampUtils() {
 
     }
