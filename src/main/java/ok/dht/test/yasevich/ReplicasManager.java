@@ -42,12 +42,10 @@ public class ReplicasManager {
     }
 
     private void handleUpsert(
-            HttpSession session,
-            Request request,
+            HttpSession session, Request request,
             String key,
             Iterable<RandevouzHashingRouter.Node> responsibleNodes,
-            int ack,
-            int from,
+            int ack, int from,
             String okMessage
     ) {
         AtomicInteger oks = new AtomicInteger();
@@ -58,7 +56,8 @@ public class ReplicasManager {
             if (node.url.equals(selfUrl)) {
                 try {
                     doUpsert(request, key);
-                    probablyResponseGood(session, goodResponseForUpsert(okMessage), ack, oks, responsesTotal, alreadyResponded);
+                    probablyResponseGood(session, goodResponseForUpsert(okMessage), ack, oks,
+                            responsesTotal, alreadyResponded);
                 } catch (Exception e) {
                     handleNodeFailure(e, node, request, key);
                     probablyResponseBad(session, from, responsesTotal, alreadyResponded);
@@ -83,7 +82,12 @@ public class ReplicasManager {
         }
     }
 
-    private void handleGet(HttpSession session, Request request, String key, Iterable<RandevouzHashingRouter.Node> responsibleNodes, int ack, int from) {
+    private void handleGet(
+            HttpSession session, Request request,
+            String key,
+            Iterable<RandevouzHashingRouter.Node> responsibleNodes,
+            int ack, int from
+    ) {
         AtomicInteger nonFailed = new AtomicInteger();
         AtomicInteger responsesTotal = new AtomicInteger();
         AtomicBoolean alreadyResponded = new AtomicBoolean();
@@ -120,7 +124,12 @@ public class ReplicasManager {
         }
     }
 
-    private TimeStampedValue updateValueIfNeeded(TimeStampedValue[] latestValueRef, Lock lock, byte[] body, int statusCode) {
+    private TimeStampedValue updateValueIfNeeded(
+            TimeStampedValue[] latestValueRef,
+            Lock lock,
+            byte[] body,
+            int statusCode
+    ) {
         lock.lock();
         try {
             TimeStampedValue value;
@@ -207,8 +216,8 @@ public class ReplicasManager {
 
     private static void handleNodeFailure(Throwable t, RandevouzHashingRouter.Node node, Request request, String key) {
         node.managePossibleIllness();
-        ServiceImpl.LOGGER.error(t + " when requesting a " + node.url + " to respond to an " +
-                request.getMethod() + " method for " + key);
+        ServiceImpl.LOGGER.error(t + " when requesting a " + node.url + " to respond to an "
+                + request.getMethod() + " method for " + key);
     }
 
     private void doUpsert(Request request, String key) {

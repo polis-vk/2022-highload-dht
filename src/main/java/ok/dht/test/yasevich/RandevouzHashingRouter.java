@@ -31,8 +31,11 @@ public class RandevouzHashingRouter {
         }
     }
 
-
-    public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(Request request, String key, Node responsibleNode) {
+    public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(
+            Request request,
+            String key,
+            Node responsibleNode
+    ) {
         return responsibleNode.routedRequestFuture(httpClient, request, key);
     }
 
@@ -57,7 +60,6 @@ public class RandevouzHashingRouter {
 
         return priorityQueue;
     }
-
 
     private static HttpRequest innerHttpRequestOf(String key, String targetUrl, Request request) {
         HttpRequest.Builder requestBuilder = HttpRequest

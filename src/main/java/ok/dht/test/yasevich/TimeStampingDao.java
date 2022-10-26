@@ -8,6 +8,7 @@ import ok.dht.test.yasevich.dao.Entry;
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 public class TimeStampingDao {
 
@@ -50,7 +51,7 @@ public class TimeStampingDao {
         public final long time;
 
         TimeStampedValue(byte[] value, long time) {
-            this.value = value;
+            this.value = value == null ? null : Arrays.copyOf(value, value.length); //codeclimate fix
             this.time = time;
         }
 

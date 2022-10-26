@@ -42,7 +42,8 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        timeStampingDao = new TimeStampingDao(new MemorySegmentDao(new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD)));
+        Config daoConfig = new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD);
+        timeStampingDao = new TimeStampingDao(new MemorySegmentDao(daoConfig));
         server = new CustomHttpServer(createConfigFromPort(serviceConfig.selfPort()), timeStampingDao);
         server.addRequestHandlers(this);
         server.start();
@@ -97,7 +98,8 @@ public class ServiceImpl implements Service {
                             Response response = handleInnerRequest(request, key);
                             ReplicasManager.sendResponse(session, response);
                         } catch (IOException e) {
-                            ReplicasManager.sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                            ReplicasManager.sendResponse(session,
+                                    new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                         }
                     });
                 } catch (RejectedExecutionException e) {
