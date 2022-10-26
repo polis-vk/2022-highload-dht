@@ -1,8 +1,6 @@
 package ok.dht.test.vihnin;
 
-import ok.dht.ServiceConfig;
 import ok.dht.test.vihnin.database.DataBase;
-import one.nio.http.HttpServer;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
@@ -76,13 +74,13 @@ public class ResponseManager {
     public Response handleRequest(Request request) {
         String id = request.getParameter("id=");
 
-        switch (request.getMethod()) {
-            case Request.METHOD_GET: return handleGet(id);
-            case Request.METHOD_PUT: return handlePut(id, request);
-            case Request.METHOD_DELETE: return handleDelete(id, request);
-        }
+        return switch (request.getMethod()) {
+            case Request.METHOD_GET -> handleGet(id);
+            case Request.METHOD_PUT -> handlePut(id, request);
+            case Request.METHOD_DELETE -> handleDelete(id, request);
+            default -> null;
+        };
 
-        return null;
     }
 
     private static long getTimestamp(Request request) {
@@ -98,9 +96,10 @@ public class ResponseManager {
     private static byte[] convertData(byte[] data, long timestamp) {
         byte[] timeBytes = new byte[9];
         // 1 + 8
+        long timestampCope = timestamp;
         for (int i = 0; i < 8; i++) {
-            timeBytes[8 - i] = (byte) timestamp;
-            timestamp >>= 8;
+            timeBytes[8 - i] = (byte) timestampCope;
+            timestampCope >>= 8;
         }
         byte[] actualBytes = new byte[data.length + timeBytes.length];
         System.arraycopy(timeBytes, 0, actualBytes, 0, timeBytes.length);
