@@ -16,12 +16,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.Buffer;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -30,8 +29,9 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
-public class TycoonService implements ok.dht.Service {
+public class TycoonService implements ok.dht.Service, Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(TycoonService.class);
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
     public static final String PATH = "/v0/entity";
@@ -42,8 +42,8 @@ public class TycoonService implements ok.dht.Service {
 
     private final ServiceConfig config;
     private final NodeMapper nodeMapper;
-    private final int defaultReplicasCount;
     private final int defaultFromCount;
+    private final int defaultAckCount;
     private DB levelDb;
     private TycoonHttpServer server;
     private ExecutorService executorService;
@@ -53,8 +53,8 @@ public class TycoonService implements ok.dht.Service {
     public TycoonService(ServiceConfig config) {
         this.config = config;
         this.nodeMapper = new NodeMapper(config.clusterUrls());
-        this.defaultReplicasCount = config.clusterUrls().size();
-        this.defaultFromCount = (config.clusterUrls().size() + 1) / 2;
+        this.defaultFromCount = config.clusterUrls().size();
+        this.defaultAckCount = (config.clusterUrls().size() + 1) / 2;
         this.nodeRequestsTimeouts = new ConcurrentHashMap<>();
     }
 
@@ -104,84 +104,137 @@ public class TycoonService implements ok.dht.Service {
             return;
         }
 
+        // TODO: differ replicas request and inner request !!!!
         String idParameter = request.getParameter("id=");
         if (idParameter == null || idParameter.isEmpty()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
 
-        final int from, replicas;
+        final int ack, from;
         String replicasParameter = request.getParameter("replicas=");
         if (replicasParameter == null || replicasParameter.isEmpty()) {
-            replicas = defaultReplicasCount;
             from = defaultFromCount;
+            ack = defaultAckCount;
         } else {
             int sepIndex = replicasParameter.indexOf("/");
             if (sepIndex == -1) {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
-            String replicasString = replicasParameter.substring(0, sepIndex);
-            String fromString = replicasParameter.substring(sepIndex + 1);
+            String fromString = replicasParameter.substring(0, sepIndex);
+            String ackString = replicasParameter.substring(sepIndex + 1);
             try {
-                replicas = Integer.parseInt(replicasString);
                 from = Integer.parseInt(fromString);
+                ack = Integer.parseInt(ackString);
             } catch (NumberFormatException e) {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
         }
 
-        // TODO: send <replicas> messages
-        int[] nodeUrls = nodeMapper.getNodeUrlsByKey(Utf8.toBytes(idParameter));
-        String nodeUrlByKey = nodeMapper.getNodeUrls().get(nodeUrls[0]);
-        if (config.selfUrl().equals(nodeUrlByKey)) {
-            executeLocal(session, request, idParameter);
-        } else {
-            proxyRequest(session, request, idParameter, nodeUrlByKey);
+        if (Request.METHOD_GET == request.getMethod()) {
+            // TODO: should do almost all process request in executor thread ???
+            int[] nodeUrls = nodeMapper.getNodeUrlsByKey(Utf8.toBytes(idParameter));
+
+            int[] statusCodes = new int[ack];
+            byte[][] bodies = new byte[ack][];
+            AtomicInteger ackReceivedRef = new AtomicInteger();
+
+            boolean needLocalWork = false;
+            for (int replicaToSend = 0; replicaToSend < from; ++replicaToSend) {
+                String nodeUrlByKey = nodeMapper.getNodeUrls().get(nodeUrls[replicaToSend]);
+                if (config.selfUrl().equals(nodeUrlByKey)) {
+                    needLocalWork = true;
+                } else {
+                    proxyRequest(session, request, idParameter, nodeUrlByKey).thenAccept(
+                        response -> {
+                            int statusCode = response.statusCode();
+                            if (statusCode != 404 && statusCode != 410 && statusCode != 200) {
+                                LOG.error(
+                                    "Unexpected status {} code requesting node {}", statusCode, nodeUrlByKey
+                                );
+                                // TODO: add check not enough replicas !!!!!!
+                                return;
+                            }
+
+                            addResultAndAggregateIfNeed(
+                                session, ack, statusCodes, bodies, ackReceivedRef, response.body(), statusCode
+                            );
+                            // TODO: add check not enough replicas !!!!!!
+                        }
+                    );
+                }
+            }
+            if (needLocalWork) {
+                byte[] value = get(idParameter);
+                int statusCode;
+                if (value == null) {
+                    statusCode = 404;
+                } else {
+                    boolean deleted = readFlagDeletedFromBytes(value);
+                    if (deleted) {
+                        statusCode = 410;
+                    } else {
+                        statusCode = 200;
+                    }
+                }
+                addResultAndAggregateIfNeed(session, ack, statusCodes, bodies, ackReceivedRef, value, statusCode);
+                // TODO: add check not enough replicas !!!!!!
+            }
         }
     }
 
-    private void proxyRequest(HttpSession session, Request request, String idParameter, String nodeUrl) {
-        Integer timeout = nodeRequestsTimeouts.computeIfAbsent(nodeUrl, s -> DEFAULT_TIMEOUT_MILLIS);
-        httpClient.sendAsync(
-            HttpRequest.newBuilder()
-                .uri(URI.create(nodeUrl + PATH + "?id=" + idParameter))
-                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                .build(),
-            HttpResponse.BodyHandlers.ofByteArray()
-        ).thenAccept(response -> {
-            String statusCode;
-            if (response.statusCode() == 404) {
-                statusCode = Response.NOT_FOUND;
-            } else if (response.statusCode() == 200) {
-                statusCode = Response.OK;
-            } else if (response.statusCode() == 201) {
-                statusCode = Response.CREATED;
-            } else if (response.statusCode() == 202) {
-                statusCode = Response.ACCEPTED;
-            } else {
-                LOG.error("Unexpected status {} code requesting node {}", response.statusCode(), nodeUrl);
-                statusCode = Response.INTERNAL_ERROR;
+    private void addResultAndAggregateIfNeed(
+        HttpSession session, int ack, int[] statusCodes, byte[][] bodies,
+        AtomicInteger ackReceivedRef, byte[] value, int statusCode
+    ) {
+        // saving received body and status code
+        int ackReceived;
+        while (true) {
+            ackReceived = ackReceivedRef.get();
+            if (ackReceived >= ack) {
+                return;
             }
-            Response proxyResponse = new Response(statusCode, response.body());
-            sendResponse(session, proxyResponse);
-            nodeRequestsTimeouts.compute(nodeUrl, (url, t) -> Math.max(t * 2, MIN_TIMEOUT_MILLIS));
-        }).orTimeout(timeout, TimeUnit.MILLISECONDS)
-        .exceptionally(ex -> {
-            nodeRequestsTimeouts.compute(nodeUrl, (url, t) -> Math.min(t / 2, MAX_TIMEOUT_MILLIS));
-            LOG.error("Error after proxy request to {}", nodeUrl, ex);
-            Response proxyResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-            sendResponse(session, proxyResponse);
-            return null;
-        });
+            if (ackReceivedRef.compareAndSet(ackReceived, ackReceived + 1)) {
+                bodies[ackReceived] = value;
+                statusCodes[ackReceived] = statusCode;
+                break;
+            }
+        }
+
+        // aggregating results after receiving enough replicas
+        if (ackReceived + 1 == ack) {
+            int maxTimeStampReplica = -1;
+            long maxTimeMillis = 0;
+            for (int replicaAnswered = 0; replicaAnswered < ack; replicaAnswered++) {
+                if (statusCodes[replicaAnswered] != 404) {
+                    long timeMillis = readTimeMillisFromBytes(bodies[replicaAnswered]);
+                    if (maxTimeMillis < timeMillis) {
+                        maxTimeMillis = timeMillis;
+                        maxTimeStampReplica = replicaAnswered;
+                    }
+                }
+            }
+            if (maxTimeStampReplica == -1 || statusCodes[maxTimeStampReplica] == 410) {
+                sendResponse(session, new Response(Response.NOT_FOUND, Response.EMPTY));
+            } else {
+                byte[] realValue = readValueFromBytes(bodies[maxTimeStampReplica]);
+                sendResponse(session, new Response(Response.OK, realValue));
+            }
+        }
     }
+
+    private byte[] get(String id) {
+        return levelDb.get(Utf8.toBytes(id));
+    }
+
 
     private void executeLocal(HttpSession session, Request request, String id) {
         try {
             executorService.execute(() -> {
                 Response response = switch (request.getMethod()) {
-                    case Request.METHOD_GET -> get(id);
+                    case Request.METHOD_GET -> null;
                     case Request.METHOD_PUT -> upsert(id, request.getBody());
                     case Request.METHOD_DELETE -> delete(id);
                     default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
@@ -192,6 +245,24 @@ public class TycoonService implements ok.dht.Service {
             LOG.error("Cannot execute task", e);
             sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
+    }
+
+    private CompletableFuture<HttpResponse<byte[]>> proxyRequest(HttpSession session, Request request, String idParameter, String nodeUrl) {
+        Integer timeout = nodeRequestsTimeouts.computeIfAbsent(nodeUrl, s -> DEFAULT_TIMEOUT_MILLIS);
+        return httpClient.sendAsync(
+                HttpRequest.newBuilder()
+                    .uri(URI.create(nodeUrl + PATH + "?id=" + idParameter))
+                    .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                    .build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+            ).orTimeout(timeout, TimeUnit.MILLISECONDS)
+            .exceptionally(ex -> {
+                nodeRequestsTimeouts.compute(nodeUrl, (url, t) -> Math.min(t / 2, MAX_TIMEOUT_MILLIS));
+                LOG.error("Error after proxy request to {}", nodeUrl, ex);
+                Response proxyResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                sendResponse(session, proxyResponse);
+                return null;
+            });
     }
 
     private void sendResponse(HttpSession session, Response response) {
@@ -205,20 +276,6 @@ public class TycoonService implements ok.dht.Service {
                 e2.addSuppressed(e1);
                 LOG.error("Exception while closing session", e2);
             }
-        }
-    }
-
-    private Response get(String id) {
-        try {
-            byte[] value = levelDb.get(Utf8.toBytes(id));
-            if (value == null) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
-            } else {
-                return new Response(Response.OK, value);
-            }
-        } catch (DBException e) {
-            LOG.error("Error in DB", e);
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
 
@@ -242,22 +299,37 @@ public class TycoonService implements ok.dht.Service {
         }
     }
 
-    private byte[] withCurrentTimestamp(byte[] value) {
-        byte[] newValue = new byte[value.length + 8];
-        System.arraycopy(value, 0, newValue, 0, value.length);
+    private byte[] withCurrentTimestampAndNotDeletedFlag(byte[] value, boolean flagDeleted) {
+        byte[] newValue = new byte[value.length + 9];
+        if (flagDeleted) {
+            newValue[0] = 0b0;
+        } else {
+            newValue[0] = 0b1;
+        }
+        System.arraycopy(value, 0, newValue, 1, value.length);
         long currentTimeMillis = System.currentTimeMillis();
-        for (int i = 0; i < 8; ++ i) {
-            newValue[value.length + i] = (byte) (currentTimeMillis << (8 * i));
+        for (int i = 0; i < 8; ++i) {
+            newValue[value.length + 1 + i] = (byte) (currentTimeMillis << (8 * i));
         }
         return newValue;
     }
 
-    private long readTimeMillisFromLastBytes(byte[] value) {
+    private boolean readFlagDeletedFromBytes(byte[] value) {
+        return value[0] == 0b0;
+    }
+
+    private long readTimeMillisFromBytes(byte[] value) {
         long timeMillisFromLastBytes = 0;
-        for (int i = 0; i < 8; ++ i) {
+        for (int i = 0; i < 8; ++i) {
             timeMillisFromLastBytes += ((long) value[value.length - 8 + i]) >> (8 * i);
         }
         return timeMillisFromLastBytes;
+    }
+
+    private byte[] readValueFromBytes(byte[] codedValue) {
+        byte[] value = new byte[codedValue.length - 9];
+        System.arraycopy(codedValue, 1, value, 0, value.length);
+        return value;
     }
 
     @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
