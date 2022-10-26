@@ -72,7 +72,7 @@ public class ReplicatedRequest {
     }
 
     private boolean isAckCouldNotBeReached() {
-        return ack > from - finishedTasks.get();
+        return ack - responses.size() > from - finishedTasks.get();
     }
 
     private Response findLatest() {
