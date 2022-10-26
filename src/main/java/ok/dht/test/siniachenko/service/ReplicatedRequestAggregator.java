@@ -4,7 +4,6 @@ import ok.dht.test.siniachenko.Utils;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
-import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ReplicatedRequestAggregator {

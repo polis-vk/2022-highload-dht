@@ -14,6 +14,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 
 public class TycoonHttpServer extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(TycoonHttpServer.class);
@@ -21,16 +23,19 @@ public class TycoonHttpServer extends HttpServer {
     public static final String PATH = "/v0/entity";
     public static final String REQUEST_TO_REPLICA_HEADER = "Request-to-replica";
 
+    private final ExecutorService executorService;
     private final TycoonService tycoonService;
     private final EntityServiceReplica entityServiceReplica;
     private boolean closed = true;
 
     public TycoonHttpServer(
         int port,
+        ExecutorService executorService,
         TycoonService tycoonService,
         EntityServiceReplica entityServiceReplica
     ) throws IOException {
         super(createHttpConfigFromPort(port));
+        this.executorService = executorService;
         this.tycoonService = tycoonService;
         this.entityServiceReplica = entityServiceReplica;
     }
@@ -66,10 +71,21 @@ public class TycoonHttpServer extends HttpServer {
             return;
         }
 
-        if (request.getHeader(REQUEST_TO_REPLICA_HEADER) == null) {
-            tycoonService.executeRequest(request, session, idParameter);
-        } else {
-            entityServiceReplica.executeRequest(request, session, idParameter);
+        execute(session, () -> {
+            if (request.getHeader(REQUEST_TO_REPLICA_HEADER) == null) {
+                tycoonService.executeRequest(request, session, idParameter);
+            } else {
+                entityServiceReplica.executeRequest(request, session, idParameter);
+            }
+        });
+    }
+
+    private void execute(HttpSession session, Runnable runnable) {
+        try {
+            executorService.execute(runnable);
+        } catch (RejectedExecutionException e) {
+            LOG.error("Cannot execute task", e);
+            sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
     }
 

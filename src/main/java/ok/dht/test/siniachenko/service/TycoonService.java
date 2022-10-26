@@ -85,6 +85,7 @@ public class TycoonService implements ok.dht.Service, Serializable {
         // Http Server
         server = new TycoonHttpServer(
             config.selfPort(),
+            executorService,
             this,
             entityServiceReplica
         );
@@ -109,7 +110,7 @@ public class TycoonService implements ok.dht.Service, Serializable {
         return CompletableFuture.completedFuture(null);
     }
 
-    public void executeRequest(Request request, HttpSession session, String id) throws IOException {
+    public void executeRequest(Request request, HttpSession session, String id) {
         final int ack;
         final int from;
         String fromParameter = request.getParameter("from=");
@@ -126,7 +127,7 @@ public class TycoonService implements ok.dht.Service, Serializable {
                 ack = Integer.parseInt(ackParameter);
             }
         } catch (NumberFormatException e) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            TycoonHttpServer.sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
         if (!(
@@ -134,7 +135,7 @@ public class TycoonService implements ok.dht.Service, Serializable {
                 && 0 < ack && ack <= config.clusterUrls().size()
                 && ack <= from
         )) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            TycoonHttpServer.sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
 
