@@ -13,6 +13,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.Base64;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 public class DaoHandler implements Closeable {
 
@@ -24,27 +25,23 @@ public class DaoHandler implements Closeable {
         dao = new PersistenceRangeDao(config);
     }
 
-    public CompletableFuture<Response> proceed(String id, Request request, Long requestTime) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                return switch (request.getMethod()) {
-                    case Request.METHOD_GET -> proceedGet(id);
-                    case Request.METHOD_PUT -> proceedPut(id, request.getBody(), requestTime);
-                    case Request.METHOD_DELETE -> proceedDelete(id, requestTime);
-                    default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-                };
-            } catch (Exception e) {
-                LOG.error("Failed to proceed request in dao", e);
-                return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-            }
-        });
+    public Response proceed(String id, Request request, Long requestTime) {
+        try {
+            return switch (request.getMethod()) {
+                case Request.METHOD_GET -> proceedGet(id);
+                case Request.METHOD_PUT -> proceedPut(id, request.getBody(), requestTime);
+                case Request.METHOD_DELETE -> proceedDelete(id, requestTime);
+                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            };
+        } catch (Exception e) {
+            LOG.error("Failed to proceed request in dao", e);
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+        }
+
     }
 
     public void handle(String id, Request request, HttpSession session, Long requestTime) {
-        // unused variable due to warnings
-        CompletableFuture<Void> unusedCompletableFuture = proceed(id, request, requestTime)
-                .thenAccept(response -> ServiceUtils.sendResponse(session, response));
-        LOG.info("DaoHandler handle() success: " + unusedCompletableFuture.isDone());
+        ServiceUtils.sendResponse(session, proceed(id, request, requestTime));
     }
 
     private Response proceedGet(String id) {
@@ -53,8 +50,8 @@ public class DaoHandler implements Closeable {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
         Response response = (entry.value() == null)
-                        ? new Response(Response.NOT_FOUND, Response.EMPTY)
-                        : new Response(Response.OK, Base64.getDecoder().decode(entry.value()));
+                ? new Response(Response.NOT_FOUND, Response.EMPTY)
+                : new Response(Response.OK, Base64.getDecoder().decode(entry.value()));
         response.addHeader(CustomHeaders.REQUEST_TIME + entry.requestTime());
         return response;
     }

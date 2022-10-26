@@ -14,21 +14,16 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ProxyHandler implements Closeable {
 
-    private static final int RESPONSE_TIMEOUT_SECONDS = 5;
     private static final int MAX_NODE_FAILS_NUMBER = 5;
-    private static final int NODE_AS_UNAVAILABLE_DURATION_MILLIS = 180_000;
-    private static final int UNAVAILABLE_NODES_CLEAN_INTERVAL_MILLIS = NODE_AS_UNAVAILABLE_DURATION_MILLIS / 2;
-    private static final Duration CLIENT_TIMEOUT = Duration.of(5, ChronoUnit.SECONDS);
+    private static final int RESPONSE_TIMEOUT_SECONDS = 50;
+    private static final int NODE_AS_UNAVAILABLE_MILLIS = 180_000;
+    private static final int UNAVAILABLE_NODES_CLEAN_INTERVAL_MILLIS = NODE_AS_UNAVAILABLE_MILLIS / 2;
+    private static final Duration CLIENT_TIMEOUT = Duration.of(50, ChronoUnit.SECONDS);
     private static final Logger LOG = LoggerFactory.getLogger(ProxyHandler.class);
 
     private final Map<String, Long> unavailableNodes = new ConcurrentSkipListMap<>();
@@ -50,28 +45,28 @@ public class ProxyHandler implements Closeable {
         LOG.info("Unavailable nodes cleaner: " + !unusedScheduledFuture.isCancelled());
     }
 
-    public CompletableFuture<Response> proceed(Request request, String externalUrl, long requestTime) {
-        return CompletableFuture.supplyAsync(() -> {
-            if (unavailableNodes.containsKey(externalUrl)) {
-                return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+    public Response proceed(Request request, String externalUrl, long requestTime) {
+        if (unavailableNodes.containsKey(externalUrl)) {
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+        }
+        try {
+            HttpResponse<byte[]> httpResponse = proxyRequestAsync(request, externalUrl, requestTime)
+                    .get(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            return ServiceUtils.toResponse(httpResponse);
+        } catch (Exception e) {
+            LOG.error("Failed while getting response from external node", e);
+            nodesFailsNumberMap.putIfAbsent(externalUrl, new AtomicInteger(0));
+            if (nodesFailsNumberMap.get(externalUrl).incrementAndGet() >= MAX_NODE_FAILS_NUMBER) {
+                unavailableNodes.put(externalUrl, System.currentTimeMillis() + NODE_AS_UNAVAILABLE_MILLIS);
+                nodesFailsNumberMap.remove(externalUrl);
             }
-            try {
-                HttpResponse<byte[]> httpResponse = proxyRequestAsync(request, externalUrl, requestTime)
-                        .get(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-                return ServiceUtils.toResponse(httpResponse);
-            } catch (Exception e) {
-                LOG.error("Failed while getting response from external node", e);
-                nodesFailsNumberMap.putIfAbsent(externalUrl, new AtomicInteger(0));
-                if (nodesFailsNumberMap.get(externalUrl).incrementAndGet() >= MAX_NODE_FAILS_NUMBER) {
-                    unavailableNodes.put(externalUrl, System.currentTimeMillis() + NODE_AS_UNAVAILABLE_DURATION_MILLIS);
-                    nodesFailsNumberMap.remove(externalUrl);
-                }
-                return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-            }
-        });
-
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+        }
     }
-    private CompletableFuture<HttpResponse<byte[]>> proxyRequestAsync(Request request, String externalUrl, long requestTime) {
+
+    private CompletableFuture<HttpResponse<byte[]>> proxyRequestAsync(Request request,
+                                                                      String externalUrl,
+                                                                      long requestTime) {
         return httpClient.sendAsync(
                 HttpRequest.newBuilder(URI.create(externalUrl + request.getURI()))
                         .method(
@@ -80,6 +75,7 @@ public class ProxyHandler implements Closeable {
                                         ? HttpRequest.BodyPublishers.noBody()
                                         : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
                         )
+                        // Also indicates that it`s proxy request, so requestTime writes always, not only GET requests
                         .setHeader(ServiceUtils.trim(CustomHeaders.PROXY_REQUEST_TIME), String.valueOf(requestTime))
                         .build(),
                 HttpResponse.BodyHandlers.ofByteArray()

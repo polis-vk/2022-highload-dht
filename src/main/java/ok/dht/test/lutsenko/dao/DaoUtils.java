@@ -1,5 +1,6 @@
 package ok.dht.test.lutsenko.dao;
 
+import com.google.common.primitives.Longs;
 import ok.dht.test.lutsenko.dao.common.BaseEntry;
 import one.nio.util.Utf8;
 
@@ -35,9 +36,15 @@ public final class DaoUtils {
 
     public static long readRequestTime(ByteBuffer byteBuffer, ThreadLocal<Integer> position) {
         Integer positionBefore = position.get();
-        long requestTime = byteBuffer.getLong(positionBefore);
+        byte[] requestTimeBytes = new byte[Long.BYTES];
+        byteBuffer.get(positionBefore, requestTimeBytes);
+        for (int i = 0; i < requestTimeBytes.length; i++) {
+            if (requestTimeBytes[i] == (NEXT_LINE_BYTE + 1)) {
+                requestTimeBytes[i] = NEXT_LINE_BYTE;
+            }
+        }
         position.set(positionBefore + Long.BYTES);
-        return requestTime;
+        return Longs.fromByteArray(requestTimeBytes);
     }
 
     public static String readKey(ByteBuffer byteBuffer, ThreadLocal<Integer> position) {
@@ -104,13 +111,13 @@ public final class DaoUtils {
                 BaseEntry<String> baseEntry = iterator.next();
                 byte[] keyBytes = Utf8.toBytes(preprocess(baseEntry.key()));
                 byte[] valueBytes = (baseEntry.value() == null ? null : Utf8.toBytes(preprocess(baseEntry.value())));
-                int entrySize = Integer.BYTES // размер численного значения для длины ключа
+                int entrySize = Long.BYTES  // request time
+                        + Integer.BYTES // размер численного значения для длины ключа
                         + keyBytes.length
                         + Integer.BYTES // размер численного значения для длины значения
                         + (valueBytes == null ? 0 : valueBytes.length)
                         + Integer.BYTES // размер всей записи
                         + Integer.BYTES // DELETED_MARK or EXISTING_MARK
-                        + Long.BYTES // request time
                         + 1; // размер '\n'
                 if (writeBuffer.position() + entrySize > writeBuffer.capacity()) {
                     writeBuffer.flip();
@@ -120,7 +127,7 @@ public final class DaoUtils {
                 if (entrySize > writeBuffer.capacity()) {
                     writeBuffer = ByteBuffer.allocate(entrySize);
                 }
-                writeBuffer.putLong(baseEntry.requestTime());
+                writeBuffer.put(toByteArray(baseEntry.requestTime()));
                 writeKey(keyBytes, writeBuffer);
                 writeValue(valueBytes, writeBuffer);
                 writeBuffer.putInt(entrySize);
@@ -171,7 +178,7 @@ public final class DaoUtils {
             position.set((int) ((left + right) / 2));
             int startPosition = position.get();
             int leastPartOfLineLength = getLeastPartOfLineLength(byteBuffer, position);
-            int readBytes = leastPartOfLineLength + Integer.BYTES; // BYTES_IN_INT -> prevEntryLength
+            int readBytes = leastPartOfLineLength + Integer.BYTES; // Integer.BYTES -> prevEntryLength
             int prevEntryLength = byteBuffer.getInt(position.get());
             position.set(position.get() + Integer.BYTES);
             if (position.get() >= right) {
@@ -217,6 +224,18 @@ public final class DaoUtils {
 
     public static boolean isEnd(ByteBuffer byteBuffer, ThreadLocal<Integer> position) {
         return position.get() == byteBuffer.limit();
+    }
+
+    public static byte[] toByteArray(long value) {
+        byte[] result = new byte[8];
+        for (int i = 7; i >= 0; i--) {
+            result[i] = (byte) (value & 0xffL);
+            if (result[i] == NEXT_LINE_BYTE) {
+                result[i] += 1;
+            }
+            value >>= 8;
+        }
+        return result;
     }
 
     public static MappedByteBuffer mapFile(Path path) throws IOException {

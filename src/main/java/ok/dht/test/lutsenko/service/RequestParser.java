@@ -12,6 +12,7 @@ public class RequestParser {
     public static final String ID_PARAM_NAME = "id=";
     public static final String ACK_PARAM_NAME = "ack=";
     public static final String FROM_PARAM_NAME = "from=";
+
     private final Request request;
     private boolean isFailed = false;
     private String failStatus;
@@ -107,6 +108,10 @@ public class RequestParser {
 
     public boolean isFailed() {
         return isFailed;
+    }
+
+    public Request getRequest() {
+        return request;
     }
 
     private void setFailedWithStatus(String status) {
