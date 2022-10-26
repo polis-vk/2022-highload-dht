@@ -198,9 +198,39 @@ public class RocksDBService implements Service {
 
         List<String> urls = keyManager.getNodeIdsByKey(key, 1);
 
-        String replicas = request.getParameter("replicas=");
-        int ack = replicas != null ? parseAck(replicas) : 1;
-        int from = replicas != null ? parseFrom(replicas) : 1;
+//        String replicas = request.getParameter("replicas=");
+//        int ack = replicas != null ? parseAck(replicas) : 1;
+//        int from = replicas != null ? parseFrom(replicas) : 1;
+
+        int ack;
+        try {
+            ack = request.getParameter("ack=") != null
+                    ? Integer.parseInt(request.getParameter("ack="))
+                    : 1;
+        } catch (NumberFormatException e) {
+            throw new InvalidParamsException();
+        }
+        int from;
+        try {
+            from = request.getParameter("from=") != null
+                    ? Integer.parseInt(request.getParameter("from="))
+                    : 1;
+        } catch (NumberFormatException e) {
+            throw new InvalidParamsException();
+        }
+
+        if (ack < 1) {
+            throw new InvalidParamsException();
+        }
+        if (from < 1) {
+            throw new InvalidParamsException();
+        }
+        if (ack > from) {
+            throw new InvalidParamsException();
+        }
+        if (from > config.clusterUrls().size()) {
+            throw new InvalidParamsException();
+        }
 
         if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl())) {
             byte[] value = db.get(Utf8.toBytes(key));
@@ -244,9 +274,35 @@ public class RocksDBService implements Service {
 
         List<String> urls = keyManager.getNodeIdsByKey(key, 1);
 
-        String replicas = request.getParameter("replicas=");
-        int ack = replicas != null ? parseAck(replicas) : 1;
-        int from = replicas != null ? parseFrom(replicas) : 1;
+        int ack;
+        try {
+            ack = request.getParameter("ack=") != null
+                    ? Integer.parseInt(request.getParameter("ack="))
+                    : 1;
+        } catch (NumberFormatException e) {
+            throw new InvalidParamsException();
+        }
+        int from;
+        try {
+            from = request.getParameter("from=") != null
+                    ? Integer.parseInt(request.getParameter("from="))
+                    : 1;
+        } catch (NumberFormatException e) {
+            throw new InvalidParamsException();
+        }
+
+        if (ack < 1) {
+            throw new InvalidParamsException();
+        }
+        if (from < 1) {
+            throw new InvalidParamsException();
+        }
+        if (ack > from) {
+            throw new InvalidParamsException();
+        }
+        if (from > config.clusterUrls().size()) {
+            throw new InvalidParamsException();
+        }
 
         if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl())) {
             long timestamp = System.currentTimeMillis() / 1000L;
@@ -276,9 +332,35 @@ public class RocksDBService implements Service {
 
         List<String> urls = keyManager.getNodeIdsByKey(key, 1);
 
-        String replicas = request.getParameter("replicas=");
-        int ack = replicas != null ? parseAck(replicas) : 1;
-        int from = replicas != null ? parseFrom(replicas) : 1;
+        int ack;
+        try {
+            ack = request.getParameter("ack=") != null
+                    ? Integer.parseInt(request.getParameter("ack="))
+                    : 1;
+        } catch (NumberFormatException e) {
+            throw new InvalidParamsException();
+        }
+        int from;
+        try {
+            from = request.getParameter("from=") != null
+                    ? Integer.parseInt(request.getParameter("from="))
+                    : 1;
+        } catch (NumberFormatException e) {
+            throw new InvalidParamsException();
+        }
+
+        if (ack < 1) {
+            throw new InvalidParamsException();
+        }
+        if (from < 1) {
+            throw new InvalidParamsException();
+        }
+        if (ack > from) {
+            throw new InvalidParamsException();
+        }
+        if (from > config.clusterUrls().size()) {
+            throw new InvalidParamsException();
+        }
 
         if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl())) {
             long timestamp = System.currentTimeMillis() / 1000L;
@@ -300,7 +382,12 @@ public class RocksDBService implements Service {
     }
 
     private void replicateRequest(Request request, HttpSession session, String key, int ack, int from, Predicate<Response> predicate) throws IOException {
-        List<String> urls = keyManager.getNodeIdsByKey(key, from);
+        List<String> urls = null;
+        try {
+            urls = keyManager.getNodeIdsByKey(key, from);
+        } catch (Exception e) {
+            System.out.println(e);
+        }
 
         ReplicatedRequest replicatedRequest = new ReplicatedRequest(ack, from);
 
@@ -315,14 +402,23 @@ public class RocksDBService implements Service {
             }
 
             nodeQueue.tasks.offer(() -> {
+                Request newRequest = new Request(request.getMethod(),
+                        request.getPath() + "?id=" + key + "&ack=1&from=1", true);
+                for (int i = 0; i < request.getHeaderCount(); ++i) {
+                    newRequest.addHeader(request.getHeaders()[i]);
+                }
+//                newRequest.addHeader("Host" + request.getHeader("Host"));
+                newRequest.setBody(request.getBody());
+                // TODO: if url == selfUrl
                 try {
-                    Response response = clientPool.get(url).invoke(new Request(request));
+                    Response response = clientPool.get(url).invoke(newRequest);
                     if (predicate.test(response)) {
                         replicatedRequest.onSuccess(session, response);
                     } else {
                         replicatedRequest.onFailure(session);
                     }
                 } catch (Exception e1) {
+                    e1.printStackTrace();
                     replicatedRequest.onFailure(session);
                 }
             });
