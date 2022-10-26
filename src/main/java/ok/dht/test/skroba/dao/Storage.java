@@ -54,7 +54,7 @@ class Storage implements Closeable {
         while (left <= right) {
             long mid = (left + right) >>> 1;
             
-            long keyPos = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + mid * INDEX_RECORD_SIZE);
+            long keyPos = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + mid * INDEX_RECORD_SIZE) + Long.BYTES;
             long keySize = MemoryAccess.getLongAtOffset(sstable, keyPos);
             
             MemorySegment keyForCheck = sstable.asSlice(keyPos + Long.BYTES, keySize);
@@ -74,12 +74,14 @@ class Storage implements Closeable {
     private Entry<MemorySegment> entryAt(MemorySegment sstable, long keyIndex) {
         try {
             long offset = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + keyIndex * INDEX_RECORD_SIZE);
-            long keySize = MemoryAccess.getLongAtOffset(sstable, offset);
-            long valueOffset = offset + Long.BYTES + keySize;
+            long keyOffset = offset + Long.BYTES;
+            long keySize = MemoryAccess.getLongAtOffset(sstable, keyOffset);
+            long valueOffset = keyOffset + Long.BYTES + keySize;
             long valueSize = MemoryAccess.getLongAtOffset(sstable, valueOffset);
             return new BaseEntry<>(
                     sstable.asSlice(offset + Long.BYTES, keySize),
-                    valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize)
+                    valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize),
+                    MemoryAccess.getLongAtOffset(sstable, offset)
             );
         } catch (IllegalStateException e) {
             throw checkForClose(e);

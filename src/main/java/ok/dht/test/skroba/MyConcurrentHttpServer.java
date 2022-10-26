@@ -7,7 +7,6 @@ import ok.dht.test.skroba.client.MyClientImpl;
 import ok.dht.test.skroba.dao.MemorySegmentDao;
 import ok.dht.test.skroba.dao.base.BaseEntry;
 import ok.dht.test.skroba.dao.base.Entry;
-import ok.dht.test.skroba.dao.base.TimeEntry;
 import ok.dht.test.skroba.shard.Manager;
 import ok.dht.test.skroba.shard.MyManagerImpl;
 import ok.dht.test.skroba.shard.Node;
@@ -216,11 +215,11 @@ public class MyConcurrentHttpServer extends HttpServer {
     private Response upsert(
             String id,
             MemorySegment value,
+            long time,
             String onSuccessStatus
     ) {
         MemorySegment key = MemorySegment.ofArray(Utf8.toBytes(id));
-        //~TOFO
-        TimeEntry<MemorySegment> entry = new TimeEntry<>(key, value, Instant.now());
+        BaseEntry<MemorySegment> entry = new BaseEntry<>(key, value, time);
         
         try {
             dao.upsert(entry);

@@ -43,10 +43,10 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-        return getTombstoneFilteringIterator(from == null ? VERY_FIRST_KEY : from, to);
+        return getIterator(from == null ? VERY_FIRST_KEY : from, to);
     }
     
-    private TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment from, MemorySegment to) {
+    private Iterator<Entry<MemorySegment>> getIterator(MemorySegment from, MemorySegment to) {
         State state = accessState();
         
         List<Iterator<Entry<MemorySegment>>> iterators = state.storage.iterate(from, to);
@@ -54,9 +54,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         iterators.add(state.flushing.get(from, to));
         iterators.add(state.memory.get(from, to));
         
-        Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
-        
-        return new TombstoneFilteringIterator(mergeIterator);
+        return MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
     }
     
     @Override
@@ -68,7 +66,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             result = state.storage.get(key);
         }
         
-        return (result == null || result.isTombstone()) ? null : result;
+        return result;
     }
     
     @Override
