@@ -13,6 +13,7 @@ import one.nio.net.Session;
 import one.nio.pool.Pool;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
+import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,9 +34,14 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import static ok.dht.test.vihnin.ServiceUtils.emptyResponse;
+import static ok.dht.test.vihnin.ServiceUtils.getHeaderValue;
 
 public class ParallelHttpServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(ParallelHttpServer.class);
+    private static final String INNER_HEADER_NAME = "Inner";
+    private static final String INNER_HEADER_VALUE = "True";
+
+    public static final String TIME_HEADER_NAME = "Timestamp";
 
     // must be > 2
     private static final int VNODE_NUMBER_PER_SERVER = 5;
@@ -46,8 +52,10 @@ public class ParallelHttpServer extends HttpServer {
     private static final int INTERNAL_QUEUE_CAPACITY = 100;
 
     private final ShardHelper shardHelper = new ShardHelper();
-    private final Map<Integer, String> shardToUrl;
-    private Integer shard;
+    private final ClusterManager clusterManager;
+    private final Integer shard;
+
+    private final ResponseManager responseManager;
 
     private final ThreadLocal<Map<String, HttpClient>> clients;
 
@@ -67,20 +75,16 @@ public class ParallelHttpServer extends HttpServer {
             new ArrayBlockingQueue<>(INTERNAL_QUEUE_CAPACITY)
     );
 
-    public ParallelHttpServer(ServiceConfig config, Object... routers) throws IOException {
+    public ParallelHttpServer(ServiceConfig config, ResponseManager responseManager, Object... routers) throws IOException {
         super(createConfigFromPort(config.selfPort()), routers);
-        this.shardToUrl = new HashMap<>();
+        this.responseManager = responseManager;
 
-        List<String> sortedUrls = new ArrayList<>(config.clusterUrls());
-        sortedUrls.sort(Comparator.naturalOrder());
-        for (int i = 0; i < sortedUrls.size(); i++) {
-            this.shardToUrl.put(i, sortedUrls.get(i));
-            if (sortedUrls.get(i).equals(config.selfUrl())) {
-                this.shard = i;
-            }
-        }
+        addRequestHandlers(this.responseManager);
 
-        distributeVNodes(sortedUrls.size());
+        this.clusterManager = new ClusterManager(config.clusterUrls());
+        this.shard = clusterManager.getShardByUrl(config.selfUrl());
+
+        distributeVNodes(clusterManager.clusterSize());
 
         this.clients = ThreadLocal.withInitial(() -> {
             Map<String, HttpClient> baseMap = new HashMap<>();
@@ -93,29 +97,56 @@ public class ParallelHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (request.getMethod() != Request.METHOD_GET
-                && request.getMethod() != Request.METHOD_DELETE
-                && request.getMethod() != Request.METHOD_PUT) {
+        if (!methodAllowed(request.getMethod())) {
             session.sendResponse(emptyResponse(Response.METHOD_NOT_ALLOWED));
+            return;
         }
 
         String id = request.getParameter("id=");
+        String ackRaw = request.getParameter("ack=");
+        String fromRaw = request.getParameter("from=");
 
         if (id == null) {
             session.sendResponse(emptyResponse(Response.BAD_REQUEST));
             return;
         }
 
+        int ack;
+        int from;
+
+        if (ackRaw != null && fromRaw != null) {
+            try {
+                ack = Integer.parseInt(ackRaw);
+                from = Integer.parseInt(fromRaw);
+            } catch (NumberFormatException e) {
+                session.sendResponse(
+                        new Response(
+                                Response.BAD_REQUEST,
+                                Utf8.toBytes("ack and from must be integers")
+                        )
+                );
+                return;
+            }
+        } else {
+            from = clusterManager.clusterSize();
+            ack = clusterManager.clusterSize() / 2 + 1;
+        }
+
         int destinationShardId = getShardId(id);
+        String innerHeaderValue = getHeaderValue(request, INNER_HEADER_NAME);
 
         try {
             if (destinationShardId == shard) {
                 executorService.submit(() -> {
-                    requestTask(request, session);
+                    requestTask(request, session, ack, from);
+                });
+            } else if (innerHeaderValue != null && innerHeaderValue.equals(INNER_HEADER_VALUE)) {
+                executorService.submit(() -> {
+                    handleForeignRequest(request, session);
                 });
             } else {
                 internalRequestService.submit(() -> {
-                    handleInnerRequest(request, session, destinationShardId);
+                    handleInnerRequest(request, session, clusterManager.getUrlByShard(destinationShardId));
                 });
             }
         } catch (RejectedExecutionException e) {
@@ -125,7 +156,41 @@ public class ParallelHttpServer extends HttpServer {
         }
     }
 
-    private void handleInnerRequest(Request request, HttpSession session, int shardId) {
+    private void handleForeignRequest(Request request, HttpSession session) {
+        try {
+            super.handleRequest(request, session);
+        } catch (IOException e) {
+            handleException(session, e);
+        }
+    }
+
+    private static boolean methodAllowed(int method) {
+        return method == Request.METHOD_GET
+                || method == Request.METHOD_DELETE
+                || method == Request.METHOD_PUT;
+    }
+
+    private void handleInnerRequest(Request request, HttpSession session, String destinationUrl) {
+        try {
+            Response response = handleRedirectRequest(request, destinationUrl, false);
+            if (response != null) {
+                session.sendResponse(response);
+            } else {
+                session.sendError(Response.SERVICE_UNAVAILABLE, "");
+            }
+        } catch (IOException e) {
+            handleException(session, e);
+        }
+    }
+
+    private Response handleAckRequest(Request request, String destinationUrl) {
+        return handleRedirectRequest(request, destinationUrl, true);
+    }
+
+    private Response handleRedirectRequest(
+            Request request,
+            String destinationUrl,
+            boolean addFlag) {
         try {
             Request req = new Request(
                     request.getMethod(),
@@ -138,16 +203,12 @@ public class ParallelHttpServer extends HttpServer {
                     .filter(Objects::nonNull)
                     .forEach(req::addHeader);
 
-            session.sendResponse(
-                    clients.get().get(shardToUrl.get(shardId)).invoke(req)
-            );
-        } catch (Exception e) {
-            e.printStackTrace();
-            try {
-                session.sendError(Response.SERVICE_UNAVAILABLE, "");
-            } catch (IOException ex) {
-                logger.error(ex.getMessage());
+            if (addFlag) {
+                req.addHeader(INNER_HEADER_NAME + ": " + INNER_HEADER_VALUE);
             }
+            return clients.get().get(destinationUrl).invoke(req);
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -155,10 +216,70 @@ public class ParallelHttpServer extends HttpServer {
         return shardHelper.getShardByKey(key);
     }
 
-    private void requestTask(Request request, HttpSession session) {
+    private void requestTask(Request request, HttpSession session, int ack, int from) {
+        long currentTime = System.currentTimeMillis();
+        request.addHeader(TIME_HEADER_NAME + ": " + currentTime);
+
+        Map<String, Long> timestamps = new HashMap<>();
+        Map<String, byte[]> data = new HashMap<>();
+        Map<String, Integer> statuses = new HashMap<>();
+
+        int actualAck = 0;
+
+        Response myResponse = responseManager.handleRequest(request);
+
+        if (myResponse != null) {
+            String value = getHeaderValue(myResponse, TIME_HEADER_NAME);
+            if (value != null) {
+                String currShard = clusterManager.getUrlByShard(shard);
+                timestamps.put(currShard, Long.parseLong(value));
+                data.put(currShard, myResponse.getBody());
+                statuses.put(currShard, myResponse.getStatus());
+            }
+            actualAck += 1;
+        }
+
+
+        for (var neighbor : clusterManager.getNeighbours(shard).subList(0, from - 1)) {
+            Response handleSuccess = handleAckRequest(request, neighbor);
+            if (handleSuccess != null) {
+                String value = getHeaderValue(handleSuccess, TIME_HEADER_NAME);
+                if (value != null) {
+                    timestamps.put(neighbor, Long.parseLong(value));
+                    data.put(neighbor, handleSuccess.getBody());
+                    statuses.put(neighbor, handleSuccess.getStatus());
+                }
+                actualAck += 1;
+            }
+            if (actualAck == ack) {
+                break;
+            }
+        }
         try {
-            super.handleRequest(request, session);
-        } catch (Exception e) {
+            if (actualAck < ack) {
+                session.sendResponse(emptyResponse("504 Not Enough Replicas"));
+            } else {
+                if (request.getMethod() == Request.METHOD_DELETE) {
+                    session.sendResponse(emptyResponse("202 Accepted"));
+                } else if (request.getMethod() == Request.METHOD_PUT) {
+                    session.sendResponse(emptyResponse("201 Created"));
+                } else if (request.getMethod() == Request.METHOD_GET) {
+                    String freshestUrl = null;
+                    long freshestTime = -1;
+                    for (Map.Entry<String, Long> entry : timestamps.entrySet()) {
+                        if (entry.getValue() > freshestTime) {
+                            freshestTime = entry.getValue();
+                            freshestUrl = entry.getKey();
+                        }
+                    }
+                    if (statuses.get(freshestUrl) != 200) {
+                        session.sendResponse(emptyResponse("404 Not Found"));
+                    } else {
+                        session.sendResponse(new Response("200 OK", data.get(freshestUrl)));
+                    }
+                }
+            }
+        } catch (IOException e) {
             handleException(session, e);
         }
     }
@@ -169,7 +290,7 @@ public class ParallelHttpServer extends HttpServer {
             try {
                 session.sendResponse(emptyResponse(Response.BAD_REQUEST));
             } catch (IOException ex) {
-                e.printStackTrace();
+                logger.error(ex.getMessage());
             }
         } else if (e instanceof IOException) {
             try {
