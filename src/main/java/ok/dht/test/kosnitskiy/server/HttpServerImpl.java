@@ -189,10 +189,12 @@ public class HttpServerImpl extends HttpServer {
 
             target.queue.add(() -> {
                 try {
-                    Response response = target.url.equals(serverUrl) ? handleSupported(request, id) : proxyRequest(target, request);
+                    Response response =
+                            target.url.equals(serverUrl) ? handleSupported(request, id) : proxyRequest(target, request);
                     if (isAffirmative(response)) {
                         long timestamp = 0;
-                        if (response.getHeaders()[0].equals(Response.OK) || response.getHeaders()[0].equals(Response.NOT_FOUND)) {
+                        if (response.getHeaders()[0].equals(Response.OK)
+                                || response.getHeaders()[0].equals(Response.NOT_FOUND)) {
                             byte[] body = Response.EMPTY;
 
                             if (response.getBody() != Response.EMPTY) {
