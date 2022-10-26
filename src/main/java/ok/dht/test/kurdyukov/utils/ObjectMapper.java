@@ -1,5 +1,8 @@
 package ok.dht.test.kurdyukov.utils;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.annotation.Nonnull;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -9,6 +12,9 @@ import java.io.ObjectOutputStream;
 
 @SuppressWarnings("unchecked")
 public final class ObjectMapper {
+
+    private static final Logger logger = LoggerFactory.getLogger(ObjectMapper.class);
+
     private ObjectMapper() {
 
     }
@@ -19,7 +25,8 @@ public final class ObjectMapper {
             os.writeObject(obj);
             return out.toByteArray();
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            logger.error("Don't serialize obj = " + obj, e);
+            return null;
         }
     }
 
@@ -27,7 +34,8 @@ public final class ObjectMapper {
         try (ObjectInputStream is = new ObjectInputStream(new ByteArrayInputStream(data))) {
             return (T) is.readObject();
         } catch (IOException | ClassNotFoundException e) {
-            throw new RuntimeException(e);
+            logger.error("Don't deserialize byte array", e);
+            return null;
         }
     }
 }

@@ -158,7 +158,7 @@ public class HttpShardServer extends HttpServer {
                             }
                             DaoEntry current = ObjectMapper.deserialize(res.body());
 
-                            if (result.compareTo(current) < 0) {
+                            if (current != null && result.compareTo(current) < 0) {
                                 result = current;
                             }
                         }
