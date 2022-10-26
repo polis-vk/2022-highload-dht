@@ -1,5 +1,6 @@
 package ok.dht.test.kurdyukov.utils;
 
+import javax.annotation.Nonnull;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -12,25 +13,21 @@ public class ObjectMapper {
 
     }
 
-    public static byte[] serialize(Object obj) throws IOException {
-        if (obj == null) {
-            return null;
-        }
-
+    public static byte[] serialize(@Nonnull Object obj) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try (ObjectOutputStream os = new ObjectOutputStream(out)) {
             os.writeObject(obj);
             return out.toByteArray();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 
-    public static <T> T deserialize(byte[] data) throws IOException, ClassNotFoundException {
-        if (data == null) {
-            return null;
-        }
-
+    public static <T> T deserialize(@Nonnull byte[] data) {
         try (ObjectInputStream is = new ObjectInputStream(new ByteArrayInputStream(data))) {
             return (T) is.readObject();
+        } catch (IOException | ClassNotFoundException e) {
+            throw new RuntimeException(e);
         }
     }
 }

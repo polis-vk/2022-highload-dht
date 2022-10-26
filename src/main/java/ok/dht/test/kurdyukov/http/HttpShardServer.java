@@ -120,7 +120,7 @@ public class HttpShardServer extends HttpServer {
 
     private void doExecute(Request request, HttpSession session, int method, String id) {
         try {
-            boolean fromClusterRequest = request.getHeader(HttpClientDao.HEADER_NAME) != null;
+            boolean fromClusterRequest = request.getHeader(HttpClientDao.CLUSTER_HEADER) != null;
 
             if (fromClusterRequest) {
                 handleRequestInCluster(request, session, method, id);
@@ -156,25 +156,25 @@ public class HttpShardServer extends HttpServer {
                 case Request.METHOD_GET -> {
                     if (ack <= responses.stream()
                             .filter(r -> r.statusCode() == OK || r.statusCode() == NOT_FOUND).count()) {
-                        DaoEntry result = new DaoEntry(Instant.MIN, null);
+                        DaoEntry result = new DaoEntry(Instant.MIN, Response.EMPTY, true);
+
 
                         for (var res : responses) {
-                            try {
-                                DaoEntry current = ObjectMapper.deserialize(res.body());
-                                if (current != null) {
-                                    if (result.compareTo(current) < 0) {
-                                        result = current;
-                                    }
-                                }
-                            } catch (ClassNotFoundException | IOException e) {
-                                logger.error("Fail deserialize body!", e);
+                            if (res.statusCode() == NOT_FOUND) {
+                                continue;
+                            }
+
+                            DaoEntry current = ObjectMapper.deserialize(res.body());
+
+                            if (result.compareTo(current) < 0) {
+                                result = current;
                             }
                         }
 
-                        if (result.value != null) {
-                            session.sendResponse(Response.ok(result.value));
-                        } else {
+                        if (result.isTombstone) {
                             session.sendResponse(responseEmpty(Response.NOT_FOUND));
+                        } else {
+                            session.sendResponse(Response.ok(result.value));
                         }
                     } else {
                         session.sendResponse(responseEmpty(NOT_ENOUGH_REPLICAS));
@@ -214,7 +214,8 @@ public class HttpShardServer extends HttpServer {
                         .requestNode(
                                 String.format("%s%s%s", urlNode, ENDPOINT, "?id=" + id),
                                 method,
-                                new DaoEntry(timestamp, request.getBody())
+                                timestamp,
+                                request.getBody()
                         )
                 )
                 .collect(Collectors.toList());
@@ -226,6 +227,8 @@ public class HttpShardServer extends HttpServer {
             int method,
             String id
     ) throws IOException {
+        Instant timestamp = Instant.parse(request.getHeader(HttpClientDao.TIMESTAMP_HEADER).substring(2));
+
         switch (method) {
             case Request.METHOD_GET -> {
                 byte[] entry = daoRepository.get(id);
@@ -237,11 +240,15 @@ public class HttpShardServer extends HttpServer {
                 }
             }
             case Request.METHOD_PUT -> {
-                daoRepository.put(id, request.getBody());
+                DaoEntry daoEntry = new DaoEntry(timestamp, request.getBody(), false);
+
+                daoRepository.put(id, ObjectMapper.serialize(daoEntry));
                 session.sendResponse(responseEmpty(Response.CREATED));
             }
             case Request.METHOD_DELETE -> {
-                daoRepository.put(id, request.getBody());
+                DaoEntry daoEntry = new DaoEntry(timestamp, Response.EMPTY, true);
+
+                daoRepository.put(id, ObjectMapper.serialize(daoEntry));
                 session.sendResponse(responseEmpty(Response.ACCEPTED));
             }
         }

@@ -12,7 +12,9 @@ import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.security.Timestamp;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -21,7 +23,8 @@ public class HttpClientDao {
 
     private static final Logger logger = LoggerFactory.getLogger(HttpClientDao.class);
 
-    public static final String HEADER_NAME = "HEADER_FROM_CLUSTER";
+    public static final String TIMESTAMP_HEADER = "TIMESTAMP_HEADER";
+    public static final String CLUSTER_HEADER = "CLUSTER_HEADER";
 
     private final ScheduledExecutorService listenerConnect = Executors.newSingleThreadScheduledExecutor();
 
@@ -33,13 +36,15 @@ public class HttpClientDao {
     public CompletableFuture<HttpResponse<byte[]>> requestNode(
             String uri,
             int method,
-            DaoEntry entry
+            Instant timestamp,
+            byte[] value
     ) {
         HttpRequest.Builder builder;
         try {
             builder = HttpRequest
                     .newBuilder(new URI(uri))
-                    .setHeader(HEADER_NAME, uri);
+                    .setHeader(CLUSTER_HEADER, uri)
+                    .setHeader(TIMESTAMP_HEADER, timestamp.toString());
         } catch (URISyntaxException e) {
             logger.error("Fail URI syntax with uri: " + uri, e);
 
@@ -48,16 +53,10 @@ public class HttpClientDao {
 
         HttpRequest httpRequest = switch (method) {
             case Request.METHOD_GET -> builder.GET().build();
-            case Request.METHOD_PUT -> {
-                try {
-                    yield builder.PUT(HttpRequest
+            case Request.METHOD_PUT -> builder.PUT(HttpRequest
                             .BodyPublishers
-                            .ofByteArray(ObjectMapper.serialize(entry)))
-                            .build();
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            }
+                            .ofByteArray(value))
+                    .build();
             case Request.METHOD_DELETE -> builder.DELETE().build();
             default -> throw new IllegalArgumentException("No support htt method!");
         };
