@@ -119,7 +119,8 @@ public class HttpShardServer extends HttpServer {
             String fromParam = request.getParameter("from=");
             String ackParam = request.getParameter("ack=");
 
-            int from, ack;
+            int from;
+            int ack;
             try {
                 from = (fromParam != null) ? Integer.parseInt(fromParam) : clusterSize;
                 ack = (ackParam != null) ? Integer.parseInt(ackParam) : (from + 1) / 2;
@@ -139,7 +140,7 @@ public class HttpShardServer extends HttpServer {
 
             for (var res : multicast) {
                 try {
-                    responses.add(res.join());
+                    responses.add(res.get(AWAIT_TERMINATE_SECONDS, TimeUnit.SECONDS));
                 } catch (Exception e) {
                     logger.error("Fail connect with node", e);
                 }
@@ -149,7 +150,7 @@ public class HttpShardServer extends HttpServer {
                 case Request.METHOD_GET -> {
                     if (ack <= responses.stream()
                             .filter(r -> r.statusCode() == OK || r.statusCode() == NOT_FOUND).count()) {
-                        DaoEntry result = new DaoEntry(Instant.MIN, Response.EMPTY, true);
+                        DaoEntry result = new DaoEntry(Instant.MIN, request, true);
 
                         for (var res : responses) {
                             if (res.statusCode() == NOT_FOUND) {
@@ -227,13 +228,13 @@ public class HttpShardServer extends HttpServer {
                 }
             }
             case Request.METHOD_PUT -> {
-                DaoEntry daoEntry = new DaoEntry(timestamp, request.getBody(), false);
+                DaoEntry daoEntry = new DaoEntry(timestamp, request, false);
 
                 daoRepository.put(id, ObjectMapper.serialize(daoEntry));
                 session.sendResponse(responseEmpty(Response.CREATED));
             }
             case Request.METHOD_DELETE -> {
-                DaoEntry daoEntry = new DaoEntry(timestamp, Response.EMPTY, true);
+                DaoEntry daoEntry = new DaoEntry(timestamp, request, true);
 
                 daoRepository.put(id, ObjectMapper.serialize(daoEntry));
                 session.sendResponse(responseEmpty(Response.ACCEPTED));
