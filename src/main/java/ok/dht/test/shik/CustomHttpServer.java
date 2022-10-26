@@ -1,10 +1,19 @@
 package ok.dht.test.shik;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.shik.events.FollowerRequestState;
+import ok.dht.test.shik.events.HandlerDeleteRequest;
+import ok.dht.test.shik.events.HandlerPutRequest;
 import ok.dht.test.shik.events.HandlerRequest;
 import ok.dht.test.shik.events.HandlerResponse;
+import ok.dht.test.shik.events.LeaderRequestState;
+import ok.dht.test.shik.events.RequestState;
+import ok.dht.test.shik.illness.IllNodesService;
 import ok.dht.test.shik.sharding.ConsistentHash;
 import ok.dht.test.shik.sharding.ShardingConfig;
+import ok.dht.test.shik.utils.HttpServerUtils;
+import ok.dht.test.shik.validator.ValidationResult;
+import ok.dht.test.shik.validator.Validator;
 import ok.dht.test.shik.workers.WorkersConfig;
 import ok.dht.test.shik.workers.WorkersService;
 import one.nio.http.HttpServer;
@@ -23,21 +32,15 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.BufferOverflowException;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicIntegerArray;
-import java.util.function.BiConsumer;
 
 public class CustomHttpServer extends HttpServer {
 
@@ -45,6 +48,8 @@ public class CustomHttpServer extends HttpServer {
     private static final String PATH_PREFIX = "/v0/entity";
     private static final String ID_PARAM = "id=";
     private static final String URL_INFIX = PATH_PREFIX + "?" + ID_PARAM;
+    private static final String INTERNAL_HEADER = "Internal-Request";
+    private static final String TRUE = "true";
     private static final Log LOG = LogFactory.getLog(CustomHttpServer.class);
     private static final Map<Integer, String> HTTP_CODE_TO_MESSAGE = Map.of(
         HttpURLConnection.HTTP_OK, Response.OK,
@@ -52,22 +57,22 @@ public class CustomHttpServer extends HttpServer {
         HttpURLConnection.HTTP_CREATED, Response.CREATED,
         HttpURLConnection.HTTP_BAD_REQUEST, Response.BAD_REQUEST,
         HttpURLConnection.HTTP_UNAVAILABLE, Response.SERVICE_UNAVAILABLE,
-        HttpURLConnection.HTTP_INTERNAL_ERROR, Response.INTERNAL_ERROR
+        HttpURLConnection.HTTP_INTERNAL_ERROR, Response.INTERNAL_ERROR,
+        HttpURLConnection.HTTP_BAD_METHOD, Response.METHOD_NOT_ALLOWED,
+        HttpURLConnection.HTTP_NOT_FOUND, Response.NOT_FOUND
     );
+
     private static final int TIMEOUT_MILLIS = 10000;
-    private static final int ILLNESS_RATE_MILLIS = 5 * 60 * 1000;
-    private static final int FAILURES_THRESHOLD = 5;
+    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
     private final WorkersService workersService;
+    private final IllNodesService illNodesService;
     private final ConsistentHash consistentHash;
     private final String selfUrl;
     private final HttpClient httpClient;
-    private final AtomicBoolean[] nodeIllness;
-    private final AtomicIntegerArray nodeFailures;
-    private final Map<String, Integer> clusterUrlToIndex;
+    private final Validator validator;
 
     private CustomService requestHandler;
-    private ScheduledThreadPoolExecutor illNodesUpdaterPool;
 
     public CustomHttpServer(HttpServerConfig config,
                             ServiceConfig serviceConfig,
@@ -82,12 +87,8 @@ public class CustomHttpServer extends HttpServer {
             .executor(Executors.newFixedThreadPool(workersConfig.getMaxPoolSize()))
             .build();
         selfUrl = serviceConfig.selfUrl();
-        nodeIllness = new AtomicBoolean[clusterUrls.size()];
-        nodeFailures = new AtomicIntegerArray(clusterUrls.size());
-        clusterUrlToIndex = new HashMap<>(clusterUrls.size());
-        for (int i = 0; i < clusterUrls.size(); ++i) {
-            clusterUrlToIndex.put(clusterUrls.get(i), i);
-        }
+        illNodesService = new IllNodesService(clusterUrls);
+        validator = new Validator((clusterUrls.size() + 1) / 2);
     }
 
     public void setRequestHandler(CustomService requestHandler) {
@@ -97,73 +98,88 @@ public class CustomHttpServer extends HttpServer {
     @Override
     public synchronized void start() {
         workersService.start();
-        for (int i = 0; i < nodeIllness.length; ++i) {
-            nodeIllness[i] = new AtomicBoolean(false);
-        }
-        illNodesUpdaterPool = new ScheduledThreadPoolExecutor(1);
-        illNodesUpdaterPool.scheduleAtFixedRate(() -> {
-            for (AtomicBoolean illness : nodeIllness) {
-                illness.set(false);
-            }
-            for (int i = 0; i < nodeFailures.length(); ++i) {
-                nodeFailures.set(i, 0);
-            }
-        }, ILLNESS_RATE_MILLIS, ILLNESS_RATE_MILLIS, TimeUnit.MILLISECONDS);
+        illNodesService.start();
         super.start();
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        String path = request.getPath();
-        if (!path.startsWith(PATH_PREFIX)) {
-            sendBadRequest(session);
+        ValidationResult params = validator.validate(request);
+        if (params.getCode() == HttpURLConnection.HTTP_BAD_REQUEST) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        } else if (params.getCode() == HttpURLConnection.HTTP_BAD_METHOD) {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        }
+        String id = params.getId();
+        int requestedReplicas = params.getRequestedReplicas();
+        int requiredReplicas = params.getRequiredReplicas();
+
+        if (request.getHeader(INTERNAL_HEADER) != null) {
+            FollowerRequestState state = new FollowerRequestState(request, session, request.getParameter(ID_PARAM));
+            handleCurrentShardRequest(state);
+            session.sendResponse(state.getResponse());
             return;
         }
 
-        String id = request.getParameter(ID_PARAM);
-        if (id == null || id.isEmpty()) {
-            sendBadRequest(session);
+        List<String> shardUrls = consistentHash.getShardUrlByKey(
+            id.getBytes(StandardCharsets.UTF_8), requestedReplicas);
+        if (illNodesService.getIllNodesCount(shardUrls) + requiredReplicas > requestedReplicas) {
+            session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
             return;
         }
 
-        String shardUrl = consistentHash.getShardUrlByKey(id.getBytes(StandardCharsets.UTF_8));
-        if (nodeIllness[clusterUrlToIndex.get(shardUrl)].get()) {
-            sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
-            return;
+        RequestState state = new LeaderRequestState(requestedReplicas, requiredReplicas, request, session, id);
+        for (String shardUrl : shardUrls) {
+            if (selfUrl.equals(shardUrl)) {
+                handleCurrentShardRequest(state);
+            } else {
+                handleProxyRequest(state, shardUrl);
+            }
         }
 
-        if (selfUrl.equals(shardUrl)) {
-            handleCurrentShardRequest(request, session, id);
-        } else {
-            handleProxyRequest(request, session, id, shardUrl);
-        }
+        handleLeaderRequest(state);
     }
 
-    private void handleProxyRequest(Request request, HttpSession session,
-                                    String id, String shardUrl) throws IOException {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(shardUrl + URL_INFIX + id));
+    private void handleLeaderRequest(RequestState state) {
+        workersService.submitTask(() -> {
+            HandlerResponse handlerResponse = new HandlerResponse();
+            HandlerRequest handlerRequest = new HandlerRequest(state);
+            state.awaitShardResponses();
+            Request request = state.getRequest();
+            switch (request.getMethod()) {
+                case Request.METHOD_GET -> requestHandler.handleLeaderGet(handlerRequest, handlerResponse);
+                case Request.METHOD_PUT -> requestHandler.handleLeaderPut(handlerRequest, handlerResponse);
+                case Request.METHOD_DELETE -> requestHandler.handleLeaderDelete(handlerRequest, handlerResponse);
+                default -> throw new IllegalStateException("Expected one of supported methods");
+            }
+            try {
+                state.getSession().sendResponse(handlerResponse.getResponse());
+            } catch (IOException e) {
+                LOG.error("Cannot send response ", e);
+                HttpServerUtils.sendError(state.getSession(), e);
+            }
+        });
+    }
+
+    private void handleProxyRequest(RequestState state, String shardUrl) {
+        Request request = state.getRequest();
+        HttpRequest.Builder builder = HttpRequest
+            .newBuilder(URI.create(shardUrl + URL_INFIX + state.getId()))
+            .header(INTERNAL_HEADER, TRUE);
         HttpRequest httpRequest;
         switch (request.getMethod()) {
             case Request.METHOD_GET -> httpRequest = builder.GET().build();
-            case Request.METHOD_PUT -> {
-                byte[] body = request.getBody();
-                if (body == null) {
-                    sendBadRequest(session);
-                    return;
-                }
-                httpRequest = builder.PUT(HttpRequest.BodyPublishers.ofByteArray(body)).build();
-            }
+            case Request.METHOD_PUT ->
+                httpRequest = builder.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody())).build();
             case Request.METHOD_DELETE -> httpRequest = builder.DELETE().build();
-            default -> {
-                session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-                return;
-            }
+            default -> throw new IllegalStateException("Expected one of supported methods");
         }
 
-        sendProxyRequest(httpRequest, session);
+        sendProxyRequest(httpRequest, state);
     }
 
-    private void sendProxyRequest(HttpRequest httpRequest, HttpSession session) {
+    private void sendProxyRequest(HttpRequest httpRequest, RequestState state) {
         workersService.submitTask(() -> {
             try {
                 HttpResponse<byte[]> httpResponse = httpClient
@@ -172,7 +188,7 @@ public class CustomHttpServer extends HttpServer {
 
                 Response failureResponse = checkProxyResponseFailure(httpRequest, httpResponse);
                 if (failureResponse != null) {
-                    session.sendResponse(failureResponse);
+                    state.onShardResponseFailure();
                     return;
                 }
 
@@ -180,25 +196,22 @@ public class CustomHttpServer extends HttpServer {
                 String statusCode = HTTP_CODE_TO_MESSAGE.get(httpResponse.statusCode());
                 if (statusCode == null) {
                     LOG.error("Unexpected error code from other shard: " + httpResponse.statusCode());
-                    session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, body));
+                    state.onShardResponseFailure();
                 } else {
-                    session.sendResponse(new Response(statusCode, body));
+                    state.onShardResponseSuccess(new Response(statusCode, body));
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 LOG.warn("Interrupted while processing proxy request", e);
-                sendError(session, e);
+                state.onShardResponseFailure();
             } catch (ExecutionException e) {
                 LOG.warn("Execution exception while processing proxy request", e);
-                markNodeIll(httpRequest.uri());
-                sendError(session, e);
+                illNodesService.markNodeIll(httpRequest.uri());
+                state.onShardResponseFailure();
             } catch (TimeoutException e) {
                 LOG.warn("Timeout while processing proxy request", e);
-                markNodeIll(httpRequest.uri());
-                sendError(session, e);
-            } catch (IOException e) {
-                LOG.warn("I/O exception while processing proxy request", e);
-                sendError(session, e);
+                illNodesService.markNodeIll(httpRequest.uri());
+                state.onShardResponseFailure();
             }
         });
     }
@@ -211,76 +224,37 @@ public class CustomHttpServer extends HttpServer {
         if (httpResponse.statusCode() == HttpURLConnection.HTTP_INTERNAL_ERROR) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-        if (httpResponse.statusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
         return null;
     }
 
-    private void markNodeIll(URI uri) {
-        String path = uri.toString();
-        String clusterUrl = path.substring(0, path.indexOf(PATH_PREFIX));
-        int nodeIndex = clusterUrlToIndex.get(clusterUrl);
-        if (nodeFailures.incrementAndGet(nodeIndex) >= FAILURES_THRESHOLD) {
-            nodeIllness[nodeIndex].set(true);
-        }
-    }
-
-    private void handleCurrentShardRequest(Request request, HttpSession session, String id) throws IOException {
-        HandlerRequest handlerRequest = new HandlerRequest(request, session, id);
+    private void handleCurrentShardRequest(RequestState state) {
         HandlerResponse handlerResponse = new HandlerResponse();
+        Request request = state.getRequest();
         try {
             switch (request.getMethod()) {
-                case Request.METHOD_GET -> workersService.submitTask(() ->
-                    handleConcreteRequest(handlerRequest, handlerResponse, requestHandler::handleGet));
-                case Request.METHOD_PUT -> {
-                    if (request.getBody() == null) {
-                        sendBadRequest(session);
-                    }
-                    workersService.submitTask(() ->
-                        handleConcreteRequest(handlerRequest, handlerResponse, requestHandler::handlePut));
-                }
-                case Request.METHOD_DELETE -> workersService.submitTask(() ->
-                    handleConcreteRequest(handlerRequest, handlerResponse, requestHandler::handleDelete));
-                default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+                case Request.METHOD_GET -> workersService.submitTask(
+                    () -> HttpServerUtils.handleConcreteRequest(state,
+                        new HandlerRequest(state),
+                        handlerResponse,
+                        requestHandler::handleGet
+                ));
+                case Request.METHOD_PUT -> workersService.submitTask(
+                    () -> HttpServerUtils.handleConcreteRequest(state,
+                        new HandlerPutRequest(state, System.currentTimeMillis()),
+                        handlerResponse,
+                        requestHandler::handlePut
+                ));
+                case Request.METHOD_DELETE -> workersService.submitTask(
+                    () -> HttpServerUtils.handleConcreteRequest(state,
+                        new HandlerDeleteRequest(state, System.currentTimeMillis()),
+                        handlerResponse,
+                        requestHandler::handleDelete
+                ));
+                default -> throw new IllegalStateException("Expected one of supported methods");
             }
         } catch (RejectedExecutionException e) {
             LOG.warn("Internal executor queue is full", e);
-            session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
-        }
-    }
-
-    private void handleConcreteRequest(HandlerRequest request, HandlerResponse response,
-                                      BiConsumer<HandlerRequest, HandlerResponse> method) {
-        try {
-            method.accept(request, response);
-            sendResponse(request.getSession(), response.getResponse());
-        } catch (Exception e) {
-            sendError(request.getSession(), e);
-        }
-    }
-
-    private void sendResponse(HttpSession session, Response response) throws IOException {
-        session.sendResponse(response);
-    }
-
-    private void sendBadRequest(HttpSession session) throws IOException {
-        sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-    }
-
-    private void sendError(HttpSession session, Exception e) {
-        try {
-            String response;
-            if (BufferOverflowException.class == e.getClass()) {
-                response = Response.REQUEST_ENTITY_TOO_LARGE;
-            } else if (TimeoutException.class == e.getClass()) {
-                response = Response.GATEWAY_TIMEOUT;
-            } else {
-                response = Response.SERVICE_UNAVAILABLE;
-            }
-            session.sendError(response, e.getMessage());
-        } catch (IOException e1) {
-            LOG.error("Error while sending message about error: ", e1);
+            state.onShardResponseFailure();
         }
     }
 
@@ -303,22 +277,7 @@ public class CustomHttpServer extends HttpServer {
         }
         super.stop();
         workersService.stop();
-        stopIllnessPool();
-    }
-
-    private void stopIllnessPool() {
-        illNodesUpdaterPool.shutdown();
-        try {
-            if (!illNodesUpdaterPool.awaitTermination(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
-                illNodesUpdaterPool.shutdownNow();
-                if (!illNodesUpdaterPool.awaitTermination(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
-                    LOG.warn("Cannot terminate illness thread pool");
-                }
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            illNodesUpdaterPool.shutdownNow();
-        }
+        illNodesService.stop();
     }
 
 }
