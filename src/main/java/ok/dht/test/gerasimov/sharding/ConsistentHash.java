@@ -8,4 +8,6 @@ public interface ConsistentHash<K> {
     List<Shard> getShards();
 
     List<VNode> getVnodes();
+
+    List<Shard> getShards(Shard start, int limit);
 }

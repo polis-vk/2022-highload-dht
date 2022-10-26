@@ -16,8 +16,10 @@ public class Shard {
     private final String host;
     private final int port;
     private final AtomicBoolean isAvailable = new AtomicBoolean(true);
+    private final int pos;
 
-    public Shard(String url) {
+    public Shard(String url, int pos) {
+        this.pos = pos;
         Matcher matcher = URL_PATTERN.matcher(url);
         if (matcher.matches()) {
             this.host = matcher.group(1);
@@ -47,6 +49,10 @@ public class Shard {
 
     public int getPort() {
         return port;
+    }
+
+    public int getPos() {
+        return pos;
     }
 
     public AtomicBoolean isAvailable() {

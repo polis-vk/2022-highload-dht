@@ -12,6 +12,10 @@ public final class ResponseEntity {
         return new Response(Response.NOT_FOUND, Response.EMPTY);
     }
 
+    public static Response notFound(byte[] data) {
+        return new Response(Response.NOT_FOUND, data);
+    }
+
     public static Response ok(String message) {
         return new Response(Response.OK, Utf8.toBytes(message));
     }
@@ -46,5 +50,9 @@ public final class ResponseEntity {
 
     public static Response methodNotAllowed() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+    }
+
+    public static Response gatewayTimeout(String message) {
+        return new Response(Response.GATEWAY_TIMEOUT, Utf8.toBytes(message));
     }
 }
