@@ -9,7 +9,10 @@ import java.nio.ByteBuffer;
 
 public class RequestExecutor {
 
+	private static final int SIZE_LONG = Long.SIZE / Long.BYTES;
+
 	private final DB dao;
+
 
 	public RequestExecutor(DB dao) {
 		this.dao = dao;
@@ -42,27 +45,32 @@ public class RequestExecutor {
 		byte[] res = dao.get(Utils.stringToByte(id));
 
 		if (res == null) {
-			return Utils.emptyResponse(Response.NOT_FOUND);
+			Response response = Utils.emptyResponse(Response.NOT_FOUND);
+			response.addHeader(Utils.TIMESTAMP_ONE_NIO + System.currentTimeMillis());
+			return response;
 		}
 
-		int sizeLong = Long.SIZE / Long.BYTES;
 
 		ByteBuffer buffer = ByteBuffer.allocate(res.length);
 		buffer.put(res);
 		buffer.flip();
 		long timestamp = buffer.getLong();
 
-		if (res[sizeLong] == 1) {
+		if (res[SIZE_LONG] == 1) {
 			Response response = Utils.emptyResponse(Response.NOT_FOUND);
 			response.addHeader(Utils.TIMESTAMP_ONE_NIO + timestamp);
-			response.addHeader(Utils.TOMBSTONE_ONE_NIO + "true");
+			response.addHeader(Utils.TOMBSTONE_ONE_NIO);
 			return response;
 		} else {
-			byte[] resultData = new byte[res.length - sizeLong - 1];
-			buffer.get(sizeLong + 1, resultData);
-			Response response = new Response(Response.OK, resultData);
+			Response response = new Response(Response.OK, getData(res, buffer));
 			response.addHeader(Utils.TIMESTAMP_ONE_NIO + timestamp);
 			return response;
 		}
+	}
+
+	private static byte[] getData(byte[] res, ByteBuffer buffer) {
+		byte[] resultData = new byte[res.length - SIZE_LONG - 1];
+		buffer.get(SIZE_LONG + 1, resultData);
+		return resultData;
 	}
 }

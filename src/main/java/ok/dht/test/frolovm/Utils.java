@@ -6,6 +6,7 @@ import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -22,10 +23,11 @@ public final class Utils {
 
 	public static final String BAD_ID = "Given id is bad.";
 
-	public static final String TOMBSTONE = "tombstone";
+	public static final String TOMBSTONE = "TS";
 
-	public static final String TOMBSTONE_ONE_NIO = "tombstone: ";
+	public static final String TOMBSTONE_ONE_NIO = "TS: ";
 
+	public static final String UNKNOWN_STATUS_CODE = "Unknown status code: ";
 
 	public static final Map<Integer, String> STATUS_MAP = Map.ofEntries(
 			Map.entry(100, Response.CONTINUE),
@@ -90,6 +92,10 @@ public final class Utils {
 		return code >= SERVER_ERROR;
 	}
 
+	public static boolean is4xxError(int code) {
+		return code >= 400;
+	}
+
 	public static void closeExecutorPool(ExecutorService pool) {
 		pool.shutdown();
 		try {
@@ -113,6 +119,22 @@ public final class Utils {
 		request.addHeader(Utils.TIMESTAMP_ONE_NIO + System.currentTimeMillis());
 	}
 
+	public static long getTimestamp(Request request) {
+		return Long.parseLong(request.getHeader(Utils.TIMESTAMP_ONE_NIO));
+	}
+
+	public static long getTimestamp(Response request) {
+		return Long.parseLong(request.getHeader(Utils.TIMESTAMP_ONE_NIO));
+	}
+
+	public static boolean isInternal(Request request) {
+		return request.getHeader(Utils.TIMESTAMP_ONE_NIO) != null;
+	}
+
+	public static boolean isInternal(Response request) {
+		return request.getHeader(Utils.TIMESTAMP_ONE_NIO) != null;
+	}
+
 	public static byte[] dataToBytes(long timestamp, byte[] data) {
 		ByteBuffer buffer = ByteBuffer.allocate(Long.SIZE / Byte.SIZE);
 		buffer.putLong(timestamp);
@@ -131,4 +153,13 @@ public final class Utils {
 			return newArray;
 		}
 	}
+
+	public static String getResponseStatus(HttpResponse<byte[]> response) {
+		String responseStatus = Utils.STATUS_MAP.get(response.statusCode());
+		if (responseStatus == null) {
+			throw new IllegalArgumentException(UNKNOWN_STATUS_CODE + response.statusCode());
+		}
+		return responseStatus;
+	}
+
 }

@@ -89,9 +89,6 @@ public class ServiceImpl implements Service {
 		if (!Utils.checkId(id)) {
 			return new Response(Response.BAD_REQUEST, Utf8.toBytes(Utils.BAD_ID));
 		}
-
-
-
 		int ackNum;
 		int from;
 
@@ -120,7 +117,7 @@ public class ServiceImpl implements Service {
 
 	private boolean validateAcks(String ackParam, String fromParam, int ackNum, int from) {
 		return ackNum <= 0 || from <= 0 || from > config.clusterUrls().size() || ackNum > from
-				|| ackParam != null && fromParam == null || ackParam == null && fromParam != null;
+				|| (ackParam != null && fromParam == null) || (ackParam == null && fromParam != null);
 	}
 
 	@Override
