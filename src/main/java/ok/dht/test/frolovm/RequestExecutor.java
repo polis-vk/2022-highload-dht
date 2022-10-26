@@ -13,7 +13,6 @@ public class RequestExecutor {
 
     private final DB dao;
 
-
     public RequestExecutor(DB dao) {
         this.dao = dao;
     }
@@ -55,7 +54,6 @@ public class RequestExecutor {
             response.addHeader(Utils.TIMESTAMP_ONE_NIO + System.currentTimeMillis());
             return response;
         }
-
 
         ByteBuffer buffer = ByteBuffer.allocate(res.length);
         buffer.put(res);
