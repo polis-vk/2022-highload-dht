@@ -36,7 +36,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     public MemorySegmentDao(Config config) throws IOException {
         this.config = config;
-        this.state = State.newState(config, Storage.load(config));
+        this.state = State.newState(config, StorageCompanionObject.load(config));
     }
 
     @Override
@@ -108,8 +108,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 State curState = accessState();
 
                 Storage storage = curState.storage;
-                Storage.save(config, storage, curState.flushing.values());
-                Storage load = Storage.load(config);
+                StorageCompanionObject.save(config, storage, curState.flushing.values());
+                Storage load = StorageCompanionObject.load(config);
 
                 upsertLock.writeLock().lock();
                 try {
@@ -164,7 +164,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 return null;
             }
 
-            Storage.compact(
+            StorageCompanionObject.compact(
                     config,
                     () -> MergeIterator.of(
                             curState.storage.iterate(VERY_FIRST_KEY,
@@ -174,7 +174,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                     )
             );
 
-            Storage storage = Storage.load(config);
+            Storage storage = StorageCompanionObject.load(config);
 
             upsertLock.writeLock().lock();
             try {
@@ -228,6 +228,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         if (curState.memory.isEmpty()) {
             return;
         }
-        Storage.save(config, curState.storage, curState.memory.values());
+        StorageCompanionObject.save(config, curState.storage, curState.memory.values());
     }
 }
