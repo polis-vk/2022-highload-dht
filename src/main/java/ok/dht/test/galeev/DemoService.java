@@ -207,23 +207,27 @@ public class DemoService implements Service {
     private static void updateNewestEntry(
             AtomicReference<Entry<Timestamp, byte[]>> newestEntry,
             Entry<Timestamp, byte[]> entry) {
-        Entry<Timestamp, byte[]> currentNewestEntry = newestEntry.get();
         // When NotFound entry is (null,null)
         if (entry.key() == null) {
             // If response was Not Found -> set entry only if there was nothing else.
             newestEntry.compareAndSet(null, entry);
-        } else {    // If there is absolutely no entry
-            while ((currentNewestEntry == null
-                    // It there is NotFound
-                    || currentNewestEntry.key() == null
-                    // If new is more fresh
-                    || entry.key().after(currentNewestEntry.key())
-                    // If time is the same -> better use tombstone
-                    || (entry.key().equals(currentNewestEntry.key()) && entry.isTombstone()))
-                    // If everything is ok -> trying to update newestEntry
-                    && !newestEntry.compareAndSet(currentNewestEntry, entry)) {
+        } else {
+            boolean needToUpdate;
+            Entry<Timestamp, byte[]> currentNewestEntry;
+            do {
+                needToUpdate = false;
                 currentNewestEntry = newestEntry.get();
-            }
+                // If there is absolutely no entry, or if there is NotFound (anything is better than this)
+                if (currentNewestEntry == null || currentNewestEntry.key() == null) {
+                    needToUpdate = true;
+                } else {
+                    // If we have more actual entry
+                    if (entry.key().after(currentNewestEntry.key())
+                            || (entry.key().equals(currentNewestEntry.key()) && entry.isTombstone())) {
+                        needToUpdate = true;
+                    }
+                }
+            } while (needToUpdate && !newestEntry.compareAndSet(currentNewestEntry, entry));
         }
     }
 
