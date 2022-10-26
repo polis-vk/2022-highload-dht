@@ -158,7 +158,6 @@ public class InMemoryDao implements Dao<String, Entry<String>> {
         return highestKeyComparing <= 0;
     }
 
-
     @Override
     public void upsert(Entry<String> entry) {
         lock.readLock().lock();

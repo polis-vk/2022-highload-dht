@@ -3,7 +3,6 @@ package ok.dht.test.trofimov.dao;
 import ok.dht.ServiceConfig;
 import ok.dht.test.trofimov.common.Responses;
 import ok.dht.test.trofimov.dao.impl.InMemoryDao;
-import ok.dht.test.trofimov.httpclient.MyHttpClient;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -43,11 +42,8 @@ public class MyHttpServer extends HttpServer {
     private final ServiceConfig config;
     private final InMemoryDao dao;
     private ThreadPoolExecutor requestsExecutor;
-    private Map<Long, MyHttpClient> clients;
-    private HttpClient client;
-
-    private static Map<String, Integer> urlsMurmur = new HashMap<>();
-
+    private final HttpClient client;
+    private static final Map<String, Integer> urlsMurmur = new HashMap<>();
 
     public MyHttpServer(ServiceConfig config) throws IOException {
         super(createConfigFromPort(config.selfPort()));
@@ -69,8 +65,6 @@ public class MyHttpServer extends HttpServer {
         requestsExecutor = new ThreadPoolExecutor(threadsCount, threadsCount, 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(REQUESTS_MAX_QUEUE_SIZE), new ThreadPoolExecutor.DiscardOldestPolicy());
         requestsExecutor.prestartAllCoreThreads();
-
-        clients = new HashMap<>();
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
