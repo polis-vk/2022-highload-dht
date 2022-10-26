@@ -18,17 +18,18 @@ public class NodeMapper {
 
     // TODO: think very hard about replacing rendezvous hash with consistent hash
     // because of memory and concurrency improvements
-    public int[] getNodeUrlsByKey(byte[] key) {
+    public long[] getNodeUrlsByKey(byte[] key) {
 //        if (nodeCount < 1 || nodeCount >= nodeUrls.size()) {
 //            throw new IllegalArgumentException("count must be > 0 and < " + nodeUrls.size() + ", but was " + nodeCount);
 //        }
-        int[] hashes = new int[nodeUrls.size()];
+        long[] hashesAndNodes = new long[nodeUrls.size()];
         for (int i = 0; i < nodeUrls.size(); i++) {
             String nodeUrl = nodeUrls.get(i);
-            hashes[i] = hash(key, nodeUrl);
+            // TODO: fix koctil with nodes no in hashes
+            hashesAndNodes[i] = hash(key, nodeUrl) + (((long) i) << 32);
         }
-        Arrays.sort(hashes);
-        return hashes;
+        Arrays.sort(hashesAndNodes);
+        return hashesAndNodes;
     }
 
     private int hash(byte[] key, String node) {

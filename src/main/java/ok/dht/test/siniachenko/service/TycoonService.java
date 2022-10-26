@@ -44,6 +44,7 @@ public class TycoonService implements ok.dht.Service, Serializable {
     private final ServiceConfig config;
     private final NodeMapper nodeMapper;
     private final ConcurrentMap<String, Integer> nodeRequestsTimeouts;
+    private final ReplicatedRequestAggregator replicatedRequestAggregator;
     private final int defaultFromCount;
     private final int defaultAckCount;
     private DB levelDb;
@@ -54,9 +55,10 @@ public class TycoonService implements ok.dht.Service, Serializable {
     public TycoonService(ServiceConfig config) {
         this.config = config;
         this.nodeMapper = new NodeMapper(config.clusterUrls());
-        this.defaultFromCount = config.clusterUrls().size();
-        this.defaultAckCount = (config.clusterUrls().size() + 1) / 2;
         this.nodeRequestsTimeouts = new ConcurrentHashMap<>();
+        this.replicatedRequestAggregator = new ReplicatedRequestAggregator();
+        this.defaultFromCount = config.clusterUrls().size();
+        this.defaultAckCount = config.clusterUrls().size() / 2 + 1;
     }
 
     @Override
@@ -108,65 +110,68 @@ public class TycoonService implements ok.dht.Service, Serializable {
 
     public void executeRequest(Request request, HttpSession session, String id) throws IOException {
         final int ack, from;
-        String replicasParameter = request.getParameter("replicas=");
-        if (replicasParameter == null || replicasParameter.isEmpty()) {
-            from = defaultFromCount;
-            ack = defaultAckCount;
-        } else {
-            int sepIndex = replicasParameter.indexOf("/");
-            if (sepIndex == -1) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
+        String fromParameter = request.getParameter("from=");
+        try {
+            if (fromParameter == null || fromParameter.isEmpty()) {
+                from = defaultFromCount;
+            } else {
+                from = Integer.parseInt(fromParameter);
             }
-            String fromString = replicasParameter.substring(0, sepIndex);
-            String ackString = replicasParameter.substring(sepIndex + 1);
-            try {
-                from = Integer.parseInt(fromString);
-                ack = Integer.parseInt(ackString);
-                if (!(
-                    0 < from && from <= config.clusterUrls().size()
-                        && 0 < ack && ack <= config.clusterUrls().size()
-                        && ack <= from
-                )) {
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                    return;
-                }
-            } catch (NumberFormatException e) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
+            String ackParameter = request.getParameter("ack=");
+            if (ackParameter == null || ackParameter.isEmpty()) {
+                ack = defaultAckCount;
+            } else {
+                ack = Integer.parseInt(ackParameter);
             }
+        } catch (NumberFormatException e) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+        if (!(
+            0 < from && from <= config.clusterUrls().size()
+                && 0 < ack && ack <= config.clusterUrls().size()
+                && ack <= from
+        )) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        if (request.getMethod() == Request.METHOD_PUT) {
+            request.setBody(Utils.withCurrentTimestampAndFlagDeleted(request.getBody(), false));
+        } else if (request.getMethod() == Request.METHOD_DELETE) {
+            request.setBody(Utils.withCurrentTimestampAndFlagDeleted(new byte[0], true));
         }
 
         // TODO: should do almost all process request in executor thread ???
-        int[] nodeUrls = nodeMapper.getNodeUrlsByKey(Utf8.toBytes(id));
+        long[] nodeUrls = nodeMapper.getNodeUrlsByKey(Utf8.toBytes(id));
 
-        int[] statusCodes = new int[ack];
         byte[][] bodies = new byte[ack][];
         AtomicInteger ackReceivedRef = new AtomicInteger();
         AtomicInteger finishedOrFailedRef = new AtomicInteger();
 
         boolean needLocalWork = false;
         for (int replicaToSend = 0; replicaToSend < from; ++replicaToSend) {
-            String nodeUrlByKey = nodeMapper.getNodeUrls().get(nodeUrls[replicaToSend]);
+            String nodeUrlByKey = nodeMapper.getNodeUrls().get(
+                (int) (nodeUrls[replicaToSend] >> (long) 32)
+            );
             if (config.selfUrl().equals(nodeUrlByKey)) {
                 needLocalWork = true;
             } else {
                 proxyRequest(request, id, nodeUrlByKey).thenAccept(
                     response -> {
                         int statusCode = response.statusCode();
-                        // TODO: different logic for different methods
-                        if (statusCode != 404 && statusCode != 410 && statusCode != 200) {
-                            LOG.error(
-                                "Unexpected status {} code requesting node {}", statusCode, nodeUrlByKey
-                            );
-                            checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
-                            return;
-                        }
+//                        // TODO: different logic for filtering requests via status code
+//                        if (statusCode != 404 && statusCode != 410 && statusCode != 200) {
+//                            LOG.error(
+//                                "Unexpected status {} code requesting node {}", statusCode, nodeUrlByKey
+//                            );
+//                            checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
+//                            return;
+//                        }
 
                         try {
-                            // TODO: different aggregate methods
-                            addResultAndAggregateIfNeed(
-                                session, ack, statusCodes, bodies, ackReceivedRef, response.body(), statusCode
+                            replicatedRequestAggregator.addResultAndAggregateIfNeed(
+                                session, ack, bodies, ackReceivedRef, response.body(), request.getMethod()
                             );
                         } finally {
                             checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
@@ -180,22 +185,21 @@ public class TycoonService implements ok.dht.Service, Serializable {
                 });
             }
         }
-        // different for different methods
+        // TODO: different for different methods
         if (needLocalWork) {
             try {
-                byte[] value = levelDb.get(Utf8.toBytes(id));
-                int statusCode;
-                if (value == null) {
-                    statusCode = 404;
-                } else {
-                    boolean deleted = Utils.readFlagDeletedFromBytes(value);
-                    if (deleted) {
-                        statusCode = 410;
-                    } else {
-                        statusCode = 200;
+                byte[] value = null;
+                switch (request.getMethod()) {
+                    case Request.METHOD_GET -> value = levelDb.get(Utf8.toBytes(id));
+                    case Request.METHOD_PUT -> levelDb.put(Utf8.toBytes(id), request.getBody());
+                    case Request.METHOD_DELETE -> levelDb.put(Utf8.toBytes(id), request.getBody());
+                    default -> {
+                        return;
                     }
                 }
-                addResultAndAggregateIfNeed(session, ack, statusCodes, bodies, ackReceivedRef, value, statusCode);
+                replicatedRequestAggregator.addResultAndAggregateIfNeed(
+                    session, ack, bodies, ackReceivedRef, value, request.getMethod()
+                );
             } catch (DBException e) {
                 LOG.error("Error in DB", e);
             } finally {
@@ -217,46 +221,6 @@ public class TycoonService implements ok.dht.Service, Serializable {
         }
     }
 
-    private void addResultAndAggregateIfNeed(
-        HttpSession session, int ack, int[] statusCodes, byte[][] bodies,
-        AtomicInteger ackReceivedRef, byte[] value, int statusCode
-    ) {
-        // saving received body and status code
-        int ackReceived;
-        while (true) {
-            ackReceived = ackReceivedRef.get();
-            if (ackReceived >= ack) {
-                return;
-            }
-            if (ackReceivedRef.compareAndSet(ackReceived, ackReceived + 1)) {
-                bodies[ackReceived] = value;
-                statusCodes[ackReceived] = statusCode;
-                break;
-            }
-        }
-
-        // aggregating results after receiving enough replicas
-        if (ackReceived + 1 == ack) {
-            int maxTimeStampReplica = -1;
-            long maxTimeMillis = 0;
-            for (int replicaAnswered = 0; replicaAnswered < ack; replicaAnswered++) {
-                if (statusCodes[replicaAnswered] != 404) {
-                    long timeMillis = Utils.readTimeMillisFromBytes(bodies[replicaAnswered]);
-                    if (maxTimeMillis < timeMillis) {
-                        maxTimeMillis = timeMillis;
-                        maxTimeStampReplica = replicaAnswered;
-                    }
-                }
-            }
-            if (maxTimeStampReplica == -1 || statusCodes[maxTimeStampReplica] == 410) {
-                TycoonHttpServer.sendResponse(session, new Response(Response.NOT_FOUND, Response.EMPTY));
-            } else {
-                byte[] realValue = Utils.readValueFromBytes(bodies[maxTimeStampReplica]);
-                TycoonHttpServer.sendResponse(session, new Response(Response.OK, realValue));
-            }
-        }
-    }
-
     private CompletableFuture<HttpResponse<byte[]>> proxyRequest(Request request, String idParameter, String nodeUrl) {
         Integer timeout = nodeRequestsTimeouts.computeIfAbsent(nodeUrl, s -> DEFAULT_TIMEOUT_MILLIS);
         return httpClient.sendAsync(
@@ -270,7 +234,7 @@ public class TycoonService implements ok.dht.Service, Serializable {
         );
     }
 
-    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public ok.dht.Service create(ServiceConfig config) {

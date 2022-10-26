@@ -27,7 +27,7 @@ public class EntityServiceReplica {
             Response response = switch (request.getMethod()) {
                 case Request.METHOD_GET -> getEntity(id);
                 case Request.METHOD_PUT -> upsertEntity(id, request.getBody());
-                case Request.METHOD_DELETE -> deleteEntity(id);
+                case Request.METHOD_DELETE -> deleteEntity(id, request.getBody());
                 default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             };
             TycoonHttpServer.sendResponse(session, response);
@@ -61,9 +61,9 @@ public class EntityServiceReplica {
         }
     }
 
-    public Response deleteEntity(String id) {
+    public Response deleteEntity(String id, byte[] value) {
         try {
-            levelDb.delete(Utf8.toBytes(id));
+            levelDb.put(Utf8.toBytes(id), value);
             return new Response(Response.ACCEPTED, Response.EMPTY);
         } catch (DBException e) {
             LOG.error("Error in DB", e);

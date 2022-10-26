@@ -59,6 +59,13 @@ public class TycoonHttpServer extends HttpServer {
             return;
         }
 
+        if (request.getMethod() != Request.METHOD_GET
+            && request.getMethod() != Request.METHOD_PUT
+            && request.getMethod() != Request.METHOD_DELETE) {
+            sendResponse(session, new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            return;
+        }
+
         if (request.getHeader(REQUEST_TO_REPLICA_HEADER) == null) {
             tycoonService.executeRequest(request, session, idParameter);
         } else {
