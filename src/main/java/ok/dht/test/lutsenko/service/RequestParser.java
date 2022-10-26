@@ -14,7 +14,7 @@ public class RequestParser {
     public static final String FROM_PARAM_NAME = "from=";
 
     private final Request request;
-    private boolean isFailed = false;
+    private boolean isFailed;
     private String failStatus;
     private List<Integer> successStatuses;
     private String id;
@@ -68,15 +68,15 @@ public class RequestParser {
         String ackString = request.getParameter(ACK_PARAM_NAME);
         String fromString = request.getParameter(FROM_PARAM_NAME);
         try {
-            if (ackString != null && fromString != null) {
+            if (ackString == null && fromString == null) {
+                from = clusterUrlsSize;
+                ack = quorum(from);
+            } else if (ackString != null && fromString != null) {
                 ack = Integer.parseInt(ackString);
                 from = Integer.parseInt(fromString);
                 if (ack <= 0 || ack > from || from > clusterUrlsSize) {
                     setFailedWithStatus(Response.BAD_REQUEST);
                 }
-            } else if (ackString == null && fromString == null) {
-                from = clusterUrlsSize;
-                ack = quorum(from);
             } else {
                 setFailedWithStatus(Response.BAD_REQUEST);
             }

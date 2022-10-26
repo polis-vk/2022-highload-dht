@@ -138,11 +138,6 @@ public class DemoService implements Service {
     private List<Runnable> createReplicaResponsesTasks(HttpSession session,
                                                        RequestParser requestParser,
                                                        long requestTime) {
-        String id = requestParser.id();
-        int ack = requestParser.ack();
-        int from = requestParser.from();
-        Request request = requestParser.getRequest();
-        List<Integer> successStatuses = requestParser.successStatuses();
         // Может возникнуть вопрос зачем нужны счетчики, ведь можно использовать размер мапы responses?
         // Чтобы не класть в мапу лишние значения, если requestTime не важен, например при PUT и DELETE.
         // Также при GET запросах с помощью CustomHeaders.REQUEST_TIME различается ситуации когда ключ не найден, тогда
@@ -154,39 +149,54 @@ public class DemoService implements Service {
         AtomicInteger failsCounter = new AtomicInteger(0);
         AtomicInteger successCounter = new AtomicInteger(0);
         NavigableMap<Long, Response> responses = new ConcurrentSkipListMap<>();
-        List<Runnable> replicaResponsesTasks = new ArrayList<>(from);
-        for (int nodeNumber : getReplicaNodeNumbers(id, from)) {
+        List<Runnable> replicaResponsesTasks = new ArrayList<>();
+        for (int nodeNumber : getReplicaNodeNumbers(requestParser.id(), requestParser.from())) {
             replicaResponsesTasks.add(() -> {
-                try {
-                    // both proceed() methods wrapped with try / catch Exception
-                    Response response = (nodeNumber == selfNodeNumber)
-                            ? daoHandler.proceed(id, request, requestTime)
-                            : proxyHandler.proceed(request, nodesNumberToUrlMap.get(nodeNumber), requestTime);
-                    if (successStatuses.contains(response.getStatus())) {
-                        String requestTimeHeaderValue = response.getHeader(CustomHeaders.REQUEST_TIME);
-                        if (requestTimeHeaderValue != null) {
-                            responses.put(Long.parseLong(requestTimeHeaderValue), response);
-                        } else if (responses.isEmpty()) {
-                            responses.put(0L, response);
-                        }
-                        if (successCounter.incrementAndGet() == ack) {
-                            ServiceUtils.sendResponse(session, responses.lastEntry().getValue());
-                            removeReplicasResponsesTasks(replicaResponsesTasks);
-                        }
-                    } else if (failsCounter.incrementAndGet() == from - ack + 1) {
-                        ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);
-                        removeReplicasResponsesTasks(replicaResponsesTasks);
-                    }
-                } catch (Exception e) {
-                    if (failsCounter.incrementAndGet() == from - ack + 1) {
-                        ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);
-                        removeReplicasResponsesTasks(replicaResponsesTasks);
-                    }
-                    LOG.error("Getting response from replica failed", e);
-                }
+                Response replicaResponse = getReplicaResponse(nodeNumber, requestParser, requestTime);
+                handleReplicaResponse(session, requestParser, replicaResponse,
+                        failsCounter, successCounter, responses, replicaResponsesTasks);
             });
         }
         return replicaResponsesTasks;
+    }
+
+    private void handleReplicaResponse(HttpSession session, RequestParser requestParser, Response response,
+                                       AtomicInteger failsCounter, AtomicInteger successCounter,
+                                       NavigableMap<Long, Response> responses, List<Runnable> replicaResponsesTasks) {
+        int ack = requestParser.ack();
+        int failLimit = requestParser.from() - ack + 1;
+        try {
+            // both proceed() methods wrapped with try / catch Exception
+            if (requestParser.successStatuses().contains(response.getStatus())) {
+                String requestTimeHeaderValue = response.getHeader(CustomHeaders.REQUEST_TIME);
+                if (requestTimeHeaderValue == null) {
+                    if (responses.isEmpty()) {
+                        responses.put(0L, response);
+                    }
+                } else {
+                    responses.put(Long.parseLong(requestTimeHeaderValue), response);
+                }
+                if (successCounter.incrementAndGet() == ack) {
+                    ServiceUtils.sendResponse(session, responses.lastEntry().getValue());
+                    removeReplicasResponsesTasks(replicaResponsesTasks);
+                }
+            } else if (failsCounter.incrementAndGet() == failLimit) {
+                ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);
+                removeReplicasResponsesTasks(replicaResponsesTasks);
+            }
+        } catch (Exception e) {
+            if (failsCounter.incrementAndGet() == failLimit) {
+                ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);
+                removeReplicasResponsesTasks(replicaResponsesTasks);
+            }
+            LOG.error("Getting response from replica failed", e);
+        }
+    }
+
+    private Response getReplicaResponse(int nodeNumber, RequestParser requestParser, long requestTime) {
+        return (nodeNumber == selfNodeNumber)
+                ? daoHandler.proceed(requestParser.id(), requestParser.getRequest(), requestTime)
+                : proxyHandler.proceed(requestParser.getRequest(), nodesNumberToUrlMap.get(nodeNumber), requestTime);
     }
 
     private boolean isProxyRequestAndHandle(Request request, HttpSession session) {
@@ -224,10 +234,10 @@ public class DemoService implements Service {
         if (replicaNodesPositions.size() < from) {
             addReplicaNodePositions(replicaNodesPositions, virtualNodes.values(), from);
         }
-        if (replicaNodesPositions.size() != from) {
-            throw new IllegalArgumentException("Can`t find from amount of replica nodes positions");
+        if (replicaNodesPositions.size() == from) {
+            return replicaNodesPositions;
         }
-        return replicaNodesPositions;
+        throw new IllegalArgumentException("Can`t find from amount of replica nodes positions");
     }
 
     private int calculateHashRingPosition(String url) {

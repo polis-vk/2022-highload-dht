@@ -103,7 +103,7 @@ public final class ServiceUtils {
     }
 
     public static String trim(String header) {
-        return header.substring(0, header.indexOf(":"));
+        return header.substring(0, header.indexOf(':'));
     }
 
     public static HttpServerConfig createConfigFromPort(int port) {
