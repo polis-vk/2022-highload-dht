@@ -6,11 +6,12 @@ import one.nio.http.Response;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 
 public interface NodeRequestHandler extends Closeable {
-    Response handleForKey(String key, Request request) throws IOException;
+    void handleForKey(String key, Request request, HttpSession session, long timestamp) throws IOException;
 
-    void handleForKey(String key, Request request, HttpSession session) throws IOException;
+    CompletableFuture<Response> handleForKeyAsync(String key, Request request, long timestamp);
 
     @Override
     default void close() throws IOException {

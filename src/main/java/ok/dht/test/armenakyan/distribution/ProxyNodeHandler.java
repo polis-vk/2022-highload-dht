@@ -1,5 +1,6 @@
 package ok.dht.test.armenakyan.distribution;
 
+import ok.dht.test.armenakyan.util.ServiceUtils;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -16,10 +17,10 @@ import java.util.concurrent.*;
 public class ProxyNodeHandler implements NodeRequestHandler {
     private static final String REQUEST_PATH = "/v0/entity?id=";
     private static final Duration TIMEOUT = Duration.ofSeconds(2);
-    private static final int MAX_QUEUE_SIZE = 5000;
-    private static final int MAX_POOL_WORKERS = Runtime.getRuntime().availableProcessors();
+    private static final int MAX_QUEUE_SIZE = 1000;
+    private static final int MAX_POOL_WORKERS = Math.min(4, Runtime.getRuntime().availableProcessors());
     private static final int CORE_POOL_WORKERS = Math.min(2, MAX_POOL_WORKERS);
-    private static final long KEEP_ALIVE_TIME_SEC = 3;
+    private static final long KEEP_ALIVE_TIME_MS = 3000;
     private final ExecutorService clientPool;
     private final HttpClient httpClient;
     private final String fullPath;
@@ -28,7 +29,7 @@ public class ProxyNodeHandler implements NodeRequestHandler {
         this.fullPath = nodeUrl + REQUEST_PATH;
         this.clientPool = new ThreadPoolExecutor(
                 CORE_POOL_WORKERS, MAX_POOL_WORKERS,
-                KEEP_ALIVE_TIME_SEC, TimeUnit.SECONDS,
+                KEEP_ALIVE_TIME_MS, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(MAX_QUEUE_SIZE)
         );
         this.httpClient = HttpClient.newBuilder()
@@ -37,20 +38,8 @@ public class ProxyNodeHandler implements NodeRequestHandler {
     }
 
     @Override
-    public Response handleForKey(String key, Request request) {
-        try {
-            return handleAsync(key, request).get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-        } catch (ExecutionException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-    }
-
-    @Override
-    public void handleForKey(String key, Request request, HttpSession session) throws IOException {
-        handleAsync(key, request).thenAcceptAsync(response -> {
+    public void handleForKey(String key, Request request, HttpSession session, long timestamp) {
+        handleAsync(key, request, timestamp).thenAcceptAsync(response -> {
             try {
                 session.sendResponse(response);
             } catch (IOException e) {
@@ -59,10 +48,21 @@ public class ProxyNodeHandler implements NodeRequestHandler {
         }, clientPool);
     }
 
-    private CompletableFuture<Response> handleAsync(String key, Request request) {
+    @Override
+    public CompletableFuture<Response> handleForKeyAsync(String key, Request request, long timestamp) {
+        return handleAsync(key, request, timestamp);
+    }
+
+    private CompletableFuture<Response> handleAsync(String key, Request request, long timestamp) {
         HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(fullPath.concat(key)))
                 .timeout(TIMEOUT)
-                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .header(ServiceUtils.TIMESTAMP_HEADER, String.valueOf(timestamp))
+                .method(
+                        request.getMethodName(),
+                        request.getBody() != null
+                        ? HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                        : HttpRequest.BodyPublishers.noBody()
+                )
                 .build();
         return httpClient
                 .sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())

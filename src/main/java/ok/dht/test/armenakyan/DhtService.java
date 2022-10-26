@@ -3,9 +3,8 @@ package ok.dht.test.armenakyan;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.armenakyan.distribution.ClusterCoordinatorNodeHandler;
+import ok.dht.test.armenakyan.distribution.coordinator.ClusterCoordinator;
 import ok.dht.test.armenakyan.distribution.SelfNodeHandler;
-import ok.dht.test.armenakyan.distribution.NodeRequestHandler;
 import ok.dht.test.armenakyan.distribution.hashing.MD5KeyHasher;
 import ok.dht.test.armenakyan.util.ServiceUtils;
 import one.nio.http.HttpServer;
@@ -20,6 +19,8 @@ import java.util.concurrent.CompletableFuture;
 
 public class DhtService implements Service {
     private static final String ID_PARAM = "id=";
+    private static final String ACK_PARAM = "ack=";
+    private static final String FROM_PARAM = "from=";
 
     private static final Set<Integer> ALLOWED_METHODS = Set.of(
             Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
@@ -27,7 +28,9 @@ public class DhtService implements Service {
 
     private final ServiceConfig serviceConfig;
     private HttpServer httpServer;
-    private NodeRequestHandler requestHandler;
+    private ClusterCoordinator coordinator;
+
+    private SelfNodeHandler daoHandler;
 
     public DhtService(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
@@ -39,9 +42,9 @@ public class DhtService implements Service {
                 ServiceUtils.createConfigFromPort(serviceConfig.selfPort()),
                 this);
 
-        SelfNodeHandler daoHandler = new SelfNodeHandler(serviceConfig.workingDir());
+        daoHandler = new SelfNodeHandler(serviceConfig.workingDir());
 
-        requestHandler = new ClusterCoordinatorNodeHandler(
+        coordinator = new ClusterCoordinator(
                 serviceConfig.selfUrl(),
                 daoHandler,
                 serviceConfig.clusterUrls(),
@@ -56,7 +59,8 @@ public class DhtService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         httpServer.stop();
-        requestHandler.close();
+        daoHandler.close();
+        coordinator.close();
 
         return CompletableFuture.completedFuture(null);
     }
@@ -74,7 +78,39 @@ public class DhtService implements Service {
             return;
         }
 
-       requestHandler.handleForKey(id, request, session);
+        String timestampHeader = request.getHeader(ServiceUtils.TIMESTAMP_HEADER);
+        if (timestampHeader != null) {
+            daoHandler.handleForKey(id, request, session, -1);
+            return;
+        }
+
+        String ackParam = request.getParameter(ACK_PARAM);
+        String fromParam = request.getParameter(FROM_PARAM);
+
+        int from = serviceConfig.clusterUrls().size();
+        if (fromParam != null) {
+            try {
+                from = Integer.parseInt(fromParam);
+            } catch (NumberFormatException ignored) {
+                // fallback to default
+            }
+        }
+
+        int ack = from / 2 + 1;
+        if (ackParam != null) {
+            try {
+                ack = Integer.parseInt(ackParam);
+            } catch (NumberFormatException ignored) {
+                // fallback to default
+            }
+        }
+
+        if (ack > from || ack <= 0) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+       coordinator.replicate(id, request, session, ack, from);
     }
 
     @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")

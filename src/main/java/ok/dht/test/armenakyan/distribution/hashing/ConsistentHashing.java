@@ -5,9 +5,7 @@ import ok.dht.test.armenakyan.distribution.model.VNode;
 import one.nio.util.Utf8;
 
 import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 
 public class ConsistentHashing implements Hashing {
     private static final int VIRTUAL_NODE_COUNT = 5;
@@ -36,6 +34,30 @@ public class ConsistentHashing implements Hashing {
         }
 
         Arrays.sort(virtualNodesCircle, COMPARATOR);
+    }
+
+    @Override
+    public Set<Node> nodesByKey(String key, int nodeCount) {
+        if (nodeCount <= 0) {
+            return Collections.emptySet();
+        }
+        if (nodeCount > virtualNodesCircle.length / VIRTUAL_NODE_COUNT) {
+            nodeCount = virtualNodesCircle.length / VIRTUAL_NODE_COUNT;
+        }
+
+        Set<Node> nodes = new HashSet<>();
+
+        VNode currentVNode = virtualNodeByHash(keyHasher.hash(key));
+        nodes.add(currentVNode.node());
+        int nextHash = currentVNode.hash() + 1;
+
+        while (nodes.size() != nodeCount) {
+            currentVNode = virtualNodeByHash(nextHash);
+            nodes.add(currentVNode.node());
+            nextHash = currentVNode.hash() + 1;
+        }
+
+        return nodes;
     }
 
     @Override
