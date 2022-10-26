@@ -46,12 +46,6 @@ class TwoNodeTest extends TestBase {
     }
 
     @ServiceTest(stage = 4, clusterSize = 2)
-    void postNotSupportedTest(List<ServiceInfo> nodes) throws Exception {
-        assertEquals(HttpURLConnection.HTTP_BAD_METHOD, nodes.get(0).post(randomId(), randomValue(), 1, 0).statusCode());
-        assertEquals(HttpURLConnection.HTTP_BAD_METHOD, nodes.get(1).post(randomId(), randomValue(), 2, 1).statusCode());
-    }
-
-    @ServiceTest(stage = 4, clusterSize = 2)
     void unreachableRF(List<ServiceInfo> nodes) throws Exception {
         nodes.get(0).stop();
 
@@ -360,6 +354,59 @@ class TwoNodeTest extends TestBase {
             serviceInfo.stop();
         }
         assertEquals(1, successCount);
+    }
+
+    @ServiceTest(stage = 4, clusterSize = 5)
+    void checkQuorum(List<ServiceInfo> nodes) throws Exception {
+        String key = randomId();
+        byte[] value = randomValue();
+
+        int quorumSize = nodes.size() / 2 + 1;
+
+        for (int i = quorumSize; i < nodes.size(); i++) {
+
+            nodes.get(i).stop();
+        }
+        waitForVersionAdvancement();
+
+        assertEquals(HttpURLConnection.HTTP_CREATED, nodes.get(0).upsert(key, value).statusCode());
+
+        // Help implementors with ms precision for conflict resolution
+        waitForVersionAdvancement();
+
+        nodes.get(quorumSize - 1).stop();
+
+        assertEquals(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, nodes.get(0).get(key, value).statusCode());
+
+
+        for (int i = 0; i < quorumSize; ++i) {
+            // Insert value1
+            byte[] value1 = randomValue();
+
+            // Stop node
+            nodes.get(i).stop();
+
+            // Help implementors with ms precision for conflict resolution
+            waitForVersionAdvancement();
+
+            // Insert value2
+            byte[] value2 = randomValue();
+            int status = nodes.get((i + 1) % nodes.size()).upsert(key, value2, 1, 2).statusCode();
+            assertEquals(HttpURLConnection.HTTP_CREATED, status);
+
+            // Start node
+            nodes.get(i).start();
+
+            // Check value2
+            {
+                HttpResponse<byte[]> response = nodes.get(i).get(key, 2, 2);
+                assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
+                assertArrayEquals(value2, response.body());
+            }
+
+            // Help implementors with ms precision for conflict resolution
+            waitForVersionAdvancement();
+        }
     }
 
 }
