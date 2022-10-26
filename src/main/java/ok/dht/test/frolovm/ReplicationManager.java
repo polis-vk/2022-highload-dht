@@ -81,17 +81,11 @@ public class ReplicationManager {
             Shard shard = algorithm.getShardByIndex(shardIndex);
 
             if (shard.getName().equals(selfUrl)) {
-                countAck = addSuccessResponse(request, collectedResponses, countAck,
-                        requestExecutor.entityHandlerSelf(id, request, timestamp));
+                Response response = requestExecutor.entityHandlerSelf(id, request, timestamp);
+                countAck = addSuccessResponse(request, collectedResponses, countAck, response);
             } else {
                 if (circuitBreaker.isReady(shard.getName())) {
-                    try {
-                        countAck = addSuccessResponse(request, collectedResponses, countAck,
-                                sendResponseToAnotherNode(request, shard));
-                    } catch (IOException | InterruptedException e) {
-                        LOGGER.error("Something bad happens when client answer", e);
-                        circuitBreaker.incrementFail(shard.getName());
-                    }
+                    countAck = requestToAnotherNode(request, collectedResponses, countAck, shard);
                 } else {
                     LOGGER.error("Node is unavailable right now");
                 }
@@ -103,6 +97,17 @@ public class ReplicationManager {
         }
 
         return new Response(Response.GATEWAY_TIMEOUT, Utils.stringToByte(NOT_ENOUGH_REPLICAS));
+    }
+
+    private int requestToAnotherNode(Request request, List<Response> collectedResponses, int countAck, Shard shard) {
+        try {
+            Response response = getResponseFromAnotherNode(request, shard);
+            countAck = addSuccessResponse(request, collectedResponses, countAck, response);
+        } catch (IOException | InterruptedException e) {
+            LOGGER.error("Something bad happens when client answer", e);
+            circuitBreaker.incrementFail(shard.getName());
+        }
+        return countAck;
     }
 
     private int addSuccessResponse(Request request, List<Response> collectedResponses,
@@ -161,7 +166,7 @@ public class ReplicationManager {
                 || response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND);
     }
 
-    private Response sendResponseToAnotherNode(Request request, Shard shard) throws IOException, InterruptedException {
+    private Response getResponseFromAnotherNode(Request request, Shard shard) throws IOException, InterruptedException {
         byte[] body = request.getBody() == null ? Response.EMPTY : request.getBody();
         HttpResponse<byte[]> response;
 
