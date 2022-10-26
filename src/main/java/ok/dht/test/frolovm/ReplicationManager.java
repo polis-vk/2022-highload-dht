@@ -75,7 +75,23 @@ public class ReplicationManager {
 
         for (int i = 0; i < from; ++i) {
             Shard shard = algorithm.getShardByIndex(shardIndex);
-            countAck = oneShardExecution(id, request, timestamp, collectedResponses, countAck, shard);
+
+            if (shard.getName().equals(selfUrl)) {
+                Response response = requestExecutor.entityHandlerSelf(id, request, timestamp);
+                countAck = addSuccessResponse(request, collectedResponses, countAck, response);
+            } else {
+                if (circuitBreaker.isReady(shard.getName())) {
+                    try {
+                        Response response = sendResponseToAnotherNode(request, shard);
+                        countAck = addSuccessResponse(request, collectedResponses, countAck, response);
+                    } catch (IOException | InterruptedException e) {
+                        LOGGER.error("Something bad happens when client answer", e);
+                        circuitBreaker.incrementFail(shard.getName());
+                    }
+                } else {
+                    LOGGER.error("Node is unavailable right now");
+                }
+            }
             if (countAck >= ack && request.getMethod() == Request.METHOD_GET) {
                 return generateResult(collectedResponses, request.getMethod());
             }
@@ -85,27 +101,6 @@ public class ReplicationManager {
             return generateResult(collectedResponses, request.getMethod());
         }
         return new Response(Response.GATEWAY_TIMEOUT, Utils.stringToByte(NOT_ENOUGH_REPLICAS));
-    }
-
-    private int oneShardExecution(String id, Request request, long timestamp,
-                                  List<Response> collectedResponses, int countAck, Shard shard) {
-        if (shard.getName().equals(selfUrl)) {
-            Response response = requestExecutor.entityHandlerSelf(id, request, timestamp);
-            countAck = addSuccessResponse(request, collectedResponses, countAck, response);
-        } else {
-            if (circuitBreaker.isReady(shard.getName())) {
-                try {
-                    Response response = sendResponseToAnotherNode(request, shard);
-                    countAck = addSuccessResponse(request, collectedResponses, countAck, response);
-                } catch (IOException | InterruptedException e) {
-                    LOGGER.error("Something bad happens when client answer", e);
-                    circuitBreaker.incrementFail(shard.getName());
-                }
-            } else {
-                LOGGER.error("Node is unavailable right now");
-            }
-        }
-        return countAck;
     }
 
     private int addSuccessResponse(Request request, List<Response> collectedResponses,
@@ -145,8 +140,8 @@ public class ReplicationManager {
         for (Response response : collectedResponses) {
             long timestamp = Utils.getTimestamp(response);
             boolean isTombstone = response.getHeader(Utils.TOMBSTONE) != null;
-            if (mostRelevantTimestamp < timestamp &&
-                    (response.getStatus() == HttpURLConnection.HTTP_OK || isTombstone)) {
+            if (mostRelevantTimestamp < timestamp
+                    && (response.getStatus() == HttpURLConnection.HTTP_OK || isTombstone)) {
                 isResultTombstone = isTombstone;
                 mostRelevantTimestamp = timestamp;
                 result = response.getBody();
