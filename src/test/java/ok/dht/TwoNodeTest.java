@@ -176,7 +176,7 @@ class TwoNodeTest extends TestBase {
 
             // Check
             {
-                HttpResponse<byte[]> response = nodes.get(i).get(key, 1, 2);
+                HttpResponse<byte[]> response = nodes.get(i).get(key, 2, 2);
                 assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
                 assertArrayEquals(value, response.body());
             }
@@ -199,7 +199,7 @@ class TwoNodeTest extends TestBase {
             nodes.get(i).stop();
 
             // Help implementors with ms precision for conflict resolution
-            waitForVersionAdvancement();
+git            waitForVersionAdvancement();
 
             // Delete
             int statusCode = nodes.get((i + 1) % nodes.size()).delete(key, 1, 2).statusCode();
@@ -347,7 +347,7 @@ class TwoNodeTest extends TestBase {
             serviceInfo.start();
 
             HttpResponse<byte[]> response = serviceInfo.get(key, 1, 1);
-            if (response.statusCode() == 200 && Arrays.equals(value, response.body())) {
+            if (response.statusCode() == HttpURLConnection.HTTP_OK && Arrays.equals(value, response.body())) {
                 successCount++;
             }
 
