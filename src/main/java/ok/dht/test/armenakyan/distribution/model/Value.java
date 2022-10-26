@@ -50,7 +50,7 @@ public class Value {
     }
 
     public byte[] value() {
-        return data;
+        return data == null ? null : Arrays.copyOf(data, data.length);
     }
 
     public long timestamp() {

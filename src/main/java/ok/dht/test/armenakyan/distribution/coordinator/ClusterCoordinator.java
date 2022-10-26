@@ -137,10 +137,13 @@ public class ClusterCoordinator implements Closeable {
         if (second == null) {
             return first;
         }
-
         if (first == null || first.timestamp() < second.timestamp()) {
             return second;
         }
+        if (first.timestamp() == second.timestamp()) {
+            return first.isTombstone() ? second : first;
+        }
+
         return first;
     }
 
