@@ -26,11 +26,12 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.temporal.Temporal;
-import java.time.temporal.TemporalUnit;
 import java.util.List;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 public class HttpServerImpl extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(HttpServerImpl.class);
@@ -39,11 +40,15 @@ public class HttpServerImpl extends HttpServer {
     private final HttpClient httpClient;
 
     private final String serverUrl;
-    private final List<String> clusterUrls;
+    private final List<Cluster> clusters;
 
     private final HashFunction hash = Hashing.murmur3_128();
 
     private static final long SHUTDOWN_WAIT_TIME_SECONDS = 60;
+
+    private static final int MAX_THREADS_PER_NODE = Runtime.getRuntime().availableProcessors() / 2 +
+            (Runtime.getRuntime().availableProcessors() % 2  == 0 ? 0 : 1);
+    private static final int MAX_TASKS_PER_NODE = MAX_THREADS_PER_NODE * 42;
 
     public HttpServerImpl(ServiceConfig config,
                           MemorySegmentDao memorySegmentDao,
@@ -52,7 +57,7 @@ public class HttpServerImpl extends HttpServer {
         this.executor = executor;
         this.memorySegmentDao = memorySegmentDao;
         this.httpClient = HttpClient.newHttpClient();
-        clusterUrls = config.clusterUrls();
+        clusters = config.clusterUrls().stream().map(Cluster::new).collect(Collectors.toList());
         serverUrl = config.selfUrl();
 
     }
@@ -70,13 +75,20 @@ public class HttpServerImpl extends HttpServer {
             return;
         }
 
-        executor.execute(() -> {
-            String targetUrl = getTargetUrlFromKey(id);
+        Cluster target = getTargetClusterFromKey(id);
+
+        if (target.amountOfTasks.incrementAndGet() >= MAX_TASKS_PER_NODE) {
+            target.amountOfTasks.decrementAndGet();
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            return;
+        }
+
+        target.queue.add(() -> {
             try {
-                if (targetUrl.equals(serverUrl)) {
+                if (target.url.equals(serverUrl)) {
                     handleSupported(request, session, id);
                 } else {
-                    HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(targetUrl + request.getURI()))
+                    HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(target.url + request.getURI()))
                             .method(
                                     request.getMethodName(),
                                     HttpRequest
@@ -102,6 +114,29 @@ public class HttpServerImpl extends HttpServer {
                 }
             }
         });
+
+        if (target.amountOfWorkers.incrementAndGet() <= MAX_THREADS_PER_NODE) {
+            executor.execute(() -> {
+                Runnable task;
+                while (true) {
+                    task = target.queue.poll();
+                    if (task == null) {
+                        target.amountOfWorkers.decrementAndGet();
+                        break;
+                    }
+                    LOG.debug("Url {} for id {} (my url is {})", target.url, id, serverUrl);
+                    try {
+                        task.run();
+                    } catch (Exception e) {
+                        LOG.error("Error while executing task");
+                    } finally {
+                        target.amountOfTasks.decrementAndGet();
+                    }
+                }
+            });
+        } else {
+            target.amountOfWorkers.decrementAndGet();
+        }
     }
 
     @Override
@@ -196,9 +231,10 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
-    private String getTargetUrlFromKey(String key) {
-        return clusterUrls.get(Math.abs(hash.newHasher().putString(key, StandardCharsets.UTF_8)
-                .hash().hashCode() % clusterUrls.size()));
+    private Cluster getTargetClusterFromKey(String key) {
+        return clusters.get(
+                hash.newHasher().putString(key, StandardCharsets.UTF_8).hash().hashCode() & 0x7FFFFFFF
+                        % clusters.size());
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -235,4 +271,20 @@ public class HttpServerImpl extends HttpServer {
             default -> throw new IllegalArgumentException("Unknown status code: " + statusCode);
         };
     }
+
+    private static class Cluster {
+        public final String url;
+
+        public final ConcurrentLinkedQueue<Runnable> queue = new ConcurrentLinkedQueue<Runnable>();
+
+        public final AtomicInteger amountOfTasks;
+        public final AtomicInteger amountOfWorkers;
+
+        public Cluster(String url) {
+            this.url = url;
+            this.amountOfTasks = new AtomicInteger(0);
+            this.amountOfWorkers = new AtomicInteger(0);
+        }
+    }
+
 }
