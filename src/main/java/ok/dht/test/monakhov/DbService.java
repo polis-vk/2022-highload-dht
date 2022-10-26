@@ -36,17 +36,18 @@ import java.util.concurrent.TimeUnit;
 
 import static java.net.HttpURLConnection.HTTP_ACCEPTED;
 import static java.net.HttpURLConnection.HTTP_CREATED;
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static ok.dht.test.monakhov.ServiceUtils.NOT_ENOUGH_REPLICAS;
 import static ok.dht.test.monakhov.ServiceUtils.QUEUE_SIZE;
 import static ok.dht.test.monakhov.ServiceUtils.TIMESTAMP_HEADER;
 import static ok.dht.test.monakhov.ServiceUtils.createConfigFromPort;
-import static ok.dht.test.monakhov.ServiceUtils.deserialize;
+// import static ok.dht.test.monakhov.ServiceUtils.deserialize;
 import static ok.dht.test.monakhov.ServiceUtils.isInvalidReplica;
 import static ok.dht.test.monakhov.ServiceUtils.max;
-import static ok.dht.test.monakhov.ServiceUtils.serialize;
-// import static one.nio.serial.Serializer.deserialize;
-// import static one.nio.serial.Serializer.serialize;
+// import static ok.dht.test.monakhov.ServiceUtils.serialize;
+import static one.nio.serial.Serializer.deserialize;
+import static one.nio.serial.Serializer.serialize;
 
 public class DbService implements Service {
     private static final Log log = LogFactory.getLog(DbService.class);
@@ -193,39 +194,91 @@ public class DbService implements Service {
             } catch (InterruptedException e) {
                 return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             } catch (ExecutionException e) {
+                responses.add(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
                 log.error("Exception occurred while redirecting request to another node", e);
             }
         }
 
         switch (request.getMethod()) {
         case Request.METHOD_GET -> {
-            List<Response> successful = responses.stream().filter(r -> r.getStatus() == HTTP_OK).toList();
 
-            if (successful.size() >= ack) {
-                try {
-                    EntryWrapper mostRecent = (EntryWrapper) deserialize(successful.get(0).getBody());
+            if (ack <= responses.stream()
+                .filter(r -> r.getStatus() == HTTP_OK || r.getStatus() == HTTP_NOT_FOUND).count()) {
+                // DaoEntry result = new DaoEntry(Instant.MIN, request, true);
+                EntryWrapper result = null;
 
-                    for (Response response : successful) {
-                        try {
-                            EntryWrapper entry = (EntryWrapper) deserialize(response.getBody());
-                            mostRecent = max(mostRecent, entry);
-                        } catch (IOException | ClassNotFoundException e) {
-                            log.error("Exception occurred while deserialization", e);
+
+                for (var res : responses) {
+                    if (res.getStatus() == HTTP_NOT_FOUND) {
+                        continue;
+                    }
+                    try {
+                        EntryWrapper current = (EntryWrapper) deserialize(res.getBody());
+
+                        if (result == null) {
+                            result = current;
                         }
-                    }
 
-                    if (mostRecent.isTombstone) {
-                        return new Response(Response.NOT_FOUND, Response.EMPTY);
+                        if (result.compareTo(current) < 0) {
+                            result = current;
+                        }
+                    } catch (IOException | ClassNotFoundException e) {
+                        throw new RuntimeException(e);
                     }
-                    return new Response(Response.OK, mostRecent.bytes);
-                } catch (IOException | ClassNotFoundException e) {
-                    log.error("Exception occurred while deserialization", e);
                 }
+
+                if (result.isTombstone) {
+                    return new Response(Response.NOT_FOUND, Response.EMPTY);
+                } else {
+                    return new Response(Response.OK, result.bytes);
+                }
+            } else {
+                return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
             }
 
-            if (responses.stream().filter(r -> r.getStatus() != HTTP_OK).count() >= ack) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
-            }
+
+            // // List<Response> successful = responses.stream().filter(r -> r.getStatus() == HTTP_OK || r.getStatus() == HTTP_NOT_FOUND).toList();
+            // List<Response> successful = responses;
+            //
+            // if (successful.size() >= ack) {
+            //     // try {
+            //         EntryWrapper mostRecent = null;
+            //
+            //         for (Response response : successful) {
+            //             try {
+            //                 EntryWrapper entry = (EntryWrapper) deserialize(response.getBody());
+            //                 if (mostRecent == null) {
+            //                     mostRecent = entry;
+            //                 }
+            //                 mostRecent = max(mostRecent, entry);
+            //             } catch (IOException | ClassNotFoundException e) {
+            //                 log.error("Exception occurred while deserialization", e);
+            //             }
+            //
+            //         }
+            //         // EntryWrapper mostRecent = (EntryWrapper) deserialize(successful.get(0).getBody());
+            //         //
+            //         // for (Response response : successful) {
+            //         //     try {
+            //         //         EntryWrapper entry = (EntryWrapper) deserialize(response.getBody());
+            //         //         mostRecent = max(mostRecent, entry);
+            //         //     } catch (IOException | ClassNotFoundException e) {
+            //         //         log.error("Exception occurred while deserialization", e);
+            //         //     }
+            //         // }
+            //
+            //         if (mostRecent == null || mostRecent.isTombstone) {
+            //             return new Response(Response.NOT_FOUND, Response.EMPTY);
+            //         }
+            //         return new Response(Response.OK, mostRecent.bytes);
+                // } catch (IOException | ClassNotFoundException e) {
+            //     //     log.error("Exception occurred while deserialization", e);
+            //     // }
+            // }
+            //
+            // if (responses.stream().filter(r -> r.getStatus() != HTTP_OK).count() >= ack) {
+            //     return new Response(Response.NOT_FOUND, Response.EMPTY);
+            // }
         }
         case Request.METHOD_PUT -> {
             if (responses.stream().filter(r -> r.getStatus() == HTTP_CREATED).count() >= ack) {
