@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -172,6 +173,8 @@ public class HttpServerImpl extends HttpServer {
         AtomicInteger succeeded = new AtomicInteger(0);
         AtomicInteger tried = new AtomicInteger(0);
 
+        PriorityBlockingQueue<ResponseVariant> variants = new PriorityBlockingQueue<ResponseVariant>();
+
         for (Cluster target : targets) {
             if (target.amountOfTasks.incrementAndGet() >= MAX_TASKS_PER_NODE) {
                 target.amountOfTasks.decrementAndGet();
@@ -188,16 +191,17 @@ public class HttpServerImpl extends HttpServer {
                 try {
                     Response response = target.url.equals(serverUrl) ? handleSupported(request, id) : proxyRequest(target, request);
                     if (isAffirmative(response)) {
+                        long timestamp = 0;
                         if (response.getHeaders()[0].equals(Response.OK) || response.getHeaders()[0].equals(Response.NOT_FOUND)) {
                             byte[] body = Response.EMPTY;
 
                             if (response.getBody() != Response.EMPTY) {
-                                long timestamp = bytesToLong(Arrays.copyOfRange(response.getBody(), 0, 8));
+                                timestamp = bytesToLong(Arrays.copyOfRange(response.getBody(), 0, 8));
                                 body = Arrays.copyOfRange(response.getBody(), 8, response.getBody().length);
                             }
-
                             response = new Response(response.getHeaders()[0], body);
                         }
+                        variants.add(new ResponseVariant(response, timestamp));
                         LOG.debug("Got Affirmative " + serverUrl);
                         int succ = succeeded.incrementAndGet();
                         int tr = tried.incrementAndGet();
@@ -205,7 +209,7 @@ public class HttpServerImpl extends HttpServer {
                             LOG.debug("Got required, sending response: "
                                     + " tried: " + tr + " succeeded: " + succ + " needed: "
                                     + nodesAnswersRequired + " total: " + nodesAmount);
-                            session.sendResponse(response);
+                            session.sendResponse(variants.take().response);
                         } else if (tr == nodesAmount && succ < nodesAnswersRequired) {
                             LOG.debug("Failed to get quorum, sending response: "
                                     + " tried: " + tr + " succeeded: " + succ + " needed: "
@@ -353,18 +357,14 @@ public class HttpServerImpl extends HttpServer {
             case Request.METHOD_PUT -> {
                 memorySegmentDao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.toCharArray()),
                         MemorySegment.ofArray(request.getBody())));
-                long[] longs = new long[1];
-                longs[0] = System.currentTimeMillis();
                 timestampDao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.toCharArray()),
-                        MemorySegment.ofArray(longs)));
+                        MemorySegment.ofArray(longToBytes(System.currentTimeMillis()))));
                 return new Response(Response.CREATED, Response.EMPTY);
             }
             case Request.METHOD_DELETE -> {
                 memorySegmentDao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.toCharArray()), null));
-                long[] longs = new long[1];
-                longs[0] = System.currentTimeMillis();
                 timestampDao.upsert(new BaseEntry<>(MemorySegment.ofArray(id.toCharArray()),
-                        MemorySegment.ofArray(longs)));
+                        MemorySegment.ofArray(longToBytes(System.currentTimeMillis()))));
                 return new Response(Response.ACCEPTED, Response.EMPTY);
             }
             default -> {
@@ -447,10 +447,34 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
+    private static class ResponseVariant implements Comparable<ResponseVariant> {
+        public final Response response;
+        public final long timestamp;
+
+        public ResponseVariant(Response response, long timestamp) {
+            this.response = response;
+            this.timestamp = timestamp;
+        }
+
+        @Override
+        public int compareTo(ResponseVariant o) {
+            return Long.compare(o.timestamp, this.timestamp);
+        }
+    }
+
     public static byte[] addAll(final byte[] array1, byte[] array2) {
         byte[] joinedArray = Arrays.copyOf(array1, array1.length + array2.length);
         System.arraycopy(array2, 0, joinedArray, array1.length, array2.length);
         return joinedArray;
+    }
+
+    public static byte[] longToBytes(long l) {
+        byte[] result = new byte[8];
+        for (int i = 7; i >= 0; i--) {
+            result[i] = (byte)(l & 0xFF);
+            l >>= 8;
+        }
+        return result;
     }
 
     public static long bytesToLong(final byte[] b) {
