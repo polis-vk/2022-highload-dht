@@ -1,6 +1,5 @@
 package ok.dht.test.gerasimov;
 
-import ok.dht.kovalenko.dao.base.Dao;
 import ok.dht.test.gerasimov.exception.ServerException;
 import ok.dht.test.gerasimov.sharding.ConsistentHash;
 import ok.dht.test.gerasimov.sharding.Shard;
@@ -16,7 +15,6 @@ import one.nio.pool.PoolException;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -24,8 +22,6 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public final class Server extends HttpServer {
