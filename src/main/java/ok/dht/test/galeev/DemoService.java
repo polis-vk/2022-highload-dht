@@ -217,11 +217,11 @@ public class DemoService implements Service {
             do {
                 needToUpdate = false;
                 currentNewestEntry = newestEntry.get();
-                if (currentNewestEntry == null || currentNewestEntry.key() == null) {
-                    // If there is absolutely no entry, or if there is NotFound entry (anything is better than this two)
-                    needToUpdate = true;
-                } else if (isFirstMoreActual(entry, currentNewestEntry)) {
-                    // If we have more actual entry
+                if (currentNewestEntry == null || currentNewestEntry.key() == null
+                        || isFirstMoreActual(entry, currentNewestEntry)) {
+                    // If there is absolutely no entry
+                    // Or if there is NotFound entry (anything is better than this two)
+                    // Or if we have more actual entry
                     needToUpdate = true;
                 }
             } while (needToUpdate && !newestEntry.compareAndSet(currentNewestEntry, entry));
