@@ -94,7 +94,8 @@ public final class Server extends HttpServer {
                 try {
                     session.sendResponse(handleRequest(request));
                 } catch (IOException e) {
-                    throw new ServerException("Handler can not handle request", e);
+//                    throw new ServerException("Handler can not handle request", e);
+                    System.err.println("Handler can not handle request");
                 }
             });
         } catch (RejectedExecutionException e) {
