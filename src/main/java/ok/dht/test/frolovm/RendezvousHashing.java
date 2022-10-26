@@ -1,50 +1,49 @@
 package ok.dht.test.frolovm;
 
 import ok.dht.test.frolovm.hasher.Hasher;
+
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 public class RendezvousHashing implements ShardingAlgorithm {
 
-    private final List<Shard> shards;
+	private final List<Shard> shards;
 
-    private final Hasher hasher;
+	private final Hasher hasher;
 
-    private final Map<String, Integer> statistic;
+	public RendezvousHashing(List<String> shards, Hasher hasher) {
+		this.shards = shards.stream().map(Shard::new).sorted(Comparator.comparing(Shard::getName)).toList();
+		this.hasher = hasher;
+	}
 
-    public RendezvousHashing(List<String> shards, Hasher hasher) {
-        this.shards = shards.stream().map(Shard::new).sorted(Comparator.comparing(Shard::getName)).toList();
-        this.hasher = hasher;
-        statistic = new HashMap<>();
-        for (String shard : shards) {
-            statistic.put(shard, 0);
-        }
-    }
+	@Override
+	public int chooseShard(final String current) {
 
-    public Map<String, Integer> getStatistic() {
-        return statistic;
-    }
+		int answer = -1;
 
-    @Override
-    public Shard chooseShard(final String current) {
+		int maxHash = Integer.MIN_VALUE;
 
-        Shard answer = null;
+		for (int i = 0; i < shards.size(); ++i) {
+			Shard shard = shards.get(i);
+			int hash = hasher.hash(current + shard.getName());
+			if (maxHash < hash) {
+				answer = i;
+				maxHash = hash;
+			}
+		}
+		if (answer == -1) {
+			throw new IllegalArgumentException("Can't find node for key");
+		}
+		return answer;
+	}
 
-        int maxHash = Integer.MIN_VALUE;
+	@Override
+	public Shard getShardByIndex(int index) {
+		return shards.get(index);
+	}
 
-        for (Shard shard : shards) {
-            int hash = hasher.hash(current + shard.getName());
-            if (maxHash < hash) {
-                answer = shard;
-                maxHash = hash;
-            }
-        }
-        if (answer == null) {
-            throw new IllegalArgumentException("Can't find node for key");
-        }
-        statistic.put(answer.getName(), statistic.getOrDefault(answer.getName(), 0) + 1);
-        return answer;
-    }
+	@Override
+	public List<Shard> getShards() {
+		return shards;
+	}
 }

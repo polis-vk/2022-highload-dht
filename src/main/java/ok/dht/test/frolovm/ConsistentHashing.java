@@ -14,7 +14,7 @@ public class ConsistentHashing implements ShardingAlgorithm {
     private final Hasher hasher;
 
     private static final int SHARD_VNODES = 4;
-    private final Map<Integer, Shard> hashing;
+    private final Map<Integer, Integer> hashing;
 
     private final int[] vnodes;
 
@@ -34,17 +34,17 @@ public class ConsistentHashing implements ShardingAlgorithm {
                 int currentIndexVnode = SHARD_VNODES * curShard + nodeInd;
 
                 vnodes[currentIndexVnode] = hash;
-                hashing.put(hash, this.shards.get(curShard));
+                hashing.put(hash, curShard);
             }
         }
         Arrays.sort(vnodes);
     }
 
     @Override
-    public Shard chooseShard(String shard) {
+    public int chooseShard(String shard) {
         int hash = hasher.hash(shard);
         int index = Arrays.binarySearch(vnodes, hash);
-        Shard answer;
+        int answer;
         if (index >= 0) {
             answer = hashing.get(vnodes[index]);
         } else {
@@ -52,4 +52,14 @@ public class ConsistentHashing implements ShardingAlgorithm {
         }
         return answer;
     }
+
+	@Override
+	public Shard getShardByIndex(int index) {
+		return shards.get(index);
+	}
+
+	@Override
+	public List<Shard> getShards() {
+		return shards;
+	}
 }

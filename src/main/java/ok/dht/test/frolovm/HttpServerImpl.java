@@ -10,11 +10,7 @@ import one.nio.server.SelectorThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.IOException;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class HttpServerImpl extends HttpServer {
 
@@ -33,7 +29,7 @@ public class HttpServerImpl extends HttpServer {
                 CORE_POLL_SIZE,
                 KEEP_ALIVE_TIME,
                 TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(QUEUE_CAPACITY)
+                new LinkedBlockingQueue<>(QUEUE_CAPACITY)
         );
     }
 
@@ -47,7 +43,7 @@ public class HttpServerImpl extends HttpServer {
         Runnable handleTask = () -> {
             try {
                 super.handleRequest(request, session);
-            } catch (IOException e) {
+            } catch (Exception e) {
                 sessionSendError(session, e);
             }
         };
