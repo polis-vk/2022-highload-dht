@@ -204,7 +204,9 @@ public class HttpServerImpl extends HttpServer {
 
                             if (response.getBody() != Response.EMPTY) {
                                 timestamp = bytesToLong(Arrays.copyOfRange(response.getBody(), 0, 8));
-                                body = Arrays.copyOfRange(response.getBody(), 8, response.getBody().length);
+                                if (response.getBody().length > 8) {
+                                    body = Arrays.copyOfRange(response.getBody(), 8, response.getBody().length);
+                                }
                             }
                             response = new Response(response.getHeaders()[0], body);
                         }
