@@ -28,8 +28,8 @@ public final class ServerImpl {
             String url3 = localhost + port3;
             Path path = Files.createTempDirectory("server");
             ServiceConfig cfg = new ServiceConfig(
-                    port,
-                    url,
+                    port3,
+                    url3,
                     List.of(url, url2, url3),
                     path
             );

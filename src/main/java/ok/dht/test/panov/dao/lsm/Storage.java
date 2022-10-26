@@ -102,6 +102,8 @@ final class Storage implements Closeable {
                         StorageCompanionObject.INDEX_HEADER_SIZE + index * StorageCompanionObject.INDEX_RECORD_SIZE,
                         offset);
 
+                MemoryAccess.setLongAtOffset(nextSSTable, offset, entry.timestamp());
+                offset += Long.BYTES;
                 offset += StorageCompanionObject.writeRecord(nextSSTable, offset, entry.key());
                 offset += StorageCompanionObject.writeRecord(nextSSTable, offset, entry.value());
 
@@ -157,8 +159,6 @@ final class Storage implements Closeable {
         return index;
     }
 
-    // file structure:
-    // (fileVersion)(entryCount)((entryPosition)...)|((keySize/key/valueSize/value)...)
     private long entryIndex(MemorySegment sstable, MemorySegment key) {
         long fileVersion = MemoryAccess.getLongAtOffset(sstable, 0);
         if (fileVersion != 0) {
@@ -178,7 +178,7 @@ final class Storage implements Closeable {
             long keyPos = MemoryAccess.getLongAtOffset(
                     sstable,
                     StorageCompanionObject.INDEX_HEADER_SIZE + mid * StorageCompanionObject.INDEX_RECORD_SIZE
-            );
+            ) + Long.BYTES;
             long keySize = MemoryAccess.getLongAtOffset(sstable, keyPos);
 
             MemorySegment keyForCheck = sstable.asSlice(keyPos + Long.BYTES, keySize);
@@ -201,12 +201,15 @@ final class Storage implements Closeable {
                     sstable,
                     StorageCompanionObject.INDEX_HEADER_SIZE + keyIndex * StorageCompanionObject.INDEX_RECORD_SIZE
             );
-            long keySize = MemoryAccess.getLongAtOffset(sstable, offset);
-            long valueOffset = offset + Long.BYTES + keySize;
+            long timestamp = MemoryAccess.getLongAtOffset(sstable, offset);
+            long keyOffset = offset + Long.BYTES;
+            long keySize = MemoryAccess.getLongAtOffset(sstable, keyOffset);
+            long valueOffset = keyOffset + Long.BYTES + keySize;
             long valueSize = MemoryAccess.getLongAtOffset(sstable, valueOffset);
             return new BaseEntry<>(
                     sstable.asSlice(offset + Long.BYTES, keySize),
-                    valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize)
+                    valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize),
+                    timestamp
             );
         } catch (IllegalStateException e) {
             throw checkForClose(e);
@@ -249,8 +252,6 @@ final class Storage implements Closeable {
         };
     }
 
-    // last is newer
-    // it is ok to mutate list after
     public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
         try {
             ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
@@ -296,5 +297,4 @@ final class Storage implements Closeable {
         }
         return !hasTombstones;
     }
-
 }
