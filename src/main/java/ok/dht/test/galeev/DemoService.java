@@ -217,18 +217,21 @@ public class DemoService implements Service {
             do {
                 needToUpdate = false;
                 currentNewestEntry = newestEntry.get();
-                // If there is absolutely no entry, or if there is NotFound (anything is better than this)
                 if (currentNewestEntry == null || currentNewestEntry.key() == null) {
+                    // If there is absolutely no entry, or if there is NotFound entry (anything is better than this two)
                     needToUpdate = true;
-                } else {
+                } else if (isFirstMoreActual(entry, currentNewestEntry)) {
                     // If we have more actual entry
-                    if (entry.key().after(currentNewestEntry.key())
-                            || (entry.key().equals(currentNewestEntry.key()) && entry.isTombstone())) {
-                        needToUpdate = true;
-                    }
+                    needToUpdate = true;
                 }
             } while (needToUpdate && !newestEntry.compareAndSet(currentNewestEntry, entry));
         }
+    }
+
+    private static boolean isFirstMoreActual(Entry<Timestamp, byte[]> first,
+                                             Entry<Timestamp, byte[]> second) {
+        return first.key().after(second.key())
+                || (first.key().equals(second.key()) && first.isTombstone());
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
