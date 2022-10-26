@@ -1,5 +1,6 @@
 package ok.dht.test.siniachenko;
 
+import ok.dht.test.siniachenko.service.EntityServiceReplica;
 import ok.dht.test.siniachenko.service.TycoonService;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -14,13 +15,21 @@ import java.io.IOException;
 
 public class TycoonHttpServer extends HttpServer {
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
+    public static final String PATH = "/v0/entity";
+    public static final String REQUEST_TO_REPLICA_HEADER = "Request-to-replica";
 
-    private final TycoonService service;
+    private final TycoonService tycoonService;
+    private final EntityServiceReplica entityServiceReplica;
     private boolean closed = true;
 
-    public TycoonHttpServer(TycoonService service, int port) throws IOException {
+    public TycoonHttpServer(
+        int port,
+        TycoonService tycoonService,
+        EntityServiceReplica entityServiceReplica
+    ) throws IOException {
         super(createHttpConfigFromPort(port));
-        this.service = service;
+        this.tycoonService = tycoonService;
+        this.entityServiceReplica = entityServiceReplica;
     }
 
     private static HttpServerConfig createHttpConfigFromPort(int port) {
@@ -36,7 +45,22 @@ public class TycoonHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        service.handleRequest(request, session);
+        if (!PATH.equals(request.getPath())) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        String idParameter = request.getParameter("id=");
+        if (idParameter == null || idParameter.isEmpty()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        if (request.getHeader(REQUEST_TO_REPLICA_HEADER) == null) {
+            tycoonService.executeRequest(request, session, idParameter);
+        } else {
+            entityServiceReplica.executeRequest(request, session, idParameter);
+        }
     }
 
     @Override

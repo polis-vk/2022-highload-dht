@@ -21,12 +21,12 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -34,7 +34,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class TycoonService implements ok.dht.Service, Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(TycoonService.class);
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
-    public static final String PATH = "/v0/entity";
     public static final int THREAD_POOL_QUEUE_CAPACITY = 128;
     public static final int DEFAULT_TIMEOUT_MILLIS = 1000;
     public static final int MIN_TIMEOUT_MILLIS = 300;
@@ -73,11 +72,18 @@ public class TycoonService implements ok.dht.Service, Serializable {
             new LinkedBlockingQueue<>(THREAD_POOL_QUEUE_CAPACITY)
         );
 
+        // Replica
+        EntityServiceReplica entityServiceReplica = new EntityServiceReplica(levelDb);
+
         // Http Client
         httpClient = HttpClient.newHttpClient();
 
         // Http Server
-        server = new TycoonHttpServer(this, config.selfPort());
+        server = new TycoonHttpServer(
+            config.selfPort(),
+            this,
+            entityServiceReplica
+        );
         server.start();
         LOG.info("Service started on {}, executor threads: {}", config.selfUrl(), threadPoolSize);
 
@@ -99,19 +105,7 @@ public class TycoonService implements ok.dht.Service, Serializable {
         return CompletableFuture.completedFuture(null);
     }
 
-    public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (!PATH.equals(request.getPath())) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            return;
-        }
-
-        // TODO: differ replicas request and inner request !!!!
-        String idParameter = request.getParameter("id=");
-        if (idParameter == null || idParameter.isEmpty()) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            return;
-        }
-
+    public void executeRequest(Request request, HttpSession session, String id) throws IOException {
         final int ack, from;
         String replicasParameter = request.getParameter("replicas=");
         if (replicasParameter == null || replicasParameter.isEmpty()) {
@@ -142,68 +136,69 @@ public class TycoonService implements ok.dht.Service, Serializable {
             }
         }
 
-        if (Request.METHOD_GET == request.getMethod()) {
-            // TODO: should do almost all process request in executor thread ???
-            int[] nodeUrls = nodeMapper.getNodeUrlsByKey(Utf8.toBytes(idParameter));
+        // TODO: should do almost all process request in executor thread ???
+        int[] nodeUrls = nodeMapper.getNodeUrlsByKey(Utf8.toBytes(id));
 
-            int[] statusCodes = new int[ack];
-            byte[][] bodies = new byte[ack][];
-            AtomicInteger ackReceivedRef = new AtomicInteger();
-            AtomicInteger finishedOrFailedRef = new AtomicInteger();
+        int[] statusCodes = new int[ack];
+        byte[][] bodies = new byte[ack][];
+        AtomicInteger ackReceivedRef = new AtomicInteger();
+        AtomicInteger finishedOrFailedRef = new AtomicInteger();
 
-            boolean needLocalWork = false;
-            for (int replicaToSend = 0; replicaToSend < from; ++replicaToSend) {
-                String nodeUrlByKey = nodeMapper.getNodeUrls().get(nodeUrls[replicaToSend]);
-                if (config.selfUrl().equals(nodeUrlByKey)) {
-                    needLocalWork = true;
-                } else {
-                    proxyRequest(session, request, idParameter, nodeUrlByKey).thenAccept(
-                        response -> {
-                            int statusCode = response.statusCode();
-                            if (statusCode != 404 && statusCode != 410 && statusCode != 200) {
-                                LOG.error(
-                                    "Unexpected status {} code requesting node {}", statusCode, nodeUrlByKey
-                                );
-                                checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
-                                return;
-                            }
-
-                            try {
-                                addResultAndAggregateIfNeed(
-                                    session, ack, statusCodes, bodies, ackReceivedRef, response.body(), statusCode
-                                );
-                            } finally {
-                                checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
-                            }
+        boolean needLocalWork = false;
+        for (int replicaToSend = 0; replicaToSend < from; ++replicaToSend) {
+            String nodeUrlByKey = nodeMapper.getNodeUrls().get(nodeUrls[replicaToSend]);
+            if (config.selfUrl().equals(nodeUrlByKey)) {
+                needLocalWork = true;
+            } else {
+                proxyRequest(request, id, nodeUrlByKey).thenAccept(
+                    response -> {
+                        int statusCode = response.statusCode();
+                        // TODO: different logic for different methods
+                        if (statusCode != 404 && statusCode != 410 && statusCode != 200) {
+                            LOG.error(
+                                "Unexpected status {} code requesting node {}", statusCode, nodeUrlByKey
+                            );
+                            checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
+                            return;
                         }
-                    ).exceptionally(ex -> {
-                        nodeRequestsTimeouts.compute(nodeUrlByKey, (url, t) -> Math.min(t / 2, MAX_TIMEOUT_MILLIS));
-                        LOG.error("Error after proxy request to {}", nodeUrlByKey, ex);
-                        checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
-                        return null;
-                    });
-                }
-            }
-            if (needLocalWork) {
-                try {
-                    byte[] value = get(idParameter);
-                    int statusCode;
-                    if (value == null) {
-                        statusCode = 404;
-                    } else {
-                        boolean deleted = readFlagDeletedFromBytes(value);
-                        if (deleted) {
-                            statusCode = 410;
-                        } else {
-                            statusCode = 200;
+
+                        try {
+                            // TODO: different aggregate methods
+                            addResultAndAggregateIfNeed(
+                                session, ack, statusCodes, bodies, ackReceivedRef, response.body(), statusCode
+                            );
+                        } finally {
+                            checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
                         }
                     }
-                    addResultAndAggregateIfNeed(session, ack, statusCodes, bodies, ackReceivedRef, value, statusCode);
-                } catch (DBException e) {
-                    LOG.error("Error in DB", e);
-                } finally {
+                ).exceptionally(ex -> {
+                    nodeRequestsTimeouts.compute(nodeUrlByKey, (url, t) -> Math.min(t / 2, MAX_TIMEOUT_MILLIS));
+                    LOG.error("Error after proxy request to {}", nodeUrlByKey, ex);
                     checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
+                    return null;
+                });
+            }
+        }
+        // different for different methods
+        if (needLocalWork) {
+            try {
+                byte[] value = levelDb.get(Utf8.toBytes(id));
+                int statusCode;
+                if (value == null) {
+                    statusCode = 404;
+                } else {
+                    boolean deleted = readFlagDeletedFromBytes(value);
+                    if (deleted) {
+                        statusCode = 410;
+                    } else {
+                        statusCode = 200;
+                    }
                 }
+                addResultAndAggregateIfNeed(session, ack, statusCodes, bodies, ackReceivedRef, value, statusCode);
+            } catch (DBException e) {
+                LOG.error("Error in DB", e);
+            } finally {
+                checkAllFinishedOrFailed(session, ack, from, ackReceivedRef, finishedOrFailedRef);
             }
         }
     }
@@ -261,40 +256,20 @@ public class TycoonService implements ok.dht.Service, Serializable {
         }
     }
 
-    private byte[] get(String id) throws DBException {
-        return levelDb.get(Utf8.toBytes(id));
-    }
-
-
-    private void executeLocal(HttpSession session, Request request, String id) {
-        try {
-            executorService.execute(() -> {
-                Response response = switch (request.getMethod()) {
-                    case Request.METHOD_GET -> null;
-                    case Request.METHOD_PUT -> upsert(id, request.getBody());
-                    case Request.METHOD_DELETE -> delete(id);
-                    default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-                };
-                sendResponse(session, response);
-            });
-        } catch (RejectedExecutionException e) {
-            LOG.error("Cannot execute task", e);
-            sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-        }
-    }
-
-    private CompletableFuture<HttpResponse<byte[]>> proxyRequest(HttpSession session, Request request, String idParameter, String nodeUrl) {
+    private CompletableFuture<HttpResponse<byte[]>> proxyRequest(Request request, String idParameter, String nodeUrl) {
         Integer timeout = nodeRequestsTimeouts.computeIfAbsent(nodeUrl, s -> DEFAULT_TIMEOUT_MILLIS);
         return httpClient.sendAsync(
             HttpRequest.newBuilder()
-                .uri(URI.create(nodeUrl + PATH + "?id=" + idParameter))
+                .uri(URI.create(nodeUrl + TycoonHttpServer.PATH + "?id=" + idParameter))
                 .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .timeout(Duration.ofMillis(timeout))
+                .header(TycoonHttpServer.REQUEST_TO_REPLICA_HEADER, "")
                 .build(),
             HttpResponse.BodyHandlers.ofByteArray()
-        ).orTimeout(timeout, TimeUnit.MILLISECONDS);
+        );
     }
 
-    private void sendResponse(HttpSession session, Response response) {
+    public static void sendResponse(HttpSession session, Response response) {
         try {
             session.sendResponse(response);
         } catch (IOException e1) {
@@ -308,27 +283,7 @@ public class TycoonService implements ok.dht.Service, Serializable {
         }
     }
 
-    private Response upsert(String id, byte[] value) {
-        try {
-            levelDb.put(Utf8.toBytes(id), value);
-            return new Response(Response.CREATED, Response.EMPTY);
-        } catch (DBException e) {
-            LOG.error("Error in DB", e);
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-    }
-
-    private Response delete(String id) {
-        try {
-            levelDb.delete(Utf8.toBytes(id));
-            return new Response(Response.ACCEPTED, Response.EMPTY);
-        } catch (DBException e) {
-            LOG.error("Error in DB", e);
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-    }
-
-    private byte[] withCurrentTimestampAndNotDeletedFlag(byte[] value, boolean flagDeleted) {
+    public static byte[] withCurrentTimestampAndNotDeletedFlag(byte[] value, boolean flagDeleted) {
         byte[] newValue = new byte[value.length + 9];
         if (flagDeleted) {
             newValue[0] = 0b0;
@@ -343,11 +298,11 @@ public class TycoonService implements ok.dht.Service, Serializable {
         return newValue;
     }
 
-    private boolean readFlagDeletedFromBytes(byte[] value) {
+    public static boolean readFlagDeletedFromBytes(byte[] value) {
         return value[0] == 0b0;
     }
 
-    private long readTimeMillisFromBytes(byte[] value) {
+    public static long readTimeMillisFromBytes(byte[] value) {
         long timeMillisFromLastBytes = 0;
         for (int i = 0; i < 8; ++i) {
             timeMillisFromLastBytes += ((long) value[value.length - 8 + i]) >> (8 * i);
@@ -355,7 +310,7 @@ public class TycoonService implements ok.dht.Service, Serializable {
         return timeMillisFromLastBytes;
     }
 
-    private byte[] readValueFromBytes(byte[] codedValue) {
+    public static byte[] readValueFromBytes(byte[] codedValue) {
         byte[] value = new byte[codedValue.length - 9];
         System.arraycopy(codedValue, 1, value, 0, value.length);
         return value;
