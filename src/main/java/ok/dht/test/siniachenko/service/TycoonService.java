@@ -23,7 +23,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -145,7 +144,6 @@ public class TycoonService implements ok.dht.Service, Serializable {
             request.setBody(Utils.withCurrentTimestampAndFlagDeleted(new byte[0], true));
         }
 
-        // TODO: should do almost all process request in executor thread ???
         long[] nodeUrls = nodeMapper.getNodeUrlsByKey(Utf8.toBytes(id));
 
         byte[][] bodies = new byte[ack][];
@@ -155,7 +153,7 @@ public class TycoonService implements ok.dht.Service, Serializable {
         boolean needLocalWork = false;
         for (int replicaToSend = 0; replicaToSend < from; ++replicaToSend) {
             String nodeUrlByKey = nodeMapper.getNodeUrls().get(
-                (int) (nodeUrls[replicaToSend] >> (long) 32)
+                (int) nodeUrls[replicaToSend]
             );
             if (config.selfUrl().equals(nodeUrlByKey)) {
                 needLocalWork = true;
@@ -185,7 +183,6 @@ public class TycoonService implements ok.dht.Service, Serializable {
                 });
             }
         }
-        // TODO: different for different methods
         if (needLocalWork) {
             try {
                 byte[] value = null;

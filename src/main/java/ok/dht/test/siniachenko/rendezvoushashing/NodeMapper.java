@@ -23,7 +23,7 @@ public class NodeMapper {
         for (int i = 0; i < nodeUrls.size(); i++) {
             String nodeUrl = nodeUrls.get(i);
             // TODO: fix koctil with nodes no in hashes
-            hashesAndNodes[i] = hash(key, nodeUrl) + (((long) i) << 32);
+            hashesAndNodes[i] = i + (((long) hash(key, nodeUrl)) << 32);
         }
         Arrays.sort(hashesAndNodes);
         return hashesAndNodes;
