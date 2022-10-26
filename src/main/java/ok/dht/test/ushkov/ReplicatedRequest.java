@@ -21,7 +21,7 @@ public class ReplicatedRequest {
     private final AtomicInteger finishedTasks = new AtomicInteger(0);
     private boolean responseSent;
 
-    private final Logger LOG = LoggerFactory.getLogger(ReplicatedRequest.class);
+    private final Logger log = LoggerFactory.getLogger(ReplicatedRequest.class);
 
     public ReplicatedRequest(int ack, int from) {
         this.ack = ack;
@@ -33,18 +33,11 @@ public class ReplicatedRequest {
         finishedTasks.incrementAndGet();
         if (!responseSent && isAckReached()) {
             responseSent = true;
-            try {
-                session.sendResponse(findLatest());
-            } catch (IOException e) {
-                LOG.error("Could not send response to client", e);
-            }
+            sendResponseNothrow(session, findLatest());
         } else if (!responseSent && isAckCouldNotBeReached()) {
             responseSent = true;
-            try {
-                session.sendResponse(new Response("504 Not Enough Replicas", Response.EMPTY));
-            } catch (IOException e) {
-                LOG.error("Could not send response to client", e);
-            }
+            sendResponseNothrow(session,
+                    new Response("504 Not Enough Replicas", Response.EMPTY));
         }
     }
 
@@ -52,22 +45,21 @@ public class ReplicatedRequest {
         finishedTasks.incrementAndGet();
         if (!responseSent && isAckCouldNotBeReached()) {
             responseSent = true;
-            try {
-                session.sendResponse(new Response("504 Not Enough Replicas", Response.EMPTY));
-            } catch (IOException e) {
-                LOG.error("Could not send response to client", e);
-            }
+            sendResponseNothrow(session,
+                    new Response("504 Not Enough Replicas", Response.EMPTY));
+        }
+    }
+
+    private void sendResponseNothrow(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            log.error("Could not send response to client", e);
         }
     }
 
     private boolean isAckReached() {
-        int count = 0;
-        for (Response response : responses) {
-            if (Set.of(200, 201, 202, 404).contains(response.getStatus())) {
-                count++;
-            }
-        }
-        return count >= ack;
+        return responses.size() >= ack;
     }
 
     private boolean isAckCouldNotBeReached() {
