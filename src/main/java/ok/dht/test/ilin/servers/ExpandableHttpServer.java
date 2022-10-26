@@ -1,9 +1,12 @@
 package ok.dht.test.ilin.servers;
 
 import ok.dht.test.ilin.config.ExpandableHttpServerConfig;
-import ok.dht.test.ilin.domain.HeadersUtils;
+import ok.dht.test.ilin.domain.Headers;
 import ok.dht.test.ilin.domain.ReplicasInfo;
+import ok.dht.test.ilin.hashing.impl.ConsistentHashing;
 import ok.dht.test.ilin.replica.ReplicasHandler;
+import ok.dht.test.ilin.service.EntityService;
+import ok.dht.test.ilin.sharding.ShardHandler;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
@@ -14,6 +17,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -84,11 +88,11 @@ public class ExpandableHttpServer extends HttpServer {
             return;
         }
 
-        String timestamp = request.getHeader(HeadersUtils.TIMESTAMP_HEADER);
+        String timestamp = request.getHeader(Headers.TIMESTAMP_HEADER);
         boolean isController = false;
         if (timestamp == null) {
             isController = true;
-            request.addHeader(HeadersUtils.TIMESTAMP_HEADER + System.currentTimeMillis());
+            request.addHeader(Headers.TIMESTAMP_HEADER + System.currentTimeMillis());
         }
 
         if (!isController) {

@@ -6,8 +6,8 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.ilin.config.ConsistentHashingConfig;
 import ok.dht.test.ilin.config.ExpandableHttpServerConfig;
 import ok.dht.test.ilin.domain.Entity;
-import ok.dht.test.ilin.domain.HeadersUtils;
-import ok.dht.test.ilin.domain.SerializerUtils;
+import ok.dht.test.ilin.domain.Headers;
+import ok.dht.test.ilin.domain.Serializer;
 import ok.dht.test.ilin.hashing.impl.ConsistentHashing;
 import ok.dht.test.ilin.replica.ReplicasHandler;
 import ok.dht.test.ilin.servers.ExpandableHttpServer;
@@ -78,19 +78,19 @@ public class EntityService implements Service {
             if (result == null) {
                 return new Response(Response.NOT_FOUND, Response.EMPTY);
             }
-            Entity entity = SerializerUtils.deserializeEntity(result);
+            Entity entity = Serializer.deserializeEntity(result);
             if (entity == null) {
                 logger.error("Failed to deserialize entity.");
                 return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             }
             if (entity.tombstone()) {
                 Response response = new Response(Response.NOT_FOUND, entity.data());
-                response.addHeader(HeadersUtils.TOMBSTONE_HEADER);
-                response.addHeader(HeadersUtils.TIMESTAMP_HEADER + entity.timestamp());
+                response.addHeader(Headers.TOMBSTONE_HEADER);
+                response.addHeader(Headers.TIMESTAMP_HEADER + entity.timestamp());
                 return response;
             }
             Response response = new Response(Response.OK, entity.data());
-            response.addHeader(HeadersUtils.TIMESTAMP_HEADER + entity.timestamp());
+            response.addHeader(Headers.TIMESTAMP_HEADER + entity.timestamp());
             return response;
         } catch (RocksDBException e) {
             logger.error("Error get entry in RocksDB");
@@ -109,7 +109,7 @@ public class EntityService implements Service {
         try {
             rocksDB.put(
                 id.getBytes(StandardCharsets.UTF_8),
-                SerializerUtils.serializeEntity(new Entity(TimestampUtils.extractTimestamp(request), false, body))
+                Serializer.serializeEntity(new Entity(TimestampUtils.extractTimestamp(request), false, body))
             );
         } catch (RocksDBException e) {
             logger.error("Error saving entry in RocksDB");
@@ -127,7 +127,7 @@ public class EntityService implements Service {
         try {
             rocksDB.put(
                 id.getBytes(StandardCharsets.UTF_8),
-                SerializerUtils.serializeEntity(new Entity(TimestampUtils.extractTimestamp(request), true, new byte[0]))
+                Serializer.serializeEntity(new Entity(TimestampUtils.extractTimestamp(request), true, new byte[0]))
             );
         } catch (RocksDBException e) {
             logger.error("Error delete entry in RocksDB");

@@ -1,6 +1,6 @@
 package ok.dht.test.ilin.replica;
 
-import ok.dht.test.ilin.domain.HeadersUtils;
+import ok.dht.test.ilin.domain.Headers;
 import ok.dht.test.ilin.domain.ReplicasInfo;
 import ok.dht.test.ilin.hashing.impl.ConsistentHashing;
 import ok.dht.test.ilin.service.EntityService;
@@ -120,7 +120,7 @@ public class ReplicasHandler {
                     continue;
                 }
                 if (timestamp == bestTimestamp) {
-                    if (response.getHeader(HeadersUtils.TOMBSTONE_HEADER) != null) {
+                    if (response.getHeader(Headers.TOMBSTONE_HEADER) != null) {
                         result = response;
                         isResultTombstone = true;
                     } else if (!isResultTombstone) {

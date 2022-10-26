@@ -10,7 +10,7 @@ public class Entity implements Serializable {
     public Entity(long timestamp, boolean tombstone, byte[] data) {
         this.timestamp = timestamp;
         this.tombstone = tombstone;
-        this.data = data;
+        this.data = data.clone();
     }
 
     public Entity() {
@@ -36,10 +36,10 @@ public class Entity implements Serializable {
     }
 
     public byte[] data() {
-        return data;
+        return data.clone();
     }
 
     public void setData(byte[] data) {
-        this.data = data;
+        this.data = data.clone();
     }
 }
