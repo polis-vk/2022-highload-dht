@@ -1,5 +1,7 @@
 package ok.dht.test.siniachenko.service;
 
+import ok.dht.test.siniachenko.TycoonHttpServer;
+import ok.dht.test.siniachenko.Utils;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -28,17 +30,17 @@ public class EntityServiceReplica {
                 case Request.METHOD_DELETE -> deleteEntity(id);
                 default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             };
-            TycoonService.sendResponse(session, response);
+            TycoonHttpServer.sendResponse(session, response);
         } catch (RejectedExecutionException e) {
             LOG.error("Cannot execute task", e);
-            TycoonService.sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            TycoonHttpServer.sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
     }
 
     public Response getEntity(String id) {
         try {
             byte[] value = levelDb.get(Utf8.toBytes(id));
-            boolean deleted = TycoonService.readFlagDeletedFromBytes(value);
+            boolean deleted = Utils.readFlagDeletedFromBytes(value);
             if (deleted) {
                 return new Response(Response.GONE, value);
             }

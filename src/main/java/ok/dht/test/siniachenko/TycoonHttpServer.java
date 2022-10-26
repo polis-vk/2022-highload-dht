@@ -10,10 +10,13 @@ import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 
 public class TycoonHttpServer extends HttpServer {
+    private static final Logger LOG = LoggerFactory.getLogger(TycoonHttpServer.class);
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
     public static final String PATH = "/v0/entity";
     public static final String REQUEST_TO_REPLICA_HEADER = "Request-to-replica";
@@ -65,8 +68,21 @@ public class TycoonHttpServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-        session.sendResponse(response);
+        sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+    }
+
+    public static void sendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e1) {
+            LOG.error("I/O error while sending response", e1);
+            try {
+                session.close();
+            } catch (Exception e2) {
+                e2.addSuppressed(e1);
+                LOG.error("Exception while closing session", e2);
+            }
+        }
     }
 
     public boolean isClosed() {
