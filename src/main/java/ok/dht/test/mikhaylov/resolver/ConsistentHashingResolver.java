@@ -1,26 +1,22 @@
 package ok.dht.test.mikhaylov.resolver;
 
-import java.util.List;
-
 /**
  * Consistent hashing resolver.
  * Assumes constant topology.
  */
 public class ConsistentHashingResolver implements ShardResolver {
-    private final List<String> shards;
+    private final int shardCount;
 
     private static final int VNODE_COUNT = 100;
 
-    public ConsistentHashingResolver(List<String> shards) {
-        this.shards = shards.stream()
-                .sorted()
-                .toList();
+    public ConsistentHashingResolver(int shardCount) {
+        this.shardCount = shardCount;
     }
 
     @Override
-    public String resolve(String key) {
+    public int resolve(String key) {
         int hash = key.hashCode();
-        int shardIndex = Math.abs(hash % (shards.size() * VNODE_COUNT));
-        return shards.get(shardIndex / VNODE_COUNT);
+        int shardIndex = Math.abs(hash % (shardCount * VNODE_COUNT));
+        return shardIndex / VNODE_COUNT;
     }
 }

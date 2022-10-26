@@ -6,6 +6,7 @@ import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -32,30 +33,29 @@ public class JavaHttpClient extends InternalHttpClient {
     }
 
     @Override
-    public Response proxyRequest(Request request, String shard) throws ExecutionException, InterruptedException {
+    @Nullable
+    public Response proxyRequest(Request request, String shard) throws ExecutionException, InterruptedException,
+            TimeoutException {
         byte[] body = request.getBody();
         HttpRequest.BodyPublisher publisher = body == null ? HttpRequest.BodyPublishers.noBody() :
                 HttpRequest.BodyPublishers.ofByteArray(body);
         HttpRequest httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(shard + MyService.convertPathToInternal(request.getURI())))
                 .method(request.getMethodName(), publisher).build();
-        try {
-            return client.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                    .handleAsync((response, throwable) -> {
-                        if (throwable != null) {
-                            return MyService.makeError(logger, shard, throwable);
-                        }
-                        return new Response(
-                                responseCodeToStatusText(response.statusCode()),
-                                response.body()
-                        );
-                    }).get(1, TimeUnit.SECONDS);
-        } catch (TimeoutException e) {
-            return MyService.makeError(logger, shard, e);
-        }
+        return client.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .handleAsync((response, throwable) -> {
+                    if (throwable != null) {
+                        logger.error("Could not proxy request to {}", shard, throwable);
+                        return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                    }
+                    return new Response(
+                            responseCodeToStatusText(response.statusCode()),
+                            response.body()
+                    );
+                }).get(1, TimeUnit.SECONDS);
     }
 
-    private static String responseCodeToStatusText(int code) {
+    public static String responseCodeToStatusText(int code) {
         return switch (code) {
             case HttpURLConnection.HTTP_OK -> Response.OK;
             case HttpURLConnection.HTTP_CREATED -> Response.CREATED;

@@ -10,6 +10,7 @@ import one.nio.pool.PoolException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
@@ -35,6 +36,7 @@ public class OneNioHttpClient extends InternalHttpClient {
     }
 
     @Override
+    @Nullable
     public Response proxyRequest(Request request, String shard) throws ExecutionException, InterruptedException,
             TimeoutException {
         return getExecutor().submit(() -> {
@@ -51,9 +53,11 @@ public class OneNioHttpClient extends InternalHttpClient {
                 return clients.get().get(shard).invoke(internalRequest);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                return MyService.makeError(logger, shard, e);
+                logger.error("Interrupted while proxying request to {}", shard, e);
+                return null;
             } catch (PoolException | IOException | HttpException e) {
-                return MyService.makeError(logger, shard, e);
+                logger.error("Error while proxying request to shard {}", shard, e);
+                return null;
             }
         }).get(1, TimeUnit.SECONDS);
     }
