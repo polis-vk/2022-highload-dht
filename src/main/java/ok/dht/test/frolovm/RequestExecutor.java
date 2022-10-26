@@ -18,6 +18,12 @@ public class RequestExecutor {
 		this.dao = dao;
 	}
 
+	private static byte[] getData(byte[] res, ByteBuffer buffer) {
+		byte[] resultData = new byte[res.length - SIZE_LONG - 1];
+		buffer.get(SIZE_LONG + 1, resultData);
+		return resultData;
+	}
+
 	public Response entityHandlerSelf(String id, Request request, long timestamp) {
 		if (!Utils.checkId(id)) {
 			return new Response(Response.BAD_REQUEST, Utf8.toBytes(Utils.BAD_ID));
@@ -66,11 +72,5 @@ public class RequestExecutor {
 			response.addHeader(Utils.TIMESTAMP_ONE_NIO + timestamp);
 			return response;
 		}
-	}
-
-	private static byte[] getData(byte[] res, ByteBuffer buffer) {
-		byte[] resultData = new byte[res.length - SIZE_LONG - 1];
-		buffer.get(SIZE_LONG + 1, resultData);
-		return resultData;
 	}
 }

@@ -13,13 +13,12 @@ import java.net.http.*;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 public class ReplicationManager {
 
+	public static final String NOT_ENOUGH_REPLICAS = "Not Enough Replicas";
 	private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(1);
 	private static final Logger LOGGER = LoggerFactory.getLogger(ReplicationManager.class);
-	public static final String NOT_ENOUGH_REPLICAS = "Not Enough Replicas";
 	private final ShardingAlgorithm algorithm;
 	private final String selfUrl;
 	private final RequestExecutor requestExecutor;
@@ -33,6 +32,30 @@ public class ReplicationManager {
 		this.requestExecutor = requestExecutor;
 		this.circuitBreaker = circuitBreaker;
 		this.client = client;
+	}
+
+	private static void addHeader(Response resultResponse, HttpHeaders headers, String name, String nioName) {
+		headers.firstValue(name).ifPresent(s -> resultResponse.addHeader(nioName + s));
+	}
+
+	private static HttpRequest.Builder getBuilder(Request request, String uri, byte[] body) {
+		HttpRequest.Builder requestBuilder = HttpRequest.newBuilder();
+		requestBuilder.header(Utils.TIMESTAMP, request.getHeader(Utils.TIMESTAMP_ONE_NIO));
+		requestBuilder.uri(URI.create(uri));
+		requestBuilder.method(
+				request.getMethodName(),
+				HttpRequest.BodyPublishers.ofByteArray(body));
+		requestBuilder.timeout(RESPONSE_TIMEOUT);
+		return requestBuilder;
+	}
+
+	private static Response createInternalResponse(HttpResponse<byte[]> response, String responseStatus) {
+		Response resultResponse = new Response(responseStatus, response.body());
+		HttpHeaders headers = response.headers();
+		addHeader(resultResponse, headers, Utils.TOMBSTONE, Utils.TOMBSTONE);
+		addHeader(resultResponse, headers, Utils.TIMESTAMP, Utils.TIMESTAMP_ONE_NIO);
+
+		return resultResponse;
 	}
 
 	public Response handle(String id, Request request, int ack, int from) {
@@ -57,7 +80,7 @@ public class ReplicationManager {
 				Response response = requestExecutor.entityHandlerSelf(id, request, timestamp);
 				countAck = addSuccessResponse(request, collectedResponses, countAck, response);
 			} else {
-//				if (circuitBreaker.isReady(shard.getName())) {
+				if (circuitBreaker.isReady(shard.getName())) {
 					try {
 						Response response = sendResponseToAnotherNode(request, shard);
 						countAck = addSuccessResponse(request, collectedResponses, countAck, response);
@@ -65,9 +88,9 @@ public class ReplicationManager {
 						LOGGER.error("Something bad happens when client answer", e);
 						circuitBreaker.incrementFail(shard.getName());
 					}
-//				} else {
-//					LOGGER.error("Node is unavailable right now");
-//				}
+				} else {
+					LOGGER.error("Node is unavailable right now");
+				}
 			}
 			if (countAck >= ack && request.getMethod() == Request.METHOD_GET) {
 				return generateResult(collectedResponses, request.getMethod());
@@ -112,14 +135,14 @@ public class ReplicationManager {
 		long mostRelevantTimestamp = 0L;
 		boolean isResultTombstone = false;
 		for (Response response : collectedResponses) {
-				long timestamp = Utils.getTimestamp(response);
-				boolean isTombstone = response.getHeader(Utils.TOMBSTONE) != null;
-				if (mostRelevantTimestamp < timestamp &&
-						(response.getStatus() == HttpURLConnection.HTTP_OK || isTombstone)) {
-					isResultTombstone = isTombstone;
-					mostRelevantTimestamp = timestamp;
-					result = response.getBody();
-				}
+			long timestamp = Utils.getTimestamp(response);
+			boolean isTombstone = response.getHeader(Utils.TOMBSTONE) != null;
+			if (mostRelevantTimestamp < timestamp &&
+					(response.getStatus() == HttpURLConnection.HTTP_OK || isTombstone)) {
+				isResultTombstone = isTombstone;
+				mostRelevantTimestamp = timestamp;
+				result = response.getBody();
+			}
 		}
 		if (result == null || isResultTombstone) {
 			return Utils.emptyResponse(Response.NOT_FOUND);
@@ -156,30 +179,6 @@ public class ReplicationManager {
 		String responseStatus = Utils.getResponseStatus(response);
 
 		return createInternalResponse(response, responseStatus);
-	}
-
-	private static void addHeader(Response resultResponse, HttpHeaders headers, String name, String nioName) {
-		headers.firstValue(name).ifPresent(s -> resultResponse.addHeader(nioName + s));
-	}
-
-	private static HttpRequest.Builder getBuilder(Request request, String uri, byte[] body) {
-		HttpRequest.Builder requestBuilder = HttpRequest.newBuilder();
-		requestBuilder.header(Utils.TIMESTAMP, request.getHeader(Utils.TIMESTAMP_ONE_NIO));
-		requestBuilder.uri(URI.create(uri));
-		requestBuilder.method(
-				request.getMethodName(),
-				HttpRequest.BodyPublishers.ofByteArray(body));
-		requestBuilder.timeout(RESPONSE_TIMEOUT);
-		return requestBuilder;
-	}
-
-	private static Response createInternalResponse(HttpResponse<byte[]> response, String responseStatus) {
-		Response resultResponse = new Response(responseStatus, response.body());
-		HttpHeaders headers = response.headers();
-		addHeader(resultResponse, headers, Utils.TOMBSTONE, Utils.TOMBSTONE);
-		addHeader(resultResponse, headers, Utils.TIMESTAMP, Utils.TIMESTAMP_ONE_NIO);
-
-		return resultResponse;
 	}
 
 }
