@@ -2,8 +2,7 @@ package ok.dht.test.mikhaylov;
 
 import one.nio.http.Request;
 
-
-public class DatabaseUtilities {
+public final class DatabaseUtilities {
     private DatabaseUtilities() {
     }
 
