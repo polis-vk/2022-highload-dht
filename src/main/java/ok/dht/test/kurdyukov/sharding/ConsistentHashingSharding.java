@@ -7,15 +7,16 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-public class ConsistentHashingSharding implements Sharding {
+public class ConsistentHashingSharding extends Sharding {
     private final List<Point> circleHashes;
-    private final int size;
+    private final int sizeVNodes;
 
     public ConsistentHashingSharding(
             List<String> clusterUrls,
             int countPointsForNode
     ) {
-        circleHashes = clusterUrls
+        super(clusterUrls);
+        this.circleHashes = clusterUrls
                 .stream()
                 .flatMap(
                         url -> IntStream
@@ -27,15 +28,15 @@ public class ConsistentHashingSharding implements Sharding {
                                         )
                                 )
                 )
-                .sorted(Comparator.comparingInt(Point::getHash))
+                .sorted(Comparator.comparingInt(Point::hash))
                 .collect(Collectors.toList());
-        size = circleHashes.size();
+        this.sizeVNodes = circleHashes.size();
     }
 
     @Override
     public String getShardUrlByKey(final String key) {
         int l = -1;
-        int r = size;
+        int r = sizeVNodes;
 
         int hashKey = Hash.murmur3(key);
 
@@ -49,20 +50,9 @@ public class ConsistentHashingSharding implements Sharding {
             }
         }
 
-        return r == size ? circleHashes.get(0).url : circleHashes.get(r).url;
+        return r == sizeVNodes ? circleHashes.get(0).url : circleHashes.get(r).url;
     }
 
-    private static class Point {
-        final int hash;
-        final String url;
-
-        Point(int hash, String url) {
-            this.hash = hash;
-            this.url = url;
-        }
-
-        public int getHash() {
-            return hash;
-        }
+    private record Point(int hash, String url) {
     }
 }

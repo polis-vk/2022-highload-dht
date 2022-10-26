@@ -2,16 +2,14 @@ package ok.dht.test.kurdyukov.sharding;
 
 import java.util.List;
 
-public class SimpleSharding implements Sharding {
-    private final List<String> urls;
-
+public class SimpleSharding extends Sharding {
     public SimpleSharding(List<String> urls) {
-        this.urls = urls;
+        super(urls);
     }
 
     @Override
     public String getShardUrlByKey(String key) {
-        int index = Math.abs(key.hashCode()) % urls.size();
-        return urls.get(index);
+        int index = Math.abs(key.hashCode()) % clusterUrls.size();
+        return clusterUrls.get(index);
     }
 }
