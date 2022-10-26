@@ -1,8 +1,8 @@
 package ok.dht.test.shik.model;
 
-import java.util.Comparator;
-
 import javax.annotation.Nullable;
+
+import java.util.Comparator;
 
 @SuppressWarnings("PMD.ArrayIsStoredDirectly")
 public class DBValue {
