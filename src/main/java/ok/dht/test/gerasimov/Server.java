@@ -293,9 +293,9 @@ public final class Server extends HttpServer {
                 if (shard.isAvailable().compareAndSet(true, false)) {
                     scheduledExecutorService.scheduleAtFixedRate(
                             createMonitoringNodeTask(shard),
-                            10,
-                            10,
-                            TimeUnit.MILLISECONDS
+                            5,
+                            5,
+                            TimeUnit.NANOSECONDS
                     );
                 }
             }
