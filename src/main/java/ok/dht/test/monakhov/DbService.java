@@ -42,10 +42,7 @@ import static ok.dht.test.monakhov.ServiceUtils.NOT_ENOUGH_REPLICAS;
 import static ok.dht.test.monakhov.ServiceUtils.QUEUE_SIZE;
 import static ok.dht.test.monakhov.ServiceUtils.TIMESTAMP_HEADER;
 import static ok.dht.test.monakhov.ServiceUtils.createConfigFromPort;
-// import static ok.dht.test.monakhov.ServiceUtils.deserialize;
 import static ok.dht.test.monakhov.ServiceUtils.isInvalidReplica;
-import static ok.dht.test.monakhov.ServiceUtils.max;
-// import static ok.dht.test.monakhov.ServiceUtils.serialize;
 import static one.nio.serial.Serializer.deserialize;
 import static one.nio.serial.Serializer.serialize;
 
@@ -203,11 +200,10 @@ public class DbService implements Service {
         case Request.METHOD_GET -> {
 
             if (ack <= responses.stream()
-                .filter(r -> r.getStatus() == HTTP_OK || r.getStatus() == HTTP_NOT_FOUND).count()) {
-                // DaoEntry result = new DaoEntry(Instant.MIN, request, true);
+                .filter(r -> r.getStatus() == HTTP_OK || r.getStatus() == HTTP_NOT_FOUND).count())
+            {
+
                 EntryWrapper result = null;
-
-
                 for (var res : responses) {
                     if (res.getStatus() == HTTP_NOT_FOUND) {
                         continue;
@@ -235,50 +231,6 @@ public class DbService implements Service {
             } else {
                 return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
             }
-
-
-            // // List<Response> successful = responses.stream().filter(r -> r.getStatus() == HTTP_OK || r.getStatus() == HTTP_NOT_FOUND).toList();
-            // List<Response> successful = responses;
-            //
-            // if (successful.size() >= ack) {
-            //     // try {
-            //         EntryWrapper mostRecent = null;
-            //
-            //         for (Response response : successful) {
-            //             try {
-            //                 EntryWrapper entry = (EntryWrapper) deserialize(response.getBody());
-            //                 if (mostRecent == null) {
-            //                     mostRecent = entry;
-            //                 }
-            //                 mostRecent = max(mostRecent, entry);
-            //             } catch (IOException | ClassNotFoundException e) {
-            //                 log.error("Exception occurred while deserialization", e);
-            //             }
-            //
-            //         }
-            //         // EntryWrapper mostRecent = (EntryWrapper) deserialize(successful.get(0).getBody());
-            //         //
-            //         // for (Response response : successful) {
-            //         //     try {
-            //         //         EntryWrapper entry = (EntryWrapper) deserialize(response.getBody());
-            //         //         mostRecent = max(mostRecent, entry);
-            //         //     } catch (IOException | ClassNotFoundException e) {
-            //         //         log.error("Exception occurred while deserialization", e);
-            //         //     }
-            //         // }
-            //
-            //         if (mostRecent == null || mostRecent.isTombstone) {
-            //             return new Response(Response.NOT_FOUND, Response.EMPTY);
-            //         }
-            //         return new Response(Response.OK, mostRecent.bytes);
-                // } catch (IOException | ClassNotFoundException e) {
-            //     //     log.error("Exception occurred while deserialization", e);
-            //     // }
-            // }
-            //
-            // if (responses.stream().filter(r -> r.getStatus() != HTTP_OK).count() >= ack) {
-            //     return new Response(Response.NOT_FOUND, Response.EMPTY);
-            // }
         }
         case Request.METHOD_PUT -> {
             if (responses.stream().filter(r -> r.getStatus() == HTTP_CREATED).count() >= ack) {

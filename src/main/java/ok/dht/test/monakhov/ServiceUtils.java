@@ -3,13 +3,6 @@ package ok.dht.test.monakhov;
 import ok.dht.ServiceConfig;
 import one.nio.server.AcceptorConfig;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import javax.annotation.Nonnull;
-
 public final class ServiceUtils {
     public static final String TIMESTAMP_HEADER = "TimeStamp: ";
     public static String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
@@ -37,19 +30,5 @@ public final class ServiceUtils {
         acceptor.reusePort = true;
         httpConfig.acceptors = new AcceptorConfig[] {acceptor};
         return httpConfig;
-    }
-
-    public static byte[] serialize(@Nonnull Object obj) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try (ObjectOutputStream os = new ObjectOutputStream(out)) {
-            os.writeObject(obj);
-            return out.toByteArray();
-        }
-    }
-
-    public static <T> T deserialize(@Nonnull byte[] data) throws IOException, ClassNotFoundException {
-        try (ObjectInputStream is = new ObjectInputStream(new ByteArrayInputStream(data))) {
-            return (T) is.readObject();
-        }
     }
 }
