@@ -2,6 +2,7 @@ package ok.dht.test.gerasimov.sharding;
 
 import one.nio.util.Hash;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -39,5 +40,21 @@ public class ConsistentHashImpl<K> implements ConsistentHash<K> {
     @Override
     public List<VNode> getVnodes() {
         return vnodes;
+    }
+
+    @Override
+    public List<Shard> getShards(Shard start, int limit) {
+        List<Shard> shards = new ArrayList<>();
+        shards.add(start);
+
+        for (int i = 0; i < limit - 1; i++) {
+            shards.add(
+                    this.shards.get(
+                            (shards.get(shards.size() - 1).getPos() + 1) % this.shards.size()
+                    )
+            );
+        }
+
+        return shards;
     }
 }

@@ -10,8 +10,10 @@ import ok.dht.test.gerasimov.sharding.ConsistentHashImpl;
 import ok.dht.test.gerasimov.sharding.Shard;
 import ok.dht.test.gerasimov.sharding.VNode;
 import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.server.AcceptorConfig;
 import one.nio.util.Hash;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.DBIterator;
@@ -23,13 +25,23 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
 public class ServiceImpl implements Service {
     private static final String INVALID_ID_MESSAGE = "Invalid id";
     private static final int NUMBER_VIRTUAL_NODES_PER_SHARD = 3;
+    private static final int SELECTOR_POOL_SIZE = Runtime.getRuntime().availableProcessors() / 2;
+    private static final int DEFAULT_THREAD_POOL_SIZE = 32;
+    private static final int KEEP_A_LIVE_TIME_IN_NANOSECONDS = 0;
+    private static final int WORK_QUEUE_CAPACITY = 256;
+    private static final String TIMESTAMP_HEADER = "Timestamp";
+    private static final String TOMBSTONE_HEADER = "Tombstone";
 
     private final ServiceConfig serviceConfig;
 
@@ -45,7 +57,7 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         try {
-            this.httpServer = new Server(serviceConfig.selfPort(), this, createConsistentHash(serviceConfig));
+            this.httpServer = createHttpServer(serviceConfig);
             this.dao = createDao(serviceConfig.workingDir());
             httpServer.start();
             isClosed = false;
@@ -63,43 +75,86 @@ public class ServiceImpl implements Service {
                 httpServer.stop();
                 dao.close();
                 isClosed = true;
+                httpServer = null;
+                dao = null;
             } catch (IOException e) {
-                throw new ServerException("Error during DAO close", e);
+                throw new ServiceException("Error during DAO close", e);
             }
         }
 
         return CompletableFuture.completedFuture(null);
     }
 
-    public Response handleGetRequest(String id) {
-        if (!checkId(id)) {
+    public Response handleGetRequest(EntityParameters entityParameters) {
+        if (!checkId(entityParameters.getId())) {
             return ResponseEntity.badRequest(INVALID_ID_MESSAGE);
         }
 
-        byte[] entry = dao.get(id.getBytes(StandardCharsets.UTF_8));
+        byte[] entry = dao.get(entityParameters.getId().getBytes(StandardCharsets.UTF_8));
         if (entry == null) {
             return ResponseEntity.notFound();
         }
 
-        return ResponseEntity.ok(entry);
+        try {
+            DaoEntry daoEntry = ObjectMapper.deserialize(entry);
+            if (daoEntry.isTombstone()) {
+                Response response = ResponseEntity.notFound();
+                response.addHeader(TIMESTAMP_HEADER + daoEntry.getTimestamp());
+                response.addHeader(TOMBSTONE_HEADER + daoEntry.isTombstone());
+                return response;
+            }
+
+            Response response = ResponseEntity.ok(entry);
+            response.addHeader(TIMESTAMP_HEADER + daoEntry.getTimestamp());
+            return response;
+        } catch (IOException | ClassNotFoundException  e) {
+            throw new ServiceException("Can not deserialize entry", e);
+        }
     }
 
-    public Response handlePutRequest(String id, Request request) {
-        if (!checkId(id)) {
+    public Response handlePutRequest(EntityParameters entityParameters, Request request) {
+        if (!checkId(entityParameters.getId())) {
             return ResponseEntity.badRequest(INVALID_ID_MESSAGE);
         }
 
-        dao.put(id.getBytes(StandardCharsets.UTF_8), request.getBody());
-        return ResponseEntity.created();
+
+        try {
+            dao.put(entityParameters.getId().getBytes(StandardCharsets.UTF_8),
+                    ObjectMapper.serialize(
+                            new DaoEntry(
+                                    entityParameters.getTimestamp(),
+                                    request.getBody()
+                            )
+                    )
+            );
+            return ResponseEntity.created();
+        } catch (IOException e) {
+            throw new ServiceException("Can not serialize request body", e);
+        }
     }
 
-    public Response handleDeleteRequest(String id) {
-        if (!checkId(id)) {
+    public Response handleDeleteRequest(EntityParameters entityParameters) {
+        if (!checkId(entityParameters.getId())) {
             return ResponseEntity.badRequest(INVALID_ID_MESSAGE);
         }
 
-        dao.delete(id.getBytes(StandardCharsets.UTF_8));
-        return ResponseEntity.accepted();
+        try {
+            dao.put(entityParameters.getId().getBytes(StandardCharsets.UTF_8),
+                    ObjectMapper.serialize(
+                            new DaoEntry(
+                                    entityParameters.getTimestamp(),
+                                    null,
+                                    true
+                            )
+                    )
+            );
+            return ResponseEntity.accepted();
+        } catch (IOException e) {
+            throw new ServiceException("Can not serialize request body", e);
+        }
+
+//        dao.delete(entityParameters.getId().getBytes(StandardCharsets.UTF_8));
+//        return ResponseEntity.accepted();
     }
 
     public Response handleAdminRequest() {
@@ -137,8 +192,40 @@ public class ServiceImpl implements Service {
         }
     }
 
+    private HttpServer createHttpServer(ServiceConfig serviceConfig) {
+        try {
+            HttpServerConfig httpServerConfig = new HttpServerConfig();
+            AcceptorConfig acceptor = new AcceptorConfig();
+
+            acceptor.port = serviceConfig.selfPort();
+            acceptor.reusePort = true;
+            httpServerConfig.acceptors = new AcceptorConfig[]{acceptor};
+            httpServerConfig.selectors = SELECTOR_POOL_SIZE;
+
+            return new Server(
+                    httpServerConfig,
+                    this,
+                    createConsistentHash(serviceConfig),
+                    new ThreadPoolExecutor(
+                            DEFAULT_THREAD_POOL_SIZE,
+                            DEFAULT_THREAD_POOL_SIZE,
+                            KEEP_A_LIVE_TIME_IN_NANOSECONDS,
+                            TimeUnit.NANOSECONDS,
+                            new ArrayBlockingQueue<>(WORK_QUEUE_CAPACITY)
+                    ),
+                    new ScheduledThreadPoolExecutor(serviceConfig.clusterUrls().size())
+            );
+        } catch (IOException e) {
+            throw new ServiceException("Can not create HttpServer", e);
+        }
+    }
+
     private static ConsistentHash<String> createConsistentHash(ServiceConfig serviceConfig) {
-        List<Shard> shards = serviceConfig.clusterUrls().stream().map(Shard::new).toList();
+        List<Shard> shards = new ArrayList<>();
+        for (int i = 0; i < serviceConfig.clusterUrls().size(); i++) {
+            shards.add(new Shard(serviceConfig.clusterUrls().get(i), i));
+        }
+
         List<VNode> vnodes = new ArrayList<>();
         for (Shard shard : shards) {
             for (int i = 0; i < NUMBER_VIRTUAL_NODES_PER_SHARD; i++) {
@@ -150,7 +237,7 @@ public class ServiceImpl implements Service {
         return new ConsistentHashImpl<>(vnodes, shards);
     }
 
-    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
