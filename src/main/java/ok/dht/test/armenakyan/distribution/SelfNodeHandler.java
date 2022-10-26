@@ -55,7 +55,7 @@ public class SelfNodeHandler implements NodeRequestHandler {
         try {
             return switch (request.getMethod()) {
                 case Request.METHOD_PUT -> put(id, request.getBody(), timestamp);
-                case Request.METHOD_GET -> get(id, timestamp);
+                case Request.METHOD_GET -> get(id);
                 case Request.METHOD_DELETE -> delete(id, timestamp);
                 default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             };
@@ -69,11 +69,11 @@ public class SelfNodeHandler implements NodeRequestHandler {
         return CompletableFuture.supplyAsync(() -> handleForKey(key, request, timestamp));
     }
 
-    public Response get(String id, long timestamp) throws RocksDBException {
+    public Response get(String id) throws RocksDBException {
         byte[] bytes = rocksDB.get(Utf8.toBytes(id));
 
         if (bytes == null) {
-            return new Response(Response.NOT_FOUND, Value.tombstone(timestamp).toBytes());
+            return new Response(Response.NOT_FOUND, Value.tombstone(0).toBytes());
         }
 
         Value value = Value.fromBytes(bytes);
