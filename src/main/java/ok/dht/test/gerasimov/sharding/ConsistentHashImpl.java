@@ -44,17 +44,17 @@ public class ConsistentHashImpl<K> implements ConsistentHash<K> {
 
     @Override
     public List<Shard> getShards(Shard start, int limit) {
-        List<Shard> shards = new ArrayList<>();
-        shards.add(start);
+        List<Shard> result = new ArrayList<>();
+        result.add(start);
 
         for (int i = 0; i < limit - 1; i++) {
-            shards.add(
+            result.add(
                     this.shards.get(
-                            (shards.get(shards.size() - 1).getPos() + 1) % this.shards.size()
+                            (result.get(result.size() - 1).getPos() + 1) % this.shards.size()
                     )
             );
         }
 
-        return shards;
+        return result;
     }
 }

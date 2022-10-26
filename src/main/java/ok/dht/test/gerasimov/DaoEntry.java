@@ -2,21 +2,22 @@ package ok.dht.test.gerasimov;
 
 import javax.annotation.Nonnull;
 import java.io.Serializable;
+import java.lang.reflect.Array;
+import java.util.Arrays;
 
 public class DaoEntry implements Comparable<DaoEntry>, Serializable {
     private final Long timestamp;
     private final byte[] value;
-    private boolean isTombstone = false;
-
+    private boolean isTombstone;
 
     public DaoEntry(Long timestamp, byte[] value) {
         this.timestamp = timestamp;
-        this.value = value;
+        this.value = value != null ? Arrays.copyOf(value, value.length) : new byte[0];
     }
 
     public DaoEntry(Long timestamp, byte[] value, boolean isTombstone) {
         this.timestamp = timestamp;
-        this.value = value;
+        this.value = value != null ? Arrays.copyOf(value, value.length) : new byte[0];
         this.isTombstone = isTombstone;
     }
 
@@ -29,7 +30,7 @@ public class DaoEntry implements Comparable<DaoEntry>, Serializable {
     }
 
     public byte[] getValue() {
-        return value;
+        return Arrays.copyOf(value, value.length);
     }
 
     public boolean isTombstone() {

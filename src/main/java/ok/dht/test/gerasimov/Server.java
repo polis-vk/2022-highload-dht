@@ -153,8 +153,6 @@ public final class Server extends HttpServer {
             return ResponseEntity.badRequest("Invalid parameter replicas");
         }
 
-        Shard firstShard = consistentHash.getShardByKey(id);
-
         if (request.getHeader(TIMESTAMP_HEADER) != null) {
             entityParameters.setTimestamp(Long.valueOf(request.getHeader(TIMESTAMP_HEADER)));
             return getResponse(request, entityParameters);
@@ -163,6 +161,7 @@ public final class Server extends HttpServer {
         request.addHeader(TIMESTAMP_HEADER + System.currentTimeMillis());
         entityParameters.setTimestamp(Long.valueOf(request.getHeader(TIMESTAMP_HEADER)));
 
+        Shard firstShard = consistentHash.getShardByKey(id);
         List<Shard> shards = consistentHash.getShards(firstShard, entityParameters.getFrom());
         List<Response> responses = new ArrayList<>();
 
@@ -207,7 +206,11 @@ public final class Server extends HttpServer {
 
                         if (response.getHeader(TOMBSTONE_HEADER) != null || response.getStatus() == 404) {
                             if (response.getHeader(TIMESTAMP_HEADER) != null) {
-                                recordFromResponse = new DaoEntry(Long.valueOf(response.getHeader(TIMESTAMP_HEADER)), null, true);
+                                recordFromResponse = new DaoEntry(
+                                        Long.valueOf(response.getHeader(TIMESTAMP_HEADER)),
+                                        null,
+                                        true
+                                );
                             } else {
                                 recordFromResponse = new DaoEntry(0L, null, true);
                             }

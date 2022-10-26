@@ -107,7 +107,7 @@ public class ServiceImpl implements Service {
             Response response = ResponseEntity.ok(entry);
             response.addHeader(TIMESTAMP_HEADER + daoEntry.getTimestamp());
             return response;
-        } catch (IOException | ClassNotFoundException  e) {
+        } catch (IOException | ClassNotFoundException e) {
             throw new ServiceException("Can not deserialize entry", e);
         }
     }
@@ -116,7 +116,6 @@ public class ServiceImpl implements Service {
         if (!checkId(entityParameters.getId())) {
             return ResponseEntity.badRequest(INVALID_ID_MESSAGE);
         }
-
 
         try {
             dao.put(entityParameters.getId().getBytes(StandardCharsets.UTF_8),
@@ -152,9 +151,6 @@ public class ServiceImpl implements Service {
         } catch (IOException e) {
             throw new ServiceException("Can not serialize request body", e);
         }
-
-//        dao.delete(entityParameters.getId().getBytes(StandardCharsets.UTF_8));
-//        return ResponseEntity.accepted();
     }
 
     public Response handleAdminRequest() {

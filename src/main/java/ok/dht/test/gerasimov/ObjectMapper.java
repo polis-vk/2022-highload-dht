@@ -5,14 +5,14 @@ import one.nio.serial.Serializer;
 import java.io.IOException;
 
 @SuppressWarnings("unchecked")
-public class ObjectMapper {
+public final class ObjectMapper {
     private ObjectMapper() {
 
     }
 
     public static byte[] serialize(Object obj) throws IOException {
         if (obj == null) {
-            return null;
+            return new byte[0];
         }
 
         return Serializer.serialize(obj);
