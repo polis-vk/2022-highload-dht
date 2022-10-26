@@ -60,7 +60,7 @@ public class ReplicasManager {
                     doUpsert(request, key);
                     probablyResponseGood(session, goodResponseForUpsert(okMessage), ack, oks, responsesTotal, alreadyResponded);
                 } catch (Exception e) {
-                    handleNodeFailure(e, node, request);
+                    handleNodeFailure(e, node, request, key);
                     probablyResponseBad(session, from, responsesTotal, alreadyResponded);
                 }
                 continue;
@@ -70,7 +70,7 @@ public class ReplicasManager {
                     .whenComplete((httpResponse, throwable) -> {
                         if (throwable != null) {
                             probablyResponseBad(session, from, responsesTotal, alreadyResponded);
-                            handleNodeFailure(throwable, node, request);
+                            handleNodeFailure(throwable, node, request, key);
                             return;
                         }
                         if (httpResponse.statusCode() == Integer.parseInt(okMessage.substring(0, 3))) {
@@ -96,7 +96,7 @@ public class ReplicasManager {
                     value = updateValueIfNeeded(latestValueRef, lock, value);
                     probablyResponseGoodToGet(session, ack, value, nonFailed, responsesTotal, alreadyResponded);
                 } catch (Exception e) {
-                    handleNodeFailure(e, node, request);
+                    handleNodeFailure(e, node, request, key);
                     probablyResponseBad(session, from, responsesTotal, alreadyResponded);
                 }
                 continue;
@@ -105,7 +105,7 @@ public class ReplicasManager {
                     .orTimeout(ServiceImpl.ROUTED_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                     .whenComplete((httpResponse, throwable) -> {
                         if (throwable != null) {
-                            handleNodeFailure(throwable, node, request);
+                            handleNodeFailure(throwable, node, request, key);
                             probablyResponseBad(session, from, responsesTotal, alreadyResponded);
                             return;
                         }
@@ -113,11 +113,31 @@ public class ReplicasManager {
                             probablyResponseBad(session, from, responsesTotal, alreadyResponded);
                             return;
                         }
-                        TimeStampedValue value = updateValueIfNeeded(latestValueRef, lock,
-                                TimeStampedValue.fromBytes(httpResponse.body()));
-
+                        TimeStampedValue value = updateValueIfNeeded(latestValueRef, lock, httpResponse.body(),
+                                httpResponse.statusCode());
                         probablyResponseGoodToGet(session, ack, value, nonFailed, responsesTotal, alreadyResponded);
                     });
+        }
+    }
+
+    private TimeStampedValue updateValueIfNeeded(TimeStampedValue[] latestValueRef, Lock lock, byte[] body, int statusCode) {
+        lock.lock();
+        try {
+            TimeStampedValue value;
+            if (statusCode == 404) {
+                if (body.length == 0) {
+                    return latestValueRef[0];
+                }
+                value = TimeStampedValue.tombstoneFromTime(body);
+            } else {
+                value = TimeStampedValue.fromBytes(body);
+            }
+            if (latestValueRef[0] == null || value.time > latestValueRef[0].time) {
+                latestValueRef[0] = value;
+            }
+            return latestValueRef[0];
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -185,9 +205,10 @@ public class ReplicasManager {
         return new Response(okMessage, Response.EMPTY);
     }
 
-    private static void handleNodeFailure(Throwable t, RandevouzHashingRouter.Node node, Request request) {
+    private static void handleNodeFailure(Throwable t, RandevouzHashingRouter.Node node, Request request, String key) {
         node.managePossibleIllness();
-        ServiceImpl.LOGGER.error(t + " when requesting a " + node.url + " to respond to an " + request.getMethod());
+        ServiceImpl.LOGGER.error(t + " when requesting a " + node.url + " to respond to an " +
+                request.getMethod() + " method for " + key);
     }
 
     private void doUpsert(Request request, String key) {

@@ -88,9 +88,6 @@ public class ServiceImpl implements Service {
 
         @Override
         public void handleRequest(Request request, HttpSession session) throws IOException {
-            if (!request.getPath().equals("/v0/entity")) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            }
             String key = request.getParameter("id=");
             String innerRequest = request.getParameter("inner=");
             if (innerRequest != null) {
@@ -122,13 +119,17 @@ public class ServiceImpl implements Service {
                     ackParam != null ? Integer.parseInt(ackParam) :
                             from / 2 + 1 <= serviceConfig.clusterUrls().size() ? from / 2 + 1 : from;
 
-            if (ack > from || ack <= 0) {
-                ReplicasManager.sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-            }
-
             try {
                 workersPool.execute(() -> {
+                    if (!request.getPath().equals("/v0/entity")) {
+                        ReplicasManager.sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                        return;
+                    }
                     if (key == null || key.isEmpty()) {
+                        ReplicasManager.sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                        return;
+                    }
+                    if (ack > from || ack <= 0) {
                         ReplicasManager.sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                         return;
                     }
@@ -150,8 +151,11 @@ public class ServiceImpl implements Service {
 
         private Response handleGet(String id) throws IOException {
             TimeStampingDao.TimeStampedValue entry = timeStampingDao.get(id);
+            if (entry == null) {
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
+            }
             if (entry.value == null) {
-                return new Response(Response.NOT_FOUND, entry.wholeToBytes());
+                return new Response(Response.NOT_FOUND, entry.timeBytes());
             }
             return new Response(Response.OK, entry.wholeToBytes());
         }

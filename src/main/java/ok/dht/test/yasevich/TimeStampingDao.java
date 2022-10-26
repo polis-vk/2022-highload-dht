@@ -66,6 +66,12 @@ public class TimeStampingDao {
             return new TimeStampedValue(value, time);
         }
 
+        public static TimeStampedValue tombstoneFromTime(byte[] timeBytes) {
+            ByteBuffer buffer = ByteBuffer.wrap(timeBytes);
+            long time = buffer.getLong();
+            return new TimeStampedValue(null, time);
+        }
+
         public byte[] wholeToBytes() {
             int valueLength = value == null ? 0 : value.length;
             byte[] timeStampedValue = new byte[Long.BYTES + Byte.BYTES + valueLength];
@@ -84,6 +90,10 @@ public class TimeStampingDao {
             ByteBuffer buffer = ByteBuffer.allocate(value.length);
             buffer.put(value);
             return buffer.array();
+        }
+
+        public byte[] timeBytes() {
+            return longToBytes(time);
         }
     }
 
