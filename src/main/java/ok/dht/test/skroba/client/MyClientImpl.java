@@ -34,7 +34,6 @@ public class MyClientImpl implements MyClient {
                         MyConcurrentHttpServer.PARENT_REQUEST)
                 .setHeader(MyConcurrentHttpServer.TIMESTAMP_REQUEST, Long.toString(timeStamp));
         
-        
         HttpRequest httpRequest = switch (method) {
             case Request.METHOD_GET -> builder.GET().build();
             case Request.METHOD_PUT ->

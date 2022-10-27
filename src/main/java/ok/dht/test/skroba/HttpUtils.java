@@ -13,6 +13,10 @@ public class HttpUtils {
     static final int NOT_FOUND = 404;
     public static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     
+    private HttpUtils() {
+        //empty
+    }
+    
     public static final Map<Integer, Predicate<? super HttpResponse<byte[]>>> PREDICATES = Map.of(Request.METHOD_GET,
             it -> it.statusCode() == OK || it.statusCode() == NOT_FOUND,
             Request.METHOD_PUT, it -> it.statusCode() == CREATED,

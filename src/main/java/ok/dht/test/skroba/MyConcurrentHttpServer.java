@@ -209,7 +209,7 @@ public class MyConcurrentHttpServer extends HttpServer {
                     Optional<Pair<Long, byte[]>> entry = responses.stream()
                             .filter(it -> it.statusCode() != HttpUtils.NOT_FOUND)
                             .map(it -> {
-                                System.out.println(String.join(", ", it.headers().allValues(TIMESTAMP_REQUEST)));
+                                //System.out.println(String.join(", ", it.headers().allValues(TIMESTAMP_REQUEST)));
                                 return new Pair<Long, byte[]>(Long.parseLong(
                                         it.headers().allValues(TIMESTAMP_REQUEST).get(0)), it.body());
                             })
