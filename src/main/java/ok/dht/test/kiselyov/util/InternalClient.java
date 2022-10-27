@@ -8,7 +8,6 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.HttpClient;
-import java.net.http.HttpClient.Builder;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
@@ -18,7 +17,7 @@ public class InternalClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(InternalClient.class);
 
     public InternalClient() {
-        Builder clientBuilder = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(100));
+        HttpClient.Builder clientBuilder = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(100));
         client = clientBuilder.build();
     }
 

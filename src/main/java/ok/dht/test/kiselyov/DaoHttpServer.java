@@ -72,7 +72,7 @@ public class DaoHttpServer extends HttpServer {
             return;
         }
         String fromCoordinator = request.getHeader("fromCoordinator");
-        executorService.submit(() -> {
+        executorService.execute(() -> {
             try {
                 if (fromCoordinator == null) {
                     coordinateRequest(request, session, id, ack, from);
