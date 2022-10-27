@@ -48,8 +48,8 @@ public class MyConcurrentHttpServer extends HttpServer {
     public static final String TOMBSTONE = "TOMBSTONE";
     private static final int FLUSH_THRESHOLD_BYTES = 1024 * 1048;
     private static final int CAPACITY_OF_QUEUE = 1024;
-    private static final int MAXIMUM_POOL_SIZE = Runtime.getRuntime().availableProcessors();
-    private static final int CORE_POOL_SIZE = max(1, MAXIMUM_POOL_SIZE / 4);
+    private static final int MAXIMUM_POOL_SIZE = 7;
+    private static final int CORE_POOL_SIZE = 4;
     private static final String ID_PARAMETER = "id=";
     private static final String ACK_PARAMETER = "ack=";
     private static final String FROM_PARAMETER = "from=";
