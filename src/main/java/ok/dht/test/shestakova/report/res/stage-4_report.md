@@ -404,7 +404,7 @@ Transfer/sec:      8.89KB
 
 |                                                                     cluster size = 3                                                                     |                                                                      replication 2/3                                                                      |
 |:--------------------------------------------------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------:|
-| ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht-1/blob/stage3/src/main/java/ok/dht/test/shestakova/report/jpg/stage3/put_cpu.jpg) | ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht-1/blob/stage4/src/main/java/ok/dht/test/shestakova/report/jpg/stage44/put_cpu.jpg) |
+| ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht-1/blob/stage3/src/main/java/ok/dht/test/shestakova/report/jpg/stage3/put_cpu.jpg) | ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht-1/blob/stage4/src/main/java/ok/dht/test/shestakova/report/jpg/stage4/put_cpu.jpg) |
 
 Сильных отличий между новой версией и stage 3 в контексте cpu-профилирования put запросов практически нет. Единственно, в новой реализации 
 пул воркеров теперь не только обрабатывает локальный запрос, но еще и занимается отправкой запросов другим нодам и получением ответов от них, 
