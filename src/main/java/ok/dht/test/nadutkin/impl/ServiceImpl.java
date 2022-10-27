@@ -45,11 +45,6 @@ public class ServiceImpl extends ReplicaService {
         return super.start();
     }
 
-    @Override
-    public CompletableFuture<?> stop() throws IOException {
-        return super.stop();
-    }
-
     //region Handling Requests
     private void fail(String url) {
         breaker.fail(url);
@@ -71,6 +66,7 @@ public class ServiceImpl extends ReplicaService {
             return new Response(Response.BAD_REQUEST,
                     getBytes("ack and from - two positive ints, ack <= from"));
         }
+
         List<String> urls = sharder.getShardUrls(id, neighbours);
         ResponseProcessor processor = new ResponseProcessor(request.getMethod(), quorum);
         long timestamp = System.currentTimeMillis();
@@ -83,11 +79,10 @@ public class ServiceImpl extends ReplicaService {
         }
         for (String url : urls) {
             if (breaker.isWorking(url)) {
-                boolean done = processor
-                        .process(url.equals(config.selfUrl())
-                                ? handleV1(id, request)
-                                : handleProxy(url, request));
-                if (done) {
+                Response response = url.equals(config.selfUrl())
+                        ? handleV1(id, request)
+                        : handleProxy(url, request);
+                if (processor.process(response)) {
                     break;
                 }
             }
