@@ -338,7 +338,7 @@ public class MyConcurrentHttpServer extends HttpServer {
                 thread.selector.forEach(Session::close);
             }
         } catch (ClosedSelectorException e) {
-            LOG.error("Socket already been closed: " + e.getMessage());
+            LOG.error("Socket  already been closed: " + e.getMessage());
         }
     
         try {
