@@ -105,7 +105,7 @@ Transfer/sec:      1.28MB
 id = 0
 wrk.method = "PUT"
 request = function()
-    wrk.path = "/v0/entity?id=" .. math.random(0, 1000000) .. "&from=2&ack=1"
+    wrk.path = "/v0/entity?id=" .. math.random(0, 1000000) .. "&from=1&ack=1"
     wrk.body = "№ " .. id
     id = id + 1
     return wrk.format(nil)
@@ -118,7 +118,7 @@ end
 id = 0
 wrk.method = "GET"
 request = function()
-    wrk.path = "/v0/entity?id=" .. math.random(0, 1000000) .. "&from=2&ack=1"
+    wrk.path = "/v0/entity?id=" .. math.random(0, 1000000) .. "&from=1&ack=1"
     return wrk.format(nil)
 end
 ```
@@ -218,4 +218,6 @@ Transfer/sec:      1.31MB
 
 Подобное решается при помощи лидера, который будет коммитить изменения, когда операция по записи произошла удачно и выдавать только те значения, которые есть у большинства реплик.
 Он может быть назначен изначально (координатор), либо же выбран (алгоритмы поиска лидера).
+
+
 
