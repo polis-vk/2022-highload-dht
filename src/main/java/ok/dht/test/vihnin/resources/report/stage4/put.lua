@@ -14,8 +14,8 @@ function request()
     cnt = cnt + 1
     return wrk.format(
         "PUT", 
-        "/v0/entity?id=" .. math.random(4000000, 8000000),
+        "/v0/entity?id=" .. cnt,
         {}, 
-        string.rep(rnd_str(10), 500)
+        string.rep(rnd_str(10), 100)
     )
 end
