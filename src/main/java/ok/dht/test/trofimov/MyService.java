@@ -90,87 +90,98 @@ public class MyService implements Service {
         logger.error("Can't stop executor. Shutdown now, number of requests: {}", listOfRequests.size());
     }
 
-
     @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_GET)
     public void handleGet(@Param(value = "id", required = true) String id, HttpSession session) {
         try {
-            requestsExecutor.execute(() -> {
-                Response response;
-                if (id.isEmpty()) {
-                    response = emptyResponseFor(Response.BAD_REQUEST);
-                } else {
-                    try {
-                        Entry<String> entry = dao.get(id);
-                        if (entry == null) {
-                            response = emptyResponseFor(Response.NOT_FOUND);
-                        } else {
-                            String value = entry.value();
-                            char[] chars = value.toCharArray();
-                            response = new Response(Response.OK, Base64.decodeFromChars(chars));
-                        }
-                    } catch (Exception e) {
-                        logger.error("error get request" + id, e);
-                        response = errorResponse();
-                    }
-                }
-                sendResponse(session, response);
-            });
+            doGetRequest(id, session);
         } catch (RejectedExecutionException e) {
             logger.error("Reject request {} method get", id, e);
             sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
     }
 
+    private void doGetRequest(String id, HttpSession session) {
+        requestsExecutor.execute(() -> {
+            Response response;
+            if (id.isEmpty()) {
+                response = emptyResponseFor(Response.BAD_REQUEST);
+            } else {
+                try {
+                    Entry<String> entry = dao.get(id);
+                    if (entry == null) {
+                        response = emptyResponseFor(Response.NOT_FOUND);
+                    } else {
+                        String value = entry.value();
+                        char[] chars = value.toCharArray();
+                        response = new Response(Response.OK, Base64.decodeFromChars(chars));
+                    }
+                } catch (Exception e) {
+                    logger.error("error get request" + id, e);
+                    response = errorResponse();
+                }
+            }
+            sendResponse(session, response);
+        });
+    }
+
     @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_PUT)
     public void handlePut(Request request, @Param(value = "id", required = true) String id, HttpSession session) {
         try {
-            requestsExecutor.execute(() -> {
-                Response response;
-                if (id.isEmpty()) {
-                    response = emptyResponseFor(Response.BAD_REQUEST);
-                } else {
-                    byte[] value = request.getBody();
-                    try {
-                        dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
-                        response = emptyResponseFor(Response.CREATED);
-                    } catch (Exception e) {
-                        logger.error("error put request" + id, e);
-                        response = errorResponse();
-                    }
-                }
-                sendResponse(session, response);
-            });
+            doPutRequest(request, id, session);
         } catch (RejectedExecutionException e) {
             logger.error("Reject request {} method put", id, e);
             sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
     }
 
+    private void doPutRequest(Request request, String id, HttpSession session) {
+        requestsExecutor.execute(() -> {
+            Response response;
+            if (id.isEmpty()) {
+                response = emptyResponseFor(Response.BAD_REQUEST);
+            } else {
+                byte[] value = request.getBody();
+                try {
+                    dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
+                    response = emptyResponseFor(Response.CREATED);
+                } catch (Exception e) {
+                    logger.error("error put request" + id, e);
+                    response = errorResponse();
+                }
+            }
+            sendResponse(session, response);
+        });
+    }
+
     @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_DELETE)
     public void handleDelete(@Param(value = "id", required = true) String id, HttpSession session) {
         try {
-            requestsExecutor.execute(() -> {
-                Response response;
-                if (id.isEmpty()) {
-                    response = emptyResponseFor(Response.BAD_REQUEST);
-                } else {
-                    try {
-                        dao.upsert(new BaseEntry<>(id, null));
-                        response = emptyResponseFor(Response.ACCEPTED);
-                    } catch (Exception e) {
-                        logger.error("error delete request" + id, e);
-                        response = errorResponse();
-                    }
-                }
-                sendResponse(session, response);
-            });
+            doDeleteRequest(id, session);
         } catch (RejectedExecutionException e) {
             logger.error("Reject request {} method delete", id, e);
             sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
+    }
+
+    private void doDeleteRequest(String id, HttpSession session) {
+        requestsExecutor.execute(() -> {
+            Response response;
+            if (id.isEmpty()) {
+                response = emptyResponseFor(Response.BAD_REQUEST);
+            } else {
+                try {
+                    dao.upsert(new BaseEntry<>(id, null));
+                    response = emptyResponseFor(Response.ACCEPTED);
+                } catch (Exception e) {
+                    logger.error("error delete request" + id, e);
+                    response = errorResponse();
+                }
+            }
+            sendResponse(session, response);
+        });
     }
 
     private static void sendResponse(HttpSession session, Response response) {
