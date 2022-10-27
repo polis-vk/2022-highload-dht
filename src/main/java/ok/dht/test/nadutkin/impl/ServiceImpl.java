@@ -78,13 +78,11 @@ public class ServiceImpl extends ReplicaService {
                     getBytes("Can't ask other replicas, %s$".formatted(e.getMessage())));
         }
         for (String url : urls) {
-            if (breaker.isWorking(url)) {
-                Response response = url.equals(config.selfUrl())
-                        ? handleV1(id, request)
-                        : handleProxy(url, request);
-                if (processor.process(response)) {
-                    break;
-                }
+            Response response = url.equals(config.selfUrl())
+                    ? handleV1(id, request)
+                    : handleProxy(url, request);
+            if (processor.process(response)) {
+                break;
             }
         }
         return processor.response();
@@ -93,22 +91,24 @@ public class ServiceImpl extends ReplicaService {
     //endregion
 
     private Response handleProxy(String url, Request request) {
-        try {
-            HttpRequest proxyRequest = HttpRequest
-                    .newBuilder(URI.create(url + request.getURI().replace(Constants.PATH, Constants.REPLICA_PATH)))
-                    .method(
-                            request.getMethodName(),
-                            HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                    .build();
-            HttpResponse<byte[]> response = client.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
-            if (response.statusCode() == HttpURLConnection.HTTP_UNAVAILABLE) {
+        if (breaker.isWorking(url)) {
+            try {
+                HttpRequest proxyRequest = HttpRequest
+                        .newBuilder(URI.create(url + request.getURI().replace(Constants.PATH, Constants.REPLICA_PATH)))
+                        .method(
+                                request.getMethodName(),
+                                HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                        .build();
+                HttpResponse<byte[]> response = client.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
+                if (response.statusCode() == HttpURLConnection.HTTP_UNAVAILABLE) {
+                    fail(url);
+                }
+                breaker.success(url);
+                return new Response(Integer.toString(response.statusCode()), response.body());
+            } catch (InterruptedException | IOException exception) {
+                Constants.LOG.error("Server caught an exception at url {}", url);
                 fail(url);
             }
-            breaker.success(url);
-            return new Response(Integer.toString(response.statusCode()), response.body());
-        } catch (InterruptedException | IOException exception) {
-            Constants.LOG.error("Server caught an exception at url {}", url);
-            fail(url);
         }
         return null;
     }
