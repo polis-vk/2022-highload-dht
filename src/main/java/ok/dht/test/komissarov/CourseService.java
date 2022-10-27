@@ -24,6 +24,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -137,7 +138,7 @@ public class CourseService implements Service {
                 );
                 Entry<MemorySegment> time = new BaseEntry<>(
                         segmentId,
-                        MemorySegment.ofArray(new long[]{System.currentTimeMillis()})
+                        MemorySegment.ofArray(convertToLong(System.currentTimeMillis()))
                 );
                 dao.upsert(entry);
                 tsmpDao.upsert(time);
@@ -153,7 +154,7 @@ public class CourseService implements Service {
                 tsmpDao.upsert(
                         new BaseEntry<>(
                         fromString(id),
-                        MemorySegment.ofArray(new long[]{time})
+                        MemorySegment.ofArray(convertToLong(time))
                         ));
                 return new Response(Response.ACCEPTED, Response.EMPTY);
             }
@@ -173,7 +174,7 @@ public class CourseService implements Service {
             long maxTime = Long.MIN_VALUE;
             Response answer = null;
             for (Response response : responses) {
-                long time = convertToLong(Arrays.copyOfRange(response.getBody(), 0, 8));
+                long time = convertToBytes(Arrays.copyOfRange(response.getBody(), 0, 8));
                 if (time > maxTime) {
                     maxTime = time;
                     if (response.getStatus() == 404 && response.getBody().length > 0) {
@@ -235,12 +236,17 @@ public class CourseService implements Service {
         return result;
     }
 
-    private static long convertToLong(byte[] bytes) {
-        long value = 0L;
-        for (byte b : bytes) {
-            value = (value << 8) + (b & 255);
-        }
-        return value;
+    public byte[] convertToLong(long x) {
+        ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
+        buffer.putLong(x);
+        return buffer.array();
+    }
+
+    public long convertToBytes(byte[] bytes) {
+        ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
+        buffer.put(bytes);
+        buffer.flip();
+        return buffer.getLong();
     }
 
     private static Path getPath(String name) {
