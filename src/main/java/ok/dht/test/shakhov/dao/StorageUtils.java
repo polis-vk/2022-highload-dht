@@ -81,6 +81,7 @@ final class StorageUtils {
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
                 offset += writeRecord(nextSSTable, offset, entry.key());
+                offset += writeTimestamp(nextSSTable, offset, entry.timestamp());
                 offset += writeRecord(nextSSTable, offset, entry.value());
 
                 index++;
@@ -98,9 +99,9 @@ final class StorageUtils {
 
     private static long getSize(Entry<MemorySegment> entry) {
         if (entry.value() == null) {
-            return Long.BYTES + entry.key().byteSize() + Long.BYTES;
+            return Long.BYTES + entry.key().byteSize() + Long.BYTES + Long.BYTES;
         } else {
-            return Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
+            return Long.BYTES + entry.value().byteSize() + Long.BYTES + entry.key().byteSize() + Long.BYTES;
         }
     }
 
@@ -117,6 +118,11 @@ final class StorageUtils {
         MemoryAccess.setLongAtOffset(nextSSTable, offset, recordSize);
         nextSSTable.asSlice(offset + Long.BYTES, recordSize).copyFrom(record);
         return Long.BYTES + recordSize;
+    }
+
+    private static long writeTimestamp(MemorySegment nextSSTable, long offset, long timestamp) {
+        MemoryAccess.setLongAtOffset(nextSSTable, offset, timestamp);
+        return Long.BYTES;
     }
 
     @SuppressWarnings("DuplicateThrows")

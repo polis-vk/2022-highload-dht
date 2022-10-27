@@ -56,7 +56,8 @@ final class Storage implements Closeable {
     static void save(
             DaoConfig daoConfig,
             Storage previousState,
-            Collection<Entry<MemorySegment>> entries) throws IOException {
+            Collection<Entry<MemorySegment>> entries) throws IOException
+    {
         int nextSSTableIndex = previousState.sstables.size();
         Path sstablePath = daoConfig.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
         StorageUtils.save(entries::iterator, sstablePath);
@@ -77,7 +78,7 @@ final class Storage implements Closeable {
     }
 
     // file structure:
-    // (fileVersion)(entryCount)((entryPosition)...)|((keySize/key/valueSize/value)...)
+    // (fileVersion)(entryCount)((entryPosition)...)|((keySize/key/timestamp/valueSize/value)...)
     private long entryIndex(MemorySegment sstable, MemorySegment key) {
         long fileVersion = MemoryAccess.getLongAtOffset(sstable, 0);
         if (fileVersion != 0) {
@@ -115,10 +116,13 @@ final class Storage implements Closeable {
         try {
             long offset = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + keyIndex * INDEX_RECORD_SIZE);
             long keySize = MemoryAccess.getLongAtOffset(sstable, offset);
-            long valueOffset = offset + Long.BYTES + keySize;
+            long timestampOffset = offset + Long.BYTES + keySize;
+            long timestamp = MemoryAccess.getLongAtOffset(sstable, timestampOffset);
+            long valueOffset = timestampOffset + Long.BYTES;
             long valueSize = MemoryAccess.getLongAtOffset(sstable, valueOffset);
             return new BaseEntry<>(
                     sstable.asSlice(offset + Long.BYTES, keySize),
+                    timestamp,
                     valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize)
             );
         } catch (IllegalStateException e) {

@@ -11,19 +11,27 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BiFunction;
+
+import static ok.dht.test.shakhov.HttpUtils.ACK_PARAM;
+import static ok.dht.test.shakhov.HttpUtils.FROM_PARAM;
+import static ok.dht.test.shakhov.HttpUtils.ID_PARAMETER;
+import static ok.dht.test.shakhov.HttpUtils.ONE_NIO_X_LEADER_TIMESTAMP_HEADER;
+import static ok.dht.test.shakhov.HttpUtils.badRequest;
+import static ok.dht.test.shakhov.HttpUtils.methodNotAllowed;
 
 public class KeyValueHttpServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(KeyValueHttpServer.class);
 
     private static final String ENDPOINT = "/v0/entity";
-    private static final String ID_PARAMETER = "id=";
+    private static final Set<Integer> SUPPORTED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
+
     private static final int QUEUE_MAX_SIZE = 50_000;
     private static final int MAX_POOL_SIZE = Runtime.getRuntime().availableProcessors() / 2;
     private static final int CORE_POOL_SIZE = MAX_POOL_SIZE / 2;
@@ -31,13 +39,20 @@ public class KeyValueHttpServer extends HttpServer {
     private static final RejectedExecutionHandler DISCARD_POLICY = new ThreadPoolExecutor.DiscardPolicy();
     private static final int AWAIT_TERMINATION_TIMEOUT_SECONDS = 20;
 
-    private final BiFunction<Request, String, Response> requestHandler;
+    private final int clusterSize;
+    private final ClientRequestHandler clientRequestHandler;
+    private final InternalRequestHandler internalRequestHandler;
     private ExecutorService executorService;
 
     public KeyValueHttpServer(HttpServerConfig config,
-                              BiFunction<Request, String, Response> requestHandler) throws IOException {
+                              int clusterSize,
+                              ClientRequestHandler clientRequestHandler,
+                              InternalRequestHandler internalRequestHandler) throws IOException
+    {
         super(config);
-        this.requestHandler = requestHandler;
+        this.clusterSize = clusterSize;
+        this.clientRequestHandler = clientRequestHandler;
+        this.internalRequestHandler = internalRequestHandler;
     }
 
     @Override
@@ -58,23 +73,51 @@ public class KeyValueHttpServer extends HttpServer {
     public void handleRequest(Request request, HttpSession session) {
         executorService.execute(() -> {
             try {
-                if (!ENDPOINT.equals(request.getPath())) {
-                    session.sendResponse(badRequest());
-                    return;
-                }
-
-                String id = request.getParameter(ID_PARAMETER);
-                if (id == null || id.isEmpty()) {
-                    session.sendResponse(badRequest());
-                    return;
-                }
-
-                session.sendResponse(requestHandler.apply(request, id));
+                session.sendResponse(processRequest(request));
             } catch (IOException e) {
                 log.error("Error during sending response", e);
                 session.close();
             }
         });
+    }
+
+    private Response processRequest(Request request) {
+        if (!ENDPOINT.equals(request.getPath())) {
+            return badRequest();
+        }
+
+        if (!SUPPORTED_METHODS.contains(request.getMethod())) {
+            return methodNotAllowed();
+        }
+
+        String id = request.getParameter(ID_PARAMETER);
+        if (id == null || id.isEmpty()) {
+            return badRequest();
+        }
+
+        String leaderTimestamp = request.getHeader(ONE_NIO_X_LEADER_TIMESTAMP_HEADER);
+        if (leaderTimestamp == null || leaderTimestamp.isEmpty()) {
+            int ack;
+            int from;
+            try {
+                ack = HttpUtils.getIntParameter(request, ACK_PARAM, clusterSize / 2 + 1);
+                from = HttpUtils.getIntParameter(request, FROM_PARAM, clusterSize);
+            } catch (NumberFormatException e) {
+                return badRequest();
+            }
+            if (ack <= 0 || from > clusterSize || ack > from) {
+                return badRequest();
+            }
+            return clientRequestHandler.handleClientRequest(request, id, ack, from);
+        } else {
+            long parsedLeaderTimestamp;
+            try {
+                parsedLeaderTimestamp = Long.parseLong(leaderTimestamp);
+            } catch (NumberFormatException e) {
+                return badRequest();
+            }
+            return internalRequestHandler.handleInternalRequest(request, id, parsedLeaderTimestamp);
+        }
     }
 
     @Override
@@ -96,9 +139,5 @@ public class KeyValueHttpServer extends HttpServer {
                 session.close();
             }
         }
-    }
-
-    private static Response badRequest() {
-        return new Response(Response.BAD_REQUEST, Response.EMPTY);
     }
 }
