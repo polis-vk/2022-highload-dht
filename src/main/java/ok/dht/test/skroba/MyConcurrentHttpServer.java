@@ -94,10 +94,10 @@ public class MyConcurrentHttpServer extends HttpServer {
         pool.shutdown();
         
         try {
-            if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
+            if (!pool.awaitTermination(60, TimeUnit.MILLISECONDS)) {
                 pool.shutdownNow();
                 
-                if (!pool.awaitTermination(60, TimeUnit.SECONDS)) {
+                if (!pool.awaitTermination(60, TimeUnit.MILLISECONDS)) {
                     LOG.error("Pool did not terminate");
                 }
             }
