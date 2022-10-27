@@ -228,7 +228,7 @@ class ShardingTest extends TestBase {
 
     @ServiceTest(stage = 3, clusterSize = 2)
     void checkDistributionUniformity2(List<ServiceInfo> serviceInfos) throws Exception {
-        final int keysCount = 250_000;
+        final int keysCount = 150_000;
         final int delta = 1;
         String key;
         final byte[] value = randomValue();
