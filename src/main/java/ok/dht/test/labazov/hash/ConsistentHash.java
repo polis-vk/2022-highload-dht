@@ -1,6 +1,7 @@
 package ok.dht.test.labazov.hash;
 
-import java.nio.charset.StandardCharsets;
+import one.nio.util.Hash;
+
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -9,15 +10,14 @@ import java.util.Set;
 import java.util.TreeMap;
 
 public final class ConsistentHash {
-    private final NavigableMap<Integer, String> circle = new TreeMap<>();
-    private final Hasher hasher = new Hasher();
+    private final NavigableMap<Integer, Node> circle = new TreeMap<>();
 
-    private int hashKey(final String key) {
-        return hasher.digest(key.getBytes(StandardCharsets.UTF_8));
+    private static int hashKey(final String key) {
+        return Hash.murmur3(key);
     }
 
-    public String getShard(final String key) {
-        final Map.Entry<Integer, String> ent = circle.ceilingEntry(hashKey(key));
+    public Node getShard(final String key) {
+        final Map.Entry<Integer, Node> ent = circle.ceilingEntry(hashKey(key));
         if (ent == null) {
             return circle.firstEntry().getValue();
         } else {
@@ -25,25 +25,24 @@ public final class ConsistentHash {
         }
     }
 
-    public List<String> getShards(final String key, final int size) {
-        final Set<String> ret = new HashSet<>(size);
+    public List<Node> getShards(final String key, final int size) {
+        final Set<Node> ret = new HashSet<>(size);
         ret.add(getShard(key));
         int i = 0;
         while (ret.size() < size) {
-            final String candidate = getShard(key + i);
-            ret.add(candidate);
+            ret.add(getShard(key + i));
             i++;
         }
         return List.copyOf(ret);
     }
 
-    public void addShard(String newShard, Set<Integer> vnodeHashes) {
+    public void addShard(Node newShard, Set<Integer> vnodeHashes) {
         for (final int vnodeHash : vnodeHashes) {
             circle.put(vnodeHash, newShard);
         }
     }
 
-    public void removeShard(final String shard) {
-        circle.values().removeIf((String x) -> x.equals(shard));
+    public void removeShard(final Node shard) {
+        circle.values().removeIf((Node x) -> x.url.equals(shard.url));
     }
 }

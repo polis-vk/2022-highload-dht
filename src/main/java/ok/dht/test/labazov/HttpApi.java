@@ -8,7 +8,7 @@ import ok.dht.test.labazov.dao.Dao;
 import ok.dht.test.labazov.dao.Entry;
 import ok.dht.test.labazov.dao.MemorySegmentDao;
 import ok.dht.test.labazov.hash.ConsistentHash;
-import ok.dht.test.labazov.hash.Hasher;
+import ok.dht.test.labazov.hash.Node;
 import one.nio.http.HttpClient;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -22,16 +22,14 @@ import one.nio.net.ConnectionString;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
+import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -40,7 +38,6 @@ import java.util.concurrent.TimeUnit;
 public final class HttpApi extends HttpServer {
     private static final int FLUSH_THRESHOLD_BYTES = 8 * 1024 * 1024;
     private static final Logger LOG = LoggerFactory.getLogger(HttpApi.class);
-    private final HashMap<String, HttpClient> httpClients = new HashMap<>();
     private final ConsistentHash shards;
     private final ServiceConfig config;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
@@ -53,12 +50,11 @@ public final class HttpApi extends HttpServer {
             final int virtualNodeCount = 1;
 
             final HashSet<Integer> nodeSet = new HashSet<>(virtualNodeCount);
-            final Hasher hasher = new Hasher();
             for (int i = 0; i < virtualNodeCount; i++) {
-                nodeSet.add(hasher.digest(url.getBytes(StandardCharsets.UTF_8)));
+                nodeSet.add(Hash.murmur3(url));
             }
 
-            shards.addShard(url, nodeSet);
+            shards.addShard(new Node(url), nodeSet);
         }
         this.config = config;
     }
@@ -124,12 +120,6 @@ public final class HttpApi extends HttpServer {
             throw new RuntimeException(e);
         }
         super.start();
-
-        for (final String url : config.clusterUrls()) {
-            ConnectionString str = new ConnectionString(url);
-            HttpClient client = new HttpClient(str);
-            httpClients.put(url, client);
-        }
     }
 
     @Override
@@ -139,11 +129,6 @@ public final class HttpApi extends HttpServer {
                 session.close();
             }
         }
-
-        for (final Map.Entry<String, HttpClient> entry : httpClients.entrySet()) {
-            entry.getValue().close();
-        }
-        httpClients.clear();
 
         super.stop();
         shutdownAndAwaitTermination(threadPool);
@@ -188,10 +173,10 @@ public final class HttpApi extends HttpServer {
         try {
             super.handleRequest(request, session);
         } catch (IOException e) {
-            LOG.error("IOException during request handling: " + e.getMessage());
+            LOG.error("IOException during request handling: ", e);
             ioExceptionHandler(session);
         } catch (Exception e) {
-            LOG.error("Exception during request handling: " + e.getMessage());
+            LOG.error("Exception during request handling: ", e);
             genericExceptionHandler(request, session);
         }
     }
@@ -200,15 +185,22 @@ public final class HttpApi extends HttpServer {
                                      final HttpSession session,
                                      final String key,
                                      final int acks,
-                                     final int froms) {
-        final List<String> targetShards = shards.getShards(key, froms);
+                                     final int froms) throws IOException {
+        final List<Node> targetShards = shards.getShards(key, froms);
         final RequestGather gather = new RequestGather(acks, froms);
-        for (final String shard : targetShards) {
-            threadPool.execute(() -> {
+        for (final Node shard : targetShards) {
+            int tasks = shard.tasksCount.incrementAndGet();
+            if (tasks > Node.MAX_TASKS_ALLOWED) {
+                shard.tasksCount.decrementAndGet();
+                session.sendResponse(getEmptyResponse(Response.SERVICE_UNAVAILABLE));
+                return;
+            }
+
+            shard.tasks.offer(() -> {
                 Request redirectedRequest = new Request(request);
                 redirectedRequest.addHeader("Proxy: true");
-                try {
-                    final Response response = httpClients.get(shard).invoke(redirectedRequest, 500);
+                try (final HttpClient httpClient = new HttpClient(new ConnectionString(shard.url))) {
+                    final Response response = httpClient.invoke(redirectedRequest, 500);
                     switch (response.getStatus()) {
                         case 200, 201, 202, 404 -> gather.submitGoodResponse(session, response);
                         default -> gather.submitFailure(session);
@@ -218,6 +210,25 @@ public final class HttpApi extends HttpServer {
                     gather.submitFailure(session);
                 }
             });
+
+            if (tasks <= Node.MAX_WORKERS_ALLOWED) {
+                threadPool.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        Runnable poll = shard.tasks.poll();
+                        if (poll != null) {
+                            try {
+                                poll.run();
+                            } catch (Exception e) {
+                                LOG.error("Unexpected error handle request", e);
+                            } finally {
+                                shard.tasksCount.decrementAndGet();
+                                threadPool.execute(this);
+                            }
+                        }
+                    }
+                });
+            }
         }
     }
 
@@ -312,7 +323,7 @@ public final class HttpApi extends HttpServer {
             session.sendResponse(getEmptyResponse(Response.BAD_REQUEST));
             return true;
         }
-        if ((shards.getShard(key).equals(config.selfUrl()) && acks == 1 && froms == 1)
+        if ((shards.getShard(key).url.equals(config.selfUrl()) && acks == 1 && froms == 1)
                 || req.getHeader("Proxy: ") != null) {
             return false;
         }
