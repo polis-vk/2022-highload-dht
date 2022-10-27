@@ -69,7 +69,7 @@ public class DemoHttpServer extends HttpServer {
             return;
         }
 
-        List<String> targetNodes = HttpServerUtils.INSTANCE.getClustersByRendezvousHashing(key, circuitBreaker,
+        List<String> targetNodes = HttpServerUtils.INSTANCE.getNodesSortedByRendezvousHashing(key, circuitBreaker,
                 serviceConfig);
         workersPool.execute(() -> {
             try {
@@ -107,10 +107,10 @@ public class DemoHttpServer extends HttpServer {
             return;
         }
 
-        sendResponseToUser(session, responses);
+        aggregateResponsesAndSend(session, responses);
     }
 
-    private void sendResponseToUser(HttpSession session, List<Response> responses) throws IOException {
+    private void aggregateResponsesAndSend(HttpSession session, List<Response> responses) throws IOException {
         byte[] body = null;
         int notFoundResponsesCount = 0;
         long maxTimestamp = Long.MIN_VALUE;

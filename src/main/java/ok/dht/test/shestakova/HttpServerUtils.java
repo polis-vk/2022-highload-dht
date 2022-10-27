@@ -14,8 +14,8 @@ public class HttpServerUtils {
 
     static final HttpServerUtils INSTANCE = new HttpServerUtils();
 
-    List<String> getClustersByRendezvousHashing(String key, CircuitBreakerImpl circuitBreaker,
-                                                ServiceConfig serviceConfig) {
+    List<String> getNodesSortedByRendezvousHashing(String key, CircuitBreakerImpl circuitBreaker,
+                                                   ServiceConfig serviceConfig) {
         Map<Integer, String> nodesHashes = new TreeMap<>();
 
         for (String nodeUrl : serviceConfig.clusterUrls()) {
