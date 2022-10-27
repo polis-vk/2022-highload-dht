@@ -7,6 +7,7 @@ import one.nio.http.Response;
 
 import java.io.IOException;
 import java.util.Queue;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -19,11 +20,13 @@ public class ReplicasManager {
     private final TimeStampingDao dao;
     private final RandevouzHashingRouter shardingRouter;
     private final String selfUrl;
+    private final Executor executor;
 
-    public ReplicasManager(TimeStampingDao dao, RandevouzHashingRouter shardingRouter, String selfUrl) {
+    public ReplicasManager(TimeStampingDao dao, RandevouzHashingRouter shardingRouter, String selfUrl, Executor executor) {
         this.dao = dao;
         this.shardingRouter = shardingRouter;
         this.selfUrl = selfUrl;
+        this.executor = executor;
     }
 
     void handleReplicatingRequest(HttpSession session, Request request, String key, int ack, int from) {
@@ -66,7 +69,7 @@ public class ReplicasManager {
             }
             shardingRouter.routedRequestFuture(request, key, node)
                     .orTimeout(ServiceImpl.ROUTED_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                    .whenComplete((httpResponse, throwable) -> {
+                    .whenCompleteAsync((httpResponse, throwable) -> {
                         if (throwable != null) {
                             probablyResponseBad(session, from, responsesTotal, alreadyResponded);
                             handleNodeFailure(throwable, node, request, key);
@@ -78,7 +81,7 @@ public class ReplicasManager {
                         } else {
                             probablyResponseBad(session, from, responsesTotal, alreadyResponded);
                         }
-                    });
+                    }, executor);
         }
     }
 
@@ -107,7 +110,7 @@ public class ReplicasManager {
             }
             shardingRouter.routedRequestFuture(request, key, node)
                     .orTimeout(ServiceImpl.ROUTED_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                    .whenComplete((httpResponse, throwable) -> {
+                    .whenCompleteAsync((httpResponse, throwable) -> {
                         if (throwable != null) {
                             handleNodeFailure(throwable, node, request, key);
                             probablyResponseBad(session, from, responsesTotal, alreadyResponded);
@@ -120,7 +123,7 @@ public class ReplicasManager {
                         TimeStampedValue value = updateValueIfNeeded(latestValueRef, lock, httpResponse.body(),
                                 httpResponse.statusCode());
                         probablyResponseGoodToGet(session, ack, value, nonFailed, responsesTotal, alreadyResponded);
-                    });
+                    }, executor);
         }
     }
 

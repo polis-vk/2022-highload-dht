@@ -84,7 +84,8 @@ public class ServiceImpl implements Service {
 
             super(config, routers);
             RandevouzHashingRouter shardingRouter = new RandevouzHashingRouter(serviceConfig.clusterUrls());
-            this.replicasManager = new ReplicasManager(timeStampingDao, shardingRouter, serviceConfig.selfUrl());
+            this.replicasManager = new ReplicasManager(timeStampingDao, shardingRouter,
+                    serviceConfig.selfUrl(), workersPool);
         }
 
         @Override
