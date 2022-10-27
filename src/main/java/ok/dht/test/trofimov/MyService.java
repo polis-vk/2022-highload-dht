@@ -22,8 +22,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -33,6 +35,7 @@ public class MyService implements Service {
     private static final Logger logger = LoggerFactory.getLogger(MyService.class);
     private static final long FLUSH_THRESHOLD = 1 << 20;
     private static final int REQUESTS_MAX_QUEUE_SIZE = 1024;
+    public static final int TIMEOUT_EXECUTOR = 10;
     private final ServiceConfig config;
     private HttpServer server;
     private InMemoryDao dao;
@@ -61,84 +64,113 @@ public class MyService implements Service {
         requestsExecutor = new ThreadPoolExecutor(threadsCount, threadsCount,
                 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(REQUESTS_MAX_QUEUE_SIZE),
-                new ThreadPoolExecutor.DiscardOldestPolicy());
+                new ThreadPoolExecutor.AbortPolicy());
         requestsExecutor.prestartAllCoreThreads();
     }
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
+        requestsExecutor.shutdown();
+        try {
+            if (!requestsExecutor.awaitTermination(TIMEOUT_EXECUTOR, TimeUnit.SECONDS)) {
+                shutdownNowExecutor();
+            }
+        } catch (InterruptedException e) {
+            logger.error("InterruptedException while stopping requestExecutor", e);
+            Thread.currentThread().interrupt();
+            shutdownNowExecutor();
+        }
         server.stop();
-        requestsExecutor.shutdownNow();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
 
+    private void shutdownNowExecutor() {
+        List<Runnable> listOfRequests = requestsExecutor.shutdownNow();
+        logger.error("Can't stop executor. Shutdown now, number of requests: {}", listOfRequests.size());
+    }
+
+
     @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_GET)
     public void handleGet(@Param(value = "id", required = true) String id, HttpSession session) {
-        requestsExecutor.execute(() -> {
-            Response response;
-            if (id.isEmpty()) {
-                response = emptyResponseFor(Response.BAD_REQUEST);
-            } else {
-                try {
-                    Entry<String> entry = dao.get(id);
-                    if (entry == null) {
-                        response = emptyResponseFor(Response.NOT_FOUND);
-                    } else {
-                        String value = entry.value();
-                        char[] chars = value.toCharArray();
-                        response = new Response(Response.OK, Base64.decodeFromChars(chars));
+        try {
+            requestsExecutor.execute(() -> {
+                Response response;
+                if (id.isEmpty()) {
+                    response = emptyResponseFor(Response.BAD_REQUEST);
+                } else {
+                    try {
+                        Entry<String> entry = dao.get(id);
+                        if (entry == null) {
+                            response = emptyResponseFor(Response.NOT_FOUND);
+                        } else {
+                            String value = entry.value();
+                            char[] chars = value.toCharArray();
+                            response = new Response(Response.OK, Base64.decodeFromChars(chars));
+                        }
+                    } catch (Exception e) {
+                        logger.error("error get request" + id, e);
+                        response = errorResponse();
                     }
-                } catch (Exception e) {
-                    logger.error("error get request" + id, e);
-                    response = errorResponse();
                 }
-            }
-            sendResponse(session, response);
-        });
+                sendResponse(session, response);
+            });
+        } catch (RejectedExecutionException e) {
+            logger.error("Reject request {} method get", id, e);
+            sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
     }
 
     @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_PUT)
     public void handlePut(Request request, @Param(value = "id", required = true) String id, HttpSession session) {
-        requestsExecutor.execute(() -> {
-            Response response;
-            if (id.isEmpty()) {
-                response = emptyResponseFor(Response.BAD_REQUEST);
-            } else {
-                byte[] value = request.getBody();
-                try {
-                    dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
-                    response = emptyResponseFor(Response.CREATED);
-                } catch (Exception e) {
-                    logger.error("error put request" + id, e);
-                    response = errorResponse();
+        try {
+            requestsExecutor.execute(() -> {
+                Response response;
+                if (id.isEmpty()) {
+                    response = emptyResponseFor(Response.BAD_REQUEST);
+                } else {
+                    byte[] value = request.getBody();
+                    try {
+                        dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
+                        response = emptyResponseFor(Response.CREATED);
+                    } catch (Exception e) {
+                        logger.error("error put request" + id, e);
+                        response = errorResponse();
+                    }
                 }
-            }
-            sendResponse(session, response);
-        });
+                sendResponse(session, response);
+            });
+        } catch (RejectedExecutionException e) {
+            logger.error("Reject request {} method put", id, e);
+            sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
     }
 
     @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_DELETE)
     public void handleDelete(@Param(value = "id", required = true) String id, HttpSession session) {
-        requestsExecutor.execute(() -> {
-            Response response;
-            if (id.isEmpty()) {
-                response = emptyResponseFor(Response.BAD_REQUEST);
-            } else {
-                try {
-                    dao.upsert(new BaseEntry<>(id, null));
-                    response = emptyResponseFor(Response.ACCEPTED);
-                } catch (Exception e) {
-                    logger.error("error delete request" + id, e);
-                    response = errorResponse();
+        try {
+            requestsExecutor.execute(() -> {
+                Response response;
+                if (id.isEmpty()) {
+                    response = emptyResponseFor(Response.BAD_REQUEST);
+                } else {
+                    try {
+                        dao.upsert(new BaseEntry<>(id, null));
+                        response = emptyResponseFor(Response.ACCEPTED);
+                    } catch (Exception e) {
+                        logger.error("error delete request" + id, e);
+                        response = errorResponse();
+                    }
                 }
-            }
-            sendResponse(session, response);
-        });
-
+                sendResponse(session, response);
+            });
+        } catch (RejectedExecutionException e) {
+            logger.error("Reject request {} method delete", id, e);
+            sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
     }
 
     private static void sendResponse(HttpSession session, Response response) {
@@ -181,7 +213,7 @@ public class MyService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 3, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
