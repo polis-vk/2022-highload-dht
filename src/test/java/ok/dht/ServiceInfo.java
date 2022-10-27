@@ -99,7 +99,7 @@ public class ServiceInfo {
         return request("/v0/entity?id=" + key);
     }
 
-    private HttpRequest.Builder requestForKey(String key, int from, int ack) {
+    private HttpRequest.Builder requestForKey(String key, int ack, int from) {
         return request("/v0/entity?id=" + key + "&from=" + from + "&ack=" + ack);
     }
 
