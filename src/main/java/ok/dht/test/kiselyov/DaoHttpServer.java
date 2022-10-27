@@ -226,7 +226,7 @@ public class DaoHttpServer extends HttpServer {
         int successResponses = 0;
         for (Response response : responses) {
             int responseStatus = response.getStatus();
-            if (responseStatus >= 200 && responseStatus <= 202 || responseStatus == 404) {
+            if ((responseStatus >= 200 && responseStatus <= 202) || responseStatus == 404) {
                 successResponses++;
             }
         }
