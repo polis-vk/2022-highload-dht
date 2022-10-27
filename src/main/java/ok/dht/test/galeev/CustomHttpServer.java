@@ -42,6 +42,7 @@ public class CustomHttpServer extends HttpServer {
     public synchronized void stop() {
         for (SelectorThread thread : selectors) {
             if (thread.isAlive()) {
+                thread.interrupt();
                 for (Session session : thread.selector) {
                     if (session.socket().isOpen()) {
                         session.socket().close();
@@ -72,11 +73,6 @@ public class CustomHttpServer extends HttpServer {
             handleDefault(request, session);
         } else {
             // If handler was found - then everything is OK
-            String id = request.getParameter("id=");
-            if (id == null || id.isEmpty()) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
             executorService.submit(new RunnableForRequestHandler(requestHandler, request, session));
         }
     }

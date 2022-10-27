@@ -75,11 +75,11 @@ public abstract class Node {
 
         @Override
         public CompletableFuture<Entry<Timestamp, byte[]>> get(String key) {
-            Entry<Timestamp, byte[]> entry = getDao(key);
+            Entry<Timestamp, byte[]> entry = getFromDao(key);
             return CompletableFuture.completedFuture(entry);
         }
 
-        public Entry<Timestamp, byte[]> getDao(String key) {
+        public Entry<Timestamp, byte[]> getFromDao(String key) {
             Entry<String, Entry<Timestamp, byte[]>> entry = dao.get(key);
             if (entry == null) {
                 return new BaseEntry<>(null, null);
@@ -90,25 +90,25 @@ public abstract class Node {
 
         @Override
         public CompletableFuture<Boolean> put(String key, Timestamp timestamp, byte[] body) {
-            putDao(key, timestamp, body);
+            putToDao(key, timestamp, body);
             return CompletableFuture.completedFuture(true);
         }
 
-        public void putDao(String key, Timestamp timestamp, byte[] body) {
-            putDao(key, new BaseEntry<>(timestamp, body));
+        public void putToDao(String key, Timestamp timestamp, byte[] body) {
+            putToDao(key, new BaseEntry<>(timestamp, body));
         }
 
-        public void putDao(String key, Entry<Timestamp, byte[]> entry) {
+        public void putToDao(String key, Entry<Timestamp, byte[]> entry) {
             dao.upsert(key, entry);
         }
 
         @Override
         public CompletableFuture<Boolean> delete(String key, Timestamp timestamp) {
-            deleteDao(key, timestamp);
+            deleteFromDao(key, timestamp);
             return CompletableFuture.completedFuture(true);
         }
 
-        public void deleteDao(String key, Timestamp timestamp) {
+        public void deleteFromDao(String key, Timestamp timestamp) {
             dao.upsert(new BaseEntry<>(key, new BaseEntry<>(timestamp, null)));
         }
 

@@ -13,10 +13,14 @@ public class Header {
     private final boolean isOk;
 
     public Header(Request request, int amountOfPhysicalNodes) {
+        String tmpKey;
         int tmpAck;
         int tmpFrom;
         boolean tmpIsOk = true;
-        key = request.getParameter(ID_PARAMETR);
+        tmpKey = request.getParameter(ID_PARAMETR);
+        if (tmpKey == null || tmpKey.isEmpty()) {
+            tmpIsOk = false;
+        }
         String ackString = request.getParameter(ACK_PARAMETR);
         String fromString = request.getParameter(FROM_PARAMETR);
         try {
@@ -33,6 +37,7 @@ public class Header {
             tmpFrom = -1;
             tmpIsOk = false;
         }
+        key = tmpKey;
         ack = tmpAck;
         from = tmpFrom;
         isOk = tmpIsOk;

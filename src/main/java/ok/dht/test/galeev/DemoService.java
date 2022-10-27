@@ -124,7 +124,7 @@ public class DemoService implements Service {
     public void localHandleGet(Request request, HttpSession session) throws IOException {
         String key = request.getParameter(Header.ID_PARAMETR);
 
-        Entry<Timestamp, byte[]> entry = localNode.getDao(key);
+        Entry<Timestamp, byte[]> entry = localNode.getFromDao(key);
         if (entry.key() == null) {
             session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
         } else {
@@ -146,13 +146,7 @@ public class DemoService implements Service {
 
         List<Node> routerNode = consistentHashRouter.getNode(header.getKey(), header.getFrom());
         for (Node node : routerNode) {
-            node.put(header.getKey(), currentTime, request.getBody()).thenAccept((isSuccessful) -> {
-                if (isSuccessful) {
-                    barrier.success();
-                } else {
-                    barrier.unSuccess();
-                }
-            });
+            node.put(header.getKey(), currentTime, request.getBody()).thenAccept(barrier.getDefaultSuccessChecker());
         }
 
         barrier.waitContinueBarrier(session,
@@ -177,13 +171,7 @@ public class DemoService implements Service {
 
         List<Node> routerNode = consistentHashRouter.getNode(header.getKey(), header.getFrom());
         for (Node node : routerNode) {
-            node.delete(header.getKey(), currentTime).thenAccept((isSuccessful) -> {
-                if (isSuccessful) {
-                    barrier.success();
-                } else {
-                    barrier.unSuccess();
-                }
-            });
+            node.delete(header.getKey(), currentTime).thenAccept(barrier.getDefaultSuccessChecker());
         }
 
         barrier.waitContinueBarrier(session,
@@ -200,7 +188,7 @@ public class DemoService implements Service {
         String key = request.getParameter(Header.ID_PARAMETR);
         Entry<Timestamp, byte[]> entry = Node.ClusterNode.getEntryFromByteArray(request.getBody());
 
-        localNode.putDao(key, entry);
+        localNode.putToDao(key, entry);
         if (entry.value() == null) {
             session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
         } else {
