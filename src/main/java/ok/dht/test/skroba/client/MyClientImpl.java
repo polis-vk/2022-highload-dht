@@ -1,5 +1,6 @@
 package ok.dht.test.skroba.client;
 
+import ok.dht.test.skroba.MyConcurrentHttpServer;
 import one.nio.http.Request;
 
 import java.net.URI;
@@ -18,9 +19,18 @@ public class MyClientImpl implements MyClient {
             .build();
     
     @Override
-    public CompletableFuture<HttpResponse<byte[]>> sendRequest(String uri, int method, byte[] body)
-            throws URISyntaxException {
+    public CompletableFuture<HttpResponse<byte[]>> sendRequest(
+            String uri,
+            long timeStamp,
+            int method,
+            byte[] body
+    ) throws URISyntaxException {
         HttpRequest.Builder builder = HttpRequest.newBuilder(new URI(uri));
+        
+        builder.setHeader(MyConcurrentHttpServer.PARENT_REQUEST,
+                MyConcurrentHttpServer.PARENT_REQUEST)
+                .setHeader(MyConcurrentHttpServer.TIMESTAMP_REQUEST, Long.toString(timeStamp));
+        
         
         HttpRequest httpRequest = switch (method) {
             case Request.METHOD_GET -> builder.GET().build();

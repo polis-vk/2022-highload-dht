@@ -54,7 +54,10 @@ class Storage implements Closeable {
         while (left <= right) {
             long mid = (left + right) >>> 1;
             
-            long keyPos = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + mid * INDEX_RECORD_SIZE) + Long.BYTES;
+            long keyPos = MemoryAccess.getLongAtOffset(
+                    sstable,
+                    INDEX_HEADER_SIZE + mid * INDEX_RECORD_SIZE
+            ) + Long.BYTES;
             long keySize = MemoryAccess.getLongAtOffset(sstable, keyPos);
             
             MemorySegment keyForCheck = sstable.asSlice(keyPos + Long.BYTES, keySize);

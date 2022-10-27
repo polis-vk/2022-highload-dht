@@ -7,7 +7,6 @@ import ok.dht.test.skroba.dao.base.Entry;
 import ok.dht.test.skroba.dao.comparators.EntryKeyComparator;
 import ok.dht.test.skroba.dao.exceptions.TooManyFlushesInBgException;
 import ok.dht.test.skroba.dao.iterators.MergeIterator;
-import ok.dht.test.skroba.dao.iterators.TombstoneFilteringIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

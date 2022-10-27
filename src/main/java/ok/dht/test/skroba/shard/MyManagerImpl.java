@@ -11,8 +11,13 @@ import java.util.stream.IntStream;
 public class MyManagerImpl implements Manager {
     private static final int BUCKETS_FOR_ONE_NODE = 5;
     private final List<Node> nodes;
+    private final int size;
+    
+    private final ServiceConfig config;
     
     public MyManagerImpl(ServiceConfig serviceConfig) {
+        config = serviceConfig;
+        
         nodes = new ArrayList<>(serviceConfig.clusterUrls().size() * BUCKETS_FOR_ONE_NODE);
         
         serviceConfig.clusterUrls().forEach(url -> {
@@ -20,6 +25,8 @@ public class MyManagerImpl implements Manager {
                     index -> nodes.add(new Node(url, Hash.murmur3("node:" + url + index)))
             );
         });
+        
+        size = serviceConfig.clusterUrls().size();
         
         nodes.sort(Comparator.comparingInt(Node::getHash));
     }
@@ -42,5 +49,25 @@ public class MyManagerImpl implements Manager {
         }
     
         return nodes.get(right % nodes.size());
+    }
+    
+    @Override
+    public int clusterSize() {
+        return size;
+    }
+    
+    @Override
+    public List<String> getUrls(String id, int size) {
+        List<String> result = new ArrayList<>();
+        
+        List<String> urls = config.clusterUrls();
+        String url = getUrlById(id).getUrl();
+        int index = urls.indexOf(url);
+        
+        while (result.size() != size) {
+            result.add(urls.get(index++ % urls.size()));
+        }
+        
+        return result;
     }
 }

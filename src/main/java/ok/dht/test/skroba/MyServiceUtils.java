@@ -9,7 +9,11 @@ import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.nio.file.Path;
 
 public final class MyServiceUtils {
@@ -52,6 +56,27 @@ public final class MyServiceUtils {
             LOGGER.error("Error while creating database.\n" + err.getMessage());
             
             throw err;
+        }
+    }
+    
+    static byte[] serialize(Object obj) {
+        try (ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
+            try (ObjectOutputStream object = new ObjectOutputStream(bytes)) {
+                object.writeObject(obj);
+                return bytes.toByteArray();
+            }
+        } catch (IOException e) {
+            LOGGER.error("Can't serialize object: " + e);
+            return new byte[0];
+        }
+    }
+    
+    static <T> T deserialize(byte[] data) {
+        try (ObjectInputStream is = new ObjectInputStream(new ByteArrayInputStream(data))) {
+            return (T) is.readObject();
+        } catch (IOException | ClassNotFoundException e) {
+            LOGGER.error("Can't deserialize object: " + e);
+            return null;
         }
     }
 }
