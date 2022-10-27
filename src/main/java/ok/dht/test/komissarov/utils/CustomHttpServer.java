@@ -1,11 +1,8 @@
 package ok.dht.test.komissarov.utils;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
-import ok.dht.test.komissarov.database.MemorySegmentDao;
-import ok.dht.test.komissarov.database.models.BaseEntry;
-import ok.dht.test.komissarov.database.models.Config;
-import ok.dht.test.komissarov.database.models.Entry;
+import ok.dht.test.komissarov.CourseService;
+import ok.dht.test.komissarov.database.exceptions.BadParamException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -14,42 +11,34 @@ import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
-import one.nio.util.Hash;
-import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class CustomHttpServer extends HttpServer {
 
     private static final String PATH = "/v0/entity";
-    private static final String PARAM_KEY = "id=";
+    private static final String ID_PARAM = "id=";
+    private static final String ACK = "ack=";
+    private static final String FROM = "from=";
+    private static final String REPEATED = "Repeated";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CustomHttpServer.class);
 
-    private final ExecutorService nodeWorkers = Executors.newFixedThreadPool(2);
-    private final ExecutorService binder = Executors.newFixedThreadPool(2);
-    private final ServiceConfig config;
-    private final HttpClient client;
-    private final MemorySegmentDao dao;
+    private final CourseService service;
+    private final int size;
 
-    public CustomHttpServer(ServiceConfig config) throws IOException {
+    private final ExecutorService nodeWorkers = Executors.newFixedThreadPool(
+            Runtime.getRuntime().availableProcessors() - 1
+    );
+
+    public CustomHttpServer(ServiceConfig config, CourseService service) throws IOException {
         super(createConfigFromPort(config.selfPort()));
-
-        this.config = config;
-        client = HttpClient.newHttpClient();
-        dao = new MemorySegmentDao(new Config(
-                config.workingDir(),
-                1 << 20
-        ));
+        this.service = service;
+        this.size = config.clusterUrls().size();
     }
 
     @Override
@@ -60,31 +49,29 @@ public class CustomHttpServer extends HttpServer {
             return;
         }
 
-        String id = request.getParameter(PARAM_KEY);
+        String id = request.getParameter(ID_PARAM);
         if (id == null || id.isEmpty()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
-        handle(request, session, id);
+
+        PairParams params;
+        try {
+            params = parseParam(request);
+        } catch (BadParamException e) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+        handle(request, session, id, params);
     }
 
     @Override
     public synchronized void stop() {
-        try {
-            nodeWorkers.shutdown();
-            binder.shutdown();
-            super.stop();
-            for (SelectorThread thread : selectors) {
-                thread.selector.forEach(Session::close);
-            }
-            dao.close();
-        } catch (IOException e) {
-            LOGGER.error("Stop error", e);
+        nodeWorkers.shutdown();
+        super.stop();
+        for (SelectorThread thread : selectors) {
+            thread.selector.forEach(Session::close);
         }
-    }
-
-    private static MemorySegment fromString(String value) {
-        return value == null ? null : MemorySegment.ofArray(Utf8.toBytes(value));
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -96,24 +83,21 @@ public class CustomHttpServer extends HttpServer {
         return httpConfig;
     }
 
-    private void handle(Request request, HttpSession session, String id) {
-        String url = getNode(id);
-        if (config.selfUrl().equals(url)) {
+    private void handle(Request request, HttpSession session, String id, PairParams params) {
             nodeWorkers.execute(() -> {
                 try {
-                    Response response = getResponse(request, id);
+                    Response response;
+                    if (request.getHeader(REPEATED) == null) {
+                        response = service.executeRequests(request, id, params);
+                    } else {
+                        response = service.executeSoloRequest(request, id);
+                    }
                     send(session, response);
                 } catch (Exception e) {
                     LOGGER.error("Unavailable error", e);
                     send(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
                 }
             });
-        } else {
-            binder.execute(() -> {
-                Response response = getProxyResponse(request, url);
-                send(session, response);
-            });
-        }
     }
 
     private void send(HttpSession session, Response response) {
@@ -125,75 +109,29 @@ public class CustomHttpServer extends HttpServer {
         }
     }
 
-    private Response getProxyResponse(Request request, String url) {
-        try {
-            HttpRequest proxyRequest = HttpRequest.newBuilder()
-                    .uri(new URI(url + request.getURI()))
-                    .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                    .build();
-            HttpResponse<byte[]> response = client.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
-            return new Response(mapCode(response.statusCode()), response.body());
-        } catch (Exception e) {
-            LOGGER.error("Unavailable error", e);
-            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-        }
-    }
+    private PairParams parseParam(Request request) {
+        String ackStr = request.getParameter(ACK);
+        String fromStr = request.getParameter(FROM);
 
-    private Response getResponse(Request request, String id) {
-        int method = request.getMethod();
-        switch (method) {
-            case Request.METHOD_GET -> {
-                Entry<MemorySegment> entry = dao.get(fromString(id));
-                if (entry == null) {
-                    return new Response(Response.NOT_FOUND, Response.EMPTY);
+        int clusterSize = size;
+        if (ackStr != null && fromStr != null) {
+            try {
+                int ack = Integer.parseInt(request.getParameter(ACK));
+                int from = Integer.parseInt(request.getParameter(FROM));
+
+                if (ack == 0 || from > clusterSize || ack > from) {
+                    throw new BadParamException();
                 }
-                return new Response(Response.OK, entry.value().toByteArray());
-            }
-            case Request.METHOD_PUT -> {
-                Entry<MemorySegment> entry = new BaseEntry<>(
-                        fromString(id),
-                        MemorySegment.ofArray(request.getBody())
-                );
-                dao.upsert(entry);
-                return new Response(Response.CREATED, Response.EMPTY);
-            }
-            case Request.METHOD_DELETE -> {
-                Entry<MemorySegment> removedEntry = new BaseEntry<>(
-                        fromString(id),
-                        null
-                );
-                dao.upsert(removedEntry);
-                return new Response(Response.ACCEPTED, Response.EMPTY);
-            }
-            default -> {
-                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                return new PairParams(ack, from);
+            } catch (NumberFormatException e) {
+                throw new BadParamException();
             }
         }
+        return new PairParams(quorum(clusterSize), clusterSize);
     }
 
-    private String mapCode(int code) {
-        return switch (code) {
-            case HttpURLConnection.HTTP_OK -> Response.OK;
-            case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
-            case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
-            case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
-            case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
-            default -> throw new IllegalStateException("Unexpected value:" + code);
-        };
-    }
-
-    private String getNode(String id) {
-        int max = Integer.MIN_VALUE;
-        String node = null;
-
-        for (String url : config.clusterUrls()) {
-            int hash = Hash.murmur3(url + id);
-            if (max < hash) {
-                max = hash;
-                node = url;
-            }
-        }
-        return node;
+    private int quorum(int from) {
+        return from / 2 + 1;
     }
 
 }
