@@ -219,207 +219,181 @@ Requests/sec:  20013.94
 Transfer/sec:      1.28MB  
 
 
-##### GET-запросы на заполненной (1.4 Гб) БД
+##### GET-запросы на заполненной (1.2 Гб на каждой ноде) БД
 
-Как и для PUT-запросов, были проведены запуски сервера с количеством нод от 1 до 10. В приведённой таблице видно, что с увеличением количества нод (>1) 
-оптимальное значение rate не меняется, только увеличивается latency для 90% запросов и max latency, что связано с необходимостью сервера дополнительно использовать передачу запросов по HTTP другим нодам.  
-В среднем при размере кластера >1 достигается значение rate = 1000 при среднем значении latency ~20 ms, для 90% запросов latency = ~30 ms.  
+Как и для PUT-запросов, были проведены запуски сервера с количеством нод от 2 до 5. В приведённой таблице видно, что с увеличением количества нод (>1) 
+оптимальное значение rate не меняется, только увеличиваются все значения latency: и среднее, и для 90% запросов, и для max latency, 
+что связано с необходимостью сервера в ack раз больше, чем в прошлом этапе, использовать передачу запросов по HTTP другим нодам.  
+Как и для put-запросов, становится заметрым влияние количества дубляжей запросов (равное ack) на производительность. Так, 
+в прошлых этапах при размере кластера >1 достигается значение rate = 1000 при среднем значении latency ~20 ms, для 90% запросов latency = ~30 ms. 
+Теперь же максимально достигаемый rate = 100, причем теперь значения всех latency в несколько раз больше. 
+Можно заметить, что при одинаковом значении ack и разных значениях from (при размерах клстера 2 и 3) хначения latency растут менее, чем в два раза, тк 
+в обоих случаях приходится искать ключ на другой ноде, но при этом в первом варианте второе подтверждение ключа мы ищем точно локально 
+(т.е. не ходим по сети в другую ноду), а во втором варианте мы либо ищем локально, либо обращаемя к другой ноде, в связи с чем увеличивается время на 
+хождение по сети.  
+А вот если сравнить варианты с разными значениями ack (например, вариант с количеством нод 3 и ack=2, а также вариант с количеством нод 4 и ack=3), 
+можно заметить увеличение latency более, чем в два раза, и здесь ключевое влияние оказывает необходимость искать ключ на еще одной ноде (во втором варианте), 
+а итерирование по диску у нас и так самая тяжеловесная операция.  
 
-В отличие от варианта с размером кластера = 1, в других вариантах значительно увеличивается значение max latency (в 2-3 раза, а в варианте с количеством нод = 10 - в 13.5 раз).
-Предполагаю, что, как и с put-запросами, на это влияет передача запросов и получение ответов от других нод. 
-Если говорить про значение latency при нескольких нодах, небольшой разброс значений, вероятно, связан 
-с тем, в какую ноду мы стреляли, и в какую ноду далее распределялся ключ, исходя из чего какая-то нода могла становиться более востребованной, 
-что связано с использованием не очень хорошей хеш-функции. 
-А такое большое значение max latency, особенно в многонодовых вариантах, вероятно, связано с работой сборщика мусора G1, 
+А такое большое значение max latency, особенно в вариантах с бОльшим количеством нод, вероятно, связано с работой сборщика мусора G1, 
 а на put-запросах еще добавляется фоновый flush.
 
-
-| Количество нод | Optimal rate | Latency avg | Latency per 90% | Max latency |
-|:--------------:|:------------:|:-----------:|:---------------:|:-----------:|
-|       1        |     1000     |  14.68 ms   |    22.78 ms     |  58.56 ms   |
-|       2        |     1000     |  19.68 ms   |    32.37 ms     |  120.13 ms  |
-|       3        |     1000     |  26.05 ms   |    39.97 ms     |  166.27 ms  |
-|       4        |     1000     |  16.44 ms   |    27.57 ms     |  109.76 ms  |
-|       5        |     1000     |  25.17 ms   |    42.72 ms     |  130.56 ms  |
-|       10       |     1000     |  18.12 ms   |    28.75 ms     |  787.97 ms  |
-
-UPD: в таблице выше приведены результаты с использованием плохой хеш-функции, впоследствии замененной на MurMur3,
-ниже в таблице приведены обновленные результаты.  
-
-| Количество нод | Optimal rate | Latency avg | Latency per 90% | Max latency |
-|:--------------:|:------------:|:-----------:|:---------------:|:-----------:|
-|       2        |     1000     |  23.87 ms   |    38.88 ms     |  141.82 ms  |
-|       3        |     1000     |  18.31 ms   |    30.99 ms     |  141.18 ms  |
-|       4        |     1000     |  14.66 ms   |    23.52 ms     |  178.69 ms  |
-|       5        |     1000     |  29.12 ms   |    46.81 ms     |  213.25 ms  |
+| Количество нод | ack/from | Optimal rate | Latency avg | Latency per 90% | Max latency |
+|:--------------:|:--------:|:------------:|:-----------:|:---------------:|:-----------:|
+|       2        |   2/2    |     100      |  35.03 ms   |    65.47 ms     |  132.35 ms  |
+|       3        |   2/3    |     100      |  58.30 ms   |    88.64 ms     |  180.86 ms  |
+|       4        |   3/4    |     100      |  120.83 ms  |    198.53 ms    |  243.97 ms  |
+|       5        |   3/5    |     100      |  146.67 ms  |    213.25 ms    |  234.24 ms  |
 
 Ниже представлен вывод для варианта с количеством нод 3.   
 
-`wrk -t 64 -c 64 -d 30 -R 1000 -s get.lua -L http://localhost:41575`  
-Running 30s test @ http://localhost:41575  
+`wrk -t 64 -c 64 -d 30 -R 100 -s get.lua -L http://localhost:33069`  
+Running 30s test @ http://localhost:33069  
 64 threads and 64 connections  
-Thread calibration: mean lat.: 10.742ms, rate sampling interval: 31ms  
-Thread calibration: mean lat.: 8.155ms, rate sampling interval: 18ms  
-Thread calibration: mean lat.: 9.270ms, rate sampling interval: 19ms  
-Thread calibration: mean lat.: 8.144ms, rate sampling interval: 18ms  
-Thread calibration: mean lat.: 8.869ms, rate sampling interval: 19ms  
-Thread calibration: mean lat.: 17.686ms, rate sampling interval: 44ms  
-Thread calibration: mean lat.: 10.877ms, rate sampling interval: 29ms  
-Thread calibration: mean lat.: 15.483ms, rate sampling interval: 45ms  
-Thread calibration: mean lat.: 12.992ms, rate sampling interval: 31ms  
-Thread calibration: mean lat.: 17.830ms, rate sampling interval: 52ms  
-Thread calibration: mean lat.: 15.505ms, rate sampling interval: 41ms  
-Thread calibration: mean lat.: 19.074ms, rate sampling interval: 45ms  
-Thread calibration: mean lat.: 15.682ms, rate sampling interval: 41ms  
-Thread calibration: mean lat.: 14.142ms, rate sampling interval: 45ms  
-Thread calibration: mean lat.: 18.993ms, rate sampling interval: 64ms  
-Thread calibration: mean lat.: 18.927ms, rate sampling interval: 44ms  
-Thread calibration: mean lat.: 14.534ms, rate sampling interval: 39ms  
-Thread calibration: mean lat.: 14.599ms, rate sampling interval: 43ms  
-Thread calibration: mean lat.: 29.878ms, rate sampling interval: 72ms  
-Thread calibration: mean lat.: 26.602ms, rate sampling interval: 63ms  
-Thread calibration: mean lat.: 28.887ms, rate sampling interval: 69ms  
-Thread calibration: mean lat.: 23.351ms, rate sampling interval: 71ms  
-Thread calibration: mean lat.: 13.654ms, rate sampling interval: 52ms  
-Thread calibration: mean lat.: 13.364ms, rate sampling interval: 39ms  
-Thread calibration: mean lat.: 18.854ms, rate sampling interval: 45ms  
-Thread calibration: mean lat.: 26.803ms, rate sampling interval: 72ms  
-Thread calibration: mean lat.: 28.557ms, rate sampling interval: 75ms  
-Thread calibration: mean lat.: 23.488ms, rate sampling interval: 66ms  
-Thread calibration: mean lat.: 29.615ms, rate sampling interval: 81ms  
-Thread calibration: mean lat.: 19.154ms, rate sampling interval: 50ms  
-Thread calibration: mean lat.: 30.716ms, rate sampling interval: 79ms  
-Thread calibration: mean lat.: 31.493ms, rate sampling interval: 72ms  
-Thread calibration: mean lat.: 36.710ms, rate sampling interval: 90ms  
-Thread calibration: mean lat.: 37.954ms, rate sampling interval: 91ms  
-Thread calibration: mean lat.: 36.436ms, rate sampling interval: 101ms  
-Thread calibration: mean lat.: 24.756ms, rate sampling interval: 61ms  
-Thread calibration: mean lat.: 25.025ms, rate sampling interval: 57ms  
-Thread calibration: mean lat.: 37.024ms, rate sampling interval: 84ms  
-Thread calibration: mean lat.: 38.561ms, rate sampling interval: 87ms  
-Thread calibration: mean lat.: 31.265ms, rate sampling interval: 71ms  
-Thread calibration: mean lat.: 30.042ms, rate sampling interval: 71ms  
-Thread calibration: mean lat.: 26.189ms, rate sampling interval: 65ms  
-Thread calibration: mean lat.: 39.719ms, rate sampling interval: 102ms  
-Thread calibration: mean lat.: 41.830ms, rate sampling interval: 95ms  
-Thread calibration: mean lat.: 29.654ms, rate sampling interval: 76ms  
-Thread calibration: mean lat.: 34.487ms, rate sampling interval: 86ms  
-Thread calibration: mean lat.: 19.812ms, rate sampling interval: 53ms  
-Thread calibration: mean lat.: 35.436ms, rate sampling interval: 82ms  
-Thread calibration: mean lat.: 37.698ms, rate sampling interval: 91ms  
-Thread calibration: mean lat.: 43.286ms, rate sampling interval: 109ms  
-Thread calibration: mean lat.: 42.561ms, rate sampling interval: 104ms  
-Thread calibration: mean lat.: 27.060ms, rate sampling interval: 69ms  
-Thread calibration: mean lat.: 37.144ms, rate sampling interval: 94ms  
-Thread calibration: mean lat.: 27.979ms, rate sampling interval: 67ms  
-Thread calibration: mean lat.: 35.502ms, rate sampling interval: 92ms  
-Thread calibration: mean lat.: 37.820ms, rate sampling interval: 84ms  
-Thread calibration: mean lat.: 35.361ms, rate sampling interval: 84ms  
-Thread calibration: mean lat.: 36.334ms, rate sampling interval: 91ms  
-Thread calibration: mean lat.: 28.431ms, rate sampling interval: 71ms  
-Thread calibration: mean lat.: 35.773ms, rate sampling interval: 86ms  
-Thread calibration: mean lat.: 30.731ms, rate sampling interval: 80ms  
-Thread calibration: mean lat.: 42.100ms, rate sampling interval: 106ms  
-Thread calibration: mean lat.: 27.637ms, rate sampling interval: 69ms  
-Thread calibration: mean lat.: 34.434ms, rate sampling interval: 92ms  
+Thread calibration: mean lat.: 19.711ms, rate sampling interval: 44ms  
+Thread calibration: mean lat.: 18.741ms, rate sampling interval: 44ms  
+Thread calibration: mean lat.: 16.785ms, rate sampling interval: 35ms  
+Thread calibration: mean lat.: 18.390ms, rate sampling interval: 42ms  
+Thread calibration: mean lat.: 18.072ms, rate sampling interval: 43ms  
+Thread calibration: mean lat.: 18.867ms, rate sampling interval: 40ms  
+Thread calibration: mean lat.: 26.939ms, rate sampling interval: 59ms  
+Thread calibration: mean lat.: 41.944ms, rate sampling interval: 103ms  
+Thread calibration: mean lat.: 25.314ms, rate sampling interval: 59ms  
+Thread calibration: mean lat.: 41.554ms, rate sampling interval: 89ms  
+Thread calibration: mean lat.: 22.540ms, rate sampling interval: 60ms  
+Thread calibration: mean lat.: 74.118ms, rate sampling interval: 175ms  
+Thread calibration: mean lat.: 38.180ms, rate sampling interval: 107ms  
+Thread calibration: mean lat.: 81.320ms, rate sampling interval: 182ms  
+Thread calibration: mean lat.: 65.334ms, rate sampling interval: 157ms  
+Thread calibration: mean lat.: 52.057ms, rate sampling interval: 113ms  
+Thread calibration: mean lat.: 47.077ms, rate sampling interval: 126ms  
+Thread calibration: mean lat.: 38.809ms, rate sampling interval: 92ms  
+Thread calibration: mean lat.: 26.893ms, rate sampling interval: 66ms  
+Thread calibration: mean lat.: 50.964ms, rate sampling interval: 113ms  
+Thread calibration: mean lat.: 52.544ms, rate sampling interval: 113ms  
+Thread calibration: mean lat.: 67.109ms, rate sampling interval: 166ms  
+Thread calibration: mean lat.: 45.404ms, rate sampling interval: 120ms  
+Thread calibration: mean lat.: 41.152ms, rate sampling interval: 96ms  
+Thread calibration: mean lat.: 64.919ms, rate sampling interval: 156ms  
+Thread calibration: mean lat.: 74.916ms, rate sampling interval: 179ms  
+Thread calibration: mean lat.: 60.486ms, rate sampling interval: 149ms  
+Thread calibration: mean lat.: 36.180ms, rate sampling interval: 83ms  
+Thread calibration: mean lat.: 58.162ms, rate sampling interval: 153ms  
+Thread calibration: mean lat.: 70.484ms, rate sampling interval: 157ms  
+Thread calibration: mean lat.: 43.138ms, rate sampling interval: 104ms  
+Thread calibration: mean lat.: 77.221ms, rate sampling interval: 196ms  
+Thread calibration: mean lat.: 73.047ms, rate sampling interval: 174ms  
+Thread calibration: mean lat.: 66.866ms, rate sampling interval: 173ms   
+Thread calibration: mean lat.: 36.815ms, rate sampling interval: 90ms  
+Thread calibration: mean lat.: 76.569ms, rate sampling interval: 178ms  
+Thread calibration: mean lat.: 28.974ms, rate sampling interval: 82ms  
+Thread calibration: mean lat.: 54.218ms, rate sampling interval: 138ms  
+Thread calibration: mean lat.: 71.552ms, rate sampling interval: 170ms  
+Thread calibration: mean lat.: 76.282ms, rate sampling interval: 182ms  
+Thread calibration: mean lat.: 59.386ms, rate sampling interval: 153ms  
+Thread calibration: mean lat.: 60.793ms, rate sampling interval: 143ms  
+Thread calibration: mean lat.: 54.634ms, rate sampling interval: 134ms   
+Thread calibration: mean lat.: 78.640ms, rate sampling interval: 175ms  
+Thread calibration: mean lat.: 30.993ms, rate sampling interval: 66ms  
+Thread calibration: mean lat.: 68.026ms, rate sampling interval: 168ms  
+Thread calibration: mean lat.: 65.906ms, rate sampling interval: 152ms  
+Thread calibration: mean lat.: 49.492ms, rate sampling interval: 116ms  
+Thread calibration: mean lat.: 74.472ms, rate sampling interval: 170ms  
+Thread calibration: mean lat.: 61.513ms, rate sampling interval: 149ms  
+Thread calibration: mean lat.: 70.032ms, rate sampling interval: 179ms  
+Thread calibration: mean lat.: 60.659ms, rate sampling interval: 146ms  
+Thread calibration: mean lat.: 78.674ms, rate sampling interval: 176ms  
+Thread calibration: mean lat.: 84.288ms, rate sampling interval: 185ms  
+Thread calibration: mean lat.: 82.993ms, rate sampling interval: 183ms  
+Thread calibration: mean lat.: 82.507ms, rate sampling interval: 193ms  
+Thread calibration: mean lat.: 87.072ms, rate sampling interval: 195ms  
+Thread calibration: mean lat.: 87.188ms, rate sampling interval: 194ms  
+Thread calibration: mean lat.: 85.356ms, rate sampling interval: 184ms  
+Thread calibration: mean lat.: 87.704ms, rate sampling interval: 195ms   
+Thread calibration: mean lat.: 85.679ms, rate sampling interval: 195ms  
+Thread calibration: mean lat.: 84.448ms, rate sampling interval: 189ms  
+Thread calibration: mean lat.: 84.076ms, rate sampling interval: 179ms  
+Thread calibration: mean lat.: 88.028ms, rate sampling interval: 191ms  
 Thread Stats   Avg      Stdev     Max   +/- Stdev  
-Latency    26.05ms   14.10ms 166.14ms   74.36%  
-Req/Sec    15.48     13.48    64.00     62.93%  
+Latency    58.30ms   28.99ms 180.74ms   67.54%  
+Req/Sec     1.48      4.07    29.00     92.62%  
 Latency Distribution (HdrHistogram - Recorded Latency)  
-50.000%   25.36ms  
-75.000%   33.41ms  
-90.000%   39.97ms  
-99.000%   74.05ms  
-99.900%  108.80ms  
-99.990%  136.57ms  
-99.999%  166.27ms  
-100.000%  166.27ms  
+50.000%   59.23ms  
+75.000%   79.68ms   
+90.000%   88.64ms  
+99.000%  166.78ms  
+99.900%  180.22ms  
+99.990%  180.86ms  
+99.999%  180.86ms  
+100.000%  180.86ms  
 
 Detailed Percentile spectrum:  
 Value   Percentile   TotalCount 1/(1-Percentile)  
 
-       4.411     0.000000            1         1.00
-       8.743     0.100000         2000         1.11
-      13.199     0.200000         4000         1.25
-      18.223     0.300000         5999         1.43
-      22.303     0.400000         8004         1.67
-      25.359     0.500000        10000         2.00
-      27.407     0.550000        10998         2.22
-      28.671     0.600000        12006         2.50
-      30.079     0.650000        13005         2.86
-      31.647     0.700000        14006         3.33
-      33.407     0.750000        15013         4.00
-      34.143     0.775000        15501         4.44
-      35.039     0.800000        16002         5.00
-      35.871     0.825000        16496         5.71
-      37.087     0.850000        17006         6.67
-      38.367     0.875000        17512         8.00
-      39.103     0.887500        17749         8.89
-      39.967     0.900000        18002        10.00
-      40.927     0.912500        18248        11.43
-      42.271     0.925000        18498        13.33
-      44.287     0.937500        18746        16.00
-      46.143     0.943750        18871        17.78
-      48.351     0.950000        18996        20.00
-      51.231     0.956250        19122        22.86
-      53.887     0.962500        19246        26.67
-      57.695     0.968750        19371        32.00
-      59.359     0.971875        19433        35.56
-      60.895     0.975000        19497        40.00
-      62.751     0.978125        19562        45.71
-      64.831     0.981250        19622        53.33
-      67.071     0.984375        19683        64.00
-      68.287     0.985938        19714        71.11
-      70.143     0.987500        19746        80.00
-      72.511     0.989062        19778        91.43
-      74.943     0.990625        19808       106.67
-      79.743     0.992188        19839       128.00
-      82.879     0.992969        19855       142.22
-      86.015     0.993750        19871       160.00
-      89.983     0.994531        19886       182.86
-      93.887     0.995313        19902       213.33
-      97.151     0.996094        19917       256.00
-      97.791     0.996484        19925       284.44
-      99.583     0.996875        19933       320.00
-     101.247     0.997266        19941       365.71
-     102.271     0.997656        19949       426.67
-     102.847     0.998047        19956       512.00
-     103.615     0.998242        19960       568.89
-     105.343     0.998437        19964       640.00
-     105.983     0.998633        19969       731.43
-     107.007     0.998828        19972       853.33
-     108.991     0.999023        19976      1024.00
-     110.335     0.999121        19979      1137.78
-     111.167     0.999219        19980      1280.00
-     113.407     0.999316        19982      1462.86
-     117.567     0.999414        19984      1706.67
-     121.727     0.999512        19986      2048.00
-     123.263     0.999561        19987      2275.56
-     124.991     0.999609        19988      2560.00
-     130.559     0.999658        19989      2925.71
-     132.607     0.999707        19990      3413.33
-     133.247     0.999756        19991      4096.00
-     133.247     0.999780        19991      4551.11
-     134.655     0.999805        19992      5120.00
-     134.655     0.999829        19992      5851.43
-     136.575     0.999854        19993      6826.67
-     136.575     0.999878        19993      8192.00
-     136.575     0.999890        19993      9102.22
-     150.911     0.999902        19994     10240.00
-     150.911     0.999915        19994     11702.86
-     150.911     0.999927        19994     13653.33
-     150.911     0.999939        19994     16384.00
-     150.911     0.999945        19994     18204.44
-     166.271     0.999951        19995     20480.00
-     166.271     1.000000        19995          inf
-
-[Mean    =       26.052, StdDeviation   =       14.104]  
-[Max     =      166.144, Total count    =        19995]  
+      13.791     0.000000            1         1.00  
+      18.319     0.100000          199         1.11  
+      28.271     0.200000          397         1.25  
+      38.783     0.300000          596         1.43  
+      48.863     0.400000          794         1.67  
+      59.231     0.500000          992         2.00  
+      64.319     0.550000         1092         2.22  
+      69.247     0.600000         1191         2.50  
+      73.087     0.650000         1293         2.86  
+      76.479     0.700000         1389         3.33  
+      79.679     0.750000         1489         4.00  
+      81.215     0.775000         1539         4.44  
+      82.431     0.800000         1588         5.00  
+      83.903     0.825000         1639         5.71  
+      85.247     0.850000         1687         6.67  
+      86.271     0.875000         1736         8.00  
+      87.359     0.887500         1765         8.89  
+      88.639     0.900000         1786        10.00  
+      89.599     0.912500         1811        11.43  
+      91.071     0.925000         1837        13.33  
+      92.479     0.937500         1860        16.00  
+      93.631     0.943750         1875        17.78  
+      93.951     0.950000         1885        20.00  
+      94.975     0.956250         1898        22.86  
+      95.807     0.962500         1910        26.67  
+      98.047     0.968750         1922        32.00  
+      99.967     0.971875         1929        35.56  
+     102.463     0.975000         1935        40.00  
+     103.999     0.978125         1942        45.71  
+     135.423     0.981250         1948        53.33  
+     153.087     0.984375         1953        64.00  
+     154.111     0.985938         1957        71.11  
+     160.255     0.987500         1960        80.00  
+     166.527     0.989062         1963        91.43  
+     167.423     0.990625         1966       106.67  
+     168.063     0.992188         1970       128.00  
+     175.231     0.992969         1971       142.22  
+     176.767     0.993750         1973       160.00  
+     176.895     0.994531         1975       182.86  
+     176.895     0.995313         1975       213.33  
+     177.023     0.996094         1978       256.00  
+     177.023     0.996484         1978       284.44  
+     177.023     0.996875         1978       320.00  
+     177.279     0.997266         1979       365.71   
+     180.095     0.997656         1981       426.67  
+     180.095     0.998047         1981       512.00  
+     180.095     0.998242         1981       568.89  
+     180.095     0.998437         1981       640.00  
+     180.223     0.998633         1982       731.43  
+     180.223     0.998828         1982       853.33  
+     180.479     0.999023         1983      1024.00   
+     180.479     0.999121         1983      1137.78  
+     180.479     0.999219         1983      1280.00  
+     180.479     0.999316         1983      1462.86  
+     180.479     0.999414         1983      1706.67  
+     180.863     0.999512         1984      2048.00  
+     180.863     1.000000         1984          inf  
+[Mean    =       58.299, StdDeviation   =       28.994]  
+[Max     =      180.736, Total count    =         1984]  
 [Buckets =           27, SubBuckets     =         2048]  
 ----------------------------------------------------------  
-30016 requests in 30.02s, 2.28MB read  
-Requests/sec:    999.83  
-Transfer/sec:     77.85KB  
+3008 requests in 30.01s, 266.69KB read  
+Requests/sec:    100.22  
+Transfer/sec:      8.89KB  
  
 
 
@@ -434,11 +408,11 @@ Transfer/sec:     77.85KB
 
 Сильных отличий между новой версией и stage 3 в контексте cpu-профилирования put запросов практически нет. Единственно, в новой реализации 
 пул воркеров теперь не только обрабатывает локальный запрос, но еще и занимается отправкой запросов другим нодам и получением ответов от них, 
-чем рантше занимались селекторы, а в связи с этими изменениями теперь SelectorThread занимает на 10% меньше процессорного времени.  
+чем раньше занимались селекторы, а в связи с этими изменениями теперь SelectorThread занимает на 10% меньше процессорного времени.  
 Далее стоит оставить пулу воркеров только обработку локальных запросов, как это было в предыдущей версии, а для отправки запросов и получения ответов от других нод 
 стоит добавить еще один ExecutorService, чтобы мы могли проводить общение с другими нодами параллельно, отчего время получения ответов от всех нод 
 теоретически должно сократиться и быть не больше, чем время получения ответа от ноды, коммуникация с которой самая медленная.  
-Также в новой реализации увеличилось время для получения нод c bcgjkmpjdfybtv Randezvous Hashing (c 0.22% до 1.73%), тк 
+Также в новой реализации увеличилось время для получения нод c использованием Randezvous Hashing (c 0.22% до 1.73%), тк 
 теперь используется TreeMap, stream() и toList()(0.75%). Далее стоит, вероятно, попытаться убрать стримы (еще не успела).  
 
 Сравнение многонодового варианта с однонодовым:  
@@ -496,9 +470,10 @@ Transfer/sec:     77.85KB
 | ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht1/blob/stage3/src/main/java/ok/dht/test/shestakova/report/jpg/stage3/get_cpu.jpg) | ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht1/blob/stage4/src/main/java/ok/dht/test/shestakova/report/jpg/stage4/get_cpu.jpg) |
 
 
-Как и в put-запросах, появился SelectorManager, работающий с очередью задач клиента (занимает всего 0.5% процессорного времени). 
-Воркеры так же занимают большую часть процессорного времени (97%), в основном итерируясь по диску в поиске ключа, 
-а также занимаясь отправкой запросов (не более 2% времени).  
+Как и в put-запросах, сильных изменений нет. Использование процессорного времени SelectorThread-ом сократилось с 1.28% дл 0.19% 
+за счет переноса общения с другими нодами (передачи запросов и получения ответов) на пул воркеров.  
+Все так же около 93% процессорного времени занимает хождение по диску в поисках ключа, только теперь на пул воркеров добавилось немного (около 1%) 
+затрат на общение с другими нодами (которое раньшебыло на селекторах).
 
 **alloc**
 
@@ -506,10 +481,12 @@ Transfer/sec:     77.85KB
 |:----------------------------------------------------------------------------------------------------------------------------------------------------------:|:----------------------------------------------------------------------------------------------------------------------------------------------------------:|
 | ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht1/blob/stage3/src/main/java/ok/dht/test/shestakova/report/jpg/stage3/get_alloc.jpg) | ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht1/blob/stage4/src/main/java/ok/dht/test/shestakova/report/jpg/stage4/get_alloc.jpg) |
 
-В контексте аллокаций также видно добавление аллокаций для работы с клиетами (отправка/получение запросов/ответов, 
-аллокации на создании URI, синхронизация планировщика задач, парсинг заголовков, работа с CompletableFuture).
-Из 80% аллокаций, создаваемых на ThreadPoolExecutore, только 30% идут на итерацию по диску, остальные же - 
-результат добавления общения нод по http.
+
+Значительно (с 16% до 5%) снизилось количество аллокаций на селекторах, связвнное с переносом общения с другими нодами на пул воркеров. 
+Теперь селекторы выполняют select и работу с сессиями.
+В следствие этого добавились аллокации на пуле воркеров по общению с другими нодами ().  
+С 30% до 69% увеличилось количество аллокаций, затрачиваемых при итерировании по диску в поисках ключа (тк теперь мы это делаем в два раза больше, 
+по крайней мере в рассматриваемом примере с ack=2).
 
 
 **lock**
@@ -518,25 +495,29 @@ Transfer/sec:     77.85KB
 |:---------------------------------------------------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------:|
 | ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht1/blob/stage3/src/main/java/ok/dht/test/shestakova/report/jpg/stage3/get_lock.jpg) | ![Иллюстрация к проекту](https://github.com/Anilochka/2022-highload-dht1/blob/stage4/src/main/java/ok/dht/test/shestakova/report/jpg/stage4/get_lock.jpg) |
 
-ThreadPoolExecutor (80% локов):  
-22% занимают локи на обработке CompletableFuture, регистрацию событий SelectorManager-ом клиента.  
-Теперь вместо 74% на взятие задачи из очереди воркеров уходит 14% от общего числа локов.
-45% локов используется для планировщика, асинхронно принимающего запросы/ответы, для регистрации нового event SelectorManager-ом. 
+ThreadPoolExecutor (75% локов):  
+При работе пула воркеров появились локи, связанные с общением нод (отправка запроса клиентом), тк раньше эту работу выполняли селекторы.  
+24% занимают локи на обработке CompletableFuture, регистрацию событий SelectorManager-ом клиента.  
+На взятие задачи из очереди воркеров уходит 6% от общего числа локов.  
+Добавилось 4% локов для при работе клиента (асинхронная отправка запросов нескольким нодам, а раньше отправляли только одной).  
+40% локов используется для планировщика, асинхронно принимающего запросы/ответы, для регистрации нового event SelectorManager-ом. 
 
 SelectorThread:  
 И около 2% забирает synchronized метод process из пакета one.nio.net, вызывающий методы чтения и записи в сокет.  
 
-SelectorManager (18% локов)
+SelectorManager (22% локов)
 Работает с пулом соединений.
  
 Если сравнивать результаты с результатами предыдущего этапа, можно заметить, что производительность снизилась, 
-что связано с необходимостью сервера дополнительно использовать передачу запросов по HTTP другим нодам.  
-В связи с этими изменениями главным образом увеличилось количество аллокаций и локов, 
-а процессорное время в основном увеличилось для put-запросов, тк get-запросы все так же остаются тяжеловесными сами по себе (по работе с диском).     
+что связано с необходимостью сервера увеличивать в ack раз количество работы по обработке запросов и по передаче запросов по HTTP другим нодам.  
+В основном на изменение результатов профилирования повлияло то, что в новой реализации пул воркеров теперь не только обрабатывает локальный запрос, н
+о еще и занимается отправкой запросов другим нодам и получением ответов от них, чем раньше занимались селекторы.  
+Также в новой реализации увеличилось процессорное время и количество аллокаций для получения нод c использованием Randezvous Hashing, тк
+теперь используется TreeMap, stream() и toList(), теперь надо попытаться убрать стримы (еще не успела).  
+Кроме того, стоит добавить еще один экзекьютор для проксирования запросов на другие ноды, чтобы локальая обработка запросов и работа с запросами к другим нодам 
+осуществлялись параллельно.  
 
 Как и на прошлых этапах:
 Для оптимизации однозначно стоит рассмотреть поиск ключа на диске: подумать о фоновом компакшене, а также о других способах, которые позволили бы меньше "ходить" по диску.  
 Для ускорения работы пула воркеров можно поискать более оптимальную структуру данных для очереди задач воркеров, которая бы затрачивала меньше времени на блокировки, что особенно актуально для get-запросов, в которых появление очереди задач не дало особого выигрыша в производительности из-за появившихся блокировок взятия/размещения в очереди задач.  
-Кроме того можно попробовать другие коллекции для очереди задач клиента; также можно посмотреть другие протоколы для общения между клиентами.  
-
-Еще было бы интересно одновременно нагрузить несколько нод (или все) с помощью wrk и посмотреть на их взаимодействие. (это пока не успела)  
+Кроме того можно попробовать другие коллекции для очереди задач клиента; также можно посмотреть другие протоколы для общения между клиентами.   
