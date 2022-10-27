@@ -120,12 +120,12 @@ public class CustomHttpServer extends HttpServer {
                 int from = Integer.parseInt(request.getParameter(FROM));
 
                 if (ack == 0 || from > clusterSize || ack > from) {
-                    throw new BadParamException();
+                    throw new BadParamException("Incorrect parameters");
                 }
                 return new PairParams(ack, from);
             } catch (NumberFormatException e) {
                 LOGGER.error("Not a number");
-                throw new BadParamException(e.getMessage());
+                throw new BadParamException("Wrong number format", e);
             }
         }
         return new PairParams(quorum(clusterSize), clusterSize);
