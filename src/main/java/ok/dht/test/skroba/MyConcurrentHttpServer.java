@@ -189,7 +189,6 @@ public class MyConcurrentHttpServer extends HttpServer {
                 } catch (InterruptedException
                          | ExecutionException
                          | TimeoutException e) {
-                    // Add handling in the future;
                     LOG.error("Error while connecting to other node");
                 }
                 return null;
