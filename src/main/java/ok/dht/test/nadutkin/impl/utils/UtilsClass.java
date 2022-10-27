@@ -67,6 +67,7 @@ public final class UtilsClass {
             return next;
         }
     }
+
     public static HttpServerConfig createConfigFromPort(int port) {
         HttpServerConfig httpConfig = new HttpServerConfig();
         AcceptorConfig acceptor = new AcceptorConfig();
@@ -98,6 +99,7 @@ public final class UtilsClass {
             Thread.currentThread().interrupt();
         }
     }
+
     public static MemorySegment getKey(String id) {
         return MemorySegment.ofArray(getBytes(id));
     }

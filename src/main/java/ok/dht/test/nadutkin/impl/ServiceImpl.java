@@ -57,37 +57,36 @@ public class ServiceImpl extends ReplicaService {
     }
 
     @Path(Constants.PATH)
-    public Response handle(@Param(value = "id", required = true) String id,
+    public Response handle(@Param(value = "id") String id,
                            Request request,
                            @Param(value = "ack") Integer ack,
                            @Param(value = "from") Integer from) throws IOException {
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, getBytes("Id can not be null or empty!"));
         }
-        if (from == null) {
-            from = this.config.clusterUrls().size();
+        int neighbours = from == null ? this.config.clusterUrls().size() : from;
+        int quorum = ack == null ? neighbours / 2 + 1 : ack;
+
+        if (quorum > neighbours || quorum <= 0) {
+            return new Response(Response.BAD_REQUEST,
+                    getBytes("ack and from - two positive ints, ack <= from"));
         }
-        if (ack == null) {
-            ack = from / 2 + 1;
-        }
-        if (from <= 0 || ack > from || ack <= 0) {
-            return new Response(Response.BAD_REQUEST, getBytes("ack and from - two positive ints, ack <= from"));
-        }
-        List<String> urls = sharder.getShardUrls(id, from);
-        ResponseProcessor processor = new ResponseProcessor(request.getMethod(), ack);
+        List<String> urls = sharder.getShardUrls(id, neighbours);
+        ResponseProcessor processor = new ResponseProcessor(request.getMethod(), quorum);
         long timestamp = System.currentTimeMillis();
         try {
             byte[] body = request.getMethod() == Request.METHOD_PUT ? request.getBody() : null;
             request.setBody(UtilsClass.valueToSegment(new StoredValue(body, timestamp)));
         } catch (IOException e) {
-            return new Response(Response.BAD_REQUEST, getBytes("Can't ask other replicas, %s$".formatted(e.getMessage())));
+            return new Response(Response.BAD_REQUEST,
+                    getBytes("Can't ask other replicas, %s$".formatted(e.getMessage())));
         }
         for (String url : urls) {
             if (breaker.isWorking(url)) {
                 boolean done = processor
-                        .process(url.equals(config.selfUrl()) ?
-                                handleV1(id, request) :
-                                handleProxy(url, request));
+                        .process(url.equals(config.selfUrl())
+                                ? handleV1(id, request)
+                                : handleProxy(url, request));
                 if (done) {
                     break;
                 }

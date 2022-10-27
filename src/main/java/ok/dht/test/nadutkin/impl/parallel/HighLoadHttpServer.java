@@ -9,7 +9,6 @@ import one.nio.net.Session;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
-import java.util.NoSuchElementException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -60,8 +59,7 @@ public class HighLoadHttpServer extends HttpServer {
             } catch (Exception e) {
                 LOG.error("Caught an exception while trying to handle request. Exception: {}", e.getMessage());
                 try {
-                    String status = e.getCause() instanceof NoSuchElementException ? Response.BAD_REQUEST : Response.GATEWAY_TIMEOUT;
-                    session.sendResponse(new Response(status, Response.EMPTY));
+                    session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
                 } catch (IOException ex) {
                     LOG.error("Unable to send bad request. Exception: {}", ex.getMessage());
                 }
