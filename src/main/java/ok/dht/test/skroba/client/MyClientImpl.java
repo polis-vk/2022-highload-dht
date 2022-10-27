@@ -11,8 +11,11 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 public class MyClientImpl implements MyClient {
+    public static final int TERMINATION_TIME = 1;
+    public static final TimeUnit TIME_UNIT = TimeUnit.SECONDS;
     private final HttpClient httpClient = HttpClient
             .newBuilder()
             .connectTimeout(Duration.of(2, ChronoUnit.SECONDS))
@@ -28,7 +31,7 @@ public class MyClientImpl implements MyClient {
         HttpRequest.Builder builder = HttpRequest.newBuilder(new URI(uri));
         
         builder.setHeader(MyConcurrentHttpServer.PARENT_REQUEST,
-                MyConcurrentHttpServer.PARENT_REQUEST)
+                        MyConcurrentHttpServer.PARENT_REQUEST)
                 .setHeader(MyConcurrentHttpServer.TIMESTAMP_REQUEST, Long.toString(timeStamp));
         
         

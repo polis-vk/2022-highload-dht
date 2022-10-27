@@ -37,7 +37,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
 
 import static java.lang.Math.max;
 import static ok.dht.test.skroba.MyServiceUtils.createDaoFromDir;
@@ -171,8 +170,7 @@ public class MyConcurrentHttpServer extends HttpServer {
             
             List<CompletableFuture<HttpResponse<byte[]>>> futures = urls
                     .stream()
-                    .map(url ->
-                    {
+                    .map(url -> {
                         try {
                             return client.sendRequest(
                                     url + "/v0/entity?id=" + id,
@@ -186,9 +184,10 @@ public class MyConcurrentHttpServer extends HttpServer {
             
             List<HttpResponse<byte[]>> responses = futures.stream().map(it -> {
                 try {
-                    return it.get(MyClient.TERMINATION_TIME, MyClient.TIME_UNIT);
-                } catch (InterruptedException | ExecutionException |
-                         TimeoutException e) {
+                    return it.get(MyClientImpl.TERMINATION_TIME, MyClientImpl.TIME_UNIT);
+                } catch (InterruptedException
+                         | ExecutionException
+                         | TimeoutException e) {
                     // Add handling in the future;
                     LOG.error("Error while connecting to other node");
                 }
@@ -211,7 +210,8 @@ public class MyConcurrentHttpServer extends HttpServer {
                             .filter(it -> it.statusCode() != HttpUtils.NOT_FOUND)
                             .map(it -> {
                                 System.out.println(String.join(", ", it.headers().allValues(TIMESTAMP_REQUEST)));
-                                return new Pair<Long, byte[]>(Long.parseLong(it.headers().allValues(TIMESTAMP_REQUEST).get(0)), it.body());
+                                return new Pair<Long, byte[]>(Long.parseLong(
+                                        it.headers().allValues(TIMESTAMP_REQUEST).get(0)), it.body());
                             })
                             .min(Comparator.comparing(Pair::getFirst));
                     
