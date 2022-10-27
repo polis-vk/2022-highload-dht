@@ -25,6 +25,7 @@ import java.net.URISyntaxException;
 import java.net.http.HttpResponse;
 import java.nio.channels.ClosedSelectorException;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -37,6 +38,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 
 import static java.lang.Math.max;
 import static ok.dht.test.skroba.MyServiceUtils.createDaoFromDir;
@@ -45,6 +47,7 @@ import static ok.dht.test.skroba.MyServiceUtils.getEmptyResponse;
 public class MyConcurrentHttpServer extends HttpServer {
     public static final String PARENT_REQUEST = "PARENT_REQUEST";
     public static final String TIMESTAMP_REQUEST = "TIMESTAMP_REQUEST";
+    public static final String TOMBSTONE = "TOMBSTONE";
     private static final int FLUSH_THRESHOLD_BYTES = 1024 * 1048;
     private static final int CAPACITY_OF_QUEUE = 1024;
     private static final int MAXIMUM_POOL_SIZE = Runtime.getRuntime().availableProcessors();
@@ -198,7 +201,7 @@ public class MyConcurrentHttpServer extends HttpServer {
                     .stream()
                     .filter(HttpUtils.PREDICATES.get(request.getMethod()))
                     .count();
-            
+
             if (ack > result) {
                 session.sendResponse(getEmptyResponse(HttpUtils.NOT_ENOUGH_REPLICAS));
                 return;
@@ -208,14 +211,11 @@ public class MyConcurrentHttpServer extends HttpServer {
                 case Request.METHOD_GET -> {
                     Optional<Pair<Long, byte[]>> entry = responses.stream()
                             .filter(it -> it.statusCode() != HttpUtils.NOT_FOUND)
-                            .map(it -> {
-                                //System.out.println(String.join(", ", it.headers().allValues(TIMESTAMP_REQUEST)));
-                                return new Pair<Long, byte[]>(Long.parseLong(
-                                        it.headers().allValues(TIMESTAMP_REQUEST).get(0)), it.body());
-                            })
-                            .min(Comparator.comparing(Pair::getFirst));
+                            .map(it -> new Pair<Long, byte[]>(Long.parseLong(
+                                        it.headers().allValues(TIMESTAMP_REQUEST).get(0)), !it.headers().allValues(TOMBSTONE).isEmpty() ? null : it.body())
+                            ).max(Comparator.comparing(Pair::getFirst));
                     
-                    if (entry.isEmpty()) {
+                    if (entry.isEmpty() || entry.get().getSecond() == null) {
                         session.sendResponse(getEmptyResponse(Response.NOT_FOUND));
                         return;
                     }
@@ -278,7 +278,7 @@ public class MyConcurrentHttpServer extends HttpServer {
                 MemorySegment.ofArray(Utf8.toBytes(id))
         );
         
-        if (entry == null || entry.value() == null) {
+        if (entry == null) {
             session.sendResponse(MyServiceUtils.getResponse(
                     Response.NOT_FOUND,
                     "There's no entity with id: " + id
@@ -288,10 +288,13 @@ public class MyConcurrentHttpServer extends HttpServer {
         
         Response response = new Response(
                 Response.OK,
-                entry.value().toByteArray()
+                entry.value() == null ? Response.EMPTY : entry.value().toByteArray()
         );
         
         response.addHeader(TIMESTAMP_REQUEST + ": " + entry.timeStamp());
+        if (entry.isTombstone()) {
+            response.addHeader(TOMBSTONE + ": " + "true");
+        }
         session.sendResponse(response);
     }
     
@@ -336,14 +339,14 @@ public class MyConcurrentHttpServer extends HttpServer {
         } catch (ClosedSelectorException e) {
             LOG.error("Socket already been closed: " + e.getMessage());
         }
-        
-        shutdownAndAwaitTermination(requestsWorkers);
-        
+    
         try {
             dao.close();
         } catch (IOException e) {
             LOG.error("Can't close dao!");
         }
+        
+        shutdownAndAwaitTermination(requestsWorkers);
         
         super.stop();
     }

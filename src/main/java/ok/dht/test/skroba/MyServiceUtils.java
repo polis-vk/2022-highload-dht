@@ -58,25 +58,4 @@ public final class MyServiceUtils {
             throw err;
         }
     }
-    
-    static byte[] serialize(Object obj) {
-        try (ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
-            try (ObjectOutputStream object = new ObjectOutputStream(bytes)) {
-                object.writeObject(obj);
-                return bytes.toByteArray();
-            }
-        } catch (IOException e) {
-            LOGGER.error("Can't serialize object: " + e);
-            return new byte[0];
-        }
-    }
-    
-    static <T> T deserialize(byte[] data) {
-        try (ObjectInputStream is = new ObjectInputStream(new ByteArrayInputStream(data))) {
-            return (T) is.readObject();
-        } catch (IOException | ClassNotFoundException e) {
-            LOGGER.error("Can't deserialize object: " + e);
-            return null;
-        }
-    }
 }
