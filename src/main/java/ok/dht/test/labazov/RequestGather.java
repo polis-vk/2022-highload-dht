@@ -16,7 +16,7 @@ public class RequestGather {
     public final int froms;
 
     private final List<Response> responses = new ArrayList<>();
-    private int finishedTasks = 0;
+    private int finishedTasks;
     private boolean replied;
 
     public RequestGather(int acks, int froms) {

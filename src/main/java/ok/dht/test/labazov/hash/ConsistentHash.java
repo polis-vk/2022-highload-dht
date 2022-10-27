@@ -1,7 +1,12 @@
 package ok.dht.test.labazov.hash;
 
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.Set;
+import java.util.TreeMap;
 
 public final class ConsistentHash {
     private final NavigableMap<Integer, String> circle = new TreeMap<>();
