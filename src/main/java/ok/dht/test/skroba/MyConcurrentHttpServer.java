@@ -280,7 +280,7 @@ public class MyConcurrentHttpServer extends HttpServer {
                 MemorySegment.ofArray(Utf8.toBytes(id))
         );
         
-        if (entry == null) {
+        if (entry == null || entry.value() == null) {
             session.sendResponse(MyServiceUtils.getResponse(
                     Response.NOT_FOUND,
                     "There's no entity with id: " + id
