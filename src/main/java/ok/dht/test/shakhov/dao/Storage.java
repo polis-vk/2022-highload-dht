@@ -56,8 +56,7 @@ final class Storage implements Closeable {
     static void save(
             DaoConfig daoConfig,
             Storage previousState,
-            Collection<Entry<MemorySegment>> entries) throws IOException
-    {
+            Collection<Entry<MemorySegment>> entries) throws IOException {
         int nextSSTableIndex = previousState.sstables.size();
         Path sstablePath = daoConfig.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
         StorageUtils.save(entries::iterator, sstablePath);

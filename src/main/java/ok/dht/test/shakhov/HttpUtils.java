@@ -24,10 +24,10 @@ public final class HttpUtils {
 
     public static int getIntParameter(Request request, String parameterKey, int defaultValue) {
         String parameter = request.getParameter(parameterKey);
-        if (parameter != null && !parameter.isEmpty()) {
-            return Integer.parseInt(parameter);
-        } else {
+        if (parameter == null || parameter.isEmpty()) {
             return defaultValue;
+        } else {
+            return Integer.parseInt(parameter);
         }
     }
 

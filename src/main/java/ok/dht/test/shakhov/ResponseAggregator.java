@@ -8,8 +8,6 @@ import static java.net.HttpURLConnection.HTTP_ACCEPTED;
 import static java.net.HttpURLConnection.HTTP_CREATED;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_OK;
-import static ok.dht.test.shakhov.HttpUtils.NOT_ENOUGH_REPLICAS;
-import static ok.dht.test.shakhov.HttpUtils.ONE_NIO_X_RECORD_TIMESTAMP_HEADER;
 
 public final class ResponseAggregator {
 
@@ -22,13 +20,8 @@ public final class ResponseAggregator {
         long maxTimestamp = Long.MIN_VALUE;
         for (Response response : responses) {
             if (response.getStatus() == HTTP_OK || response.getStatus() == HTTP_NOT_FOUND) {
-                long timestamp;
-                try {
-                    timestamp = Long.parseLong(response.getHeader(ONE_NIO_X_RECORD_TIMESTAMP_HEADER));
-                } catch (NumberFormatException e) {
-                    continue;
-                }
                 ackCounter++;
+                long timestamp = Long.parseLong(response.getHeader(HttpUtils.ONE_NIO_X_RECORD_TIMESTAMP_HEADER));
                 if (timestamp > maxTimestamp) {
                     maxTimestamp = timestamp;
                     data = response.getStatus() == HTTP_OK ? response.getBody() : null;
@@ -37,7 +30,7 @@ public final class ResponseAggregator {
         }
 
         if (ackCounter < ack) {
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            return new Response(HttpUtils.NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
 
         if (data == null) {
@@ -55,7 +48,10 @@ public final class ResponseAggregator {
         return aggregateGenericResponses(responses, ack, HTTP_ACCEPTED, Response.ACCEPTED);
     }
 
-    public static Response aggregateGenericResponses(Iterable<Response> responses, int ack, int expectedStatus, String resultCode) {
+    public static Response aggregateGenericResponses(Iterable<Response> responses,
+                                                     int ack,
+                                                     int expectedStatus,
+                                                     String resultCode) {
         int ackCounter = 0;
         for (Response response : responses) {
             if (response.getStatus() == expectedStatus) {
@@ -64,7 +60,7 @@ public final class ResponseAggregator {
         }
 
         if (ackCounter < ack) {
-            return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            return new Response(HttpUtils.NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
 
         return new Response(resultCode, Response.EMPTY);

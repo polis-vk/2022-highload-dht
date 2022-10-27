@@ -120,7 +120,11 @@ public class KeyValueService implements Service {
         return limitedNodes;
     }
 
-    private void collectResponseFromNode(Node node, Request request, String id, long timestamp, List<Response> responses) {
+    private void collectResponseFromNode(Node node,
+                                         Request request,
+                                         String id,
+                                         long timestamp,
+                                         List<Response> responses) {
         if (!serviceConfig.selfUrl().equals(node.url)) {
             try {
                 Response response = sendInternalRequest(request, node.url, timestamp);
@@ -134,7 +138,9 @@ public class KeyValueService implements Service {
         }
     }
 
-    private Response sendInternalRequest(Request clientRequest, String url, long timestamp) throws IOException, InterruptedException {
+    private Response sendInternalRequest(Request clientRequest,
+                                         String url,
+                                         long timestamp) throws IOException, InterruptedException {
         byte[] requestBody = clientRequest.getBody();
         HttpRequest.BodyPublisher bodyPublisher;
         if (requestBody != null) {

@@ -23,14 +23,16 @@ import static ok.dht.test.shakhov.HttpUtils.ACK_PARAM;
 import static ok.dht.test.shakhov.HttpUtils.FROM_PARAM;
 import static ok.dht.test.shakhov.HttpUtils.ID_PARAMETER;
 import static ok.dht.test.shakhov.HttpUtils.ONE_NIO_X_LEADER_TIMESTAMP_HEADER;
-import static ok.dht.test.shakhov.HttpUtils.badRequest;
-import static ok.dht.test.shakhov.HttpUtils.methodNotAllowed;
 
 public class KeyValueHttpServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(KeyValueHttpServer.class);
 
     private static final String ENDPOINT = "/v0/entity";
-    private static final Set<Integer> SUPPORTED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
+    private static final Set<Integer> SUPPORTED_METHODS = Set.of(
+            Request.METHOD_GET,
+            Request.METHOD_PUT,
+            Request.METHOD_DELETE
+    );
 
     private static final int QUEUE_MAX_SIZE = 50_000;
     private static final int MAX_POOL_SIZE = Runtime.getRuntime().availableProcessors() / 2;
@@ -47,8 +49,7 @@ public class KeyValueHttpServer extends HttpServer {
     public KeyValueHttpServer(HttpServerConfig config,
                               int clusterSize,
                               ClientRequestHandler clientRequestHandler,
-                              InternalRequestHandler internalRequestHandler) throws IOException
-    {
+                              InternalRequestHandler internalRequestHandler) throws IOException {
         super(config);
         this.clusterSize = clusterSize;
         this.clientRequestHandler = clientRequestHandler;
@@ -83,16 +84,16 @@ public class KeyValueHttpServer extends HttpServer {
 
     private Response processRequest(Request request) {
         if (!ENDPOINT.equals(request.getPath())) {
-            return badRequest();
+            return HttpUtils.badRequest();
         }
 
         if (!SUPPORTED_METHODS.contains(request.getMethod())) {
-            return methodNotAllowed();
+            return HttpUtils.methodNotAllowed();
         }
 
         String id = request.getParameter(ID_PARAMETER);
         if (id == null || id.isEmpty()) {
-            return badRequest();
+            return HttpUtils.badRequest();
         }
 
         String leaderTimestamp = request.getHeader(ONE_NIO_X_LEADER_TIMESTAMP_HEADER);
@@ -103,10 +104,10 @@ public class KeyValueHttpServer extends HttpServer {
                 ack = HttpUtils.getIntParameter(request, ACK_PARAM, clusterSize / 2 + 1);
                 from = HttpUtils.getIntParameter(request, FROM_PARAM, clusterSize);
             } catch (NumberFormatException e) {
-                return badRequest();
+                return HttpUtils.badRequest();
             }
             if (ack <= 0 || from > clusterSize || ack > from) {
-                return badRequest();
+                return HttpUtils.badRequest();
             }
             return clientRequestHandler.handleClientRequest(request, id, ack, from);
         } else {
@@ -114,7 +115,7 @@ public class KeyValueHttpServer extends HttpServer {
             try {
                 parsedLeaderTimestamp = Long.parseLong(leaderTimestamp);
             } catch (NumberFormatException e) {
-                return badRequest();
+                return HttpUtils.badRequest();
             }
             return internalRequestHandler.handleInternalRequest(request, id, parsedLeaderTimestamp);
         }
