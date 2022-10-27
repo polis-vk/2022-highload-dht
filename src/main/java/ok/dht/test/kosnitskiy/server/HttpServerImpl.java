@@ -59,7 +59,7 @@ public class HttpServerImpl extends HttpServer {
 
     private static final int MAX_THREADS_PER_NODE = Runtime.getRuntime().availableProcessors() / 2
             + (Runtime.getRuntime().availableProcessors() % 2 == 0 ? 0 : 1);
-    private static final int MAX_TASKS_PER_NODE = MAX_THREADS_PER_NODE * 42;
+    private static final int MAX_TASKS_PER_NODE = MAX_THREADS_PER_NODE * 43;
 
     public HttpServerImpl(ServiceConfig config,
                           MemorySegmentDao memorySegmentDao,
