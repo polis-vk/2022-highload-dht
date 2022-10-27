@@ -245,8 +245,6 @@ public class MyConcurrentHttpServer extends HttpServer {
             if (ack > 0 && ack <= from) {
                 return List.of(from, ack);
             }
-            
-            return List.of(from, ack);
         } catch (IllegalArgumentException e) {
             //Ignore
         }

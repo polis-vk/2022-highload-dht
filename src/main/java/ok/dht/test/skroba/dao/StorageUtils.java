@@ -120,7 +120,8 @@ public final class StorageUtils {
                         INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE,
                         offset
                 );
-                
+                MemoryAccess.setLongAtOffset(nextSSTable, offset, entry.timeStamp());
+                offset += Long.BYTES;
                 offset += writeRecord(nextSSTable, offset, entry.key());
                 offset += writeRecord(nextSSTable, offset, entry.value());
                 
