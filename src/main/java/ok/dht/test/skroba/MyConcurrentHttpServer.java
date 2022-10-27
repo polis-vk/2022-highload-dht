@@ -25,7 +25,6 @@ import java.net.URISyntaxException;
 import java.net.http.HttpResponse;
 import java.nio.channels.ClosedSelectorException;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -38,7 +37,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
 
 import static java.lang.Math.max;
 import static ok.dht.test.skroba.MyServiceUtils.createDaoFromDir;
@@ -212,7 +210,11 @@ public class MyConcurrentHttpServer extends HttpServer {
                     Optional<Pair<Long, byte[]>> entry = responses.stream()
                             .filter(it -> it.statusCode() != HttpUtils.NOT_FOUND)
                             .map(it -> new Pair<Long, byte[]>(Long.parseLong(
-                                        it.headers().allValues(TIMESTAMP_REQUEST).get(0)), !it.headers().allValues(TOMBSTONE).isEmpty() ? null : it.body())
+                                        it.headers().allValues(TIMESTAMP_REQUEST).get(0)),
+                                    !it.headers().allValues(TOMBSTONE).isEmpty()
+                                            ? null
+                                            : it.body()
+                                    )
                             ).max(Comparator.comparing(Pair::getFirst));
                     
                     if (entry.isEmpty() || entry.get().getSecond() == null) {
