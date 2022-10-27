@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 public class HttpServerImpl extends HttpServer {
-    private static final int IN_MEMORY_SIZE = 8388608;
+    private static final int IN_MEMORY_SIZE = 81920;
 
     private static final Logger LOG = LoggerFactory.getLogger(HttpServerImpl.class);
     private final ThreadPoolExecutor executor;
