@@ -209,23 +209,16 @@ class ShardingTest extends TestBase {
 
         for (int i = 0; i < keysCount; i++) {
             key = String.valueOf(i);
-            serviceInfos.get(0).upsert(key, value);
+            serviceInfos.get(0).upsert(key, value, 1, 1);
         }
 
-        float avgEntriesCountPerNode = 0;
-        for (int i = 0; i < keysCount; i++) {
-            if (serviceInfos.get(0).get(String.valueOf(i)).statusCode() == HttpURLConnection.HTTP_OK) {
-                avgEntriesCountPerNode++;
-            }
-        }
-
-        avgEntriesCountPerNode /= serviceInfos.size();
+        float avgEntriesCountPerNode = (float) keysCount / serviceInfos.size();
 
         serviceInfos.get(1).stop();
 
         int oneNodeEntriesCount = 0;
         for (int i = 0; i < keysCount; i++) {
-            if (serviceInfos.get(0).get(String.valueOf(i)).statusCode() == HttpURLConnection.HTTP_OK) {
+            if (serviceInfos.get(0).get(String.valueOf(i), 1, 1).statusCode() == HttpURLConnection.HTTP_OK) {
                 oneNodeEntriesCount++;
             }
         }
@@ -242,7 +235,7 @@ class ShardingTest extends TestBase {
 
         for (int i = 0; i < keysCount; i++) {
             key = randomId();
-            serviceInfos.get(0).upsert(key, value);
+            serviceInfos.get(0).upsert(key, value, 1, 1);
         }
 
         final int[] nodesFilesCount = new int[serviceInfos.size()];
