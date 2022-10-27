@@ -1,10 +1,12 @@
 package ok.dht.test.nadutkin.impl.shards;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 
 public class JumpHashSharder extends Sharder {
 
-    public JumpHashSharder(Integer shards) {
+    public JumpHashSharder(List<String> shards) {
         super(shards);
     }
 
@@ -12,7 +14,7 @@ public class JumpHashSharder extends Sharder {
         Random random = new Random(key.hashCode());
         int lastJump = -1;
         int nextJump = 0;
-        while (nextJump < shards) {
+        while (nextJump < shards.size()) {
             lastJump = nextJump;
             double step = random.nextDouble(0, 1);
             if (step == 0) {
@@ -24,7 +26,12 @@ public class JumpHashSharder extends Sharder {
     }
 
     @Override
-    public Integer getShard(String key) {
-        return jumpHash(key);
+    public List<String> getShardUrls(String key, int from) {
+        int index = jumpHash(key);
+        List<String> destinations = new ArrayList<>();
+        for (int i = 0; i < from; i++) {
+            destinations.add(shards.get((index + i) % shards.size()));
+        }
+        return destinations;
     }
 }

@@ -59,7 +59,7 @@ public class HighLoadHttpServer extends HttpServer {
             } catch (Exception e) {
                 LOG.error("Caught an exception while trying to handle request. Exception: {}", e.getMessage());
                 try {
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
                 } catch (IOException ex) {
                     LOG.error("Unable to send bad request. Exception: {}", ex.getMessage());
                 }

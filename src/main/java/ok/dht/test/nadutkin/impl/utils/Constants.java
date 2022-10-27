@@ -31,6 +31,7 @@ public final class Constants {
     public static final String FILE_EXT_TMP = ".tmp";
     public static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
     public static final String PATH = "/v0/entity";
+    public static final String REPLICA_PATH = "/v1/entity";
     public static final Integer MAX_FAILS = 100;
 
     private Constants() {
