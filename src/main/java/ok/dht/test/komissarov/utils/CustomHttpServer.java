@@ -124,7 +124,8 @@ public class CustomHttpServer extends HttpServer {
                 }
                 return new PairParams(ack, from);
             } catch (NumberFormatException e) {
-                throw new BadParamException();
+                LOGGER.error("Not a number");
+                throw new BadParamException(e.getMessage());
             }
         }
         return new PairParams(quorum(clusterSize), clusterSize);

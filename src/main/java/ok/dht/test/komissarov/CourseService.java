@@ -227,16 +227,15 @@ public class CourseService implements Service {
     }
 
     private byte[] setBody(MemorySegment time, MemorySegment value) {
-        byte[] bTime = time.toByteArray();
-        byte[] bValue = value.toByteArray();
+        byte[] timeBytes = time.toByteArray();
+        byte[] valueBytes = value.toByteArray();
 
-        byte[] result = Arrays.copyOf(bTime, bTime.length + bValue.length);
-        System.arraycopy(bValue, 0, result, bTime.length, bValue.length);
+        byte[] result = Arrays.copyOf(timeBytes, timeBytes.length + valueBytes.length);
+        System.arraycopy(valueBytes, 0, result, timeBytes.length, valueBytes.length);
         return result;
     }
 
-    private static long convertToLong(byte[] bytes)
-    {
+    private static long convertToLong(byte[] bytes) {
         long value = 0L;
         for (byte b : bytes) {
             value = (value << 8) + (b & 255);
