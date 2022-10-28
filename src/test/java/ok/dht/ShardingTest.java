@@ -187,7 +187,7 @@ class ShardingTest extends TestBase {
             serviceInfo.start();
 
             HttpResponse<byte[]> response = serviceInfo.get(key, 1, 1);
-            if (response.statusCode() == 200 && Arrays.equals(value, response.body())) {
+            if (response.statusCode() == HttpURLConnection.HTTP_OK && Arrays.equals(value, response.body())) {
                 successCount++;
             }
 
