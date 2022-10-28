@@ -22,7 +22,12 @@ public class ReplicasManager {
     private final String selfUrl;
     private final Executor executor;
 
-    public ReplicasManager(TimeStampingDao dao, RandevouzHashingRouter shardingRouter, String selfUrl, Executor executor) {
+    public ReplicasManager(
+            TimeStampingDao dao,
+            RandevouzHashingRouter shardingRouter,
+            String selfUrl,
+            Executor executor
+    ) {
         this.dao = dao;
         this.shardingRouter = shardingRouter;
         this.selfUrl = selfUrl;
