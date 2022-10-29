@@ -154,8 +154,8 @@ public class DaoWebService {
                                                    @Nonnull final MostRelevantResponseHandler responseHandler) {
         return internalHttpClient
                 .resendDaoRequestToShard(request, id, shard, lamportClock.getValueToSend(), newEntryTimestamp)
-                .handleAsync((httpResponse, throwable) -> {
-                    if (httpResponse != null && request.getMethod() == Request.METHOD_GET) {
+                .thenAccept((httpResponse) -> {
+                    if (request.getMethod() == Request.METHOD_GET) {
                         final String responseCode = InternalHttpClient.convertHttpStatusCode(httpResponse.statusCode());
 
                         final DaoService.LazyByteArrayEntry responseEntry =
@@ -167,23 +167,20 @@ public class DaoWebService {
                                 new ResponseHolder(responseCode, responseEntry.isAbsent() ? null : responseEntry),
                                 null
                         );
-                    } else if (httpResponse != null) {
+                    } else {
                         final String responseCode = InternalHttpClient.convertHttpStatusCode(httpResponse.statusCode());
 
                         final long responseTimestamp = DaoService.extractLongFromBytes(httpResponse.body(), 0);
                         lamportClock.getValueToReceive(responseTimestamp);
 
                         responseHandler.handleResponse(session, new ResponseHolder(responseCode, null), null);
-                    } else {
-                        responseHandler.handleResponse(session, null, throwable);
                     }
-                    return null;
-                }, internalHttpClient.getRequestExecutor())
-                .handleAsync((httpResponse, throwable) -> {
+                })
+                .exceptionally((throwable) -> {
                     if (throwable != null) {
                         responseHandler.handleResponse(session, null, throwable);
                     }
                     return null;
-                }, internalHttpClient.getRequestExecutor());
+                });
     }
 }

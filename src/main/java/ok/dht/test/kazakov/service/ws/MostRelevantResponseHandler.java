@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicReference;
                                @Nullable final Throwable throwable) {
         logResponse(currentResponseHolder, throwable);
 
+        final int currentSuccessfulResponses;
         if (isResponseSuccessful(currentResponseHolder)) {
             ResponseHolder bestResponse = responseHolder.get();
             while (currentResponseHolder.isMoreRelevantThan(bestResponse)) {
@@ -47,10 +48,7 @@ import java.util.concurrent.atomic.AtomicReference;
                 }
                 bestResponse = responseHolder.get();
             }
-        }
 
-        final int currentSuccessfulResponses;
-        if (isResponseSuccessful(currentResponseHolder)) {
             currentSuccessfulResponses = successfulResponses.incrementAndGet();
 
             if (currentSuccessfulResponses == needAcknowledgements) {
