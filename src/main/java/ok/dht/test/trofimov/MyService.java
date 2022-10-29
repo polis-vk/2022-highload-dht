@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -40,14 +41,20 @@ public class MyService implements Service {
     private static final Logger logger = LoggerFactory.getLogger(MyService.class);
     private static final long FLUSH_THRESHOLD = 1 << 20;
     private static final int REQUESTS_MAX_QUEUE_SIZE = 256;
+    public static final int TIMEOUT_EXECUTOR = 10;
     private final ServiceConfig config;
     private HttpServer server;
     private InMemoryDao dao;
     private ThreadPoolExecutor requestsExecutor;
     private Map<Long, MyHttpClient> clients;
+    private static Map<String, Integer> urlHashes;
 
     public MyService(ServiceConfig config) {
         this.config = config;
+        urlHashes = new HashMap<>();
+        for (String clusterUrl : config.clusterUrls()) {
+            urlHashes.put(clusterUrl, Hash.murmur3(clusterUrl));
+        }
     }
 
     private Config createDaoConfig() {
@@ -69,7 +76,7 @@ public class MyService implements Service {
         requestsExecutor = new ThreadPoolExecutor(threadsCount, threadsCount,
                 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(REQUESTS_MAX_QUEUE_SIZE),
-                new ThreadPoolExecutor.DiscardOldestPolicy());
+                new ThreadPoolExecutor.AbortPolicy());
         requestsExecutor.prestartAllCoreThreads();
 
         clients = new HashMap<>();
@@ -77,15 +84,38 @@ public class MyService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
+        requestsExecutor.shutdown();
+        try {
+            if (!requestsExecutor.awaitTermination(TIMEOUT_EXECUTOR, TimeUnit.SECONDS)) {
+                shutdownNowExecutor();
+            }
+        } catch (InterruptedException e) {
+            logger.error("InterruptedException while stopping requestExecutor", e);
+            Thread.currentThread().interrupt();
+            shutdownNowExecutor();
+        }
         server.stop();
-        requestsExecutor.shutdownNow();
         dao.close();
         return CompletableFuture.completedFuture(null);
+    }
+
+    private void shutdownNowExecutor() {
+        List<Runnable> listOfRequests = requestsExecutor.shutdownNow();
+        logger.error("Can't stop executor. Shutdown now, number of requests: {}", listOfRequests.size());
     }
 
     @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_GET)
     public void handleGet(@Param(value = "id", required = true) String id, HttpSession session) {
+        try {
+            doGetRequest(id, session);
+        } catch (RejectedExecutionException e) {
+            logger.error("Reject request {} method get", id, e);
+            sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
+    }
+
+    private void doGetRequest(String id, HttpSession session) {
         requestsExecutor.execute(() -> {
             Response response;
             try {
@@ -152,8 +182,8 @@ public class MyService implements Service {
         int maxHash = Integer.MIN_VALUE;
         String node = "";
         for (String url : clusterUrls) {
-            int hash = Hash.murmur3(url) + Hash.murmur3(key);
-            if (hash > maxHash) {
+            int hash = urlHashes.get(url) + Hash.murmur3(key);
+            if (hash >= maxHash) {
                 maxHash = hash;
                 node = url;
             }
@@ -164,6 +194,15 @@ public class MyService implements Service {
     @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_PUT)
     public void handlePut(Request request, @Param(value = "id", required = true) String id, HttpSession session) {
+        try {
+            doPutRequest(request, id, session);
+        } catch (RejectedExecutionException e) {
+            logger.error("Reject request {} method put", id, e);
+            sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
+    }
+
+    private void doPutRequest(Request request, String id, HttpSession session) {
         requestsExecutor.execute(() -> {
             Response response;
             try {
@@ -194,6 +233,15 @@ public class MyService implements Service {
     @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_DELETE)
     public void handleDelete(@Param(value = "id", required = true) String id, HttpSession session) {
+        try {
+            doDeleteRequest(id, session);
+        } catch (RejectedExecutionException e) {
+            logger.error("Reject request {} method delete", id, e);
+            sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
+    }
+
+    private void doDeleteRequest(String id, HttpSession session) {
         requestsExecutor.execute(() -> {
             Response response;
             try {
@@ -217,7 +265,6 @@ public class MyService implements Service {
             }
             sendResponse(session, response);
         });
-
     }
 
     private static void sendResponse(HttpSession session, Response response) {
