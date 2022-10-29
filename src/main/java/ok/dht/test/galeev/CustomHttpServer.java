@@ -21,6 +21,7 @@ public class CustomHttpServer extends HttpServer {
     private final ExecutorService executorService;
     private static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
     private static final Set<Integer> SUPPORTED_METHODS = new HashSet<>();
+    private boolean isStopping = false;
 
     public CustomHttpServer(HttpServerConfig config,
                             ExecutorService executorService) throws IOException {
@@ -42,12 +43,12 @@ public class CustomHttpServer extends HttpServer {
     public synchronized void stop() {
         for (SelectorThread thread : selectors) {
             if (thread.isAlive()) {
-                thread.interrupt();
                 for (Session session : thread.selector) {
                     if (session.socket().isOpen()) {
                         session.socket().close();
                     }
                 }
+                thread.interrupt();
             }
         }
         super.stop();
@@ -63,6 +64,9 @@ public class CustomHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        if (isStopping) {
+            return;
+        }
         String path = request.getPath();
         int method = request.getMethod();
 
@@ -76,6 +80,11 @@ public class CustomHttpServer extends HttpServer {
             executorService.submit(new RunnableForRequestHandler(requestHandler, request, session));
         }
     }
+
+    public void prepareStopping() {
+        isStopping = true;
+    }
+
 
     public static class RunnableForRequestHandler implements Runnable {
         private final HttpSession session;

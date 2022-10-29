@@ -24,6 +24,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static ok.dht.test.galeev.SkipOldExecutorFactory.shutdownAndAwaitTermination;
+
 public class DemoService implements Service {
     private static final Logger LOGGER = LoggerFactory.getLogger(DemoService.class);
     private static final Duration CLIENT_TIMEOUT = Duration.of(300, ChronoUnit.MILLIS);
@@ -78,10 +80,11 @@ public class DemoService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        server.stop();
-        workersExecutor.shutdown();
-        proxyExecutor.shutdown();
+        server.prepareStopping();
+        shutdownAndAwaitTermination(workersExecutor);
+        shutdownAndAwaitTermination(proxyExecutor);
         localNode.stop();
+        server.stop();
         return CompletableFuture.completedFuture(null);
     }
 
@@ -235,7 +238,7 @@ public class DemoService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 4, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
+    @ServiceFactory(stage = 4, week = 2, bonuses = {"SingleNodeTest#respectFileFolder"})
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -26,14 +27,15 @@ public class AckBarrier {
         this.unsuccessfulResponses = new AtomicInteger(0);
     }
 
-    public void waitContinueBarrier(HttpSession session, String msg) throws IOException {
+    public boolean waitContinueBarrier(HttpSession session, String msg) throws IOException {
         try {
-            continueBarrier.await();
+            return continueBarrier.await(500, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             LOGGER.error(msg, e);
             Thread.currentThread().interrupt();
         }
+        return false;
     }
 
     public void success() {
