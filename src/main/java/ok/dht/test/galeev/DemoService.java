@@ -89,6 +89,7 @@ public class DemoService implements Service {
         Header header = new Header(request, consistentHashRouter.getAmountOfPhysicalNodes());
         if (!header.isOk()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
         }
         Handler<?> handler = Handler.getHandler(request);
 
