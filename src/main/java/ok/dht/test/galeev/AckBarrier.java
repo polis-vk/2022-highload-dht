@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 
 public class AckBarrier {
     private static final Logger LOGGER = LoggerFactory.getLogger(AckBarrier.class);
@@ -52,25 +51,5 @@ public class AckBarrier {
 
     public boolean isAckAchieved() {
         return successfulResponses.get() >= ack;
-    }
-
-    public Consumer<Boolean> getDefaultSuccessChecker() {
-        return (isSuccessful) -> {
-            if (isSuccessful) {
-                success();
-            } else {
-                unSuccess();
-            }
-        };
-    }
-
-    public Consumer<Boolean> getSuccessChecker() {
-        return (isSuccessful) -> {
-            if (isSuccessful) {
-                success();
-            } else {
-                unSuccess();
-            }
-        };
     }
 }
