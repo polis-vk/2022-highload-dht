@@ -18,8 +18,13 @@ public class TimeStampingDao {
         this.dao = dao;
     }
 
-    public TimeStampedValue get(String key) throws IOException {
-        Entry<MemorySegment> entry = dao.get(memSegmentOfString(key));
+    public TimeStampedValue get(String key) {
+        Entry<MemorySegment> entry;
+        try {
+            entry = dao.get(memSegmentOfString(key));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         if (entry == null) {
             return null;
         }
@@ -46,7 +51,7 @@ public class TimeStampingDao {
         dao.close();
     }
 
-    static final class TimeStampedValue {
+    static class TimeStampedValue {
         public final byte[] value;
         public final long time;
 
