@@ -40,7 +40,6 @@ public interface Handler<T> {
         }
     }
 
-
     class GetHandler implements Handler<Entry<Timestamp, byte[]>> {
         private final AtomicReference<Entry<Timestamp, byte[]>> newestEntry = new AtomicReference<>();
 
