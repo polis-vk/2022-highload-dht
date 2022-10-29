@@ -21,7 +21,7 @@ public class CustomHttpServer extends HttpServer {
     private final ExecutorService executorService;
     private static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
     private static final Set<Integer> SUPPORTED_METHODS = new HashSet<>();
-    private boolean isStopping = false;
+    private boolean isStopping;
 
     public CustomHttpServer(HttpServerConfig config,
                             ExecutorService executorService) throws IOException {
@@ -84,7 +84,6 @@ public class CustomHttpServer extends HttpServer {
     public void prepareStopping() {
         isStopping = true;
     }
-
 
     public static class RunnableForRequestHandler implements Runnable {
         private final HttpSession session;

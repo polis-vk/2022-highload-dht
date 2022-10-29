@@ -12,10 +12,15 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public interface Handler<T> {
     String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
+
     CompletableFuture<Optional<T>> action(Node node, String key);
+
     Response responseOk();
+
     Response responseError();
-    void onSuccess(Optional<?> t);
+
+    void onSuccess(Optional<?> input);
+
     void onError();
 
     static Handler<?> getHandler(Request request) {
@@ -70,8 +75,8 @@ public interface Handler<T> {
         }
 
         @Override
-        public void onSuccess(Optional<?> t) {
-            Entry<Timestamp, byte[]> entry = (Entry<Timestamp, byte[]>) t.get();
+        public void onSuccess(Optional<?> input) {
+            Entry<Timestamp, byte[]> entry = (Entry<Timestamp, byte[]>) input.get();
             updateNewestEntry(newestEntry, entry);
         }
 
@@ -142,8 +147,7 @@ public interface Handler<T> {
         }
 
         @Override
-        public void onSuccess(Optional<?> aBoolean) {
-
+        public void onSuccess(Optional<?> input) {
         }
 
         @Override
@@ -181,9 +185,8 @@ public interface Handler<T> {
             return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
         }
 
-
         @Override
-        public void onSuccess(Optional<?> aBoolean) {
+        public void onSuccess(Optional<?> input) {
         }
 
         @Override
