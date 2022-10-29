@@ -27,7 +27,7 @@ import static ok.dht.test.galeev.SkipOldExecutorFactory.shutdownAndAwaitTerminat
 
 public class DemoService implements Service {
     private static final Logger LOGGER = LoggerFactory.getLogger(DemoService.class);
-    private static final Duration CLIENT_TIMEOUT = Duration.of(300, ChronoUnit.MILLIS);
+    private static final Duration CLIENT_TIMEOUT = Duration.of(500, ChronoUnit.MILLIS);
     public static final String DEFAULT_PATH = "/v0/entity";
     public static final String LOCAL_PATH = "/v0/local/entity";
     private final ServiceConfig config;
