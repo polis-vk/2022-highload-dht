@@ -9,6 +9,7 @@ import ok.dht.test.skroba.dao.base.BaseEntry;
 import ok.dht.test.skroba.dao.base.Entry;
 import ok.dht.test.skroba.shard.Manager;
 import ok.dht.test.skroba.shard.MyManagerImpl;
+import ok.dht.test.skroba.utils.Pair;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -214,14 +215,14 @@ public class MyConcurrentHttpServer extends HttpServer {
                                             ? null
                                             : it.body()
                                     )
-                            ).max(Comparator.comparing(Pair::getFirst));
+                            ).max(Comparator.comparing(Pair::first));
                     
-                    if (entry.isEmpty() || entry.get().getSecond() == null) {
+                    if (entry.isEmpty() || entry.get().second() == null) {
                         session.sendResponse(getEmptyResponse(Response.NOT_FOUND));
                         return;
                     }
                     
-                    session.sendResponse(new Response(Response.OK, entry.get().getSecond()));
+                    session.sendResponse(new Response(Response.OK, entry.get().second()));
                 }
                 case Request.METHOD_PUT ->
                         session.sendResponse(getEmptyResponse(Response.CREATED));
