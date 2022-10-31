@@ -1,4 +1,4 @@
-package ok.dht.test.ushkov;
+package ok.dht.test.ushkov.hashing;
 
 import java.util.List;
 

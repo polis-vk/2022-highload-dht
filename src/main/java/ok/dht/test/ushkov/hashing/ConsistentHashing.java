@@ -1,4 +1,4 @@
-package ok.dht.test.ushkov;
+package ok.dht.test.ushkov.hashing;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
