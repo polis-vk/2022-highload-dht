@@ -27,8 +27,11 @@ import java.net.URISyntaxException;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutorService;
 
 public class DaoHttpServer extends HttpServer {
@@ -38,7 +41,10 @@ public class DaoHttpServer extends HttpServer {
     private final PersistentDao dao;
 
     private final ServiceConfig config;
-    public List<Response> responses;
+    private final List<Response> responses;
+    private final Set<Long> activeResponsesNumbers;
+    private String currentMethod;
+
     private static final Logger LOGGER = LoggerFactory.getLogger(DaoHttpServer.class);
 
     public DaoHttpServer(ServiceConfig config, ExecutorService executorService, PersistentDao dao) throws IOException {
@@ -48,6 +54,8 @@ public class DaoHttpServer extends HttpServer {
         this.dao = dao;
         nodeDeterminer = new NodeDeterminer(config.clusterUrls());
         internalClient = new InternalClient();
+        responses = new CopyOnWriteArrayList<>();
+        activeResponsesNumbers = new CopyOnWriteArraySet<>();
     }
 
     @Override
@@ -167,13 +175,16 @@ public class DaoHttpServer extends HttpServer {
 
     private void coordinateRequest(Request request, HttpSession session, String id, int ack, int from)
             throws IOException {
-        responses = new ArrayList<>(from);
+        long number = System.currentTimeMillis();
+        activeResponsesNumbers.add(number);
+        currentMethod = request.getMethodName();
         for (ClusterNode targetClusterNode : nodeDeterminer.getNodeUrls(id, from)) {
             if (targetClusterNode.hasUrl(config.selfUrl())) {
+                Response response;
                 switch (request.getMethodName()) {
-                    case "PUT" -> responses.add(handlePut(id, request));
-                    case "GET" -> responses.add(handleGet(id));
-                    case "DELETE" -> responses.add(handleDelete(id));
+                    case "PUT" -> response = handlePut(id, request);
+                    case "GET" -> response = handleGet(id);
+                    case "DELETE" -> response = handleDelete(id);
                     default -> {
                         LOGGER.error("Unsupported request method: {}", request.getMethodName());
                         handleDefault(request, session);
@@ -181,59 +192,88 @@ public class DaoHttpServer extends HttpServer {
                                 + request.getMethodName());
                     }
                 }
+                response.addHeader("Number " + number);
+                replicationDecision(response, ack, request.getMethodName(), session, number);
             } else {
-                responses.add(sendResponse(request, id, targetClusterNode));
+                sendResponseToNode(request, id, targetClusterNode, ack, session, number);
             }
         }
-        replicationDecision(responses, ack, request.getMethodName(), session);
     }
 
-    private Response sendResponse(Request request, String id, ClusterNode targetClusterNode) {
-        HttpResponse<byte[]> getResponse;
+    private void sendResponseToNode(Request request, String id, ClusterNode targetClusterNode,
+                                    int ack, HttpSession session, long number) {
         try {
             request.addHeader("fromCoordinator 1");
-            getResponse = internalClient.sendRequestToNode(request, targetClusterNode, id);
-            switch (request.getMethod()) {
-                case Request.METHOD_GET -> {
-                    if (getResponse.statusCode() == HttpURLConnection.HTTP_OK) {
-                        return new Response(getResponseCode(getResponse.statusCode()), getResponse.body());
-                    } else {
-                        return new Response(getResponseCode(getResponse.statusCode()), Response.EMPTY);
-                    }
-                }
-                case Request.METHOD_PUT, Request.METHOD_DELETE -> {
-                    return new Response(getResponseCode(getResponse.statusCode()), Response.EMPTY);
-                }
-                default -> {
-                    LOGGER.error("Unsupported request method: {}", request.getMethodName());
-                    throw new UnsupportedOperationException("Unsupported request method: "
-                            + request.getMethodName());
-                }
-            }
+            internalClient
+                    .sendRequestToNode(request, targetClusterNode, id)
+                    .thenAccept(response -> tryMakeDecision(response, request, ack, session, number))
+                    .exceptionally(throwable -> {
+                        Response timeout = new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+                        timeout.addHeader("Number " + number);
+                        replicationDecision(timeout, ack, request.getMethodName(), session, number);
+                        LOGGER.error("Cannot get response from another node.", throwable);
+                        return null;
+                    });
         } catch (URISyntaxException e) {
             LOGGER.error("URI error.", e);
-            return new Response(Response.BAD_GATEWAY, Response.EMPTY);
+            new Response(Response.BAD_GATEWAY, Response.EMPTY);
         } catch (IOException e) {
             LOGGER.error("Error handling request.", e);
-            return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+            new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
         } catch (InterruptedException e) {
             LOGGER.error("Error while getting response.", e);
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
 
-    private void replicationDecision(List<Response> responses, int ack, String method, HttpSession session) {
+    private void tryMakeDecision(HttpResponse<byte[]> response, Request request, int ack, HttpSession session,
+                                 long number) {
+        Response responseFromNode;
+        switch (request.getMethod()) {
+            case Request.METHOD_GET -> {
+                if (response.statusCode() == HttpURLConnection.HTTP_OK) {
+                    responseFromNode = new Response(getResponseCode(response.statusCode()), response.body());
+                } else {
+                    responseFromNode = new Response(getResponseCode(response.statusCode()), Response.EMPTY);
+                }
+            }
+            case Request.METHOD_PUT, Request.METHOD_DELETE ->
+                    responseFromNode = new Response(getResponseCode(response.statusCode()), Response.EMPTY);
+            default -> {
+                LOGGER.error("Unsupported request method: {}", request.getMethodName());
+                throw new UnsupportedOperationException("Unsupported request method: "
+                        + request.getMethodName());
+            }
+        }
+        responseFromNode.addHeader("Number " + number);
+        replicationDecision(responseFromNode, ack, request.getMethodName(), session, number);
+    }
+
+    private void replicationDecision(Response newResponse, int ack, String method, HttpSession session,
+                                     long number) {
+        if (!Objects.equals(method, currentMethod)) {
+            return;
+        }
+        responses.add(newResponse);
+        if (responses.size() < ack) {
+            return;
+        }
+        if (!activeResponsesNumbers.contains(number)) {
+            responses.removeIf(response -> Long.parseLong(response.getHeader("Number")) == number);
+            return;
+        }
         int successResponses = 0;
         for (Response response : responses) {
             int responseStatus = response.getStatus();
-            if ((responseStatus >= 200 && responseStatus <= 202) || responseStatus == 404) {
+            if (Long.parseLong(response.getHeader("Number")) == number &&
+                    ((responseStatus >= 200 && responseStatus <= 202) || responseStatus == 404)) {
                 successResponses++;
             }
         }
         try {
             switch (method) {
                 case "GET" -> {
-                    byte[] body = getBody(responses);
+                    byte[] body = getBody(responses, number);
                     if (successResponses >= ack && body != null) {
                         session.sendResponse(new Response(Response.OK, body));
                     } else if (successResponses >= ack) {
@@ -263,21 +303,23 @@ public class DaoHttpServer extends HttpServer {
             }
         } catch (IOException e) {
             LOGGER.error("Error handling request.", e);
+        } finally {
+            clearResponses(responses);
         }
     }
 
-    private byte[] getBody(List<Response> responses) {
+    private byte[] getBody(List<Response> responses, long number) {
         byte[] body = null;
         long maxTimestamp = -1L;
         for (Response response : responses) {
-            if (response.getStatus() == 200) {
+            if (Long.parseLong(response.getHeader("Number")) == number && response.getStatus() == 200) {
                 ByteBuffer buffer = ByteBuffer.wrap(response.getBody());
                 long currentTimestamp = buffer.getLong();
                 if (currentTimestamp > maxTimestamp) {
                     buffer.position(Long.BYTES);
                     body = new byte[0];
                     while (buffer.position() < buffer.capacity()) {
-                        body = Bytes.concat(body, new byte[] {buffer.get()});
+                        body = Bytes.concat(body, new byte[]{buffer.get()});
                     }
                     if (body.length == Integer.BYTES && ByteBuffer.wrap(body).getInt() == -1) {
                         body = null;
@@ -287,6 +329,11 @@ public class DaoHttpServer extends HttpServer {
             }
         }
         return body;
+    }
+
+    private void clearResponses(List<Response> responses) {
+        activeResponsesNumbers.clear();
+        responses.clear();
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {

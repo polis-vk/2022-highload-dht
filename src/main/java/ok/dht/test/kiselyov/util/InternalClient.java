@@ -11,6 +11,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 
 public class InternalClient {
     private final HttpClient client;
@@ -21,9 +22,9 @@ public class InternalClient {
         client = clientBuilder.build();
     }
 
-    public HttpResponse<byte[]> sendRequestToNode(Request request, ClusterNode clusterNode, String id)
+    public CompletableFuture<HttpResponse<byte[]>> sendRequestToNode(Request request, ClusterNode node, String id)
             throws URISyntaxException, IOException, InterruptedException {
-        return client.send(resendRequest(request, clusterNode, id), HttpResponse.BodyHandlers.ofByteArray());
+        return client.sendAsync(resendRequest(request, node, id), HttpResponse.BodyHandlers.ofByteArray());
     }
 
     private HttpRequest resendRequest(Request request, ClusterNode clusterNode, String id) throws URISyntaxException {
