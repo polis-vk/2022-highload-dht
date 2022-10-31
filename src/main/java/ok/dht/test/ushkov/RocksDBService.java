@@ -3,13 +3,18 @@ package ok.dht.test.ushkov;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import one.nio.http.HttpClient;
+import ok.dht.test.ushkov.exception.BadPathException;
+import ok.dht.test.ushkov.exception.InternalErrorException;
+import ok.dht.test.ushkov.exception.InvalidParamsException;
+import ok.dht.test.ushkov.exception.MethodNotAllowedException;
+import ok.dht.test.ushkov.hashing.ConsistentHashing;
+import ok.dht.test.ushkov.hashing.KeyManager;
+import ok.dht.test.ushkov.replicating.ReplicatingRequestsAggregator;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.net.ConnectionString;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
@@ -20,18 +25,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Predicate;
+import java.util.function.Function;
 
 public class RocksDBService implements Service {
     public static final int N_SELECTOR_THREADS = 4;
@@ -42,17 +46,16 @@ public class RocksDBService implements Service {
     public static final int NODE_QUEUE_TASKS_ON_EXECUTOR_LIMIT = 3;
 
     private static final String V0_ENTITY = "/v0/entity";
+    private static final Logger LOG = LoggerFactory.getLogger(RocksDBService.class);
 
     private final ServiceConfig config;
     private final KeyManager keyManager = new ConsistentHashing();
-    private final Map<String, NodeQueue> nodeQueues = new HashMap<>();
 
-    private ExecutorService executor;
     private RocksDB db;
     private HttpServer httpServer;
-    private final Map<String, HttpClient> clientPool = new HashMap<>();
 
-    private static final Logger LOG = LoggerFactory.getLogger(RocksDBService.class);
+    private ExecutorService executor;
+    private HttpClient client;
 
     public RocksDBService(ServiceConfig config) {
         this.config = config;
@@ -60,21 +63,23 @@ public class RocksDBService implements Service {
         for (String url : config.clusterUrls()) {
             keyManager.addNode(url);
         }
-
-        for (String url : config.clusterUrls()) {
-            nodeQueues.put(url, new NodeQueue());
-        }
     }
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        LOG.debug("start {}", config.selfUrl());
+        LOG.debug("start node {}", config.selfUrl());
+
         executor = new ThreadPoolExecutor(
                 N_WORKER_THREADS,
                 N_WORKER_THREADS,
                 0L, TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>(EXECUTOR_QUEUE_CAPACITY)
         );
+
+        client = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .executor(executor)
+                .build();
 
         try {
             db = RocksDB.open(config.workingDir().toString());
@@ -87,24 +92,16 @@ public class RocksDBService implements Service {
         httpServer = createHttpServer(httpServerConfig);
         httpServer.start();
 
-        for (String url : config.clusterUrls()) {
-            ConnectionString conn = new ConnectionString(url);
-            HttpClient client = new HttpClient(conn);
-            clientPool.put(url, client);
-        }
-
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        LOG.debug("stop {}", config.selfUrl());
-        if (httpServer == null && db == null) {
+        if (httpServer == null && db == null && executor == null) {
             return CompletableFuture.completedFuture(null);
         }
 
-        clientPool.forEach((url, client) -> client.close());
-        clientPool.clear();
+        LOG.debug("stop node {}", config.selfUrl());
 
         httpServer.stop();
         httpServer = null;
@@ -144,7 +141,7 @@ public class RocksDBService implements Service {
             public void handleRequest(Request request, HttpSession session) {
                 executor.execute(() -> {
                     try {
-                        RocksDBService.this.handleRequest(request, session);
+                        multiplex(request, session);
                     } catch (Exception e) {
                         try {
                             session.sendError(Response.SERVICE_UNAVAILABLE, "Internal error");
@@ -169,14 +166,15 @@ public class RocksDBService implements Service {
         };
     }
 
-    private void handleRequest(Request request, HttpSession session) throws IOException, RocksDBException {
+    private void multiplex(Request request, HttpSession session)
+            throws IOException, InternalErrorException {
         try {
             switch (request.getPath()) {
                 case V0_ENTITY -> {
                     switch (request.getMethod()) {
-                        case Request.METHOD_GET -> entityGet(request, session);
-                        case Request.METHOD_PUT -> entityPut(request, session);
-                        case Request.METHOD_DELETE -> entityDelete(request, session);
+                        case Request.METHOD_GET -> v0EntityGet(request, session);
+                        case Request.METHOD_PUT -> v0EntityPut(request, session);
+                        case Request.METHOD_DELETE -> v0EntityDelete(request, session);
                         default -> throw new MethodNotAllowedException();
                     }
                 }
@@ -189,27 +187,20 @@ public class RocksDBService implements Service {
         }
     }
 
-    private void entityGet(Request request, HttpSession session)
-            throws InvalidParamsException, IOException, RocksDBException {
-        String key = request.getParameter("id=");
-        if (key == null || key.isEmpty()) {
-            throw new InvalidParamsException();
-        }
+    private void v0EntityGet(Request request, HttpSession session)
+            throws InvalidParamsException, InternalErrorException {
+        executeReplicatingRequest(request, session,
+                (id, body) -> executeV0EntityGet(id), this::aggregateV0EntityGet);
+    }
 
-        List<String> urls = keyManager.getNodeIdsByKey(key, 1);
-
-        int[] ackFrom = getAckFrom(request);
-        int ack = ackFrom[0];
-        int from = ackFrom[1];
-
-        if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl()) || request.getHeader("Proxy: ") != null) {
-            byte[] value = db.get(Utf8.toBytes(key));
+    private Response executeV0EntityGet(String id) throws InternalErrorException {
+        try {
+            byte[] value = db.get(Utf8.toBytes(id));
 
             if (value == null) {
                 Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
                 response.addHeader("Timestamp: " + 0);
-                session.sendResponse(response);
-                return;
+                return response;
             }
 
             ByteBuffer buffer = ByteBuffer.wrap(value);
@@ -220,8 +211,7 @@ public class RocksDBService implements Service {
             if (tombstone == 1) {
                 Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
                 response.addHeader("Timestamp: " + timestamp);
-                session.sendResponse(response);
-                return;
+                return response;
             }
 
             byte[] body = new byte[buffer.remaining()];
@@ -229,60 +219,98 @@ public class RocksDBService implements Service {
 
             Response response = new Response(Response.OK, body);
             response.addHeader("Timestamp: " + timestamp);
-            session.sendResponse(response);
-        } else {
-            replicateRequest(request, session, key, ackFrom,
-                    response -> response.getStatus() == 200 || response.getStatus() == 404);
+            return response;
+        } catch (RocksDBException e) {
+            throw new InternalErrorException();
         }
     }
 
-    private void entityPut(Request request, HttpSession session)
-            throws InvalidParamsException, IOException, RocksDBException {
-        String key = request.getParameter("id=");
-        if (key == null || key.isEmpty()) {
-            throw new InvalidParamsException();
+    private Response aggregateV0EntityGet(List<Response> responses) {
+        // return 200 Ok if all responses is 200 Ok
+        boolean all200 = true;
+        for (Response response : responses) {
+            all200 = all200 && response.getStatus() == 200;
+        }
+        if (all200) {
+            return responses.get(0);
         }
 
-        List<String> urls = keyManager.getNodeIdsByKey(key, 1);
+        // return 404 Not Found if all responses is 404 Not Found
+        boolean all404 = true;
+        for (Response response : responses) {
+            all404 = all404 && response.getStatus() == 404;
+        }
+        if (all404) {
+            return responses.get(0);
+        }
 
-        int[] ackFrom = getAckFrom(request);
-        int ack = ackFrom[0];
-        int from = ackFrom[1];
+        // return 404 Not Found if response with latest timestamp
+        // is 404 Not Found
+        long timestamp = -1;
+        Response response = null;
+        for (Response ackResponse : responses) {
+            long responseTimestamp
+                    = Long.parseLong(ackResponse.getHeader("Timestamp: "));
+            if (timestamp < responseTimestamp) {
+                timestamp = responseTimestamp;
+                response = ackResponse;
+            }
+        }
+        if (response.getStatus() == 404) {
+            return response;
+        }
 
-        if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl()) || request.getHeader("Proxy: ") != null) {
+        // 504 Not Enough Replicas otherwise
+        return new Response("504 Not Enough Replicas", Response.EMPTY);
+    }
+
+    private void v0EntityPut(Request request, HttpSession session)
+            throws InvalidParamsException, InternalErrorException {
+        executeReplicatingRequest(request, session,
+                this::executeV0EntityPut, this::aggregateV0EntityPut);
+    }
+
+    private Response executeV0EntityPut(String id, byte[] body) throws InternalErrorException {
+        try {
             long timestamp = System.currentTimeMillis();
-            byte[] body = request.getBody();
 
             ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES + 1 + body.length);
             buffer.putLong(timestamp);
             buffer.put((byte) 0);
             buffer.put(Long.BYTES, body);
 
-            db.put(Utf8.toBytes(key), buffer.array());
+            db.put(Utf8.toBytes(id), buffer.array());
 
             Response response = new Response(Response.CREATED, Response.EMPTY);
             response.addHeader("Timestamp: " + timestamp);
-            session.sendResponse(response);
-        } else {
-            replicateRequest(request, session, key, ackFrom,
-                    response -> response.getStatus() == 201);
+            return response;
+        } catch (RocksDBException e) {
+            throw new InternalErrorException();
         }
     }
 
-    private void entityDelete(Request request, HttpSession session)
-            throws IOException, RocksDBException, InvalidParamsException {
-        String key = request.getParameter("id=");
-        if (key == null || key.isEmpty()) {
-            throw new InvalidParamsException();
+    private Response aggregateV0EntityPut(List<Response> responses) {
+        // return 201 Created if all responses is 201 Created
+        boolean all201 = true;
+        for (Response response : responses) {
+            all201 = all201 && response.getStatus() == 201;
+        }
+        if (all201) {
+            return responses.get(0);
         }
 
-        List<String> urls = keyManager.getNodeIdsByKey(key, 1);
+        // 504 Not Enough Replicas otherwise
+        return new Response("504 Not Enough Replicas", Response.EMPTY);
+    }
 
-        int[] ackFrom = getAckFrom(request);
-        int ack = ackFrom[0];
-        int from = ackFrom[1];
+    private void v0EntityDelete(Request request, HttpSession session)
+            throws InvalidParamsException, InternalErrorException {
+        executeReplicatingRequest(request, session,
+                (id, body) -> executeV0EntityDelete(id), this::aggregateV0EntityDelete);
+    }
 
-        if (ack == 1 && from == 1 && urls.get(0).equals(config.selfUrl()) || request.getHeader("Proxy: ") != null) {
+    private Response executeV0EntityDelete(String id) throws InternalErrorException {
+        try {
             long timestamp = System.currentTimeMillis();
 
             ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES + 1);
@@ -290,131 +318,101 @@ public class RocksDBService implements Service {
             // tombstone
             buffer.put((byte) 1);
 
-            db.put(Utf8.toBytes(key), buffer.array());
+            db.put(Utf8.toBytes(id), buffer.array());
 
             Response response = new Response(Response.ACCEPTED, Response.EMPTY);
             response.addHeader("Timestamp: " + timestamp);
-            session.sendResponse(response);
-        } else {
-            replicateRequest(request, session, key, ackFrom,
-                    response -> response.getStatus() == 202);
+            return response;
+        } catch (RocksDBException e) {
+            throw new InternalErrorException();
         }
     }
 
-    private int[] getAckFrom(Request request) throws InvalidParamsException {
-        int ack;
-        try {
-            ack = request.getParameter("ack=") != null
-                    ? Integer.parseInt(request.getParameter("ack="))
-                    : 1;
-        } catch (NumberFormatException e) {
-            throw new InvalidParamsException();
+    private Response aggregateV0EntityDelete(List<Response> responses) {
+        // return 202 Accepted if all responses is 202 Accepted
+        boolean all202 = true;
+        for (Response response : responses) {
+            all202 = all202 && response.getStatus() == 202;
         }
-        int from;
-        try {
-            from = request.getParameter("from=") != null
-                    ? Integer.parseInt(request.getParameter("from="))
-                    : 1;
-        } catch (NumberFormatException e) {
-            throw new InvalidParamsException();
+        if (all202) {
+            return responses.get(0);
         }
+
+        // 504 Not Enough Replicas otherwise
+        return new Response("504 Not Enough Replicas", Response.EMPTY);
+    }
+
+    private void executeReplicatingRequest(
+            Request request,
+            HttpSession session,
+            Util.RequestExecution requestExecution,
+            Function<List<Response>, Response> requestAggregator
+    ) throws InvalidParamsException, InternalErrorException {
+        String id = request.getParameter("id=");
+        Util.requireNotNullAndNotEmpty(id);
+
+        String ackString = request.getParameter("ack=");
+        int ack = ackString != null ? Util.parseInt(ackString) : 1;
+
+        String fromString = request.getParameter("from=");
+        int from = fromString != null ? Util.parseInt(fromString) : 1;
 
         if (ack < 1 || from < 1 || ack > from || from > config.clusterUrls().size()) {
             throw new InvalidParamsException();
         }
 
-        return new int[]{ack, from};
-    }
-
-    private void replicateRequest(
-            Request request,
-            HttpSession session,
-            String key,
-            int[] ackFrom,
-            Predicate<Response> succeededResponse
-    ) throws IOException {
-        int ack = ackFrom[0];
-        int from = ackFrom[1];
-
-        LOG.debug("{} start replica request, method {}", config.selfUrl(), request.getMethod());
-
-        List<String> urls = keyManager.getNodeIdsByKey(key, from);
-
-        ReplicatedRequest replicatedRequest = new ReplicatedRequest(ack, from);
-
-        for (String url : urls) {
-            NodeQueue nodeQueue = nodeQueues.get(url);
-
-            int taskCount = nodeQueue.tasksCount.incrementAndGet();
-            if (taskCount > NODE_QUEUE_TASKS_LIMIT) {
-                nodeQueue.tasksCount.decrementAndGet();
-                session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
-                return;
+        // if request is proxied from another node, execute it and leave
+        if (request.getHeader("Proxy") != null) {
+            Response response = requestExecution.execute(id, request.getBody());
+            try {
+                session.sendResponse(response);
+            } catch (IOException e) {
+                throw new InternalErrorException();
             }
+            return;
+        }
 
-            nodeQueue.tasks.offer(new Runnable() {
-                @Override
-                public void run() {
-                    Request newRequest = new Request(request);
-                    newRequest.addHeader("Proxy: 1");
-                    try (HttpClient client = new HttpClient(new ConnectionString(url))) {
-                        LOG.debug("from {} to {}", config.selfUrl(), url);
-                        Response response = client.invoke(newRequest, 5000);
-                        if (succeededResponse.test(response)) {
-                            LOG.debug("success {} {} {}", response.getStatus(),
-                                    response.getHeader("Timestamp: "), config.selfUrl());
-                            replicatedRequest.onSuccess(session, response);
-                        } else {
-                            LOG.debug("failure {} {} {}", response.getStatus(),
-                                    response.getHeader("Timestamp: "), config.selfUrl());
-                            replicatedRequest.onFailure(session);
-                        }
-                    } catch (Exception e1) {
-                        LOG.debug("failure {} {}", e1, config.selfUrl());
-                        replicatedRequest.onFailure(session);
-                    }
+        List<String> urls = keyManager.getNodeIdsByKey(id, from);
+        ReplicatingRequestsAggregator replicatingRequestsAggregator
+                = new ReplicatingRequestsAggregator(session, ack, from, urls.size(), requestAggregator);
+
+        // if current node in urls, execute request
+        if (urls.remove(config.selfUrl())) {
+            executor.execute(() -> {
+                Response response;
+                try {
+                    response = requestExecution.execute(id, request.getBody());
+                } catch (InternalErrorException e) {
+                    replicatingRequestsAggregator.failure();
+                    return;
                 }
+                replicatingRequestsAggregator.success(response);
             });
+        }
 
-            if (taskCount <= NODE_QUEUE_TASKS_ON_EXECUTOR_LIMIT) {
-                executor.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        Runnable task = nodeQueue.tasks.poll();
-                        if (task != null) {
+        // send request to other nodes
+        for (String url : urls) {
+            HttpRequest proxyRequest = Util.createProxyRequest(url, request);
+            client.sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
+                    .whenComplete((javaNetResponse, e) -> {
+                        Response oneNioResponse;
+                        if (e == null) {
                             try {
-                                task.run();
-                            } finally {
-                                nodeQueue.tasksCount.decrementAndGet();
-                                executor.execute(this);
+                                oneNioResponse = Util.toOneNioResponse(javaNetResponse);
+                            } catch (InternalErrorException e1) {
+                                replicatingRequestsAggregator.failure();
+                                return;
                             }
+                            replicatingRequestsAggregator.success(oneNioResponse);
+                        } else {
+                            replicatingRequestsAggregator.failure();
                         }
-                    }
-                });
-            }
+                    });
         }
     }
 
-    private static class FlowControlException extends Exception {
-    }
-
-    private static class MethodNotAllowedException extends FlowControlException {
-    }
-
-    private static class BadPathException extends FlowControlException {
-    }
-
-    private static class InvalidParamsException extends FlowControlException {
-    }
-
-    private static class NodeQueue {
-        final AtomicInteger tasksCount = new AtomicInteger(0);
-        final ConcurrentLinkedQueue<Runnable> tasks = new ConcurrentLinkedQueue<>();
-    }
-
-    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
-
         @Override
         public Service create(ServiceConfig config) {
             return new RocksDBService(config);

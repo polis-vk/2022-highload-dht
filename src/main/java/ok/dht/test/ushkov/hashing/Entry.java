@@ -1,4 +1,4 @@
-package ok.dht.test.ushkov;
+package ok.dht.test.ushkov.hashing;
 
 public class Entry implements Comparable<Entry> {
     private String nodeId;
