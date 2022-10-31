@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ProxyHandler implements Closeable {
 
     private static final int MAX_NODE_FAILS_NUMBER = 5;
-    private static final int RESPONSE_TIMEOUT_SECONDS = 50;
+    private static final long RESPONSE_TIMEOUT_SECONDS = 50;
     private static final int NODE_AS_UNAVAILABLE_MILLIS = 180_000;
     private static final int UNAVAILABLE_NODES_CLEAN_INTERVAL_MILLIS = NODE_AS_UNAVAILABLE_MILLIS / 2;
     private static final Duration CLIENT_TIMEOUT = Duration.of(50, ChronoUnit.SECONDS);
@@ -36,7 +36,7 @@ public class ProxyHandler implements Closeable {
     private final ScheduledExecutorService unavailableNodesCleaner = Executors.newSingleThreadScheduledExecutor();
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(CLIENT_TIMEOUT)
-            .executor(Executors.newFixedThreadPool(2))
+            .executor(Executors.newFixedThreadPool(8))
             .build();
 
     public ProxyHandler() {
@@ -50,23 +50,22 @@ public class ProxyHandler implements Closeable {
         LOG.info("Unavailable nodes cleaner: " + !unusedScheduledFuture.isCancelled());
     }
 
-    public Response proceed(Request request, String externalUrl, long requestTime) {
+    public CompletableFuture<Response> proceed(Request request, String externalUrl, long requestTime) {
         if (unavailableNodes.containsKey(externalUrl)) {
-            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+            return CompletableFuture.completedFuture(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
-        try {
-            HttpResponse<byte[]> httpResponse = proxyRequestAsync(request, externalUrl, requestTime)
-                    .get(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            return ServiceUtils.toResponse(httpResponse);
-        } catch (Exception e) {
-            LOG.error("Failed while getting response from external node", e);
-            nodesFailsNumberMap.putIfAbsent(externalUrl, new AtomicInteger(0));
-            if (nodesFailsNumberMap.get(externalUrl).incrementAndGet() >= MAX_NODE_FAILS_NUMBER) {
-                unavailableNodes.put(externalUrl, System.currentTimeMillis() + NODE_AS_UNAVAILABLE_MILLIS);
-                nodesFailsNumberMap.remove(externalUrl);
-            }
-            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-        }
+        return proxyRequestAsync(request, externalUrl, requestTime)
+                .thenApply(ServiceUtils::toResponse)
+                .orTimeout(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .exceptionally(throwable -> {
+                    LOG.error("Failed while getting response from external node", throwable);
+                    nodesFailsNumberMap.putIfAbsent(externalUrl, new AtomicInteger(0));
+                    if (nodesFailsNumberMap.get(externalUrl).incrementAndGet() >= MAX_NODE_FAILS_NUMBER) {
+                        unavailableNodes.put(externalUrl, System.currentTimeMillis() + NODE_AS_UNAVAILABLE_MILLIS);
+                        nodesFailsNumberMap.remove(externalUrl);
+                    }
+                    return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                });
     }
 
     private CompletableFuture<HttpResponse<byte[]>> proxyRequestAsync(Request request,

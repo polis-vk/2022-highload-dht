@@ -28,8 +28,6 @@ import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -38,8 +36,6 @@ public class DemoService implements Service {
     private static final int MAX_NODES_NUMBER = 1000; // was limited in lection
     private static final int VIRTUAL_NODES_NUMBER = 10;
     private static final int HASH_SPACE = MAX_NODES_NUMBER * VIRTUAL_NODES_NUMBER * 360;
-    private static final int REPLICA_RESPONSES_EXECUTOR_THREADS = 10;
-
     private static final String DAO_PREFIX = "dao";
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final Logger LOG = LoggerFactory.getLogger(DemoService.class);
@@ -53,7 +49,6 @@ public class DemoService implements Service {
     //--------------------------Non final fields due to stop / close / shutdown in stop()--------------------------\\
     private HttpServer server;
     private ExecutorService requestExecutor;
-    private ThreadPoolExecutor replicasResponsesExecutor;
     private DaoHandler daoHandler;
     private ProxyHandler proxyHandler;
     //--------------------------------------------------------------------------------------------------------------\\
@@ -77,10 +72,6 @@ public class DemoService implements Service {
         requestExecutor = RequestExecutorService.requestExecutorDiscardOldest();
         daoHandler = new DaoHandler(DaoConfig.defaultConfig(daoPath));
         proxyHandler = new ProxyHandler();
-        replicasResponsesExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(
-                REPLICA_RESPONSES_EXECUTOR_THREADS,
-                r -> new Thread(r, "ReplicasResponsesExecutorThread")
-        );
         server = new HttpServer(ServiceUtils.createConfigFromPort(config.selfPort())) {
 
             @Override
@@ -99,10 +90,11 @@ public class DemoService implements Service {
                         ServiceUtils.sendResponse(session, requestParser.failStatus());
                         return;
                     }
-                    List<Runnable> replicaTasks = createReplicaResponsesTasks(session, requestParser, requestTime);
-                    for (Runnable task : replicaTasks) {
-                        replicasResponsesExecutor.execute(task);
-                    }
+                    List<CompletableFuture<Response>> replicaResponsesFutures = createReplicaResponsesFutures(
+                            requestParser,
+                            requestTime
+                    );
+                    handleReplicaResponses(session, requestParser, replicaResponsesFutures);
                 }));
             }
 
@@ -124,7 +116,6 @@ public class DemoService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         try {
-            RequestExecutorService.shutdownAndAwaitTermination(replicasResponsesExecutor);
             RequestExecutorService.shutdownAndAwaitTermination(requestExecutor);
         } catch (TimeoutException e) {
             LOG.warn("Executor await termination too long", e);
@@ -135,51 +126,65 @@ public class DemoService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    private List<Runnable> createReplicaResponsesTasks(HttpSession session,
-                                                       RequestParser requestParser,
-                                                       long requestTime) {
+    private List<CompletableFuture<Response>> createReplicaResponsesFutures(RequestParser requestParser,
+                                                                            long requestTime) {
+        String id = requestParser.id();
+        Request request = requestParser.getRequest();
+        List<CompletableFuture<Response>> replicaResponsesFutures = new ArrayList<>(requestParser.from());
+        for (int nodeNumber : getReplicaNodeNumbers(id, requestParser.from())) {
+            replicaResponsesFutures.add(nodeNumber == selfNodeNumber
+                    ? CompletableFuture.completedFuture(daoHandler.proceed(id, request, requestTime))
+                    : proxyHandler.proceed(request, nodesNumberToUrlMap.get(nodeNumber), requestTime)
+            );
+        }
+        return replicaResponsesFutures;
+    }
+
+    private void handleReplicaResponses(HttpSession session,
+                                        RequestParser requestParser,
+                                        List<CompletableFuture<Response>> replicaResponsesFutures) {
         // Может возникнуть вопрос зачем нужны счетчики, ведь можно использовать размер мапы responses?
         // Чтобы не класть в мапу лишние значения, если requestTime не важен, например при PUT и DELETE.
         // Также при GET запросах с помощью CustomHeaders.REQUEST_TIME различается ситуации когда ключ не найден, тогда
         // requestTime невозможно записать, так как в dao его нет и в мапу такие ответы не кладутся, но successCounter
         // увеличивается. Когда найдена могила, то requestTime указывается и значение в мапу добавляется.
         // Если мапа пустая и CustomHeaders.REQUEST_TIME отсутствует, то requestTime принимаем за 0 и делаем одну
-        // запись в мапу. Также счетчики позволяют отменить выполнение запросов к другим репликам если
+        // запись в мапу. Также счетчики позволяют немедленно выполнить запросы как Continue к другим репликам если
         // кворум уже набран или количество отказов гарантированно не позволит его собрать и эти задачи еще не начались.
+        int ack = requestParser.ack();
+        int failLimit = requestParser.from() - ack + 1;
         AtomicInteger failsCounter = new AtomicInteger(0);
         AtomicInteger successCounter = new AtomicInteger(0);
         NavigableMap<Long, Response> responses = new ConcurrentSkipListMap<>();
-        List<Runnable> replicaResponsesTasks = new ArrayList<>();
-        for (int nodeNumber : getReplicaNodeNumbers(requestParser.id(), requestParser.from())) {
-            replicaResponsesTasks.add(() -> {
-                Response replicaResponse = getReplicaResponse(nodeNumber, requestParser, requestTime);
-                int ack = requestParser.ack();
-                int failLimit = requestParser.from() - ack + 1;
-                // both proceed() methods wrapped with try / catch Exception
-                if (requestParser.successStatuses().contains(replicaResponse.getStatus())) {
-                    String requestTimeHeaderValue = replicaResponse.getHeader(CustomHeaders.REQUEST_TIME);
+        for (CompletableFuture<Response> responseFuture : replicaResponsesFutures) {
+            responseFuture.thenAccept(response -> {
+                if (response.getStatus() == 100) { // Response.CONTINUE
+                    return;
+                }
+                if (requestParser.successStatuses().contains(response.getStatus())) {
+                    String requestTimeHeaderValue = response.getHeader(CustomHeaders.REQUEST_TIME);
                     if (requestTimeHeaderValue == null && responses.isEmpty()) {
-                        responses.put(0L, replicaResponse);
+                        responses.put(0L, response);
                     } else if (requestTimeHeaderValue != null) { // code climate ругается, на != в первом if
-                        responses.put(Long.parseLong(requestTimeHeaderValue), replicaResponse);
+                        responses.put(Long.parseLong(requestTimeHeaderValue), response);
                     }
                     if (successCounter.incrementAndGet() == ack) {
                         ServiceUtils.sendResponse(session, responses.lastEntry().getValue());
-                        removeReplicasResponsesTasks(replicaResponsesTasks);
+                        completeContinueNonDoneFutures(replicaResponsesFutures);
                     }
                 } else if (failsCounter.incrementAndGet() == failLimit) {
                     ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);
-                    removeReplicasResponsesTasks(replicaResponsesTasks);
+                    completeContinueNonDoneFutures(replicaResponsesFutures);
                 }
+            }).exceptionally(throwable -> {
+                if (failsCounter.incrementAndGet() == failLimit) {
+                    ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);
+                    completeContinueNonDoneFutures(replicaResponsesFutures);
+                }
+                LOG.error("Getting response from replica failed", throwable);
+                return null;
             });
         }
-        return replicaResponsesTasks;
-    }
-
-    private Response getReplicaResponse(int nodeNumber, RequestParser requestParser, long requestTime) {
-        return (nodeNumber == selfNodeNumber)
-                ? daoHandler.proceed(requestParser.id(), requestParser.getRequest(), requestTime)
-                : proxyHandler.proceed(requestParser.getRequest(), nodesNumberToUrlMap.get(nodeNumber), requestTime);
     }
 
     private boolean isProxyRequestAndHandle(Request request, HttpSession session) {
@@ -188,7 +193,7 @@ public class DemoService implements Service {
             return false;
         }
         long requestTime = Long.parseLong(proxyRequestTimeHeaderValue);
-        daoHandler.handle(request.getParameter(RequestParser.ID_PARAM_NAME), request, session, requestTime);
+        daoHandler.handle(request, session, request.getParameter(RequestParser.ID_PARAM_NAME), requestTime);
         return true;
     }
 
@@ -223,14 +228,9 @@ public class DemoService implements Service {
         throw new IllegalArgumentException("Can`t find from amount of replica nodes positions");
     }
 
-    private int calculateHashRingPosition(String url) {
-        return Math.abs(Hash.murmur3(url)) % HASH_SPACE;
-    }
-
     private static void addReplicaNodePositions(Set<Integer> replicaNodesPositions,
                                                 Collection<Integer> virtualNodesPositions,
-                                                int from
-    ) {
+                                                int from) {
         for (Integer nodePosition : virtualNodesPositions) {
             replicaNodesPositions.add(nodePosition);
             if (replicaNodesPositions.size() == from) {
@@ -239,9 +239,15 @@ public class DemoService implements Service {
         }
     }
 
-    private void removeReplicasResponsesTasks(List<Runnable> replicasResponsesTasks) {
-        for (Runnable task : replicasResponsesTasks) {
-            replicasResponsesExecutor.remove(task);
+    private int calculateHashRingPosition(String url) {
+        return Math.abs(Hash.murmur3(url)) % HASH_SPACE;
+    }
+
+    private void completeContinueNonDoneFutures(List<CompletableFuture<Response>> replicaResponsesFutures) {
+        for (CompletableFuture<Response> responseFuture : replicaResponsesFutures) {
+            if (responseFuture != null && !responseFuture.isDone()) {
+                responseFuture.complete(new Response(Response.CONTINUE, Response.EMPTY));
+            }
         }
     }
 

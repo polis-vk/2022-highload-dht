@@ -232,7 +232,7 @@ public final class DaoUtils {
         for (int i = 7; i >= 0; i--) {
             result[i] = (byte) (valueLocal & 0xffL);
             if (result[i] == NEXT_LINE_BYTE) {
-                result[i] += 1;
+                result[i] = (byte) (result[i] + 1);
             }
             valueLocal >>= 8;
         }

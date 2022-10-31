@@ -35,10 +35,9 @@ public class DaoHandler implements Closeable {
             LOG.error("Failed to proceed request in dao", e);
             return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
-
     }
 
-    public void handle(String id, Request request, HttpSession session, Long requestTime) {
+    public void handle(Request request, HttpSession session, String id, Long requestTime) {
         ServiceUtils.sendResponse(session, proceed(id, request, requestTime));
     }
 
