@@ -170,16 +170,16 @@ public class DemoService implements Service {
                     }
                     if (successCounter.incrementAndGet() == ack) {
                         ServiceUtils.sendResponse(session, responses.lastEntry().getValue());
-                        completeContinueNonDoneFutures(replicaResponsesFutures);
+                        completeAsContinueNonDoneFutures(replicaResponsesFutures);
                     }
                 } else if (failsCounter.incrementAndGet() == failLimit) {
                     ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);
-                    completeContinueNonDoneFutures(replicaResponsesFutures);
+                    completeAsContinueNonDoneFutures(replicaResponsesFutures);
                 }
             }).exceptionally(throwable -> {
                 if (failsCounter.incrementAndGet() == failLimit) {
                     ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);
-                    completeContinueNonDoneFutures(replicaResponsesFutures);
+                    completeAsContinueNonDoneFutures(replicaResponsesFutures);
                 }
                 LOG.error("Getting response from replica failed", throwable);
                 return null;
@@ -243,7 +243,7 @@ public class DemoService implements Service {
         return Math.abs(Hash.murmur3(url)) % HASH_SPACE;
     }
 
-    private void completeContinueNonDoneFutures(List<CompletableFuture<Response>> replicaResponsesFutures) {
+    private void completeAsContinueNonDoneFutures(List<CompletableFuture<Response>> replicaResponsesFutures) {
         for (CompletableFuture<Response> responseFuture : replicaResponsesFutures) {
             if (responseFuture != null && !responseFuture.isDone()) {
                 responseFuture.complete(new Response(Response.CONTINUE, Response.EMPTY));
@@ -251,7 +251,7 @@ public class DemoService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
