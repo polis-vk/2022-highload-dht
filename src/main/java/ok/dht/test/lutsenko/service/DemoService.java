@@ -26,10 +26,8 @@ import java.util.NavigableMap;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class DemoService implements Service {
 
@@ -37,7 +35,6 @@ public class DemoService implements Service {
     private static final int VIRTUAL_NODES_NUMBER = 10;
     private static final int HASH_SPACE = MAX_NODES_NUMBER * VIRTUAL_NODES_NUMBER * 360;
     private static final String DAO_PREFIX = "dao";
-    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final Logger LOG = LoggerFactory.getLogger(DemoService.class);
 
     private final Path daoPath;
@@ -90,11 +87,9 @@ public class DemoService implements Service {
                         ServiceUtils.sendResponse(session, requestParser.failStatus());
                         return;
                     }
-                    List<CompletableFuture<Response>> replicaResponsesFutures = createReplicaResponsesFutures(
-                            requestParser,
-                            requestTime
-                    );
-                    handleReplicaResponses(session, requestParser, replicaResponsesFutures);
+                    List<CompletableFuture<Response>> replicaResponsesFutures
+                            = createReplicaResponsesFutures(requestParser, requestTime);
+                    ReplicaResponsesHandler.handle(session, requestParser, replicaResponsesFutures);
                 }));
             }
 
@@ -126,67 +121,6 @@ public class DemoService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    private List<CompletableFuture<Response>> createReplicaResponsesFutures(RequestParser requestParser,
-                                                                            long requestTime) {
-        String id = requestParser.id();
-        Request request = requestParser.getRequest();
-        List<CompletableFuture<Response>> replicaResponsesFutures = new ArrayList<>(requestParser.from());
-        for (int nodeNumber : getReplicaNodeNumbers(id, requestParser.from())) {
-            replicaResponsesFutures.add(nodeNumber == selfNodeNumber
-                    ? CompletableFuture.completedFuture(daoHandler.proceed(id, request, requestTime))
-                    : proxyHandler.proceed(request, nodesNumberToUrlMap.get(nodeNumber), requestTime)
-            );
-        }
-        return replicaResponsesFutures;
-    }
-
-    private void handleReplicaResponses(HttpSession session,
-                                        RequestParser requestParser,
-                                        List<CompletableFuture<Response>> replicaResponsesFutures) {
-        // Может возникнуть вопрос зачем нужны счетчики, ведь можно использовать размер мапы responses?
-        // Чтобы не класть в мапу лишние значения, если requestTime не важен, например при PUT и DELETE.
-        // Также при GET запросах с помощью CustomHeaders.REQUEST_TIME различается ситуации когда ключ не найден, тогда
-        // requestTime невозможно записать, так как в dao его нет и в мапу такие ответы не кладутся, но successCounter
-        // увеличивается. Когда найдена могила, то requestTime указывается и значение в мапу добавляется.
-        // Если мапа пустая и CustomHeaders.REQUEST_TIME отсутствует, то requestTime принимаем за 0 и делаем одну
-        // запись в мапу. Также счетчики позволяют немедленно выполнить запросы как Continue к другим репликам если
-        // кворум уже набран или количество отказов гарантированно не позволит его собрать и эти задачи еще не начались.
-        int ack = requestParser.ack();
-        int failLimit = requestParser.from() - ack + 1;
-        AtomicInteger failsCounter = new AtomicInteger(0);
-        AtomicInteger successCounter = new AtomicInteger(0);
-        NavigableMap<Long, Response> responses = new ConcurrentSkipListMap<>();
-        for (CompletableFuture<Response> responseFuture : replicaResponsesFutures) {
-            responseFuture.thenAccept(response -> {
-                if (response.getStatus() == 100) { // Response.CONTINUE
-                    return;
-                }
-                if (requestParser.successStatuses().contains(response.getStatus())) {
-                    String requestTimeHeaderValue = response.getHeader(CustomHeaders.REQUEST_TIME);
-                    if (requestTimeHeaderValue == null && responses.isEmpty()) {
-                        responses.put(0L, response);
-                    } else if (requestTimeHeaderValue != null) { // code climate ругается, на != в первом if
-                        responses.put(Long.parseLong(requestTimeHeaderValue), response);
-                    }
-                    if (successCounter.incrementAndGet() == ack) {
-                        ServiceUtils.sendResponse(session, responses.lastEntry().getValue());
-                        completeAsContinueNonDoneFutures(replicaResponsesFutures);
-                    }
-                } else if (failsCounter.incrementAndGet() == failLimit) {
-                    ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);
-                    completeAsContinueNonDoneFutures(replicaResponsesFutures);
-                }
-            }).exceptionally(throwable -> {
-                if (failsCounter.incrementAndGet() == failLimit) {
-                    ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);
-                    completeAsContinueNonDoneFutures(replicaResponsesFutures);
-                }
-                LOG.error("Getting response from replica failed", throwable);
-                return null;
-            });
-        }
-    }
-
     private boolean isProxyRequestAndHandle(Request request, HttpSession session) {
         String proxyRequestTimeHeaderValue = request.getHeader(CustomHeaders.PROXY_REQUEST_TIME);
         if (proxyRequestTimeHeaderValue == null) {
@@ -211,6 +145,20 @@ public class DemoService implements Service {
         }
     }
 
+    private List<CompletableFuture<Response>> createReplicaResponsesFutures(RequestParser requestParser,
+                                                                            long requestTime) {
+        String id = requestParser.id();
+        Request request = requestParser.getRequest();
+        List<CompletableFuture<Response>> replicaResponsesFutures = new ArrayList<>(requestParser.from());
+        for (int nodeNumber : getReplicaNodeNumbers(id, requestParser.from())) {
+            replicaResponsesFutures.add(nodeNumber == selfNodeNumber
+                    ? CompletableFuture.completedFuture(daoHandler.proceed(id, request, requestTime))
+                    : proxyHandler.proceed(request, nodesNumberToUrlMap.get(nodeNumber), requestTime)
+            );
+        }
+        return replicaResponsesFutures;
+    }
+
     private Set<Integer> getReplicaNodeNumbers(String key, int from) {
         Map.Entry<Integer, Integer> virtualNode = virtualNodes.ceilingEntry(calculateHashRingPosition(key));
         if (virtualNode == null) {
@@ -225,7 +173,7 @@ public class DemoService implements Service {
         if (replicaNodesPositions.size() == from) {
             return replicaNodesPositions;
         }
-        throw new IllegalArgumentException("Can`t find from amount of replica nodes positions");
+        throw new RuntimeException("Can`t find from amount of replica nodes positions");
     }
 
     private static void addReplicaNodePositions(Set<Integer> replicaNodesPositions,
@@ -242,15 +190,6 @@ public class DemoService implements Service {
     private int calculateHashRingPosition(String url) {
         return Math.abs(Hash.murmur3(url)) % HASH_SPACE;
     }
-
-    private void completeAsContinueNonDoneFutures(List<CompletableFuture<Response>> replicaResponsesFutures) {
-        for (CompletableFuture<Response> responseFuture : replicaResponsesFutures) {
-            if (responseFuture != null && !responseFuture.isDone()) {
-                responseFuture.complete(new Response(Response.CONTINUE, Response.EMPTY));
-            }
-        }
-    }
-
     @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
