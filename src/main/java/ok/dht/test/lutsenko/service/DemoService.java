@@ -190,6 +190,7 @@ public class DemoService implements Service {
     private int calculateHashRingPosition(String url) {
         return Math.abs(Hash.murmur3(url)) % HASH_SPACE;
     }
+
     @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
