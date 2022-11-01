@@ -46,7 +46,7 @@ public final class Utils {
 
     public static long readTimeMillisFromBytes(byte[] value) {
         ByteBuffer newByteBuffer = ByteBuffer.wrap(value);
-        int timeMillisPosition = value.length - Long.BYTES;  // after flag deleted and data
+        int timeMillisPosition = value.length - Long.BYTES; // after flag deleted and data
         return newByteBuffer.getLong(timeMillisPosition);
     }
 
