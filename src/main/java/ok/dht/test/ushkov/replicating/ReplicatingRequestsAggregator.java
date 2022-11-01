@@ -2,6 +2,8 @@ package ok.dht.test.ushkov.replicating;
 
 import one.nio.http.HttpSession;
 import one.nio.http.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -11,6 +13,7 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.Function;
 
 public class ReplicatingRequestsAggregator {
+    private final Logger log = LoggerFactory.getLogger(ReplicatingRequestsAggregator.class);
     private final HttpSession session;
     private final int ack;
     private final int from;
@@ -18,8 +21,7 @@ public class ReplicatingRequestsAggregator {
     private final AtomicInteger failureCount = new AtomicInteger(0);
     private final AtomicReferenceArray<Response> responses;
     private final Function<List<Response>, Response> aggregator;
-
-
+    
     public ReplicatingRequestsAggregator(
             HttpSession session,
             int ack,
@@ -52,7 +54,7 @@ public class ReplicatingRequestsAggregator {
             try {
                 session.sendResponse(responseToClient);
             } catch (IOException e) {
-                // No ops.
+                log.error("Could not send response to client.");
             }
         }
     }
@@ -66,7 +68,7 @@ public class ReplicatingRequestsAggregator {
             try {
                 session.sendResponse(responseToClient);
             } catch (IOException e) {
-                // No ops.
+                log.error("Could not send response to client.");
             }
         }
     }
