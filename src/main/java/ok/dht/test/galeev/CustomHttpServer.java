@@ -65,6 +65,7 @@ public class CustomHttpServer extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         if (isStopping) {
+            session.sendError(Response.SERVICE_UNAVAILABLE, "Server is shutting down");
             return;
         }
         String path = request.getPath();
