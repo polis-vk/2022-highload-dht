@@ -7,6 +7,7 @@ import ok.dht.test.shashulovskiy.hashing.MD5Hasher;
 import ok.dht.test.shashulovskiy.metainfo.MetadataUtils;
 import ok.dht.test.shashulovskiy.sharding.CircuitBreaker;
 import ok.dht.test.shashulovskiy.sharding.ConsistentHashingShardingManager;
+import ok.dht.test.shashulovskiy.sharding.ResponseAccumulator;
 import ok.dht.test.shashulovskiy.sharding.ShardingManager;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -39,8 +40,6 @@ public class ServiceImpl implements Service {
     private static final Logger LOG = LoggerFactory.getLogger(ServiceImpl.class);
     private static final int VNODES_COUNT = 5;
     private static final String INTERNAL_PREFIX = "/internal";
-
-    private static final String NOT_ENOUGH_REPLICAS_RESPONSE = "504 Not Enough Replicas";
 
     private static final Duration REQUEST_TIMEOUT = Duration.of(2, ChronoUnit.SECONDS);
     private CircuitBreaker circuitBreaker;
@@ -153,139 +152,101 @@ public class ServiceImpl implements Service {
                     ? MetadataUtils.wrapWithMetadata(request.getBody(), false) : new byte[0];
 
             int firstShard = shardingManager.getShard(idBytes).getNodeId();
-            int acksCount = 0;
 
-            Response[] responses = new Response[from];
-            boolean responded = false;
+            ResponseAccumulator responseAccumulator = new ResponseAccumulator(
+                    ack,
+                    from,
+                    request.getMethod(),
+                    session,
+                    false
+            );
+
+            boolean processLocally = false;
 
             for (int shard = firstShard; shard < firstShard + from; ++shard) {
-                Response response;
                 if (config.selfUrl().equals(config.clusterUrls().get(shard % totalShards))) {
-                    response = handleDbOperation(request, idBytes, body);
+                    processLocally = true;
                 } else {
-                    response = handleProxyOperation(request, shard % totalShards, body);
-                }
-                responses[shard - firstShard] = response;
-                if (response != null) {
-                    acksCount++;
-                }
-
-                if (!responded && acksCount >= ack) {
-                    onAcksCollected(request, session, responses);
-                    responded = true;
-
-                    if (request.getMethod() == Request.METHOD_GET) {
-                        return;
-                    }
+                    handleProxyOperation(request, shard % totalShards, body, responseAccumulator);
                 }
             }
 
-            if (!responded) {
-                session.sendResponse(new Response(NOT_ENOUGH_REPLICAS_RESPONSE, Response.EMPTY));
+            if (processLocally) {
+                handleDbOperation(request, idBytes, body, responseAccumulator);
             }
         } catch (IOException e) {
             LOG.error("IOException occurred when sending response", e);
+        } catch (RuntimeException e) {
+            LOG.error("Runtime exception occurred while handling request", e);
         }
     }
 
-    private void onAcksCollected(Request request, HttpSession session, Response[] responses) throws IOException {
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> {
-                int successCount = 0;
-                long lastTimestamp = 0;
-                byte[] lastResponse = new byte[0];
-
-                for (var response : responses) {
-                    if (response != null && response.getStatus() == 200) {
-                        successCount++;
-                        long currentResponseTimestamp = MetadataUtils.extractTimestamp(response.getBody());
-
-                        if (currentResponseTimestamp > lastTimestamp) {
-                            lastTimestamp = currentResponseTimestamp;
-                            lastResponse = response.getBody();
-                        }
-                    }
-                }
-
-                if (successCount == 0 || MetadataUtils.isTombstone(lastResponse)) {
-                    session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
+    private void handleProxyOperation(Request request, int shardId, byte[] body, ResponseAccumulator responseAccumulator) {
+        if (circuitBreaker.isActive(shardId)) {
+            client.sendAsync(
+                    HttpRequest
+                            .newBuilder()
+                            .method(request.getMethodName(),
+                                    HttpRequest.BodyPublishers.ofByteArray(request.getBody() == null
+                                            ? Response.EMPTY : body))
+                            .uri(URI.create(config.clusterUrls().get(shardId) + INTERNAL_PREFIX + request.getURI()))
+                            .timeout(REQUEST_TIMEOUT).build(),
+                    HttpResponse.BodyHandlers.ofByteArray()
+            ).handleAsync((response, exception) -> {
+                if (exception != null) {
+                    circuitBreaker.failOn(shardId);
                 } else {
-                    session.sendResponse(new Response(Response.OK, MetadataUtils.extractData(lastResponse)));
+                    circuitBreaker.successOn(shardId);
+                    responseAccumulator.processSuccess(response.statusCode(), response.body());
                 }
-            }
-            case Request.METHOD_PUT -> session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
-            case Request.METHOD_DELETE -> session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
-            default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-        }
-    }
-
-    private Response handleProxyOperation(Request request, int shardId, byte[] body) {
-        try {
-            if (circuitBreaker.isActive(shardId)) {
-                HttpResponse<byte[]> response = client.send(
-                        HttpRequest
-                                .newBuilder()
-                                .method(request.getMethodName(),
-                                        HttpRequest.BodyPublishers.ofByteArray(request.getBody() == null
-                                                ? Response.EMPTY : body))
-                                .uri(URI.create(config.clusterUrls().get(shardId) + INTERNAL_PREFIX + request.getURI()))
-                                .timeout(REQUEST_TIMEOUT).build(),
-                        HttpResponse.BodyHandlers.ofByteArray()
-                );
-
-                circuitBreaker.successOn(shardId);
-                return new Response(Integer.toString(response.statusCode()), response.body());
-            } else {
+                responseAccumulator.processAny();
                 return null;
-            }
-        } catch (IOException | InterruptedException e) {
-            circuitBreaker.failOn(shardId);
-            return null;
+            });
+        } else {
+            responseAccumulator.processAny();
         }
     }
 
-    private Response handleDbOperation(Request request, byte[] idBytes, byte[] body) {
+    private void handleDbOperation(Request request, byte[] idBytes, byte[] body, ResponseAccumulator responseAccumulator) {
         try {
             switch (request.getMethod()) {
                 case Request.METHOD_GET -> {
                     byte[] result = dao.get(idBytes);
                     if (result == null) {
-                        return new Response(Response.NOT_FOUND, Response.EMPTY);
+                        responseAccumulator.processSuccess(404, Response.EMPTY);
                     } else {
-                        return new Response(Response.OK, result);
+                        responseAccumulator.processSuccess(200, result);
                     }
                 }
                 case Request.METHOD_PUT -> {
                     dao.put(idBytes, body);
 
-                    return new Response(Response.CREATED, Response.EMPTY);
+                    responseAccumulator.processSuccess(201, Response.EMPTY);
                 }
                 case Request.METHOD_DELETE -> {
                     dao.put(idBytes, MetadataUtils.wrapWithMetadata(new byte[0], true));
 
-                    return new Response(Response.ACCEPTED, Response.EMPTY);
+                    responseAccumulator.processSuccess(202, Response.EMPTY);
                 }
-                default -> {
-                    return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-                }
+                default -> responseAccumulator.processSuccess(405, Response.EMPTY);
             }
         } catch (DBException exception) {
             LOG.error("Internal dao exception occurred on " + request.getPath(), exception);
-            return null;
+        } finally {
+            responseAccumulator.processAny();
         }
     }
 
     @Path(INTERNAL_PREFIX + "/v0/entity")
-    public Response handleInternal(Request request) {
-        // No additional validations on internal api
-        String id = request.getParameter("id=");
+    public void handleInternal(Request request, HttpSession session) {
+        try {
+            // No additional validations on internal api
+            String id = request.getParameter("id=");
 
-        Response response = handleDbOperation(request, Utf8.toBytes(id), request.getBody());
-
-        if (response == null) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        } else {
-            return response;
+            ResponseAccumulator responseAccumulator = new ResponseAccumulator(1, 1, request.getMethod(), session, true);
+            handleDbOperation(request, Utf8.toBytes(id), request.getBody(), responseAccumulator);
+        } catch (Exception e) {
+            System.err.println(e.getMessage());
         }
     }
 
@@ -304,7 +265,7 @@ public class ServiceImpl implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 4, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
+    @ServiceFactory(stage = 5, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
