@@ -35,9 +35,9 @@ final class Util {
         };
     }
 
-    static Response toOneNioResponse(HttpResponse<byte[]> response) throws InternalErrorException {
+    static Response toOneNioResponse(HttpResponse<byte[]> javaNetResponse) throws InternalErrorException {
         String status;
-        status = switch (response.statusCode()) {
+        status = switch (javaNetResponse.statusCode()) {
             case HttpURLConnection.HTTP_OK -> Response.OK;
             case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
             case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
@@ -60,9 +60,9 @@ final class Util {
             case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> Response.GATEWAY_TIMEOUT;
             default -> throw new InternalErrorException();
         };
-        Response response1 = new Response(status, response.body());
-        response1.addHeader("Timestamp: " + response.headers().map().get("Timestamp").get(0));
-        return response1;
+        Response oneNioResponse = new Response(status, javaNetResponse.body());
+        oneNioResponse.addHeader("Timestamp: " + javaNetResponse.headers().map().get("Timestamp").get(0));
+        return oneNioResponse;
     }
 
     static void requireNotNullAndNotEmpty(String param) throws InvalidParamsException {
