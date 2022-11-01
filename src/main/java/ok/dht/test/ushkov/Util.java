@@ -11,7 +11,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
 final class Util {
-    private Util() {}
+    private Util() {
+    }
 
     static HttpRequest createProxyRequest(String url, Request request)
             throws InternalErrorException {
