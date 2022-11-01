@@ -181,8 +181,9 @@ public class MyService implements Service {
         }
         int maxHash = Integer.MIN_VALUE;
         String node = "";
+        int keyHash = Hash.murmur3(key);
         for (String url : clusterUrls) {
-            int hash = urlHashes.get(url) + Hash.murmur3(key);
+            int hash = urlHashes.get(url) + keyHash;
             if (hash >= maxHash) {
                 maxHash = hash;
                 node = url;
