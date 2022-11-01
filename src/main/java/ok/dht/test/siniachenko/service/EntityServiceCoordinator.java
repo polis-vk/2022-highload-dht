@@ -15,6 +15,7 @@ import org.iq80.leveldb.DBException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -57,7 +58,6 @@ public class EntityServiceCoordinator implements EntityService {
         this.executorService = executorService;
         this.httpClient = httpClient;
         this.nodeMapper = new NodeMapper(config.clusterUrls());
-        this.nodeRequestsTimeouts = new ConcurrentHashMap<>();
         this.defaultFromCount = config.clusterUrls().size();
         this.defaultAckCount = config.clusterUrls().size() / 2 + 1;
     }
@@ -197,20 +197,25 @@ public class EntityServiceCoordinator implements EntityService {
                 needLocalWork = true;
                 localIndex = replicaIndex;
             } else {
-                int finalReplicaIndex = replicaIndex;
-                proxyRequest(request.getMethodName(), request.getBody(), id, nodeUrlByKey).thenAccept(
-                    response -> {
-                        if (successStatusCodes.contains(response.statusCode())) {
-                            bodies[finalReplicaIndex] = response.body();
-                            successCount.incrementAndGet();
-                        }
-                        countDownLatch.countDown();
+                try {
+                    HttpResponse<byte[]> response = proxyRequest(
+                        request.getMethodName(), request.getBody(), id, nodeUrlByKey
+                    );
+                    if (successStatusCodes.contains(response.statusCode())) {
+                        bodies[replicaIndex] = response.body();
+                        successCount.incrementAndGet();
+                    } else {
+                        LOG.error(
+                            "Unexpected status code {} after proxy request to {}",
+                            response.statusCode(),
+                            nodeUrlByKey
+                        );
                     }
-                ).exceptionally(ex -> {
-                    LOG.error("Error after proxy request to {}", nodeUrlByKey, ex);
+                } catch (IOException | InterruptedException e) {
+                    LOG.error("Error after proxy request to {}", nodeUrlByKey, e);
+                } finally {
                     countDownLatch.countDown();
-                    return null;
-                });
+                }
             }
         }
         if (needLocalWork) {
@@ -248,11 +253,10 @@ public class EntityServiceCoordinator implements EntityService {
         return value;
     }
 
-    private CompletableFuture<HttpResponse<byte[]>> proxyRequest(
+    private HttpResponse<byte[]> proxyRequest(
         String methodName, byte[] requestBody, String idParameter, String nodeUrl
-    ) {
-        // TODO: replace async send with blocking send and queue managing
-        return httpClient.sendAsync(
+    ) throws IOException, InterruptedException {
+        return httpClient.send(
             HttpRequest.newBuilder()
                 .uri(URI.create(nodeUrl + TycoonHttpServer.PATH + "?id=" + idParameter))
                 .method(
