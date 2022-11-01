@@ -16,7 +16,6 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -48,16 +47,18 @@ public class DemoService implements Service {
                 POOL_SIZE,
                 KEEP_ALIVE_TIME,
                 TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(QUEUE_CAPACITY)
+                new ArrayBlockingQueue<>(QUEUE_CAPACITY),
+                new ThreadFactoryBuilder()
+                        .setNameFormat("WorkersPool-thread-%d")
+                        .build()
         );
-        ThreadFactory threadFactory = new ThreadFactoryBuilder()
-                .setNameFormat("Client-thread-%d")
-                .build();
         httpClient = HttpClient.newBuilder()
                 .executor(
                         Executors.newFixedThreadPool(
                                 POOL_SIZE,
-                                threadFactory
+                                new ThreadFactoryBuilder()
+                                        .setNameFormat("Client-thread-%d")
+                                        .build()
                         ))
                 .build();
         server = new DemoHttpServer(createConfigFromPort(config.selfPort()), httpClient, workersPool, config, dao);
@@ -83,7 +84,7 @@ public class DemoService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 4, week = 1)
+    @ServiceFactory(stage = 5, week = 1)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
