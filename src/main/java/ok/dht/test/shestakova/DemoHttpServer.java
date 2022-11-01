@@ -154,28 +154,34 @@ public class DemoHttpServer extends HttpServer {
                 }
                 continue;
             }
-            httpClient
-                    .sendAsync(
-                            httpRequest,
-                            HttpResponse.BodyHandlers.ofByteArray()
-                    )
-                    .whenComplete((response, throwable) -> {
-                        if (throwable != null) {
-                            if (errorCount.incrementAndGet() == maxErrorCount) {
-                                resultFuture.completeExceptionally(new NotEnoughReplicasException());
-                            }
-                            return;
-                        }
-                        responses.add(new Response(
-                                StatusCodes.statuses.getOrDefault(response.statusCode(), "UNKNOWN ERROR"),
-                                response.body()
-                        ));
-                        if (successCount.incrementAndGet() == ack) {
-                            resultFuture.complete(responses);
-                        }
-                    });
+            sendAsync(ack, resultFuture, maxErrorCount, responses, successCount, errorCount, httpRequest);
         }
         return resultFuture;
+    }
+
+    private void sendAsync(int ack, CompletableFuture<List<Response>> resultFuture, int maxErrorCount,
+                           List<Response> responses, AtomicInteger successCount, AtomicInteger errorCount,
+                           HttpRequest httpRequest) {
+        httpClient
+                .sendAsync(
+                        httpRequest,
+                        HttpResponse.BodyHandlers.ofByteArray()
+                )
+                .whenComplete((response, throwable) -> {
+                    if (throwable != null) {
+                        if (errorCount.incrementAndGet() == maxErrorCount) {
+                            resultFuture.completeExceptionally(new NotEnoughReplicasException());
+                        }
+                        return;
+                    }
+                    responses.add(new Response(
+                            StatusCodes.statuses.getOrDefault(response.statusCode(), "UNKNOWN ERROR"),
+                            response.body()
+                    ));
+                    if (successCount.incrementAndGet() == ack) {
+                        resultFuture.complete(responses);
+                    }
+                });
     }
 
     private void tryToSendResponseWithEmptyBody(HttpSession session, String resultCode) {
