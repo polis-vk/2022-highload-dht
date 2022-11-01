@@ -52,15 +52,11 @@ public class ConsistentHashing implements Hashing {
         }
 
         Set<Node> nodes = new HashSet<>();
-
-        VNode currentVNode = virtualNodeByHash(keyHasher.hash(key));
-        nodes.add(currentVNode.node());
-        int nextHash = currentVNode.hash() + 1;
+        int currentIndex = indexByHash(keyHasher.hash(key));
 
         while (nodes.size() != count) {
-            currentVNode = virtualNodeByHash(nextHash);
-            nodes.add(currentVNode.node());
-            nextHash = currentVNode.hash() + 1;
+            nodes.add(virtualNodesCircle[currentIndex].node());
+            currentIndex = (currentIndex + 1) % virtualNodesCircle.length;
         }
 
         return nodes;
@@ -72,6 +68,10 @@ public class ConsistentHashing implements Hashing {
     }
 
     private VNode virtualNodeByHash(int hash) {
+        return virtualNodesCircle[indexByHash(hash)];
+    }
+
+    private int indexByHash(int hash) {
         int ind = Arrays.binarySearch(
                 virtualNodesCircle,
                 new VNode(null, hash),
@@ -79,11 +79,10 @@ public class ConsistentHashing implements Hashing {
         );
 
         if (ind >= 0) {
-            return virtualNodesCircle[ind];
+            return ind;
         }
 
-        int insertionPoint = -ind - 1;
-        return virtualNodesCircle[insertionPoint % virtualNodesCircle.length];
+        return (-ind - 1) % virtualNodesCircle.length;
     }
 
     private VNode[] generateVirtualNodes(Node node) {
