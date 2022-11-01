@@ -152,10 +152,10 @@ public class DatabaseHttpServer extends HttpServer {
                                     httpResponse.body()
                             )
                     ).whenComplete((response, throwable) -> {
-                        if (throwable != null) {
-                            failCount.incrementAndGet();
-                        } else {
+                        if (throwable == null) {
                             validResponses.add(response);
+                        } else {
+                            failCount.incrementAndGet();
                         }
                     });
         }
