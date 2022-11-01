@@ -29,19 +29,24 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 public class RocksDBService implements Service {
-    public static final int N_SELECTOR_THREADS = 4;
-    public static final int N_WORKER_THREADS = 4;
-    public static final int EXECUTOR_QUEUE_CAPACITY = 100;
+    public static final int N_SELECTOR_THREADS = 3;
+    public static final int N_WORKER_THREADS = 3;
+    public static final int N_WORKER1_THREADS = 2;
+    public static final int EXECUTOR_QUEUE_CAPACITY = 2000;
+    public static final int EXECUTOR1_QUEUE_CAPACITY = 2000;
     public static final int EXECUTOR_AWAIT_SHUTDOWN_TIMEOUT_MINUTES = 1;
+    public static final int EXECUTOR_AWAIT1_SHUTDOWN_TIMEOUT_MINUTES = 1;
     public static final int NODE_QUEUE_TASKS_LIMIT = 128;
     public static final int NODE_QUEUE_TASKS_ON_EXECUTOR_LIMIT = 3;
 
@@ -51,10 +56,11 @@ public class RocksDBService implements Service {
     private final ServiceConfig config;
     private final KeyManager keyManager = new ConsistentHashing();
 
-    private RocksDB db;
+    public RocksDB db;
     private HttpServer httpServer;
 
     private ExecutorService executor;
+    private ExecutorService executor1;
     private HttpClient client;
 
     public RocksDBService(ServiceConfig config) {
@@ -76,7 +82,15 @@ public class RocksDBService implements Service {
                 new LinkedBlockingQueue<>(EXECUTOR_QUEUE_CAPACITY)
         );
 
+        executor1 = new ThreadPoolExecutor(
+                N_WORKER1_THREADS,
+                N_WORKER1_THREADS,
+                0L, TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(EXECUTOR1_QUEUE_CAPACITY)
+        );
+
         client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(500))
                 .version(HttpClient.Version.HTTP_1_1)
                 .executor(executor)
                 .build();
@@ -97,7 +111,8 @@ public class RocksDBService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        if (httpServer == null && db == null && executor == null) {
+        if (httpServer == null && db == null
+                && executor == null && executor1 == null) {
             return CompletableFuture.completedFuture(null);
         }
 
@@ -114,14 +129,17 @@ public class RocksDBService implements Service {
         db = null;
 
         executor.shutdown();
+        executor1.shutdown();
 
         return CompletableFuture.runAsync(() -> {
             try {
                 executor.awaitTermination(EXECUTOR_AWAIT_SHUTDOWN_TIMEOUT_MINUTES, TimeUnit.MINUTES);
+                executor1.awaitTermination(EXECUTOR_AWAIT1_SHUTDOWN_TIMEOUT_MINUTES, TimeUnit.MINUTES);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             } finally {
                 executor = null;
+                executor1 = null;
             }
         });
     }
@@ -139,17 +157,25 @@ public class RocksDBService implements Service {
     private HttpServer createHttpServer(HttpServerConfig httpConfig) throws IOException {
         return new HttpServer(httpConfig) {
             public void handleRequest(Request request, HttpSession session) {
-                executor.execute(() -> {
-                    try {
-                        multiplex(request, session);
-                    } catch (Exception e) {
+                try {
+                    executor.execute(() -> {
                         try {
-                            session.sendError(Response.SERVICE_UNAVAILABLE, "Internal error");
-                        } catch (IOException e1) {
-                            LOG.error("Could not send error to client", e1);
+                            multiplex(request, session);
+                        } catch (Exception e) {
+                            try {
+                                session.sendError(Response.SERVICE_UNAVAILABLE, "Internal error");
+                            } catch (IOException e1) {
+                                LOG.error("Could not send error to client", e1);
+                            }
                         }
+                    });
+                } catch (RejectedExecutionException e) {
+                    try {
+                        session.sendError(Response.SERVICE_UNAVAILABLE, "Service is busy");
+                    } catch (IOException e1) {
+                        LOG.error("Could not send error to client", e1);
                     }
-                });
+                }
             }
 
             @Override
@@ -369,7 +395,7 @@ public class RocksDBService implements Service {
         for (String url : urls) {
             HttpRequest proxyRequest = Util.createProxyRequest(url, request);
             client.sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
-                    .whenComplete((javaNetResponse, e) -> {
+                    .whenCompleteAsync((javaNetResponse, e) -> {
                         Response oneNioResponse;
                         if (e == null) {
                             try {
@@ -382,7 +408,7 @@ public class RocksDBService implements Service {
                         } else {
                             replicatingRequestsAggregator.failure();
                         }
-                    });
+                    }, executor1);
         }
     }
 
