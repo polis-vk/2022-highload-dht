@@ -1,6 +1,5 @@
 package ok.dht.test.anikina.replication;
 
-import ok.dht.test.anikina.DatabaseHttpServer;
 import ok.dht.test.anikina.utils.Utils;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -19,7 +18,7 @@ import java.util.Set;
 
 public class SynchronizationHandler {
     public static final String SYNCHRONIZATION_PATH = "/synchronization";
-    private static final Log log = LogFactory.getLog(DatabaseHttpServer.class);
+    private static final Log log = LogFactory.getLog(SynchronizationHandler.class);
 
     private static final int CONNECTION_TIMEOUT_MS = 1000;
     private static final Set<Integer> EXPECTED_STATUS_CODES = Set.of(
@@ -35,12 +34,10 @@ public class SynchronizationHandler {
     }
 
     public List<Response> forwardRequest(String key, Request request, Set<String> nodes, long timestamp) {
-        log.debug(nodes);
         List<Response> responses = new ArrayList<>();
         for (String node : nodes) {
             try {
                 HttpResponse<byte[]> httpResponse = proxyRequest(node, key, request, timestamp);
-                log.debug(httpResponse.statusCode());
                 if (EXPECTED_STATUS_CODES.contains(httpResponse.statusCode())) {
                     responses.add(
                             new Response(
@@ -50,7 +47,9 @@ public class SynchronizationHandler {
                     );
                 }
             } catch (Exception e) {
-                log.debug(e.getMessage());
+                if (log.isDebugEnabled()) {
+                    log.debug(e.getMessage());
+                }
             }
         }
         return responses;
