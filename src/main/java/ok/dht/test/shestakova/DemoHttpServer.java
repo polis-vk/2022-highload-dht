@@ -140,28 +140,27 @@ public class DemoHttpServer extends HttpServer {
     private CompletableFuture<List<Response>> getResponses(Request request, HttpSession session, int ack,
                                                            List<HttpRequest> httpRequests) {
         final CompletableFuture<List<Response>> resultFuture = new CompletableFuture<>();
-        final int maxErrorCount = httpRequests.size() - ack + 1; // если ack < from, допускаем from - ack + 1 ошибку
         List<Response> responses = new CopyOnWriteArrayList<>();
-        AtomicInteger successCount = new AtomicInteger();
-        AtomicInteger errorCount = new AtomicInteger();
+        AtomicInteger successCount = new AtomicInteger(ack);
+        // если ack < from, допускаем from - ack + 1 ошибку
+        AtomicInteger errorCount = new AtomicInteger(httpRequests.size() - ack + 1);
         for (HttpRequest httpRequest : httpRequests) {
             if (httpRequest == null) {
                 Response response = handleInternalRequest(request, session);
                 responses.add(response);
-                if (successCount.incrementAndGet() == ack) {
+                if (successCount.decrementAndGet() == 0) {
                     resultFuture.complete(responses);
                     break;
                 }
                 continue;
             }
-            sendAsync(ack, resultFuture, maxErrorCount, responses, successCount, errorCount, httpRequest);
+            sendAsync(resultFuture, responses, successCount, errorCount, httpRequest);
         }
         return resultFuture;
     }
 
-    private void sendAsync(int ack, CompletableFuture<List<Response>> resultFuture, int maxErrorCount,
-                           List<Response> responses, AtomicInteger successCount, AtomicInteger errorCount,
-                           HttpRequest httpRequest) {
+    private void sendAsync(CompletableFuture<List<Response>> resultFuture, List<Response> responses,
+                           AtomicInteger successCount, AtomicInteger errorCount, HttpRequest httpRequest) {
         httpClient
                 .sendAsync(
                         httpRequest,
@@ -169,7 +168,7 @@ public class DemoHttpServer extends HttpServer {
                 )
                 .whenComplete((response, throwable) -> {
                     if (throwable != null) {
-                        if (errorCount.incrementAndGet() == maxErrorCount) {
+                        if (errorCount.decrementAndGet() == 0) {
                             resultFuture.completeExceptionally(new NotEnoughReplicasException());
                         }
                         return;
@@ -178,7 +177,7 @@ public class DemoHttpServer extends HttpServer {
                             StatusCodes.statuses.getOrDefault(response.statusCode(), "UNKNOWN ERROR"),
                             response.body()
                     ));
-                    if (successCount.incrementAndGet() == ack) {
+                    if (successCount.decrementAndGet() == 0) {
                         resultFuture.complete(responses);
                     }
                 });
