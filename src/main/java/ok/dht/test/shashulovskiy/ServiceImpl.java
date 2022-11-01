@@ -228,6 +228,8 @@ public class ServiceImpl implements Service {
 
                     responseAccumulator.processSuccess(202, Response.EMPTY);
                 }
+                // We call any response that we have received as a success, statusCode
+                // does not really matter here
                 default -> responseAccumulator.processSuccess(405, Response.EMPTY);
             }
         } catch (DBException exception) {

@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -45,6 +46,7 @@ public class ResponseAccumulator {
     public void processSuccess(int statusCode, byte[] body) {
         int currentAcks = acksCount.incrementAndGet();
 
+        // FOR GET REQUESTS ONLY
         if (statusCode == 200 && body.length != 0) {
             // CAS loop
             while (true) {
@@ -59,7 +61,6 @@ public class ResponseAccumulator {
                     }
                 }
 
-                // TODO exctract compare
                 if (MetadataUtils.extractTimestamp(currentLatestData) < MetadataUtils.extractTimestamp(body)) {
                     if (latestData.compareAndSet(currentLatestData, body)) {
                         break;
@@ -82,13 +83,12 @@ public class ResponseAccumulator {
     }
 
     private void onAcksCollected() {
-        // No need to check that response wasnt sent before since
+        // No need to check that response here wasnt sent before since
         // the condition on entering this function is `acksCount.incrementAndGet() == requiredAcks`
-        // This can only be true one time.
+        // This can only be true once.
 
-        // However we still need to mark response as sent since in TODO we need to be able to tell
-        // if we need to respond with 504
-
+        // However we still need to mark response as "attempted" since in onAllRequestsProcessed we need to be able
+        // to tell if we need to respond with 504
         responseAttempted.set(true);
 
         try {
@@ -96,6 +96,11 @@ public class ResponseAccumulator {
                 case Request.METHOD_GET -> {
                     byte[] currentLatestData = latestData.get();
 
+                    // For internal requests, we return data as is: with metadata etc. Only exception is
+                    // when nothing is stored in database, hence we shall return 404 with no response body
+                    //
+                    // However when replying to the client we need to get rid of all our metadata, as well
+                    // as response with 404 if the latest response is a tombstone
                     if (currentLatestData == null || (!isInternal && MetadataUtils.isTombstone(currentLatestData))) {
                         session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
                     } else {
