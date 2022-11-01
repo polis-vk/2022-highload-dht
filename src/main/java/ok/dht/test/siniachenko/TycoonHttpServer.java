@@ -1,5 +1,7 @@
 package ok.dht.test.siniachenko;
 
+import ok.dht.test.siniachenko.service.EntityService;
+import ok.dht.test.siniachenko.service.EntityServiceCoordinator;
 import ok.dht.test.siniachenko.service.EntityServiceReplica;
 import ok.dht.test.siniachenko.service.TycoonService;
 import one.nio.http.HttpServer;
@@ -24,19 +26,19 @@ public class TycoonHttpServer extends HttpServer {
     public static final String REQUEST_TO_REPLICA_HEADER = "Request-to-replica";
 
     private final ExecutorService executorService;
-    private final TycoonService tycoonService;
+    private final EntityServiceCoordinator entityServiceCoordinator;
     private final EntityServiceReplica entityServiceReplica;
     private boolean closed = true;
 
     public TycoonHttpServer(
         int port,
         ExecutorService executorService,
-        TycoonService tycoonService,
+        EntityServiceCoordinator entityServiceCoordinator,
         EntityServiceReplica entityServiceReplica
     ) throws IOException {
         super(createHttpConfigFromPort(port));
         this.executorService = executorService;
-        this.tycoonService = tycoonService;
+        this.entityServiceCoordinator = entityServiceCoordinator;
         this.entityServiceReplica = entityServiceReplica;
     }
 
@@ -64,20 +66,25 @@ public class TycoonHttpServer extends HttpServer {
             return;
         }
 
-        if (request.getMethod() != Request.METHOD_GET
-            && request.getMethod() != Request.METHOD_PUT
-            && request.getMethod() != Request.METHOD_DELETE) {
-            sendResponse(session, new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-            return;
-        }
-
         execute(session, () -> {
-            if (request.getHeader(REQUEST_TO_REPLICA_HEADER) == null) {
-                tycoonService.executeRequest(request, session, idParameter);
-            } else {
-                entityServiceReplica.executeRequest(request, session, idParameter);
-            }
+            EntityService entityService;
+            entityService = getEntityService(request);
+            Response response = switch (request.getMethod()) {
+                case Request.METHOD_GET -> entityService.handleGet(request, idParameter);
+                case Request.METHOD_PUT -> entityService.handlePut(request, idParameter);
+                case Request.METHOD_DELETE -> entityService.handleDelete(request, idParameter);
+                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            };
+            sendResponse(session, response);
         });
+    }
+
+    private EntityService getEntityService(Request request) {
+        if (request.getHeader(REQUEST_TO_REPLICA_HEADER) == null) {
+            return entityServiceCoordinator;
+        } else {
+            return entityServiceReplica;
+        }
     }
 
     private void execute(HttpSession session, Runnable runnable) {
