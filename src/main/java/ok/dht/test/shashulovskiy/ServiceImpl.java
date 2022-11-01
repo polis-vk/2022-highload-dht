@@ -3,15 +3,18 @@ package ok.dht.test.shashulovskiy;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.shashulovskiy.hashing.MD5Hasher;
+import ok.dht.test.shashulovskiy.sharding.CircuitBreaker;
+import ok.dht.test.shashulovskiy.sharding.ConsistentHashingShardingManager;
+import ok.dht.test.shashulovskiy.sharding.Shard;
+import ok.dht.test.shashulovskiy.sharding.ShardingManager;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
 import one.nio.http.Path;
 import one.nio.http.Request;
+import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
-import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.DBException;
@@ -20,6 +23,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.concurrent.CompletableFuture;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
@@ -27,14 +36,27 @@ import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 public class ServiceImpl implements Service {
 
     private static final Logger LOG = LoggerFactory.getLogger(ServiceImpl.class);
+    private static final int VNODES_COUNT = 5;
+
+    private static final Duration REQUEST_TIMEOUT = Duration.of(2, ChronoUnit.SECONDS);
+    private CircuitBreaker circuitBreaker;
 
     private final ServiceConfig config;
     private HttpServer server;
+    private final HttpClient client = HttpClient.newHttpClient();
 
     private DB dao;
 
+    private final ShardingManager shardingManager;
+
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
+        this.shardingManager = new ConsistentHashingShardingManager(
+                config.clusterUrls(),
+                config.selfUrl(),
+                VNODES_COUNT,
+                new MD5Hasher()
+        );
     }
 
     @Override
@@ -44,30 +66,20 @@ public class ServiceImpl implements Service {
 
         this.dao = factory.open(config.workingDir().toFile(), options);
 
-        server = new HttpServer(createConfigFromPort(config.selfPort())) {
-            @Override
-            public void handleDefault(Request request, HttpSession session) throws IOException {
-                Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
-                session.sendResponse(response);
-            }
+        this.circuitBreaker = new CircuitBreaker(config.clusterUrls().size());
 
-            @Override
-            public synchronized void stop() {
-                for (SelectorThread selector : selectors) {
-                    selector.selector.forEach(Session::close);
-                }
-
-                super.stop();
-            }
-        };
-        server.start();
+        server = new HttpServerImpl(createConfigFromPort(config.selfPort()), config.clusterUrls().size());
         server.addRequestHandlers(this);
+        server.start();
+
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
-    public CompletableFuture<?> stop() {
+    public CompletableFuture<?> stop() throws IOException {
         server.stop();
+        dao.close();
+
         return CompletableFuture.completedFuture(null);
     }
 
@@ -86,37 +98,83 @@ public class ServiceImpl implements Service {
             );
         }
 
-        try {
-            switch (request.getMethod()) {
-                case Request.METHOD_GET -> {
-                    byte[] result = dao.get(Utf8.toBytes(id));
-                    if (result == null) {
-                        return new Response(Response.NOT_FOUND, Response.EMPTY);
-                    } else {
-                        return new Response(Response.OK, result);
+        byte[] idBytes = Utf8.toBytes(id);
+
+        Shard shard = shardingManager.getShard(idBytes);
+
+        if (shard == null) {
+            try {
+                switch (request.getMethod()) {
+                    case Request.METHOD_GET -> {
+                        byte[] result = dao.get(idBytes);
+                        if (result == null) {
+                            return new Response(Response.NOT_FOUND, Response.EMPTY);
+                        } else {
+                            return new Response(Response.OK, result);
+                        }
+                    }
+                    case Request.METHOD_PUT -> {
+                        dao.put(idBytes, request.getBody());
+
+                        return new Response(Response.CREATED, Response.EMPTY);
+                    }
+                    case Request.METHOD_DELETE -> {
+                        dao.delete(idBytes);
+
+                        return new Response(Response.ACCEPTED, Response.EMPTY);
+                    }
+                    default -> {
+                        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
                     }
                 }
-                case Request.METHOD_PUT -> {
-                    dao.put(Utf8.toBytes(id), request.getBody());
-
-                    return new Response(Response.CREATED, Response.EMPTY);
-                }
-                case Request.METHOD_DELETE -> {
-                    dao.delete(Utf8.toBytes(id));
-
-                    return new Response(Response.ACCEPTED, Response.EMPTY);
-                }
-                default -> {
-                    return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-                }
+            } catch (DBException exception) {
+                LOG.error("Internal dao exception occurred on " + request.getPath(), exception);
+                return new Response(
+                        Response.INTERNAL_ERROR,
+                        Response.EMPTY
+                );
             }
-        } catch (DBException exception) {
-            LOG.error("Internal dao exception occurred on " + request.getPath(), exception);
-            return new Response(
-                    Response.INTERNAL_ERROR,
-                    Utf8.toBytes("An error occurred when accessing database.")
-            );
+        } else {
+            try {
+                if (circuitBreaker.isActive(shard.getNodeId())) {
+                    HttpResponse<byte[]> response = client.send(
+                            HttpRequest
+                                    .newBuilder()
+                                    .method(request.getMethodName(),
+                                            HttpRequest.BodyPublishers.ofByteArray(request.getBody() == null
+                                                    ? Response.EMPTY : request.getBody()))
+                                    .uri(URI.create(shard.getShardUrl() + request.getURI()))
+                                    .timeout(REQUEST_TIMEOUT).build(),
+                            HttpResponse.BodyHandlers.ofByteArray()
+                    );
+
+                    circuitBreaker.successOn(shard.getNodeId());
+                    return new Response(Integer.toString(response.statusCode()), response.body());
+                } else {
+                    return new Response(
+                            Response.SERVICE_UNAVAILABLE,
+                            Response.EMPTY
+                    );
+                }
+            } catch (IOException e) {
+                return new Response(
+                        Response.SERVICE_UNAVAILABLE,
+                        Response.EMPTY
+                );
+            } catch (InterruptedException e) {
+                circuitBreaker.failOn(shard.getNodeId());
+                return new Response(
+                        Response.SERVICE_UNAVAILABLE,
+                        Response.EMPTY
+                );
+            }
         }
+    }
+
+    @Path("/stats/handledKeys")
+    @RequestMethod(Request.METHOD_GET)
+    public Response handleKeyStats() {
+        return new Response(Response.OK, Utf8.toBytes(Long.toString(shardingManager.getHandledKeys())));
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -128,7 +186,7 @@ public class ServiceImpl implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
+    @ServiceFactory(stage = 3, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
