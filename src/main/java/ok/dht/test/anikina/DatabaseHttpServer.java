@@ -3,7 +3,7 @@ package ok.dht.test.anikina;
 import ok.dht.ServiceConfig;
 import ok.dht.test.anikina.consistenthashing.ConsistentHashingImpl;
 import ok.dht.test.anikina.replication.ReplicationParameters;
-import ok.dht.test.anikina.replication.SynchronizationHandler;
+import ok.dht.test.anikina.utils.RequestUtils;
 import ok.dht.test.anikina.utils.Utils;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -18,15 +18,22 @@ import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import static ok.dht.test.anikina.replication.SynchronizationHandler.SYNCHRONIZATION_PATH;
+import static ok.dht.test.anikina.utils.RequestUtils.SYNCHRONIZATION_PATH;
 
 public class DatabaseHttpServer extends HttpServer {
     private static final Log log = LogFactory.getLog(DatabaseHttpServer.class);
@@ -34,8 +41,8 @@ public class DatabaseHttpServer extends HttpServer {
     private static final String QUERY_PATH = "/v0/entity";
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
-    private static final int THREADS_MIN = 2;
-    private static final int THREAD_MAX = 3;
+    private static final int HTTP_SERVICE_THREADS = 3;
+    private static final int DAO_SERVICE_THREADS = 3;
     private static final int MAX_QUEUE_SIZE = 128;
     private static final int TERMINATION_TIMEOUT_MS = 800;
 
@@ -45,20 +52,23 @@ public class DatabaseHttpServer extends HttpServer {
             Request.METHOD_DELETE
     );
 
-    private final ExecutorService executorService =
+    private final ExecutorService httpRequestService =
             new ThreadPoolExecutor(
-                    THREADS_MIN,
-                    THREAD_MAX,
+                    HTTP_SERVICE_THREADS,
+                    HTTP_SERVICE_THREADS,
                     0,
                     TimeUnit.MILLISECONDS,
                     new LinkedBlockingQueue<>(MAX_QUEUE_SIZE),
                     new ThreadPoolExecutor.AbortPolicy()
             );
+    private final ExecutorService daoRequestService =
+            Executors.newFixedThreadPool(DAO_SERVICE_THREADS);
+
     private final String selfUrl;
     private final ConsistentHashingImpl consistentHashing;
     private final DatabaseRequestHandler requestHandler;
     private final int numberOfNodes;
-    private final SynchronizationHandler synchronizationHandler;
+    private final HttpClient client;
 
     public DatabaseHttpServer(ServiceConfig config) throws IOException {
         super(createHttpServerConfig(config.selfPort()));
@@ -66,7 +76,7 @@ public class DatabaseHttpServer extends HttpServer {
         this.consistentHashing = new ConsistentHashingImpl(config.clusterUrls());
         this.requestHandler = new DatabaseRequestHandler(config.workingDir());
         this.numberOfNodes = config.clusterUrls().size();
-        this.synchronizationHandler = new SynchronizationHandler();
+        this.client = HttpClient.newHttpClient();
     }
 
     private static HttpServerConfig createHttpServerConfig(int port) {
@@ -80,7 +90,7 @@ public class DatabaseHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, final HttpSession session) {
-        executorService.execute(() -> {
+        httpRequestService.execute(() -> {
             try {
                 String key = request.getParameter("id=");
 
@@ -108,13 +118,7 @@ public class DatabaseHttpServer extends HttpServer {
                     return;
                 }
 
-                List<Response> responses = aggregateResponsesFromReplicas(parameters, key, request);
-
-                if (responses.size() < parameters.getNumberOfAcks()) {
-                    session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
-                } else {
-                    session.sendResponse(finalizeResponse(request.getMethod(), responses));
-                }
+                session.sendResponse(aggregateResponse(parameters, key, request));
             } catch (IOException e) {
                 if (log.isDebugEnabled()) {
                     log.debug(e.getMessage());
@@ -129,21 +133,53 @@ public class DatabaseHttpServer extends HttpServer {
         return requestHandler.handle(request.getMethod(), key, body, timestamp);
     }
 
-    private List<Response> aggregateResponsesFromReplicas(
+    private Response aggregateResponse(
             ReplicationParameters parameters, String key, Request request) {
         long timestamp = System.currentTimeMillis();
         Set<String> nodes = consistentHashing.getNodesByKey(key, parameters.getNumberOfReplicas());
 
         boolean saveToDao = nodes.remove(selfUrl);
-        List<Response> responses = synchronizationHandler.forwardRequest(key, request, nodes, timestamp);
+
+        ConcurrentLinkedQueue<Response> validResponses = new ConcurrentLinkedQueue<>();
+        AtomicInteger failCount = new AtomicInteger();
+
+        for (String node : nodes) {
+            HttpRequest httpRequest = RequestUtils.makeHttpRequest(node, key, request, timestamp);
+            client.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+                    .thenApply(httpResponse ->
+                            new Response(
+                                    RequestUtils.matchStatusCode(httpResponse.statusCode()),
+                                    httpResponse.body()
+                            )
+                    ).whenComplete((response, throwable) -> {
+                        if (throwable != null) {
+                            failCount.incrementAndGet();
+                        } else {
+                            validResponses.add(response);
+                        }
+                    });
+        }
         if (saveToDao) {
-            Response selfResponse =
+            CompletableFuture.supplyAsync(() ->
                     requestHandler.handle(
-                            request.getMethod(), key, request.getBody(), Utils.toByteArray(timestamp));
-            responses.add(selfResponse);
+                            request.getMethod(),
+                            key,
+                            request.getBody(),
+                            Utils.toByteArray(timestamp)
+                    ),
+                    daoRequestService
+            ).whenComplete((response, throwable) -> validResponses.add(response));
         }
 
-        return responses;
+        while (true) {
+            int currFailCount = failCount.get();
+            if (currFailCount > parameters.getNumberOfReplicas() - parameters.getNumberOfAcks()) {
+                return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            }
+            if (validResponses.size() >= parameters.getNumberOfAcks()) {
+                return finalizeResponse(request.getMethod(), List.copyOf(validResponses));
+            }
+        }
     }
 
     private Response finalizeResponse(int method, List<Response> responses) {
@@ -198,14 +234,14 @@ public class DatabaseHttpServer extends HttpServer {
     public void close() throws IOException {
         stop();
 
-        executorService.shutdown();
+        httpRequestService.shutdown();
         try {
-            if (!executorService.awaitTermination(TERMINATION_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                executorService.shutdownNow();
+            if (!httpRequestService.awaitTermination(TERMINATION_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                httpRequestService.shutdownNow();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            executorService.shutdownNow();
+            httpRequestService.shutdownNow();
         }
 
         requestHandler.close();
