@@ -5,7 +5,6 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
-import java.io.IOException;
 import java.net.http.HttpResponse;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
@@ -46,7 +45,7 @@ public class ReplicasManager {
             case Request.METHOD_DELETE ->
                     handleUpsert(session, request, key, responsibleNodes, ack, from, Response.ACCEPTED, 202);
             case Request.METHOD_GET -> handleGet(session, request, key, responsibleNodes, ack, from);
-            default -> sendResponse(session, new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            default -> ServiceImpl.sendResponse(session, new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
     }
 
@@ -134,18 +133,9 @@ public class ReplicasManager {
         }
     }
 
-    static void sendResponse(HttpSession session, Response response) {
-        try {
-            session.sendResponse(response);
-        } catch (IOException e) {
-            ServiceImpl.LOGGER.error("Error when sending " + response.getStatus());
-            session.close();
-        }
-    }
-
     private static void responseToUpsertIfNeeded(HttpSession session, String okMessage, ReplicatingResponseCounter counter) {
         if (counter.isTimeToResponseGood()) {
-            sendResponse(session, new Response(okMessage, Response.EMPTY));
+            ServiceImpl.sendResponse(session, new Response(okMessage, Response.EMPTY));
         }
     }
 
@@ -154,9 +144,9 @@ public class ReplicasManager {
             return;
         }
         if (value == null || value.value == null) {
-            sendResponse(session, new Response(Response.NOT_FOUND, Response.EMPTY));
+            ServiceImpl.sendResponse(session, new Response(Response.NOT_FOUND, Response.EMPTY));
         } else {
-            sendResponse(session, new Response(Response.OK, value.valueBytes()));
+            ServiceImpl.sendResponse(session, new Response(Response.OK, value.valueBytes()));
         }
     }
 

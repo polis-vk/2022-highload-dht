@@ -61,6 +61,15 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
+    static void sendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            ServiceImpl.LOGGER.error("Error when sending " + response.getStatus());
+            session.close();
+        }
+    }
+
     private static HttpServerConfig createConfigFromPort(int port) {
         HttpServerConfig httpConfig = new HttpServerConfig();
         AcceptorConfig acceptor = new AcceptorConfig();
@@ -97,9 +106,9 @@ public class ServiceImpl implements Service {
                     workersPool.execute(() -> {
                         try {
                             Response response = handleInnerRequest(request, key);
-                            ReplicasManager.sendResponse(session, response);
+                            sendResponse(session, response);
                         } catch (IOException e) {
-                            ReplicasManager.sendResponse(session,
+                            sendResponse(session,
                                     new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                         }
                     });
@@ -125,15 +134,15 @@ public class ServiceImpl implements Service {
             try {
                 workersPool.execute(() -> {
                     if (!request.getPath().equals("/v0/entity")) {
-                        ReplicasManager.sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                        sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                         return;
                     }
                     if (key == null || key.isEmpty()) {
-                        ReplicasManager.sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                        sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                         return;
                     }
                     if (ack > from || ack <= 0) {
-                        ReplicasManager.sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                        sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                         return;
                     }
                     replicasManager.handleReplicatingRequest(session, request, key, ack, from);
@@ -152,7 +161,7 @@ public class ServiceImpl implements Service {
             };
         }
 
-        private Response handleGet(String id) throws IOException {
+        private Response handleGet(String id) {
             TimeStampingDao.TimeStampedValue entry = timeStampingDao.get(id);
             if (entry == null) {
                 return new Response(Response.NOT_FOUND, Response.EMPTY);
