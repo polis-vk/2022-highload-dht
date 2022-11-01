@@ -15,14 +15,16 @@ import org.iq80.leveldb.DBException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.time.Duration;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,6 +32,12 @@ import java.util.function.Supplier;
 
 public class EntityServiceCoordinator implements EntityService {
     private static final Logger LOG = LoggerFactory.getLogger(EntityServiceCoordinator.class);
+    private static final Map<String, Set<Integer>> METHOD_NAME_TO_SUCCESS_STATUS_CODES = Map.of(
+        "GET", Set.of(HttpURLConnection.HTTP_OK, HttpURLConnection.HTTP_NOT_FOUND),
+        "PUT", Collections.singleton(HttpURLConnection.HTTP_CREATED),
+        "DELETE", Collections.singleton(HttpURLConnection.HTTP_ACCEPTED)
+    );
+
     public static final String NOT_ENOUGH_REPLICAS_RESULT_CODE = "504 Not Enough Replicas";
 
     private final ServiceConfig config;
@@ -37,7 +45,6 @@ public class EntityServiceCoordinator implements EntityService {
     private final ExecutorService executorService;
     private final HttpClient httpClient;
     private final NodeMapper nodeMapper;
-    private final ConcurrentMap<String, Integer> nodeRequestsTimeouts;
     private final int defaultFromCount;
     private final int defaultAckCount;
 
@@ -82,7 +89,6 @@ public class EntityServiceCoordinator implements EntityService {
         byte[] latestBody = null;
         long maxTimeMillis = 0;
         for (byte[] body : bodies) {
-            // TODO: kostil ???
             if (body != null && body.length != 0) {
                 long timeMillis = Utils.readTimeMillisFromBytes(body);
                 if (maxTimeMillis < timeMillis) {
@@ -173,26 +179,31 @@ public class EntityServiceCoordinator implements EntityService {
             throw new BadRequestException();
         }
 
-        long[] nodeUrls = nodeMapper.getNodeUrlsByKey(Utf8.toBytes(id));
+        Set<Integer> successStatusCodes = METHOD_NAME_TO_SUCCESS_STATUS_CODES.get(request.getMethodName());
 
         byte[][] bodies = new byte[from][];
-        boolean needLocalWork = false;
-        int localIndex = 0;
         CountDownLatch countDownLatch = new CountDownLatch(from);
         AtomicInteger successCount = new AtomicInteger();
-        for (int replicaToSend = 0; replicaToSend < from; ++replicaToSend) {
+
+        boolean needLocalWork = false;
+        int localIndex = 0;
+
+        long[] nodeUrls = nodeMapper.getNodeUrlsByKey(Utf8.toBytes(id));
+        for (int replicaIndex = 0; replicaIndex < from; ++replicaIndex) {
             String nodeUrlByKey = nodeMapper.getNodeUrls().get(
-                (int) nodeUrls[replicaToSend]
+                (int) nodeUrls[replicaIndex]
             );
             if (config.selfUrl().equals(nodeUrlByKey)) {
                 needLocalWork = true;
-                localIndex = replicaToSend;
+                localIndex = replicaIndex;
             } else {
-                int finalReplicaToSend = replicaToSend;
+                int finalReplicaIndex = replicaIndex;
                 proxyRequest(request.getMethodName(), request.getBody(), id, nodeUrlByKey).thenAccept(
                     response -> {
-                        bodies[finalReplicaToSend] = response.body();
-                        successCount.incrementAndGet();
+                        if (successStatusCodes.contains(response.statusCode())) {
+                            bodies[finalReplicaIndex] = response.body();
+                            successCount.incrementAndGet();
+                        }
                         countDownLatch.countDown();
                     }
                 ).exceptionally(ex -> {
@@ -218,7 +229,6 @@ public class EntityServiceCoordinator implements EntityService {
             }
             return bodies;
         } catch (InterruptedException e) {
-            LOG.info("HERE");
             throw new ServiceInternalErrorException();
         }
     }
