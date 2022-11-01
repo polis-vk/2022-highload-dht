@@ -8,7 +8,12 @@ public final class Utils {
     }
 
     public static byte[] withCurrentTimestampAndFlagDeleted(byte[] value, boolean flagDeleted) {
-        ByteBuffer byteBuffer = ByteBuffer.allocate(value.length + 9);
+        // value + timestamp + flag deleted
+        int size = value.length + Long.BYTES + 1;
+        byte[] newValue = new byte[size];
+        ByteBuffer byteBuffer = ByteBuffer.wrap(newValue);
+
+        // flag deleted
         byte flag;
         if (flagDeleted) {
             flag = 0b0;
@@ -16,15 +21,15 @@ public final class Utils {
             flag = 0b1;
         }
         byteBuffer.put(flag);
+
+        // array
         byteBuffer.put(value);
+
+        // timestamp
         long millis = System.currentTimeMillis();
         byteBuffer.putLong(millis);
 
-        byte[] newValue = new byte[value.length + 9];
-        byteBuffer.position(0);
-        byteBuffer.get(newValue);
-
-        return newValue;
+        return byteBuffer.array();
     }
 
     public static byte[] setDeleted(byte[] value, boolean flagDeleted) {
@@ -41,10 +46,9 @@ public final class Utils {
     }
 
     public static long readTimeMillisFromBytes(byte[] value) {
-        ByteBuffer newByteBuffer = ByteBuffer.allocate(value.length + 9);
-        newByteBuffer.put(value);
-        newByteBuffer.position(value.length - 8);
-        return newByteBuffer.getLong();
+        ByteBuffer newByteBuffer = ByteBuffer.wrap(value);
+        int timeMillisPosition = 1;  // after flag deleted
+        return newByteBuffer.getLong(timeMillisPosition);
     }
 
     public static byte[] readValueFromBytes(byte[] codedValue) {
