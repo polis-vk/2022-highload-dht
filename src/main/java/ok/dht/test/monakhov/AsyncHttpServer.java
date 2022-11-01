@@ -1,5 +1,6 @@
 package ok.dht.test.monakhov;
 
+import ok.dht.test.monakhov.utils.ExecutorUtils;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
@@ -15,6 +16,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+
 
 public class AsyncHttpServer extends HttpServer {
     private static final Log log = LogFactory.getLog(AsyncHttpServer.class);
@@ -76,6 +78,7 @@ public class AsyncHttpServer extends HttpServer {
                 }
             }
         }
+
         ExecutorUtils.shutdownGracefully(executor, log);
 
         super.stop();
