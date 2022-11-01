@@ -70,7 +70,7 @@ public class DemoHttpServer extends HttpServer {
         }
 
         List<String> targetNodes = HttpServerUtils.INSTANCE.getNodesSortedByRendezvousHashing(key, circuitBreaker,
-                serviceConfig);
+                serviceConfig, from);
         workersPool.execute(() -> {
             try {
                 executeHandlingRequest(request, session, key, ack, targetNodes);

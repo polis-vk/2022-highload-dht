@@ -15,7 +15,7 @@ public class HttpServerUtils {
     static final HttpServerUtils INSTANCE = new HttpServerUtils();
 
     List<String> getNodesSortedByRendezvousHashing(String key, CircuitBreakerImpl circuitBreaker,
-                                                   ServiceConfig serviceConfig) {
+                                                   ServiceConfig serviceConfig, int from) {
         Map<Integer, String> nodesHashes = new TreeMap<>();
 
         for (String nodeUrl : serviceConfig.clusterUrls()) {
@@ -24,7 +24,9 @@ public class HttpServerUtils {
             }
             nodesHashes.put(Hash.murmur3(nodeUrl + key), nodeUrl);
         }
-        return nodesHashes.values().stream().toList();
+        return nodesHashes.values().stream()
+                .limit(from)
+                .toList();
     }
 
     byte[] getBody(ByteBuffer bodyBB) {
