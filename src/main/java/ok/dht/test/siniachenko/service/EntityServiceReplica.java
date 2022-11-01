@@ -1,6 +1,5 @@
 package ok.dht.test.siniachenko.service;
 
-import ok.dht.test.siniachenko.Utils;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.util.Utf8;

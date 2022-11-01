@@ -4,7 +4,6 @@ import java.nio.ByteBuffer;
 
 public final class Utils {
     private Utils() {
-
     }
 
     public static byte[] withCurrentTimestampAndFlagDeleted(byte[] value, boolean flagDeleted) {
