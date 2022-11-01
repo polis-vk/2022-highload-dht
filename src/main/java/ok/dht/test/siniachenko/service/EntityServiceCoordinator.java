@@ -256,6 +256,7 @@ public class EntityServiceCoordinator implements EntityService {
     private HttpResponse<byte[]> proxyRequest(
         String methodName, byte[] requestBody, String idParameter, String nodeUrl
     ) throws IOException, InterruptedException {
+        // TODO: add queue to limit threads awaiting response from each node
         return httpClient.send(
             HttpRequest.newBuilder()
                 .uri(URI.create(nodeUrl + TycoonHttpServer.PATH + "?id=" + idParameter))
