@@ -226,26 +226,6 @@ public class RocksDBService implements Service {
     }
 
     private Response aggregateV0EntityGet(List<Response> responses) {
-        // return 200 Ok if all responses is 200 Ok
-        boolean all200 = true;
-        for (Response response : responses) {
-            all200 = all200 && response.getStatus() == 200;
-        }
-        if (all200) {
-            return responses.get(0);
-        }
-
-        // return 404 Not Found if all responses is 404 Not Found
-        boolean all404 = true;
-        for (Response response : responses) {
-            all404 = all404 && response.getStatus() == 404;
-        }
-        if (all404) {
-            return responses.get(0);
-        }
-
-        // return 404 Not Found if response with latest timestamp
-        // is 404 Not Found
         long timestamp = -1;
         Response response = null;
         for (Response ackResponse : responses) {
@@ -256,12 +236,7 @@ public class RocksDBService implements Service {
                 response = ackResponse;
             }
         }
-        if (response.getStatus() == 404) {
-            return response;
-        }
-
-        // 504 Not Enough Replicas otherwise
-        return new Response("504 Not Enough Replicas", Response.EMPTY);
+        return response;
     }
 
     private void v0EntityPut(Request request, HttpSession session)
