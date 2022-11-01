@@ -96,7 +96,7 @@ public class TycoonService implements ok.dht.Service, Serializable {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        if (server != null && !server.isClosed()) {
+        if (server != null) {
             server.stop();
         }
         if (executorService != null) {

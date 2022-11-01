@@ -108,24 +108,22 @@ public class TycoonHttpServer extends HttpServer {
         }
     }
 
-    public boolean isClosed() {
-        return closed;
-    }
-
     @Override
     public synchronized void start() {
-        closed = false;
         super.start();
+        closed = false;
     }
 
     @Override
     public synchronized void stop() {
-        for (SelectorThread selectorThread : selectors) {
-            for (Session session : selectorThread.selector) {
-                session.close();
+        if (!closed) {
+            closed = true;
+            for (SelectorThread selectorThread : selectors) {
+                for (Session session : selectorThread.selector) {
+                    session.close();
+                }
             }
+            super.stop();
         }
-        closed = true;
-        super.stop();
     }
 }
