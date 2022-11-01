@@ -1,4 +1,4 @@
 package ok.dht.test.ushkov.exception;
 
-public class InvalidParamsException extends FlowControlException {
+public class InvalidParamsException extends Exception {
 }
