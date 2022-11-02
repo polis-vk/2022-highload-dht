@@ -181,7 +181,12 @@ public class ServiceImpl implements Service {
         }
     }
 
-    private void handleProxyOperation(Request request, int shardId, byte[] body, ResponseAccumulator responseAccumulator) {
+    private void handleProxyOperation(
+            Request request,
+            int shardId,
+            byte[] body,
+            ResponseAccumulator responseAccumulator
+    ) {
         if (circuitBreaker.isActive(shardId)) {
             client.sendAsync(
                     HttpRequest
@@ -207,7 +212,12 @@ public class ServiceImpl implements Service {
         }
     }
 
-    private void handleDbOperation(Request request, byte[] idBytes, byte[] body, ResponseAccumulator responseAccumulator) {
+    private void handleDbOperation(
+            Request request,
+            byte[] idBytes,
+            byte[] body,
+            ResponseAccumulator responseAccumulator
+    ) {
         try {
             switch (request.getMethod()) {
                 case Request.METHOD_GET -> {
