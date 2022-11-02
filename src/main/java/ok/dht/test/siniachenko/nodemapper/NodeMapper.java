@@ -12,25 +12,24 @@ public class NodeMapper {
     public final Shard[] shards;
 
     public NodeMapper(List<String> nodeUrls) {
-        try {
-            MessageDigest instance = MessageDigest.getInstance("SHA-256");
-            hashAlgorithm = ThreadLocal.withInitial(() -> instance);
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
+        hashAlgorithm = ThreadLocal.withInitial(() -> {
+            try {
+                return MessageDigest.getInstance("SHA-256");
+            } catch (NoSuchAlgorithmException e) {
+                throw new RuntimeException(e);
+            }
+        });
         shards = new Shard[nodeUrls.size()];
         for (int i = 0; i < shards.length; i++) {
             String url = nodeUrls.get(i);
-            byte[] digest = hashAlgorithm.get().digest(Utf8.toBytes(url));
-            int nodeHash = hash(digest);
+            int nodeHash = hash(Utf8.toBytes(url));
             shards[i] = new Shard(url, nodeHash);
         }
         Arrays.sort(shards);
     }
 
     public int getIndexForKey(byte[] key) {
-        byte[] digest = hashAlgorithm.get().digest(key);
-        int keyHash = hash(digest);
+        int keyHash = hash(key);
         int index = Arrays.binarySearch(shards, new Shard(null, keyHash));
         if (index < 0) {
             index = -(index + 1);
@@ -38,7 +37,9 @@ public class NodeMapper {
         return index % shards.length;
     }
 
-    private static int hash(byte[] digest) {
+    private int hash(byte[] data) {
+        hashAlgorithm.get().reset();
+        byte[] digest = hashAlgorithm.get().digest(data);
         int hash = 0;
         for (int i = 0; i < 256 / Integer.SIZE; ++i) {
             hash += (digest[i * 4] << 24) + (digest[i * 4 + 1] << 16) + (digest[i * 4 + 2] << 8) + digest[i * 4 + 3];

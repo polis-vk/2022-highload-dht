@@ -65,17 +65,23 @@ public class TycoonHttpServer extends HttpServer {
             return;
         }
 
-        execute(session, () -> {
-            EntityService entityService;
-            entityService = getEntityService(request);
-            Response response = switch (request.getMethod()) {
-                case Request.METHOD_GET -> entityService.handleGet(request, idParameter);
-                case Request.METHOD_PUT -> entityService.handlePut(request, idParameter);
-                case Request.METHOD_DELETE -> entityService.handleDelete(request, idParameter);
-                default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            };
-            sendResponse(session, response);
-        });
+        if (request.getHeader(REQUEST_TO_REPLICA_HEADER) == null) {
+            processRequest(request, session, idParameter, entityServiceCoordinator);
+        } else {
+            execute(session, () -> processRequest(request, session, idParameter, entityServiceReplica));
+        }
+    }
+
+    private static void processRequest(
+        Request request, HttpSession session, String idParameter, EntityService entityService
+    ) {
+        Response response = switch (request.getMethod()) {
+            case Request.METHOD_GET -> entityService.handleGet(request, idParameter);
+            case Request.METHOD_PUT -> entityService.handlePut(request, idParameter);
+            case Request.METHOD_DELETE -> entityService.handleDelete(request, idParameter);
+            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+        };
+        sendResponse(session, response);
     }
 
     private EntityService getEntityService(Request request) {
