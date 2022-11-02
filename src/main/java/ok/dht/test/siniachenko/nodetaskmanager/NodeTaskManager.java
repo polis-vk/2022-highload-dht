@@ -79,14 +79,12 @@ public class NodeTaskManager {
                 break;
             } else {
                 try {
-                    try {
-                        pollTask.run(); // no exceptions are expected
-                    } finally {
-                        node.queuedTasks.release();
-                    }
+                    pollTask.run(); // no exceptions are expected
                 } catch (Exception e) {
                     LOG.error("Exception executing task for node {}", nodeUrl, e);
                     // but in case of exception continue executing tasks
+                } finally {
+                    node.queuedTasks.release();
                 }
             }
         }
