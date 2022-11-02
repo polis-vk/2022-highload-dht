@@ -91,7 +91,6 @@ final class AcquireContext {
             this.value = Value.fromBytes(response.getBody());
         }
 
-
         public int code() {
             return response.getStatus();
         }
@@ -103,7 +102,7 @@ final class AcquireContext {
         public Response response() {
             return new Response(
                     String.valueOf(response.getStatus()),
-                    value != null && !value.isTombstone() ? value.value() : Response.EMPTY
+                    value == null || value.isTombstone() ? Response.EMPTY : value.value()
             );
         }
     }
