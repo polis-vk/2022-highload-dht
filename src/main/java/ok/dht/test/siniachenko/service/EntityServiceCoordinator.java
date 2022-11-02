@@ -23,6 +23,7 @@ public class EntityServiceCoordinator implements EntityService {
     private static final Logger LOG = LoggerFactory.getLogger(EntityServiceCoordinator.class);
 
     public static final String NOT_ENOUGH_REPLICAS_RESULT_CODE = "504 Not Enough Replicas";
+    public static final String ERROR_IN_DB_MESSAGE = "Error in DB";
 
     private final ServiceConfig config;
     private final DB levelDb;
@@ -51,7 +52,7 @@ public class EntityServiceCoordinator implements EntityService {
             try {
                 return levelDb.get(Utf8.toBytes(id));
             } catch (DBException e) {
-                LOG.error("Error in DB", e);
+                LOG.error(ERROR_IN_DB_MESSAGE, e);
                 throw e;
             }
         };
@@ -103,7 +104,7 @@ public class EntityServiceCoordinator implements EntityService {
             try {
                 levelDb.put(Utf8.toBytes(id), request.getBody());
             } catch (DBException e) {
-                LOG.error("Error in DB", e);
+                LOG.error(ERROR_IN_DB_MESSAGE, e);
                 throw e;
             }
             return null;
@@ -134,7 +135,7 @@ public class EntityServiceCoordinator implements EntityService {
             try {
                 levelDb.put(Utf8.toBytes(id), request.getBody());
             } catch (DBException e) {
-                LOG.error("Error in DB", e);
+                LOG.error(ERROR_IN_DB_MESSAGE, e);
                 throw e;
             }
             return null;

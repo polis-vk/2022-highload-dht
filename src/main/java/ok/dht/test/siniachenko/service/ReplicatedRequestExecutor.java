@@ -38,6 +38,13 @@ public class ReplicatedRequestExecutor {
     private final int ack;
     private final int from;
 
+    Set<Integer> successStatusCodes;
+    byte[][] bodies;
+    CountDownLatch countDownLatch;
+    AtomicInteger successCount;
+    boolean needLocalWork;
+    int localIndex;
+
     public ReplicatedRequestExecutor(Request request, String id, Supplier<byte[]> localWork, int ack, int from) {
         this.request = request;
         this.id = id;
@@ -49,14 +56,14 @@ public class ReplicatedRequestExecutor {
     public byte[][] execute(
         String selfUrl, NodeMapper nodeMapper, NodeTaskManager nodeTaskManager, HttpClient httpClient
     ) throws ServiceUnavailableException, NotEnoughReplicasException, ServiceInternalErrorException {
-        Set<Integer> successStatusCodes = METHOD_NAME_TO_SUCCESS_STATUS_CODES.get(request.getMethodName());
+        successStatusCodes = METHOD_NAME_TO_SUCCESS_STATUS_CODES.get(request.getMethodName());
 
-        byte[][] bodies = new byte[from][];
-        CountDownLatch countDownLatch = new CountDownLatch(from);
-        AtomicInteger successCount = new AtomicInteger();
+        bodies = new byte[from][];
+        countDownLatch = new CountDownLatch(from);
+        successCount = new AtomicInteger();
 
-        boolean needLocalWork = false;
-        int localIndex = 0;
+        needLocalWork = false;
+        localIndex = 0;
 
         NodeMapper.Shard[] shards = nodeMapper.shards;
         int nodeIndex = nodeMapper.getIndexForKey(Utf8.toBytes(id));
@@ -67,31 +74,7 @@ public class ReplicatedRequestExecutor {
                 needLocalWork = true;
                 localIndex = replicaIndex;
             } else {
-                int finalReplicaIndex = replicaIndex;
-                boolean taskAdded = nodeTaskManager.tryAddNodeTask(nodeUrlByKey, () -> {
-                    try {
-                        HttpResponse<byte[]> response = proxyRequest(
-                            request, id, nodeUrlByKey, httpClient
-                        );
-                        if (successStatusCodes.contains(response.statusCode())) {
-                            bodies[finalReplicaIndex] = response.body();
-                            successCount.incrementAndGet();
-                        } else {
-                            LOG.error(
-                                "Unexpected status code {} after proxy request to {}",
-                                response.statusCode(),
-                                nodeUrlByKey
-                            );
-                        }
-                    } catch (IOException | InterruptedException e) {
-                        LOG.error("Error after proxy request to {}", nodeUrlByKey, e);
-                    } finally {
-                        countDownLatch.countDown();
-                    }
-                });
-                if (!taskAdded) {
-                    throw new ServiceUnavailableException();
-                }
+                proxyAndHandle(nodeTaskManager, httpClient, replicaIndex, nodeUrlByKey);
             }
         }
         if (needLocalWork) {
@@ -110,7 +93,37 @@ public class ReplicatedRequestExecutor {
             }
             return bodies;
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new ServiceInternalErrorException(e);
+        }
+    }
+
+    private void proxyAndHandle(
+        NodeTaskManager nodeTaskManager, HttpClient httpClient, int replicaIndex, String nodeUrlByKey
+    ) throws ServiceUnavailableException {
+        boolean taskAdded = nodeTaskManager.tryAddNodeTask(nodeUrlByKey, () -> {
+            try {
+                HttpResponse<byte[]> response = proxyRequest(
+                    request, id, nodeUrlByKey, httpClient
+                );
+                if (successStatusCodes.contains(response.statusCode())) {
+                    bodies[replicaIndex] = response.body();
+                    successCount.incrementAndGet();
+                } else {
+                    LOG.error(
+                        "Unexpected status code {} after proxy request to {}",
+                        response.statusCode(),
+                        nodeUrlByKey
+                    );
+                }
+            } catch (IOException | InterruptedException e) {
+                LOG.error("Error after proxy request to {}", nodeUrlByKey, e);
+            } finally {
+                countDownLatch.countDown();
+            }
+        });
+        if (!taskAdded) {
+            throw new ServiceUnavailableException();
         }
     }
 
