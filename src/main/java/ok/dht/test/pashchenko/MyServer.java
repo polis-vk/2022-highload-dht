@@ -1,5 +1,18 @@
 package ok.dht.test.pashchenko;
 
+import jdk.incubator.foreign.MemorySegment;
+import ok.dht.ServiceConfig;
+import ok.dht.test.pashchenko.dao.Config;
+import ok.dht.test.pashchenko.dao.Entry;
+import ok.dht.test.pashchenko.dao.MemorySegmentDao;
+import one.nio.http.*;
+import one.nio.net.Session;
+import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
+import one.nio.util.Utf8;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -8,34 +21,15 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import jdk.incubator.foreign.MemorySegment;
-import ok.dht.ServiceConfig;
-import ok.dht.test.pashchenko.dao.Config;
-import ok.dht.test.pashchenko.dao.Entry;
-import ok.dht.test.pashchenko.dao.MemorySegmentDao;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Request;
-import one.nio.http.Response;
-import one.nio.net.Session;
-import one.nio.server.AcceptorConfig;
-import one.nio.server.SelectorThread;
-import one.nio.util.Utf8;
 
 public class MyServer extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(MyServer.class);
 
     private final MemorySegmentDao dao;
     private final Executor executor;
+    private final Executor executorInt;
     private final HttpClient client;
     private final ServiceConfig config;
     private final List<Node> nodes;
@@ -45,6 +39,7 @@ public class MyServer extends HttpServer {
         this.config = config;
         dao = new MemorySegmentDao(new Config(config.workingDir(), 1048576L));
         executor = Executors.newFixedThreadPool(16);
+        executorInt = Executors.newFixedThreadPool(16);
         client = HttpClient.newHttpClient();
 
         nodes = new ArrayList<>(config.clusterUrls().size());
@@ -75,32 +70,63 @@ public class MyServer extends HttpServer {
             return;
         }
 
-        Node node = getNodeForKey(id);
-
-        int tasks = node.tasksCount.incrementAndGet();
-        if (tasks > Node.MAX_TASKS_ALLOWED) {
-            node.tasksCount.decrementAndGet();
-            session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        int from;
+        int ack;
+        try {
+            from = getInt(request, "from=", nodes.size());
+            ack = getInt(request, "ack=", (nodes.size() / 2) + 1);
+        } catch (Exception_400 e) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
+        String header = request.getHeader("i=");
 
-        node.tasks.add(() -> {
-            try {
-                String url = node.url;
-                LOG.debug("Url {} for id {} (my port is {})", url, id, config.selfPort());
-                session.sendResponse(url.equals(config.selfUrl()) ? handleRequest(request, id) : proxyRequest(request, url));
-            } catch (Exception e) {
-                LOG.error("error handle request", e);
-                sendError(session);
+
+        int index = getNodeIndexForKey(id);
+
+        Response[] response = new Response[from];
+        CountDownLatch countDownLatch = new CountDownLatch(from);
+        for (int i = index; i < from; i++) {
+            int iFinal = i;
+            Node node = nodes.get(index);
+
+            int tasks = node.tasksCount.incrementAndGet();
+            if (tasks > Node.MAX_TASKS_ALLOWED) {
+                node.tasksCount.decrementAndGet();
+                session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                return;
             }
-        });
 
-        if (tasks <= Node.MAX_WORKERS_ALLOWED) {
-            executor.execute(new Runnable() {
-                @Override
-                public void run() {
-                    Runnable poll = node.tasks.poll();
-                    if (poll != null) {
+
+            node.tasks.add(() -> {
+                try {
+                    String url = node.url;
+                    LOG.debug("Url {} for id {} (my port is {})", url, id, config.selfPort());
+                    response[iFinal] =
+                            url.equals(config.selfUrl())
+                                    ? handleRequest(request, id)
+                                    : proxyRequest(request, url);
+                    countDownLatch.countDown();
+                } catch (Exception e) {
+                    LOG.error("error handle request", e);
+                    sendError(session);
+                    response[iFinal] = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                    countDownLatch.countDown();
+                }
+            });
+
+
+            if (node.maxWorkersSemaphore.tryAcquire()) {
+                executor.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        Runnable poll = node.tasks.poll();
+
+                        if (poll == null) {
+                            node.maxWorkersSemaphore.release();
+                            return;
+                        }
+
                         try {
                             poll.run();
                         } catch (Exception e) {
@@ -110,24 +136,52 @@ public class MyServer extends HttpServer {
                             executor.execute(this);
                         }
                     }
+                });
+            }
+
+            executorInt.execute( () -> {
+            try {
+                countDownLatch.await();
+                for (Response response1 : response) {
+                    // 
                 }
+            } catch (InterruptedException e) {
+           ///
+            }
+
             });
         }
-
+//        }
     }
 
-    private Node getNodeForKey(String id) {
+    private int getInt(Request request, String param, int defaultValue) throws Exception_400 {
+        String fromStr = request.getParameter(param);
+        if (fromStr == null) {
+            return defaultValue;
+        } else {
+            try {
+                return Integer.parseInt(fromStr);
+            } catch (NumberFormatException e) {
+                LOG.error("Error parse int" + param, e);
+                throw new Exception_400();
+            }
+        }
+    }
+
+    private int getNodeIndexForKey(String id) {
         int hash = Integer.MAX_VALUE;
-        Node result = null;
+        int maxIndex = 0;
         int idHash = id.hashCode() * 17;
+        int i = 0;
         for (Node node : nodes) {
             int newHash = idHash + node.url.hashCode();
             if (newHash < hash) {
                 hash = newHash;
-                result = node;
+                maxIndex = i;
             }
+            i++;
         }
-        return result == null ? nodes.get(0) : result;
+        return maxIndex;
     }
 
     private static void sendError(HttpSession session) {
@@ -223,12 +277,13 @@ public class MyServer extends HttpServer {
 
     static class Node {
         static final int MAX_TASKS_ALLOWED = 128;
-        static final int MAX_WORKERS_ALLOWED = 3;
+        static final int MAX_WORKERS_ALLOWED = 1;
 
         final String url;
         final ConcurrentLinkedQueue<Runnable> tasks = new ConcurrentLinkedQueue<>();
 
         final AtomicInteger tasksCount = new AtomicInteger(0);
+        final Semaphore maxWorkersSemaphore = new Semaphore(MAX_WORKERS_ALLOWED);
 
         Node(String url) {
             this.url = url;
