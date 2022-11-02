@@ -39,7 +39,6 @@ public class ReplicatedRequestExecutor {
     private final int from;
 
     Set<Integer> successStatusCodes;
-    byte[][] bodies;
     CountDownLatch countDownLatch;
     AtomicInteger successCount;
     boolean needLocalWork;
@@ -58,7 +57,7 @@ public class ReplicatedRequestExecutor {
     ) throws ServiceUnavailableException, NotEnoughReplicasException, ServiceInternalErrorException {
         successStatusCodes = METHOD_NAME_TO_SUCCESS_STATUS_CODES.get(request.getMethodName());
 
-        bodies = new byte[from][];
+        byte[][] bodies = new byte[from][];
         countDownLatch = new CountDownLatch(from);
         successCount = new AtomicInteger();
 
@@ -74,7 +73,7 @@ public class ReplicatedRequestExecutor {
                 needLocalWork = true;
                 localIndex = replicaIndex;
             } else {
-                proxyAndHandle(nodeTaskManager, httpClient, replicaIndex, nodeUrlByKey);
+                proxyAndHandle(nodeTaskManager, httpClient, replicaIndex, nodeUrlByKey, bodies);
             }
         }
         if (needLocalWork) {
@@ -99,7 +98,7 @@ public class ReplicatedRequestExecutor {
     }
 
     private void proxyAndHandle(
-        NodeTaskManager nodeTaskManager, HttpClient httpClient, int replicaIndex, String nodeUrlByKey
+        NodeTaskManager nodeTaskManager, HttpClient httpClient, int replicaIndex, String nodeUrlByKey, byte[][] bodies
     ) throws ServiceUnavailableException {
         boolean taskAdded = nodeTaskManager.tryAddNodeTask(nodeUrlByKey, () -> {
             try {

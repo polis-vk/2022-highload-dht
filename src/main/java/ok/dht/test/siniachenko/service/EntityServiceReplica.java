@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 public class EntityServiceReplica implements EntityService {
     private static final Logger LOG = LoggerFactory.getLogger(EntityServiceReplica.class);
 
+    public static final String ERROR_IN_DB_MESSAGE = "Error in DB";
+
     private final DB levelDb;
 
     public EntityServiceReplica(DB levelDb) {
@@ -25,7 +27,7 @@ public class EntityServiceReplica implements EntityService {
             }
             return new Response(Response.OK, value);
         } catch (DBException e) {
-            LOG.error("Error in DB", e);
+            LOG.error(ERROR_IN_DB_MESSAGE, e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
@@ -36,7 +38,7 @@ public class EntityServiceReplica implements EntityService {
             levelDb.put(Utf8.toBytes(id), body);
             return new Response(Response.CREATED, Response.EMPTY);
         } catch (DBException e) {
-            LOG.error("Error in DB", e);
+            LOG.error(ERROR_IN_DB_MESSAGE, e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
@@ -47,7 +49,7 @@ public class EntityServiceReplica implements EntityService {
             levelDb.put(Utf8.toBytes(id), body);
             return new Response(Response.ACCEPTED, Response.EMPTY);
         } catch (DBException e) {
-            LOG.error("Error in DB", e);
+            LOG.error(ERROR_IN_DB_MESSAGE, e);
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
