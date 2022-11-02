@@ -5,9 +5,9 @@ import ok.dht.test.monakhov.AsyncHttpServerConfig;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 
+import static ok.dht.test.monakhov.DaoService.QUEUE_SIZE;
+
 public final class ServiceUtils {
-    public static final String TIMESTAMP_HEADER = "TimeStamp";
-    public static final int QUEUE_SIZE = 1000;
 
     private ServiceUtils() {
     }

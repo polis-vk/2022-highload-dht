@@ -25,11 +25,16 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import static ok.dht.test.monakhov.utils.ServiceUtils.*;
+import static ok.dht.test.monakhov.utils.ServiceUtils.createConfigFromPort;
+import static ok.dht.test.monakhov.utils.ServiceUtils.isInvalidReplica;
+import static ok.dht.test.monakhov.utils.ServiceUtils.responseBadRequest;
+import static ok.dht.test.monakhov.utils.ServiceUtils.responseMethodNotAllowed;
 
 public class DaoService implements Service {
     private static final Log log = LogFactory.getLog(DaoService.class);
 
+    public static final String TIMESTAMP_HEADER = "TimeStamp";
+    public static final int QUEUE_SIZE = 1000;
     private static final int CONNECTION_POOL_WORKERS = 32;
     private final ServiceConfig serviceConfig;
     private final NodesRouter nodesRouter;
