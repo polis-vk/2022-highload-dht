@@ -1,112 +1,49 @@
-# wrk тестирование 1 реплики
-
-Вначале решил пострелять в кластер из 1 инстанса (так же, как в прошлой домашке), чтобы потом сравнить результаты
-с шардированием. Но и к тому же я начал запускать на другом ноутбуке, поэтому нужно было определить начальную нагрузку.
-PUT запросами на 2 минуты сервис выдерживал целых 160000 rps:
-```
-Running 1m test @ http://localhost:12345
-6 threads and 64 connections
-Thread calibration: mean lat.: 1.427ms, rate sampling interval: 10ms
-Thread calibration: mean lat.: 1.395ms, rate sampling interval: 10ms
-Thread calibration: mean lat.: 1.396ms, rate sampling interval: 10ms
-Thread calibration: mean lat.: 1.407ms, rate sampling interval: 10ms
-Thread calibration: mean lat.: 1.419ms, rate sampling interval: 10ms
-Thread calibration: mean lat.: 1.392ms, rate sampling interval: 10ms
-Thread Stats   Avg      Stdev     Max   +/- Stdev
-Latency     5.48ms   28.72ms 414.72ms   97.52%
-Req/Sec    28.13k     4.23k   58.22k    81.77%
-9595975 requests in 1.00m, 613.15MB read
-Requests/sec: 159936.98
-Transfer/sec:     10.22MB
-```
-
-GET запросами удалось выжать 140000, тоже вполне неплохой результат:
-```
-Running 1m test @ http://localhost:12345
-  6 threads and 64 connections
-  Thread calibration: mean lat.: 874.876ms, rate sampling interval: 3209ms
-  Thread calibration: mean lat.: 640.717ms, rate sampling interval: 3559ms
-  Thread calibration: mean lat.: 713.206ms, rate sampling interval: 3327ms
-  Thread calibration: mean lat.: 577.992ms, rate sampling interval: 2320ms
-  Thread calibration: mean lat.: 826.235ms, rate sampling interval: 3893ms
-  Thread calibration: mean lat.: 630.966ms, rate sampling interval: 2703ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    75.79ms  348.35ms   3.27s    95.16%
-    Req/Sec    23.88k     1.60k   30.89k    89.47%
-  8396482 requests in 1.00m, 598.71MB read
-  Non-2xx or 3xx responses: 170934
-Requests/sec: 139945.01
-Transfer/sec:      9.98MB
-```
-
-# профилирование 1 реплики
-
-Профилирование за 10 секунд с rps таким же, как в прошлом пункте. На профиле значительную долю занимает send, а так же
-работа базы данных. Малую долю уже занимает преобразование байтов в UTF8 строку и обратно и парсинг параметров from, ack.
-И немного GC. Тут всё вполне отлично, почти всё полезная работу, которую сложно как-то улучшить. На профиле аллокаций
-видны только аллокации в базе, тут уже всё упирается в базу, ничего не изменить. Видна лишь малая доля сервисных аллокаций.
-Блокировки тоже только в базе.
-Конечно, намного интереснее потестить кластер.
-
 # wrk тестирование 3 реплик
 
 Тестируем 3 реплики, в скриптах установил параметры from и ack равные 3, чтобы учитывать и ожидание ответов от всех реплик.
-PUT запросами выдерживается уже только от 30000 rps:
+И PUT и GET запросами выдерживается уже только около 30000 rps:
 ```
+./put.sh 60 30000
+
 Running 1m test @ http://localhost:12345
   6 threads and 64 connections
-  Thread calibration: mean lat.: 7.334ms, rate sampling interval: 44ms
-  Thread calibration: mean lat.: 5.991ms, rate sampling interval: 31ms
-  Thread calibration: mean lat.: 6.386ms, rate sampling interval: 34ms
-  Thread calibration: mean lat.: 6.521ms, rate sampling interval: 37ms
-  Thread calibration: mean lat.: 6.498ms, rate sampling interval: 37ms
-  Thread calibration: mean lat.: 6.359ms, rate sampling interval: 36ms
+  Thread calibration: mean lat.: 11.979ms, rate sampling interval: 24ms
+  Thread calibration: mean lat.: 10.738ms, rate sampling interval: 19ms
+  Thread calibration: mean lat.: 13.134ms, rate sampling interval: 20ms
+  Thread calibration: mean lat.: 8.341ms, rate sampling interval: 16ms
+  Thread calibration: mean lat.: 7.640ms, rate sampling interval: 21ms
+  Thread calibration: mean lat.: 11.218ms, rate sampling interval: 21ms
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   205.25ms  339.90ms   1.75s    86.66%
-    Req/Sec     5.03k   751.06     7.20k    74.06%
-  1785693 requests in 1.00m, 114.10MB read
-Requests/sec:  29761.39
-Transfer/sec:      1.90MB
+    Latency    16.46ms   65.42ms 782.85ms   95.27%
+    Req/Sec     5.13k   620.14     8.13k    79.02%
+  1799083 requests in 1.00m, 114.95MB read
+Requests/sec:  29985.49
+Transfer/sec:      1.92MB
+```
+И GET:
+```
+./get.sh 60 30000
+
+Running 1m test @ http://localhost:12345
+  6 threads and 64 connections
+  Thread calibration: mean lat.: 671.389ms, rate sampling interval: 3227ms
+  Thread calibration: mean lat.: 808.521ms, rate sampling interval: 4067ms
+  Thread calibration: mean lat.: 634.616ms, rate sampling interval: 2717ms
+  Thread calibration: mean lat.: 619.641ms, rate sampling interval: 2951ms
+  Thread calibration: mean lat.: 485.781ms, rate sampling interval: 2574ms
+  Thread calibration: mean lat.: 432.413ms, rate sampling interval: 2347ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.41ms    1.90ms 124.80ms   98.23%
+    Req/Sec     5.00k     4.40     5.02k    78.22%
+  1799274 requests in 1.00m, 124.78MB read
+  Non-2xx or 3xx responses: 661920
+Requests/sec:  29988.13
+Transfer/sec:      2.08MB
 ```
 
-до 34000:
-```
-Running 1m test @ http://localhost:12345
-  6 threads and 64 connections
-  Thread calibration: mean lat.: 10.011ms, rate sampling interval: 66ms
-  Thread calibration: mean lat.: 8.646ms, rate sampling interval: 46ms
-  Thread calibration: mean lat.: 7.462ms, rate sampling interval: 42ms
-  Thread calibration: mean lat.: 9.002ms, rate sampling interval: 53ms
-  Thread calibration: mean lat.: 11.511ms, rate sampling interval: 63ms
-  Thread calibration: mean lat.: 9.101ms, rate sampling interval: 53ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency   788.17ms  619.84ms   3.14s    67.89%
-    Req/Sec     5.75k   685.64     7.52k    76.03%
-  2056254 requests in 1.00m, 131.39MB read
-Requests/sec:  34271.75
-Transfer/sec:      2.19MB
-```
-И то, здесь с большим даже средним Latency.
-Очень много времени занимает теперь ожидание ответов и агрегация результатов вместе.
-
-GET запросами достигаем 23000 rps:
-```
-Running 1m test @ http://localhost:12345
-  6 threads and 64 connections
-  Thread calibration: mean lat.: 3.266ms, rate sampling interval: 15ms
-  Thread calibration: mean lat.: 3.318ms, rate sampling interval: 16ms
-  Thread calibration: mean lat.: 3.942ms, rate sampling interval: 22ms
-  Thread calibration: mean lat.: 3.538ms, rate sampling interval: 17ms
-  Thread calibration: mean lat.: 3.844ms, rate sampling interval: 20ms
-  Thread calibration: mean lat.: 3.289ms, rate sampling interval: 15ms
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    51.00ms  178.48ms   1.52s    92.61%
-    Req/Sec     3.96k   453.07     5.91k    78.13%
-  1379473 requests in 1.00m, 95.77MB read
-  Non-2xx or 3xx responses: 489444
-Requests/sec:  22991.23
-Transfer/sec:      1.60MB
-```
+Удивительно, что оба видов запросов примерно одинаково отработали - видно теперь сетевые издержки покрыли разницу между ними.
+Очень много времени занимает теперь ожидание ответов и агрегация результатов вместе. Так же теперь мы посылали запросы
+сразу нескольким репликам, а не одному шарду.
 
 # профилирование 3 реплик
 
