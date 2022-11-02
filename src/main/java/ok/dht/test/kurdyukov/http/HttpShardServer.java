@@ -184,7 +184,7 @@ public class HttpShardServer extends HttpServer {
                                             if (last == null || last.isTombstone) {
                                                 session.sendResponse(responseEmpty(Response.NOT_FOUND));
                                             } else {
-                                                session.sendResponse(new Response(Response.ok(last.value)));
+                                                session.sendResponse(Response.ok(last.value));
                                             }
                                             multicastWaitingFutures.forEach((k, v) -> v.cancel(false));
                                         }
@@ -255,7 +255,7 @@ public class HttpShardServer extends HttpServer {
                 if (entry == null) {
                     session.sendResponse(responseEmpty(Response.NOT_FOUND));
                 } else {
-                    session.sendResponse(new Response(Response.ok(entry)));
+                    session.sendResponse(Response.ok(entry));
                 }
             }
             case Request.METHOD_PUT -> {
