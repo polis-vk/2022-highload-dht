@@ -138,8 +138,9 @@ public class HttpShardServer extends HttpServer {
             final var timestamp = Instant.now();
             final var okResponses = new AtomicInteger(0);
             final var handleResponses = new AtomicInteger(0);
-            final var multicastWaitingFutures = new ConcurrentHashMap<Integer, CompletableFuture<HttpResponse<byte[]>>>();
             final var resultDaoEntry = new AtomicReference<DaoEntry>();
+            final var multicastWaitingFutures =
+                    new ConcurrentHashMap<Integer, CompletableFuture<HttpResponse<byte[]>>>();
 
             for (int i = 0; i < urlsNode.size(); i++) {
                 final var future = clientDao.requestNode(
@@ -240,6 +241,7 @@ public class HttpShardServer extends HttpServer {
             session.sendResponse(responseEmpty(NOT_ENOUGH_REPLICAS));
         }
     }
+
     private void handleRequestInCluster(
             Request request,
             HttpSession session,
