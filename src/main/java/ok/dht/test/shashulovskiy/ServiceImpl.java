@@ -210,7 +210,7 @@ public class ServiceImpl implements Service {
                             .timeout(REQUEST_TIMEOUT).build(),
                     HttpResponse.BodyHandlers.ofByteArray()
             ).handleAsync((response, exception) -> {
-                if (exception != null) {
+                if (exception != null || response.statusCode() >= 500) {
                     circuitBreaker.failOn(shardId);
                 } else {
                     circuitBreaker.successOn(shardId);
