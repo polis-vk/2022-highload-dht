@@ -79,8 +79,7 @@ public class DaoService implements Service {
     public void manageRequest(
         @Param(value = "id") String id, @Param(value = "from") String fromParam,
         @Param(value = "ack") String ackParam, Request request, HttpSession session
-    )
-    {
+    ) {
         try {
             if (id == null || id.isBlank() || isInvalidReplica(ackParam, fromParam)) {
                 session.sendResponse(responseBadRequest());
@@ -164,7 +163,7 @@ public class DaoService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
