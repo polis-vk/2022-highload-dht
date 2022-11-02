@@ -3,6 +3,7 @@ package ok.dht.test.siniachenko.service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.siniachenko.TycoonHttpServer;
+import ok.dht.test.siniachenko.nodetaskmanager.NodeTaskManager;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.impl.DbImpl;
@@ -45,11 +46,17 @@ public class TycoonService implements ok.dht.Service {
             new LinkedBlockingQueue<>(THREAD_POOL_QUEUE_CAPACITY)
         );
 
+        // Node teaks manager
+        NodeTaskManager nodeTaskManager = new NodeTaskManager(
+            executorService, config.clusterUrls(),
+            THREAD_POOL_QUEUE_CAPACITY, AVAILABLE_PROCESSORS / 2
+        );
+
         // Http Server
         server = new TycoonHttpServer(
             config.selfPort(),
             executorService,
-            new EntityServiceCoordinator(config, levelDb, executorService, HttpClient.newHttpClient()),
+            new EntityServiceCoordinator(config, levelDb, HttpClient.newHttpClient(), nodeTaskManager),
             new EntityServiceReplica(levelDb)
         );
         server.start();

@@ -6,7 +6,9 @@ import ok.dht.test.siniachenko.Utils;
 import ok.dht.test.siniachenko.exception.BadRequestException;
 import ok.dht.test.siniachenko.exception.NotEnoughReplicasException;
 import ok.dht.test.siniachenko.exception.ServiceInternalErrorException;
+import ok.dht.test.siniachenko.exception.ServiceUnavailableException;
 import ok.dht.test.siniachenko.nodemapper.NodeMapper;
+import ok.dht.test.siniachenko.nodetaskmanager.NodeTaskManager;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.util.Utf8;
@@ -25,7 +27,6 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
@@ -41,20 +42,20 @@ public class EntityServiceCoordinator implements EntityService {
 
     private final ServiceConfig config;
     private final DB levelDb;
-    private final ExecutorService executorService;
     private final HttpClient httpClient;
+    private final NodeTaskManager nodeTaskManager;
     private final NodeMapper nodeMapper;
     private final int defaultFromCount;
     private final int defaultAckCount;
 
     public EntityServiceCoordinator(
         ServiceConfig config, DB levelDb,
-        ExecutorService executorService, HttpClient httpClient
+        HttpClient httpClient, NodeTaskManager nodeTaskManager
     ) {
         this.config = config;
         this.levelDb = levelDb;
-        this.executorService = executorService;
         this.httpClient = httpClient;
+        this.nodeTaskManager = nodeTaskManager;
         this.nodeMapper = new NodeMapper(config.clusterUrls());
         this.defaultFromCount = config.clusterUrls().size();
         this.defaultAckCount = config.clusterUrls().size() / 2 + 1;
@@ -62,13 +63,11 @@ public class EntityServiceCoordinator implements EntityService {
 
     @Override
     public Response handleGet(Request request, String id) {
-
         Supplier<byte[]> localWork = () -> {
             try {
                 return levelDb.get(Utf8.toBytes(id));
             } catch (DBException e) {
                 LOG.error("Error in DB", e);
-                // TODO: compare to many NOT_FOUND and to many internal errors
                 throw e;
             }
         };
@@ -82,6 +81,8 @@ public class EntityServiceCoordinator implements EntityService {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         } catch (BadRequestException e) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        } catch (ServiceUnavailableException e) {
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
 
         byte[] latestBody = null;
@@ -95,7 +96,6 @@ public class EntityServiceCoordinator implements EntityService {
                 }
             }
         }
-        // TODO: it cannot be null ?
         if (latestBody == null || Utils.readFlagDeletedFromBytes(latestBody)) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         } else {
@@ -116,7 +116,6 @@ public class EntityServiceCoordinator implements EntityService {
                 levelDb.put(Utf8.toBytes(id), request.getBody());
             } catch (DBException e) {
                 LOG.error("Error in DB", e);
-                // TODO: compare to many NOT_FOUND and to many internal errors
                 throw e;
             }
             return null;
@@ -131,6 +130,8 @@ public class EntityServiceCoordinator implements EntityService {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         } catch (BadRequestException e) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        } catch (ServiceUnavailableException e) {
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
     }
 
@@ -146,7 +147,6 @@ public class EntityServiceCoordinator implements EntityService {
                 levelDb.put(Utf8.toBytes(id), request.getBody());
             } catch (DBException e) {
                 LOG.error("Error in DB", e);
-                // TODO: compare to many NOT_FOUND and to many internal errors
                 throw e;
             }
             return null;
@@ -161,12 +161,15 @@ public class EntityServiceCoordinator implements EntityService {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         } catch (BadRequestException e) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
+        } catch (ServiceUnavailableException e) {
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
     }
 
     private byte[][] replicateRequestAndAwait(
         Request request, String id, Supplier<byte[]> localWork
-    ) throws ServiceInternalErrorException, NotEnoughReplicasException, BadRequestException {
+    ) throws ServiceInternalErrorException, NotEnoughReplicasException,
+        BadRequestException, ServiceUnavailableException {
         final int ack = getIntParameter(request, "ack=", defaultAckCount);
         final int from = getIntParameter(request, "from=", defaultFromCount);
         if (!(
@@ -196,24 +199,30 @@ public class EntityServiceCoordinator implements EntityService {
                 needLocalWork = true;
                 localIndex = replicaIndex;
             } else {
-                try {
-                    HttpResponse<byte[]> response = proxyRequest(
-                        request.getMethodName(), request.getBody(), id, nodeUrlByKey
-                    );
-                    if (successStatusCodes.contains(response.statusCode())) {
-                        bodies[replicaIndex] = response.body();
-                        successCount.incrementAndGet();
-                    } else {
-                        LOG.error(
-                            "Unexpected status code {} after proxy request to {}",
-                            response.statusCode(),
-                            nodeUrlByKey
+                int finalReplicaIndex = replicaIndex;
+                boolean taskAdded = nodeTaskManager.tryAddNodeTask(nodeUrlByKey, () -> {
+                    try {
+                        HttpResponse<byte[]> response = proxyRequest(
+                            request.getMethodName(), request.getBody(), id, nodeUrlByKey
                         );
+                        if (successStatusCodes.contains(response.statusCode())) {
+                            bodies[finalReplicaIndex] = response.body();
+                            successCount.incrementAndGet();
+                        } else {
+                            LOG.error(
+                                "Unexpected status code {} after proxy request to {}",
+                                response.statusCode(),
+                                nodeUrlByKey
+                            );
+                        }
+                    } catch (IOException | InterruptedException e) {
+                        LOG.error("Error after proxy request to {}", nodeUrlByKey, e);
+                    } finally {
+                        countDownLatch.countDown();
                     }
-                } catch (IOException | InterruptedException e) {
-                    LOG.error("Error after proxy request to {}", nodeUrlByKey, e);
-                } finally {
-                    countDownLatch.countDown();
+                });
+                if (!taskAdded) {
+                    throw new ServiceUnavailableException();
                 }
             }
         }
@@ -255,7 +264,6 @@ public class EntityServiceCoordinator implements EntityService {
     private HttpResponse<byte[]> proxyRequest(
         String methodName, byte[] requestBody, String idParameter, String nodeUrl
     ) throws IOException, InterruptedException {
-        // TODO: add queue to limit threads awaiting response from each node
         return httpClient.send(
             HttpRequest.newBuilder()
                 .uri(URI.create(nodeUrl + TycoonHttpServer.PATH + "?id=" + idParameter))
