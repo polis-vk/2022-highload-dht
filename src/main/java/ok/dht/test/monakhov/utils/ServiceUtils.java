@@ -52,7 +52,7 @@ public final class ServiceUtils {
         AsyncHttpServerConfig httpConfig = new AsyncHttpServerConfig();
         httpConfig.clusterUrls = serviceConfig.clusterUrls();
         httpConfig.selfUrl = serviceConfig.selfUrl();
-        httpConfig.workersNumber = Runtime.getRuntime().availableProcessors() / 4;
+        httpConfig.workersNumber = Math.max(1, Runtime.getRuntime().availableProcessors() / 4);
         httpConfig.queueSize = QUEUE_SIZE;
         AcceptorConfig acceptor = new AcceptorConfig();
         acceptor.port = serviceConfig.selfPort();

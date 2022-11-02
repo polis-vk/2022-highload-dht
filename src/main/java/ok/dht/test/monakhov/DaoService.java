@@ -51,6 +51,7 @@ public class DaoService implements Service {
     public CompletableFuture<?> start() throws IOException {
         server = new AsyncHttpServer(createConfigFromPort(serviceConfig));
         dao = new DaoRepository(serviceConfig.workingDir().toString());
+
         client = HttpClient.newBuilder().executor(new ThreadPoolExecutor(CONNECTION_POOL_WORKERS,
             CONNECTION_POOL_WORKERS, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(QUEUE_SIZE)
         )).build();
@@ -162,7 +163,7 @@ public class DaoService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
