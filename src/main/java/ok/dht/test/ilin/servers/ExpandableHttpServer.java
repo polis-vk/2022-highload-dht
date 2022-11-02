@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -89,39 +90,33 @@ public class ExpandableHttpServer extends HttpServer {
         }
 
         String timestamp = request.getHeader(Headers.TIMESTAMP_HEADER);
-        boolean isController = false;
-        if (timestamp == null) {
-            isController = true;
+        final boolean isController = timestamp == null;
+        if (isController) {
             request.addHeader(Headers.TIMESTAMP_HEADER + System.currentTimeMillis());
         }
 
-        if (!isController) {
-            try {
-                executorService.execute(() -> {
-                    try {
-                        session.sendResponse(replicasHandler.selfExecute(key, request));
-                    } catch (Exception e) {
-                        logger.error("failed to send request: {}", e.getMessage());
-                        sendBadRequest(session);
+        try {
+            executorService.execute(() -> {
+                CompletableFuture<Response> result = !isController ? replicasHandler.selfExecute(
+                    key,
+                    request
+                ) : replicasHandler.execute(key, replicasInfo, request);
+                result.whenCompleteAsync((response, throwable) -> {
+                    if (throwable != null) {
+                        logger.error("Failed to self execute request: {}", throwable.getMessage());
+                        sendInternalError(session);
+                    } else {
+                        try {
+                            session.sendResponse(response);
+                        } catch (IOException e) {
+                            logger.error("failed to send response: {}", e.getMessage());
+                        }
                     }
                 });
-            } catch (RejectedExecutionException e) {
-                logger.error("Failed to run execution: {}", e.getMessage());
-                sendServiceUnavailable(session);
-            }
-        } else {
-            try {
-                executorService.execute(() -> {
-                    try {
-                        session.sendResponse(replicasHandler.execute(key, replicasInfo, request));
-                    } catch (IOException e) {
-                        logger.error("failed to send response: {}", e.getMessage());
-                    }
-                });
-            } catch (RejectedExecutionException e) {
-                logger.error("Failed to run execution: {}", e.getMessage());
-                sendServiceUnavailable(session);
-            }
+            });
+        } catch (RejectedExecutionException e) {
+            logger.error("Failed to run execution: {}", e.getMessage());
+            sendServiceUnavailable(session);
         }
     }
 
@@ -138,6 +133,14 @@ public class ExpandableHttpServer extends HttpServer {
             session.sendError(Response.BAD_REQUEST, "failed to execute request.");
         } catch (IOException e) {
             logger.error("failed to send error: {}", e.getMessage());
+        }
+    }
+
+    private void sendInternalError(HttpSession session) {
+        try {
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        } catch (IOException e) {
+            logger.error("Failed to send response: {}", e.getMessage());
         }
     }
 
