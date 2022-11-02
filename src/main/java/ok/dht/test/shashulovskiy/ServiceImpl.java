@@ -250,6 +250,7 @@ public class ServiceImpl implements Service {
 
                     responseAccumulator.processSuccess(202, Response.EMPTY);
                 }
+                default -> LOG.error("Unsupported method. Should be unreachable");
             }
         } catch (DBException exception) {
             LOG.error("Internal dao exception occurred on " + request.getPath(), exception);
