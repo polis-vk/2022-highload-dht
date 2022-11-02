@@ -146,13 +146,13 @@ public class DaoWebService {
         }
     }
 
-    private CompletableFuture<?> doInternalRequest(@Nonnull final Request request,
-                                                   @Nonnull final HttpSession session,
-                                                   @Nonnull final String id,
-                                                   @Nonnull final Shard shard,
-                                                   final long newEntryTimestamp,
-                                                   @Nonnull final MostRelevantResponseHandler responseHandler) {
-        return internalHttpClient
+    private void doInternalRequest(@Nonnull final Request request,
+                                   @Nonnull final HttpSession session,
+                                   @Nonnull final String id,
+                                   @Nonnull final Shard shard,
+                                   final long newEntryTimestamp,
+                                   @Nonnull final MostRelevantResponseHandler responseHandler) {
+        internalHttpClient
                 .resendDaoRequestToShard(request, id, shard, lamportClock.getValueToSend(), newEntryTimestamp)
                 .thenAccept((httpResponse) -> {
                     if (request.getMethod() == Request.METHOD_GET) {
