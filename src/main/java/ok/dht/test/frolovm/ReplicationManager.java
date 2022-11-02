@@ -71,6 +71,7 @@ public class ReplicationManager {
             Utils.sendResponse(session, requestExecutor.entityHandlerSelf(id, request, Utils.getTimestamp(request)));
             return;
         }
+        final int ackNumber = ack;
         final long timestamp = System.currentTimeMillis();
         request.addHeader(Utils.TIMESTAMP_ONE_NIO + timestamp);
 
@@ -89,7 +90,7 @@ public class ReplicationManager {
                     }
             ).whenCompleteAsync(
                     (resp, exception) -> {
-                        boolean isAcks = collectedResponses.size() >= ack;
+                        boolean isAcks = collectedResponses.size() >= ackNumber;
                         if ((from == countReq.get() || isAcks)) {
                             if (!isAcks) {
                                 Utils.sendResponse(
