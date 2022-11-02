@@ -213,6 +213,7 @@ public class HttpShardServer extends HttpServer {
                                     default ->
                                             throw new IllegalArgumentException("Unsupported request method: " + method);
                                 }
+
                                 handleNotEnoughReplicas(session, from, ack, okResponses, handleResponses);
                             } catch (IOException | ClassNotFoundException e) {
                                 logger.error("Fail send response!", e);
