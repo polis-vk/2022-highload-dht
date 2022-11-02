@@ -75,7 +75,6 @@ public class ReplicationHandler {
                 handleResponse(response.statusCode(), response.body(), nodeUrl);
             }
 
-
             if (e != null) {
                 log.error(String.format(
                     "Connection error from node: %s received. This node: %s. Key: %s. Responded %s/%s",
@@ -143,6 +142,7 @@ public class ReplicationHandler {
                 }
             }
         }
+        default -> throw new IllegalArgumentException("Unsupported request method: " + request.getMethodName());
         }
     }
 

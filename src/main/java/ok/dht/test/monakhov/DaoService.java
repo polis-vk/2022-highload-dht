@@ -22,11 +22,7 @@ import java.net.http.HttpResponse;
 import java.sql.Timestamp;
 import java.util.concurrent.CompletableFuture;
 
-import static ok.dht.test.monakhov.utils.ServiceUtils.TIMESTAMP_HEADER;
-import static ok.dht.test.monakhov.utils.ServiceUtils.createConfigFromPort;
-import static ok.dht.test.monakhov.utils.ServiceUtils.isInvalidReplica;
-import static ok.dht.test.monakhov.utils.ServiceUtils.responseBadRequest;
-import static ok.dht.test.monakhov.utils.ServiceUtils.responseMethodNotAllowed;
+import static ok.dht.test.monakhov.utils.ServiceUtils.*;
 
 public class DaoService implements Service {
     private static final Log log = LogFactory.getLog(DaoService.class);
@@ -41,6 +37,7 @@ public class DaoService implements Service {
     public DaoService(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
         nodesRouter = new JumpingNodesRouter(serviceConfig.clusterUrls());
+        client = HttpClient.newBuilder().build();
     }
 
     @Override
@@ -52,8 +49,6 @@ public class DaoService implements Service {
         //     0L, TimeUnit.MILLISECONDS,
         //     new LinkedBlockingQueue<>(QUEUE_SIZE)
         // )).build();
-        //
-        client = HttpClient.newBuilder().build();
 
         server.addRequestHandlers(this);
         server.start();
@@ -62,7 +57,7 @@ public class DaoService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        if (server == null || dao == null || client == null) {
+        if (server == null || dao == null) {
             return CompletableFuture.completedFuture(null);
         }
         server.stop();
@@ -70,7 +65,6 @@ public class DaoService implements Service {
 
         server = null;
         dao = null;
-        client = null;
         return CompletableFuture.completedFuture(null);
     }
 
