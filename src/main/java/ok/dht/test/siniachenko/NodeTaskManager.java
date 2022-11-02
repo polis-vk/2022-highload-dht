@@ -51,23 +51,7 @@ public class NodeTaskManager {
                 @Override
                 public void run() {
                     try {
-                        while (true) {
-                            Runnable pollTask = node.nodeTasksQueue.poll();
-                            if (pollTask != null) {
-                                try {
-                                    try {
-                                        pollTask.run();  // no exceptions are expected
-                                    } finally {
-                                        node.queuedTasks.release();
-                                    }
-                                } catch (Exception e) {
-                                    LOG.error("Exception executing task for node {}", nodeUrl, e);
-                                    // but in case of exception continue executing tasks
-                                }
-                            } else {
-                                break;
-                            }
-                        }
+                        processTasks(node, nodeUrl);
                     } finally {
                         node.executors.release();
 
@@ -77,12 +61,8 @@ public class NodeTaskManager {
                         // That's why after release we must check the situation, that there are
                         // no more executors for node, but some tasks are remaining
 
-                        if (noNodeExecutors(node)) {  // no more node executors
-                            if (!noNodeTasks(node)) {  // there are tasks for node
-                                if (node.executors.tryAcquire()) {
-                                    executorService.execute(this);
-                                }
-                            }
+                        if (noNodeExecutors(node) && !noNodeTasks(node) && node.executors.tryAcquire()) {
+                            executorService.execute(this);
                         }
                     }
                 }
@@ -90,6 +70,26 @@ public class NodeTaskManager {
         }
 
         return true;
+    }
+
+    private static void processTasks(Node node, String nodeUrl) {
+        while (true) {
+            Runnable pollTask = node.nodeTasksQueue.poll();
+            if (pollTask == null) {
+                break;
+            } else {
+                try {
+                    try {
+                        pollTask.run(); // no exceptions are expected
+                    } finally {
+                        node.queuedTasks.release();
+                    }
+                } catch (Exception e) {
+                    LOG.error("Exception executing task for node {}", nodeUrl, e);
+                    // but in case of exception continue executing tasks
+                }
+            }
+        }
     }
 
     private boolean noNodeTasks(Node node) {
