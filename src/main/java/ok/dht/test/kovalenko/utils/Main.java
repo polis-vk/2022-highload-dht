@@ -49,6 +49,7 @@ public class Main {
                 log.debug("Socket is ready: {}", service.selfUrl());
                 urlsServices.put(service.selfUrl(), service);
             }
+            urlsServices.get(urls.get(2)).stop();
             //DaoFiller.fillDaos(urlsServices, 1, 1);
             log.debug("END");
         } catch (Exception e) {

@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.http.HttpResponse;
 import java.util.HashMap;
 import java.util.Map;
@@ -106,6 +107,8 @@ public final class LoadBalancer {
     private Object nodeRequest(String id, Request request, Node node, Handler handler, MyHttpSession session) {
         try {
             return handler.handle(id, request, session);
+        } catch (ConnectException e) {
+            return MyServiceBase.emptyResponseFor(Response.GATEWAY_TIMEOUT);
         } catch (Exception e) {
             node.setIll(true);
             log.error("Node {} is ill", node.selfUrl(), e);

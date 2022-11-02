@@ -60,8 +60,9 @@ public class MyServerBase extends HttpServer {
             return;
         }
 
-        String replicas = request.getParameter("replicas=");
-        ReplicasUtils.ReplicasValidation replicasValidation = ReplicasUtils.validate(replicas);
+        String ack = request.getParameter("ack=");
+        String from = request.getParameter("from=");
+        ReplicasUtils.ReplicasValidation replicasValidation = ReplicasUtils.validate(ack, from);
         if (!replicasValidation.valid()) {
             Response response = MyServiceBase.emptyResponseFor(Response.BAD_REQUEST);
             session.sendResponse(response);

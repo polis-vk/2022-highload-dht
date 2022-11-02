@@ -25,37 +25,29 @@ public class ReplicasUtils {
     }
 
     public static Replicas recreate(Replicas replicas, int clusterSize) {
-        Replicas res = replicas;
-        if (res == null) {
-            res = new Replicas(defaultQuorums.get(clusterSize), clusterSize);
-        }
-
-        if (res.from() != clusterSize) {
-            throw new IllegalArgumentException("Invalid cluster size or replicas.from parameter:" +
-                    " clusterSize = " + clusterSize + ", replicas.from = " + res.from());
-        }
-        return res;
+        return replicas == null
+                ? new Replicas(defaultQuorums.get(clusterSize), clusterSize)
+                : replicas;
     }
 
-    public static ReplicasValidation validate(String replicas) {
+    public static ReplicasValidation validate(String ack, String from) {
         try {
-            if (replicas == null) {
+            if (ack == null && from == null) {
                 return new ReplicasValidation(true, null);
             }
 
-            if (!REPLICAS_PATTERN.matcher(replicas).matches()) {
+            if (ack == null || from == null) {
                 return ReplicasValidation.INVALID;
             }
 
-            String[] replicasParams = replicas.split(REPLICAS_PARAMETERS_SEPARATOR);
-            int ack = Integer.parseInt(replicasParams[0]);
-            int from = Integer.parseInt(replicasParams[1]);
+            int intAck = Integer.parseInt(ack);
+            int intFrom = Integer.parseInt(from);
 
-            if (ack <= 0 || from <= 0 || ack > from) {
+            if (intAck <= 0 || intFrom <= 0 || intAck > intFrom) {
                 return ReplicasValidation.INVALID;
             }
 
-            return new ReplicasValidation(true, new Replicas(ack, from));
+            return new ReplicasValidation(true, new Replicas(intAck, intFrom));
         } catch (Exception e) {
             log.error("Unexpected error", e);
             return ReplicasValidation.INVALID;
@@ -63,9 +55,8 @@ public class ReplicasUtils {
     }
 
     public record Replicas(int ack, int from) {
-        @Override
-        public String toString() {
-            return ack + REPLICAS_PARAMETERS_SEPARATOR + from;
+        public String toHttpString() {
+            return "&ack=" + ack + "&from=" + from;
         }
     }
 

@@ -34,7 +34,7 @@ public class MyServiceBase implements Service {
     private static final ByteBufferDaoFactoryB daoFactory = new ByteBufferDaoFactoryB();
     private static final Logger log = LoggerFactory.getLogger(MyServiceBase.class);
     // One LoadBalancer per Service, one Service per Server
-    private static final LoadBalancer loadBalancer = new LoadBalancer();
+    private final LoadBalancer loadBalancer = new LoadBalancer();
     private final ServiceConfig config;
     private LSMDao dao;
     private HttpServer server;

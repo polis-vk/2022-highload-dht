@@ -40,7 +40,7 @@ public class Client {
     }
 
     private HttpRequest.Builder requestForKey(String key, MyHttpSession session) {
-        return request("/v0/entity?id=" + key + "&replicas=" + session.getReplicas().toString());
+        return request("/v0/entity?id=" + key + session.getReplicas().toHttpString());
     }
 
     private HttpRequest.Builder request(String path) {
