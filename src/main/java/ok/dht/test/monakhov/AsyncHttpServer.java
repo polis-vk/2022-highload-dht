@@ -17,7 +17,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-
 public class AsyncHttpServer extends HttpServer {
     private static final Log log = LogFactory.getLog(AsyncHttpServer.class);
     private ExecutorService executor;

@@ -11,18 +11,23 @@ public final class ServiceUtils {
 
     private ServiceUtils() {
     }
+
     public static Response responseNotFound() {
         return new Response(Response.NOT_FOUND, Response.EMPTY);
     }
+
     public static Response responseAccepted() {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
-    public static Response responseCreated(){
+
+    public static Response responseCreated() {
         return new Response(Response.CREATED, Response.EMPTY);
     }
+
     public static Response responseBadRequest() {
         return new Response(Response.BAD_REQUEST, Response.EMPTY);
     }
+
     public static Response responseMethodNotAllowed() {
         return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
     }
@@ -30,6 +35,7 @@ public final class ServiceUtils {
     public static Response responseInternalError() {
         return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
     }
+
     public static Response responseNotEnoughReplicas() {
         return new Response("504 Not Enough Replicas", Response.EMPTY);
     }
