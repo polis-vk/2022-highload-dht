@@ -47,14 +47,9 @@ public class MyService implements Service {
     private InMemoryDao dao;
     private ThreadPoolExecutor requestsExecutor;
     private Map<Long, MyHttpClient> clients;
-    private static Map<String, Integer> urlHashes;
 
     public MyService(ServiceConfig config) {
         this.config = config;
-        urlHashes = new HashMap<>();
-        for (String clusterUrl : config.clusterUrls()) {
-            urlHashes.put(clusterUrl, Hash.murmur3(clusterUrl));
-        }
     }
 
     private Config createDaoConfig() {
@@ -181,9 +176,8 @@ public class MyService implements Service {
         }
         int maxHash = Integer.MIN_VALUE;
         String node = "";
-        int keyHash = Hash.murmur3(key);
         for (String url : clusterUrls) {
-            int hash = urlHashes.get(url) + keyHash;
+            int hash = Hash.murmur3(url + key);
             if (hash >= maxHash) {
                 maxHash = hash;
                 node = url;
