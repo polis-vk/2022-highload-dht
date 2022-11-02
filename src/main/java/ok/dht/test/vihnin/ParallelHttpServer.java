@@ -16,15 +16,25 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static ok.dht.test.vihnin.ServiceUtils.createConfigFromPort;
 import static ok.dht.test.vihnin.ServiceUtils.distributeVNodes;
@@ -50,6 +60,8 @@ public class ParallelHttpServer extends HttpServer {
     private final ResponseManager responseManager;
 
     private final ThreadLocal<Map<String, HttpClient>> clients;
+
+    private final ThreadLocal<Map<String, java.net.http.HttpClient>> javaClients;
 
     private final ExecutorService executorService = new ThreadPoolExecutor(
             WORKERS_NUMBER,
@@ -85,6 +97,14 @@ public class ParallelHttpServer extends HttpServer {
             Map<String, HttpClient> baseMap = new HashMap<>();
             for (String url : config.clusterUrls()) {
                 baseMap.put(url, new HttpClient(new ConnectionString(url)));
+            }
+            return baseMap;
+        });
+
+        this.javaClients = ThreadLocal.withInitial(() -> {
+            Map<String, java.net.http.HttpClient> baseMap = new HashMap<>();
+            for (String url : config.clusterUrls()) {
+                baseMap.put(url, java.net.http.HttpClient.newBuilder().executor(executorService).build());
             }
             return baseMap;
         });
@@ -138,7 +158,7 @@ public class ParallelHttpServer extends HttpServer {
         try {
             if (innerHeaderValue == null) {
                 internalRequestService.submit(() -> {
-                    requestTask(request, session, destinationShardId, ack, from);
+                    requestTask2(request, session, destinationShardId, ack, from);
                 });
             } else {
                 executorService.submit(() -> {
@@ -187,6 +207,168 @@ public class ParallelHttpServer extends HttpServer {
         }
     }
 
+    private static class ResponseAccumulator {
+        private final HttpSession session;
+        private int method;
+        private int ack;
+        private int from;
+
+        private final AtomicInteger acknowledged;
+        private final AtomicInteger answered;
+        private final AtomicReference<Data> bestData;
+
+        private final AtomicBoolean send;
+
+
+        public ResponseAccumulator(HttpSession session, int method, int ack, int from) {
+            this.session = session;
+            this.method = method;
+            this.ack = ack;
+            this.from = from;
+            this.acknowledged = new AtomicInteger(0);
+            this.answered = new AtomicInteger(0);
+            this.bestData = new AtomicReference<>(new Data(-1, -1, null));
+            this.send = new AtomicBoolean(false);
+        }
+
+        public void acknowledgeMissed() {
+            answer(acknowledged.get());
+        }
+
+        public void acknowledgeFailed() {
+            acknowledge(false, null, null, null);
+        }
+
+        public void acknowledgeSucceed(Long time, Integer status, byte[] data) {
+            acknowledge(true, time, status, data);
+        }
+
+        private void acknowledge(boolean success, Long time, Integer status, byte[] data) {
+            if (success) {
+                Data newData = new Data(status, time, data);
+                while (bestData.get().time < time) {
+                    Data curData = bestData.get();
+                    if (bestData.compareAndSet(curData, newData)) {
+                        break;
+                    }
+                }
+            }
+
+            int curAck = acknowledged.incrementAndGet();
+
+            answer(curAck);
+        }
+
+        private void answer(int curAck) {
+            int curAnswered = answered.incrementAndGet();
+
+            if ((curAck >= ack || curAnswered == from)
+                    && send.compareAndSet(false, true)) {
+
+                Data curData = this.bestData.get();
+                processAcknowledgment(
+                        this.method,
+                        this.session,
+                        acknowledged.get() >= this.ack,
+                        curData.status,
+                        curData.bytes
+                );
+            }
+        }
+
+        private static class Data {
+            int status;
+            long time;
+            byte[] bytes;
+
+            public Data(int status, long time, byte[] bytes) {
+                this.status = status;
+                this.time = time;
+                this.bytes = bytes;
+            }
+
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) return true;
+                if (o == null || getClass() != o.getClass()) return false;
+                Data data = (Data) o;
+                return status == data.status && time == data.time;
+            }
+
+            @Override
+            public int hashCode() {
+                return Objects.hash(status, time);
+            }
+        }
+
+    }
+
+    private void handleAckRequest2(Request request, String destinationUrl, ResponseAccumulator responseAccumulator) {
+        try {
+
+            var builder = HttpRequest.newBuilder()
+                    .uri(new URI(destinationUrl + request.getURI()))
+                    .method(request.getMethodName(),
+                            request.getBody() == null
+                                    ? HttpRequest.BodyPublishers.noBody()
+                                    : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                    .header(INNER_HEADER_NAME, INNER_HEADER_VALUE)
+                    .timeout(Duration.ofMillis(1200));
+
+
+            Arrays.stream(request.getHeaders())
+                    .filter(Objects::nonNull)
+                    .map(s -> {
+                        int index = s.indexOf(':');
+                        return List.of(
+                                s.substring(0, index),
+                                s.substring(index + 1).strip()
+                        );
+                    })
+                    .forEach(ls -> {
+                        try {
+                            builder.setHeader(ls.get(0), ls.get(1));
+                        } catch (Exception ignore) {
+
+                        }
+                    });
+
+            javaClients.get().get(destinationUrl)
+                    .sendAsync(
+                            builder.build(),
+                            HttpResponse.BodyHandlers.ofByteArray()
+                    )
+                    .handleAsync(
+                            (httpResponse, throwable) -> {
+                                if (throwable != null) {
+                                    responseAccumulator.acknowledgeMissed();
+                                    return null;
+                                } else {
+                                    if (httpResponse != null) {
+                                        Optional<String> time = httpResponse.headers()
+                                                .firstValue(TIME_HEADER_NAME);
+                                        if (time.isPresent()) {
+                                            responseAccumulator.acknowledgeSucceed(
+                                                    Long.parseLong(time.get()),
+                                                    httpResponse.statusCode(),
+                                                    httpResponse.body()
+                                            );
+                                        } else {
+                                            responseAccumulator.acknowledgeFailed();
+                                        }
+                                    } else {
+                                        responseAccumulator.acknowledgeFailed();
+                                    }
+                                    return httpResponse;
+
+                                }
+                            }
+                    );
+        } catch (Exception ignored) {
+            responseAccumulator.acknowledgeMissed();
+        }
+    }
+
     private int getShardId(String key) {
         return shardHelper.getShardByKey(key);
     }
@@ -220,22 +402,47 @@ public class ParallelHttpServer extends HttpServer {
             }
         }
 
-        processAcknowledgment(request, session, ack <= actualAck, freshestStatus, freshestData);
+        processAcknowledgment(request.getMethod(), session, ack <= actualAck, freshestStatus, freshestData);
+    }
+
+    private void requestTask2(Request request, HttpSession session, int destinationShardId, int ack, int from) {
+        long currentTime = System.currentTimeMillis();
+        request.addHeader(TIME_HEADER_NAME + ": " + currentTime);
+        ResponseAccumulator responseAccumulator = new ResponseAccumulator(session, request.getMethod(), ack, from);
+
+        for (var neighbor : clusterManager.getNeighbours(destinationShardId).subList(0, from)) {
+            if (neighbor.equals(clusterManager.getUrlByShard(shard))) {
+                Response handleSuccess = responseManager.handleRequest(request);
+                if (handleSuccess != null) {
+                    String value = getHeaderValue(handleSuccess, TIME_HEADER_NAME);
+                    if (value != null) {
+                        long currTime = Long.parseLong(value);
+                        responseAccumulator.acknowledgeSucceed(currTime, handleSuccess.getStatus(), handleSuccess.getBody());
+                    } else {
+                        responseAccumulator.acknowledgeFailed();
+                    }
+                } else {
+                    responseAccumulator.acknowledgeFailed();
+                }
+            } else {
+                handleAckRequest2(request, neighbor, responseAccumulator);
+            }
+        }
     }
 
     private static void processAcknowledgment(
-            Request request,
+            int method,
             HttpSession session,
             boolean reachAckNumber,
             int freshestStatus,
             byte[] freshestData) {
         try {
             if (reachAckNumber) {
-                if (request.getMethod() == Request.METHOD_DELETE) {
+                if (method == Request.METHOD_DELETE) {
                     session.sendResponse(emptyResponse("202 Accepted"));
-                } else if (request.getMethod() == Request.METHOD_PUT) {
+                } else if (method == Request.METHOD_PUT) {
                     session.sendResponse(emptyResponse("201 Created"));
-                } else if (request.getMethod() == Request.METHOD_GET) {
+                } else if (method == Request.METHOD_GET) {
                     if (freshestStatus == 200) {
                         session.sendResponse(new Response("200 OK", freshestData));
                     } else {
