@@ -9,7 +9,7 @@ import java.util.List;
 
 public class NodeMapper {
     private final ThreadLocal<MessageDigest> hashAlgorithm;
-    private final Shard[] shards;
+    public final Shard[] shards;
 
     public NodeMapper(List<String> nodeUrls) {
         try {
@@ -26,10 +26,6 @@ public class NodeMapper {
             shards[i] = new Shard(url, nodeHash);
         }
         Arrays.sort(shards);
-    }
-
-    public Shard[] getShards() {
-        return shards;
     }
 
     public int getIndexForKey(byte[] key) {

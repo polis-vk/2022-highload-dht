@@ -74,7 +74,7 @@ public class EntityServiceCoordinator implements EntityService {
 
         byte[][] bodies;
         try {
-            bodies = replicateRequestAndAwait(request, id, localWork);
+            bodies = processRequest(request, id, localWork);
         } catch (NotEnoughReplicasException e) {
             return new Response(NOT_ENOUGH_REPLICAS_RESULT_CODE, Response.EMPTY);
         } catch (ServiceInternalErrorException e) {
@@ -85,6 +85,10 @@ public class EntityServiceCoordinator implements EntityService {
             return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
 
+        return aggregateGetResults(bodies);
+    }
+
+    private Response aggregateGetResults(byte[][] bodies) {
         byte[] latestBody = null;
         long maxTimeMillis = 0;
         for (byte[] body : bodies) {
@@ -122,7 +126,7 @@ public class EntityServiceCoordinator implements EntityService {
         };
 
         try {
-            replicateRequestAndAwait(request, id, localWork);
+            processRequest(request, id, localWork);
             return new Response(Response.CREATED, Response.EMPTY);
         } catch (NotEnoughReplicasException e) {
             return new Response(NOT_ENOUGH_REPLICAS_RESULT_CODE, Response.EMPTY);
@@ -153,7 +157,7 @@ public class EntityServiceCoordinator implements EntityService {
         };
 
         try {
-            replicateRequestAndAwait(request, id, localWork);
+            processRequest(request, id, localWork);
             return new Response(Response.ACCEPTED, Response.EMPTY);
         } catch (NotEnoughReplicasException e) {
             return new Response(NOT_ENOUGH_REPLICAS_RESULT_CODE, Response.EMPTY);
@@ -166,7 +170,7 @@ public class EntityServiceCoordinator implements EntityService {
         }
     }
 
-    private byte[][] replicateRequestAndAwait(
+    private byte[][] processRequest(
         Request request, String id, Supplier<byte[]> localWork
     ) throws ServiceInternalErrorException, NotEnoughReplicasException,
         BadRequestException, ServiceUnavailableException {
@@ -180,6 +184,11 @@ public class EntityServiceCoordinator implements EntityService {
             throw new BadRequestException();
         }
 
+        return replicateRequestAndAwait(request, id, localWork, ack, from);
+    }
+
+    private byte[][] replicateRequestAndAwait(Request request, String id, Supplier<byte[]> localWork, int ack, int from)
+        throws ServiceUnavailableException, NotEnoughReplicasException, ServiceInternalErrorException {
         Set<Integer> successStatusCodes = METHOD_NAME_TO_SUCCESS_STATUS_CODES.get(request.getMethodName());
 
         byte[][] bodies = new byte[from][];
@@ -189,7 +198,7 @@ public class EntityServiceCoordinator implements EntityService {
         boolean needLocalWork = false;
         int localIndex = 0;
 
-        NodeMapper.Shard[] shards = nodeMapper.getShards();
+        NodeMapper.Shard[] shards = nodeMapper.shards;
         int nodeIndex = nodeMapper.getIndexForKey(Utf8.toBytes(id));
         LOG.info("KEY INDEX = {}", nodeIndex);
         for (int replicaIndex = 0; replicaIndex < from; ++replicaIndex) {
@@ -203,7 +212,7 @@ public class EntityServiceCoordinator implements EntityService {
                 boolean taskAdded = nodeTaskManager.tryAddNodeTask(nodeUrlByKey, () -> {
                     try {
                         HttpResponse<byte[]> response = proxyRequest(
-                            request.getMethodName(), request.getBody(), id, nodeUrlByKey
+                            request, id, nodeUrlByKey
                         );
                         if (successStatusCodes.contains(response.statusCode())) {
                             bodies[finalReplicaIndex] = response.body();
@@ -242,7 +251,7 @@ public class EntityServiceCoordinator implements EntityService {
             }
             return bodies;
         } catch (InterruptedException e) {
-            throw new ServiceInternalErrorException();
+            throw new ServiceInternalErrorException(e);
         }
     }
 
@@ -262,16 +271,16 @@ public class EntityServiceCoordinator implements EntityService {
     }
 
     private HttpResponse<byte[]> proxyRequest(
-        String methodName, byte[] requestBody, String idParameter, String nodeUrl
+        Request request, String idParameter, String nodeUrl
     ) throws IOException, InterruptedException {
         return httpClient.send(
             HttpRequest.newBuilder()
                 .uri(URI.create(nodeUrl + TycoonHttpServer.PATH + "?id=" + idParameter))
                 .method(
-                    methodName,
-                    requestBody == null
+                    request.getMethodName(),
+                    request.getBody() == null
                         ? HttpRequest.BodyPublishers.noBody()
-                        : HttpRequest.BodyPublishers.ofByteArray(requestBody))
+                        : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
                 .header(TycoonHttpServer.REQUEST_TO_REPLICA_HEADER, "")
                 .build(),
             HttpResponse.BodyHandlers.ofByteArray()
