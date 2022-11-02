@@ -1,7 +1,6 @@
 package ok.dht.test.siniachenko.service;
 
 import ok.dht.ServiceConfig;
-import ok.dht.test.siniachenko.TycoonHttpServer;
 import ok.dht.test.siniachenko.Utils;
 import ok.dht.test.siniachenko.exception.BadRequestException;
 import ok.dht.test.siniachenko.exception.NotEnoughReplicasException;
@@ -17,26 +16,11 @@ import org.iq80.leveldb.DBException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 public class EntityServiceCoordinator implements EntityService {
     private static final Logger LOG = LoggerFactory.getLogger(EntityServiceCoordinator.class);
-    private static final Map<String, Set<Integer>> METHOD_NAME_TO_SUCCESS_STATUS_CODES = Map.of(
-        "GET", Set.of(HttpURLConnection.HTTP_OK, HttpURLConnection.HTTP_NOT_FOUND),
-        "PUT", Collections.singleton(HttpURLConnection.HTTP_CREATED),
-        "DELETE", Collections.singleton(HttpURLConnection.HTTP_ACCEPTED)
-    );
 
     public static final String NOT_ENOUGH_REPLICAS_RESULT_CODE = "504 Not Enough Replicas";
 
@@ -74,7 +58,7 @@ public class EntityServiceCoordinator implements EntityService {
 
         byte[][] bodies;
         try {
-            bodies = processRequest(request, id, localWork);
+            bodies = replicateRequestAndAwait(request, id, localWork);
         } catch (NotEnoughReplicasException e) {
             return new Response(NOT_ENOUGH_REPLICAS_RESULT_CODE, Response.EMPTY);
         } catch (ServiceInternalErrorException e) {
@@ -126,7 +110,7 @@ public class EntityServiceCoordinator implements EntityService {
         };
 
         try {
-            processRequest(request, id, localWork);
+            replicateRequestAndAwait(request, id, localWork);
             return new Response(Response.CREATED, Response.EMPTY);
         } catch (NotEnoughReplicasException e) {
             return new Response(NOT_ENOUGH_REPLICAS_RESULT_CODE, Response.EMPTY);
@@ -157,7 +141,7 @@ public class EntityServiceCoordinator implements EntityService {
         };
 
         try {
-            processRequest(request, id, localWork);
+            replicateRequestAndAwait(request, id, localWork);
             return new Response(Response.ACCEPTED, Response.EMPTY);
         } catch (NotEnoughReplicasException e) {
             return new Response(NOT_ENOUGH_REPLICAS_RESULT_CODE, Response.EMPTY);
@@ -170,7 +154,7 @@ public class EntityServiceCoordinator implements EntityService {
         }
     }
 
-    private byte[][] processRequest(
+    private byte[][] replicateRequestAndAwait(
         Request request, String id, Supplier<byte[]> localWork
     ) throws ServiceInternalErrorException, NotEnoughReplicasException,
         BadRequestException, ServiceUnavailableException {
@@ -184,75 +168,9 @@ public class EntityServiceCoordinator implements EntityService {
             throw new BadRequestException();
         }
 
-        return replicateRequestAndAwait(request, id, localWork, ack, from);
-    }
-
-    private byte[][] replicateRequestAndAwait(Request request, String id, Supplier<byte[]> localWork, int ack, int from)
-        throws ServiceUnavailableException, NotEnoughReplicasException, ServiceInternalErrorException {
-        Set<Integer> successStatusCodes = METHOD_NAME_TO_SUCCESS_STATUS_CODES.get(request.getMethodName());
-
-        byte[][] bodies = new byte[from][];
-        CountDownLatch countDownLatch = new CountDownLatch(from);
-        AtomicInteger successCount = new AtomicInteger();
-
-        boolean needLocalWork = false;
-        int localIndex = 0;
-
-        NodeMapper.Shard[] shards = nodeMapper.shards;
-        int nodeIndex = nodeMapper.getIndexForKey(Utf8.toBytes(id));
-        LOG.info("KEY INDEX = {}", nodeIndex);
-        for (int replicaIndex = 0; replicaIndex < from; ++replicaIndex) {
-            NodeMapper.Shard shard = shards[(nodeIndex + replicaIndex) % shards.length];
-            String nodeUrlByKey = shard.getUrl();
-            if (config.selfUrl().equals(nodeUrlByKey)) {
-                needLocalWork = true;
-                localIndex = replicaIndex;
-            } else {
-                int finalReplicaIndex = replicaIndex;
-                boolean taskAdded = nodeTaskManager.tryAddNodeTask(nodeUrlByKey, () -> {
-                    try {
-                        HttpResponse<byte[]> response = proxyRequest(
-                            request, id, nodeUrlByKey
-                        );
-                        if (successStatusCodes.contains(response.statusCode())) {
-                            bodies[finalReplicaIndex] = response.body();
-                            successCount.incrementAndGet();
-                        } else {
-                            LOG.error(
-                                "Unexpected status code {} after proxy request to {}",
-                                response.statusCode(),
-                                nodeUrlByKey
-                            );
-                        }
-                    } catch (IOException | InterruptedException e) {
-                        LOG.error("Error after proxy request to {}", nodeUrlByKey, e);
-                    } finally {
-                        countDownLatch.countDown();
-                    }
-                });
-                if (!taskAdded) {
-                    throw new ServiceUnavailableException();
-                }
-            }
-        }
-        if (needLocalWork) {
-            try {
-                bodies[localIndex] = localWork.get();
-                successCount.incrementAndGet();
-            } finally {
-                countDownLatch.countDown();
-            }
-        }
-
-        try {
-            countDownLatch.await();
-            if (successCount.get() < ack) {
-                throw new NotEnoughReplicasException();
-            }
-            return bodies;
-        } catch (InterruptedException e) {
-            throw new ServiceInternalErrorException(e);
-        }
+        return new ReplicatedRequestExecutor(request, id, localWork, ack, from).execute(
+            config.selfUrl(), nodeMapper, nodeTaskManager, httpClient
+        );
     }
 
     private static int getIntParameter(Request request, String parameter, int defaultValue) {
@@ -268,22 +186,5 @@ public class EntityServiceCoordinator implements EntityService {
             }
         }
         return value;
-    }
-
-    private HttpResponse<byte[]> proxyRequest(
-        Request request, String idParameter, String nodeUrl
-    ) throws IOException, InterruptedException {
-        return httpClient.send(
-            HttpRequest.newBuilder()
-                .uri(URI.create(nodeUrl + TycoonHttpServer.PATH + "?id=" + idParameter))
-                .method(
-                    request.getMethodName(),
-                    request.getBody() == null
-                        ? HttpRequest.BodyPublishers.noBody()
-                        : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                .header(TycoonHttpServer.REQUEST_TO_REPLICA_HEADER, "")
-                .build(),
-            HttpResponse.BodyHandlers.ofByteArray()
-        );
     }
 }
