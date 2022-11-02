@@ -1,50 +1,36 @@
 package ok.dht.test.vihnin;
 
 import ok.dht.ServiceConfig;
-import one.nio.http.HttpClient;
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.net.ConnectionString;
 import one.nio.net.Session;
-import one.nio.pool.Pool;
 import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.URI;
+import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.time.Duration;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 
-import static ok.dht.test.vihnin.ServiceUtils.createConfigFromPort;
-import static ok.dht.test.vihnin.ServiceUtils.distributeVNodes;
 import static ok.dht.test.vihnin.ServiceUtils.emptyResponse;
-import static ok.dht.test.vihnin.ServiceUtils.getHeaderValue;
+import static ok.dht.test.vihnin.ServiceUtils.handleSingleAcknowledgment;
 
 public class ParallelHttpServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(ParallelHttpServer.class);
-    private static final String INNER_HEADER_NAME = "Inner";
-    private static final String INNER_HEADER_VALUE = "True";
+    static final String INNER_HEADER_NAME = "Inner";
+    static final String INNER_HEADER_VALUE = "True";
 
     public static final String TIME_HEADER_NAME = "Timestamp";
     private static final int WORKERS_NUMBER = 8;
@@ -59,9 +45,7 @@ public class ParallelHttpServer extends HttpServer {
 
     private final ResponseManager responseManager;
 
-    private final ThreadLocal<Map<String, HttpClient>> clients;
-
-    private final ThreadLocal<Map<String, java.net.http.HttpClient>> javaClients;
+    private final ThreadLocal<Map<String, HttpClient>> javaClients;
 
     private final ExecutorService executorService = new ThreadPoolExecutor(
             WORKERS_NUMBER,
@@ -83,7 +67,7 @@ public class ParallelHttpServer extends HttpServer {
             ServiceConfig config,
             ResponseManager responseManager,
             Object... routers) throws IOException {
-        super(createConfigFromPort(config.selfPort()), routers);
+        super(ServiceUtils.createConfigFromPort(config.selfPort()), routers);
         this.responseManager = responseManager;
 
         addRequestHandlers(this.responseManager);
@@ -91,20 +75,12 @@ public class ParallelHttpServer extends HttpServer {
         this.clusterManager = new ClusterManager(config.clusterUrls());
         this.shard = clusterManager.getShardByUrl(config.selfUrl());
 
-        distributeVNodes(shardHelper, clusterManager.clusterSize());
-
-        this.clients = ThreadLocal.withInitial(() -> {
-            Map<String, HttpClient> baseMap = new HashMap<>();
-            for (String url : config.clusterUrls()) {
-                baseMap.put(url, new HttpClient(new ConnectionString(url)));
-            }
-            return baseMap;
-        });
+        ServiceUtils.distributeVNodes(shardHelper, clusterManager.clusterSize());
 
         this.javaClients = ThreadLocal.withInitial(() -> {
-            Map<String, java.net.http.HttpClient> baseMap = new HashMap<>();
+            Map<String, HttpClient> baseMap = new HashMap<>();
             for (String url : config.clusterUrls()) {
-                baseMap.put(url, java.net.http.HttpClient.newBuilder().executor(executorService).build());
+                baseMap.put(url, HttpClient.newBuilder().executor(executorService).build());
             }
             return baseMap;
         });
@@ -153,12 +129,12 @@ public class ParallelHttpServer extends HttpServer {
         }
 
         int destinationShardId = getShardId(id);
-        String innerHeaderValue = getHeaderValue(request, INNER_HEADER_NAME);
+        String innerHeaderValue = ServiceUtils.getHeaderValue(request, INNER_HEADER_NAME);
 
         try {
             if (innerHeaderValue == null) {
                 internalRequestService.submit(() -> {
-                    requestTask2(request, session, destinationShardId, ack, from);
+                    requestTask(request, session, destinationShardId, ack, from);
                 });
             } else {
                 executorService.submit(() -> {
@@ -186,185 +162,18 @@ public class ParallelHttpServer extends HttpServer {
                 || method == Request.METHOD_PUT;
     }
 
-    private Response handleAckRequest(Request request, String destinationUrl) {
+    private void handleAckRequest(Request request, String destinationUrl, ResponseAccumulator responseAccumulator) {
         try {
-            Request req = new Request(
-                    request.getMethod(),
-                    request.getURI(),
-                    true
-            );
-
-            req.setBody(request.getBody());
-            Arrays.stream(request.getHeaders())
-                    .filter(Objects::nonNull)
-                    .forEach(req::addHeader);
-
-            req.addHeader(INNER_HEADER_NAME + ": " + INNER_HEADER_VALUE);
-
-            return clients.get().get(destinationUrl).invoke(req);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static class ResponseAccumulator {
-        private final HttpSession session;
-        private int method;
-        private int ack;
-        private int from;
-
-        private final AtomicInteger acknowledged;
-        private final AtomicInteger answered;
-        private final AtomicReference<Data> bestData;
-
-        private final AtomicBoolean send;
-
-
-        public ResponseAccumulator(HttpSession session, int method, int ack, int from) {
-            this.session = session;
-            this.method = method;
-            this.ack = ack;
-            this.from = from;
-            this.acknowledged = new AtomicInteger(0);
-            this.answered = new AtomicInteger(0);
-            this.bestData = new AtomicReference<>(new Data(-1, -1, null));
-            this.send = new AtomicBoolean(false);
-        }
-
-        public void acknowledgeMissed() {
-            answer(acknowledged.get());
-        }
-
-        public void acknowledgeFailed() {
-            acknowledge(false, null, null, null);
-        }
-
-        public void acknowledgeSucceed(Long time, Integer status, byte[] data) {
-            acknowledge(true, time, status, data);
-        }
-
-        private void acknowledge(boolean success, Long time, Integer status, byte[] data) {
-            if (success) {
-                Data newData = new Data(status, time, data);
-                while (bestData.get().time < time) {
-                    Data curData = bestData.get();
-                    if (bestData.compareAndSet(curData, newData)) {
-                        break;
-                    }
-                }
-            }
-
-            int curAck = acknowledged.incrementAndGet();
-
-            answer(curAck);
-        }
-
-        private void answer(int curAck) {
-            int curAnswered = answered.incrementAndGet();
-
-            if ((curAck >= ack || curAnswered == from)
-                    && send.compareAndSet(false, true)) {
-
-                Data curData = this.bestData.get();
-                processAcknowledgment(
-                        this.method,
-                        this.session,
-                        acknowledged.get() >= this.ack,
-                        curData.status,
-                        curData.bytes
-                );
-            }
-        }
-
-        private static class Data {
-            int status;
-            long time;
-            byte[] bytes;
-
-            public Data(int status, long time, byte[] bytes) {
-                this.status = status;
-                this.time = time;
-                this.bytes = bytes;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) return true;
-                if (o == null || getClass() != o.getClass()) return false;
-                Data data = (Data) o;
-                return status == data.status && time == data.time;
-            }
-
-            @Override
-            public int hashCode() {
-                return Objects.hash(status, time);
-            }
-        }
-
-    }
-
-    private void handleAckRequest2(Request request, String destinationUrl, ResponseAccumulator responseAccumulator) {
-        try {
-
-            var builder = HttpRequest.newBuilder()
-                    .uri(new URI(destinationUrl + request.getURI()))
-                    .method(request.getMethodName(),
-                            request.getBody() == null
-                                    ? HttpRequest.BodyPublishers.noBody()
-                                    : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                    .header(INNER_HEADER_NAME, INNER_HEADER_VALUE)
-                    .timeout(Duration.ofMillis(1200));
-
-
-            Arrays.stream(request.getHeaders())
-                    .filter(Objects::nonNull)
-                    .map(s -> {
-                        int index = s.indexOf(':');
-                        return List.of(
-                                s.substring(0, index),
-                                s.substring(index + 1).strip()
-                        );
-                    })
-                    .forEach(ls -> {
-                        try {
-                            builder.setHeader(ls.get(0), ls.get(1));
-                        } catch (Exception ignore) {
-
-                        }
-                    });
+            HttpRequest javaRequest = ServiceUtils.createJavaRequest(request, destinationUrl);
 
             javaClients.get().get(destinationUrl)
-                    .sendAsync(
-                            builder.build(),
-                            HttpResponse.BodyHandlers.ofByteArray()
-                    )
-                    .handleAsync(
-                            (httpResponse, throwable) -> {
-                                if (throwable != null) {
-                                    responseAccumulator.acknowledgeMissed();
-                                    return null;
-                                } else {
-                                    if (httpResponse != null) {
-                                        Optional<String> time = httpResponse.headers()
-                                                .firstValue(TIME_HEADER_NAME);
-                                        if (time.isPresent()) {
-                                            responseAccumulator.acknowledgeSucceed(
-                                                    Long.parseLong(time.get()),
-                                                    httpResponse.statusCode(),
-                                                    httpResponse.body()
-                                            );
-                                        } else {
-                                            responseAccumulator.acknowledgeFailed();
-                                        }
-                                    } else {
-                                        responseAccumulator.acknowledgeFailed();
-                                    }
-                                    return httpResponse;
-
-                                }
-                            }
+                    .sendAsync(javaRequest, HttpResponse.BodyHandlers.ofByteArray())
+                    .handleAsync((httpResponse, throwable) ->
+                            handleSingleAcknowledgment(responseAccumulator, httpResponse, throwable)
                     );
-        } catch (Exception ignored) {
+
+        } catch (Exception e) {
+            logger.error(e.getMessage());
             responseAccumulator.acknowledgeMissed();
         }
     }
@@ -376,61 +185,32 @@ public class ParallelHttpServer extends HttpServer {
     private void requestTask(Request request, HttpSession session, int destinationShardId, int ack, int from) {
         long currentTime = System.currentTimeMillis();
         request.addHeader(TIME_HEADER_NAME + ": " + currentTime);
-
-        long freshestTime = -1;
-        int freshestStatus = -1;
-        byte[] freshestData = null;
-
-        int actualAck = 0;
-
-        for (var neighbor : clusterManager.getNeighbours(destinationShardId).subList(0, from)) {
-            Response handleSuccess = neighbor.equals(clusterManager.getUrlByShard(shard))
-                    ? responseManager.handleRequest(request)
-                    : handleAckRequest(request, neighbor);
-            if (handleSuccess != null) {
-                String value = getHeaderValue(handleSuccess, TIME_HEADER_NAME);
-                if (value != null) {
-                    long currTime = Long.parseLong(value);
-
-                    if (currTime >= freshestTime) {
-                        freshestData = handleSuccess.getBody();
-                        freshestStatus = handleSuccess.getStatus();
-                        freshestTime = currTime;
-                    }
-                }
-                actualAck += 1;
-            }
-        }
-
-        processAcknowledgment(request.getMethod(), session, ack <= actualAck, freshestStatus, freshestData);
-    }
-
-    private void requestTask2(Request request, HttpSession session, int destinationShardId, int ack, int from) {
-        long currentTime = System.currentTimeMillis();
-        request.addHeader(TIME_HEADER_NAME + ": " + currentTime);
         ResponseAccumulator responseAccumulator = new ResponseAccumulator(session, request.getMethod(), ack, from);
 
         for (var neighbor : clusterManager.getNeighbours(destinationShardId).subList(0, from)) {
             if (neighbor.equals(clusterManager.getUrlByShard(shard))) {
                 Response handleSuccess = responseManager.handleRequest(request);
-                if (handleSuccess != null) {
-                    String value = getHeaderValue(handleSuccess, TIME_HEADER_NAME);
-                    if (value != null) {
-                        long currTime = Long.parseLong(value);
-                        responseAccumulator.acknowledgeSucceed(currTime, handleSuccess.getStatus(), handleSuccess.getBody());
-                    } else {
-                        responseAccumulator.acknowledgeFailed();
-                    }
-                } else {
+                if (handleSuccess == null) {
                     responseAccumulator.acknowledgeFailed();
+                } else {
+                    String value = ServiceUtils.getHeaderValue(handleSuccess, TIME_HEADER_NAME);
+                    if (value == null) {
+                        responseAccumulator.acknowledgeFailed();
+                    } else {
+                        long currTime = Long.parseLong(value);
+                        responseAccumulator.acknowledgeSucceed(
+                                currTime,
+                                handleSuccess.getStatus(),
+                                handleSuccess.getBody());
+                    }
                 }
             } else {
-                handleAckRequest2(request, neighbor, responseAccumulator);
+                handleAckRequest(request, neighbor, responseAccumulator);
             }
         }
     }
 
-    private static void processAcknowledgment(
+    static void processAcknowledgment(
             int method,
             HttpSession session,
             boolean reachAckNumber,
@@ -485,8 +265,6 @@ public class ParallelHttpServer extends HttpServer {
     public synchronized void stop() {
         executorService.shutdown();
         internalRequestService.shutdown();
-
-        clients.get().values().forEach(Pool::close);
 
         for (SelectorThread selectorThread : selectors) {
             for (Session session : selectorThread.selector) {
