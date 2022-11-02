@@ -16,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -34,21 +35,16 @@ public class TycoonService implements ok.dht.Service {
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
     public static final String PATH = "/v0/entity";
     public static final int THREAD_POOL_QUEUE_CAPACITY = 128;
-    public static final int DEFAULT_TIMEOUT_MILLIS = 1000;
-    public static final int MIN_TIMEOUT_MILLIS = 300;
-    public static final int MAX_TIMEOUT_MILLIS = 2000;
     private final ServiceConfig config;
     private final NodeMapper nodeMapper;
     private DB levelDb;
     private TycoonHttpServer server;
     private ExecutorService executorService;
     private HttpClient httpClient;
-    private ConcurrentMap<String, Integer> nodeRequestsTimeouts;
 
     public TycoonService(ServiceConfig config) {
         this.config = config;
         this.nodeMapper = new NodeMapper(config.clusterUrls());
-        this.nodeRequestsTimeouts = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -112,38 +108,36 @@ public class TycoonService implements ok.dht.Service {
     }
 
     private void proxyRequest(HttpSession session, Request request, String idParameter, String nodeUrl) {
-        Integer timeout = nodeRequestsTimeouts.computeIfAbsent(nodeUrl, s -> DEFAULT_TIMEOUT_MILLIS);
-        httpClient.sendAsync(
-            HttpRequest.newBuilder()
-                .uri(URI.create(nodeUrl + PATH + "?id=" + idParameter))
-                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                .build(),
-            HttpResponse.BodyHandlers.ofByteArray()
-        ).thenAccept(response -> {
-            String statusCode;
-            if (response.statusCode() == 404) {
-                statusCode = Response.NOT_FOUND;
-            } else if (response.statusCode() == 200) {
-                statusCode = Response.OK;
-            } else if (response.statusCode() == 201) {
-                statusCode = Response.CREATED;
-            } else if (response.statusCode() == 202) {
-                statusCode = Response.ACCEPTED;
-            } else {
-                LOG.error("Unexpected status {} code requesting node {}", response.statusCode(), nodeUrl);
-                statusCode = Response.INTERNAL_ERROR;
-            }
-            Response proxyResponse = new Response(statusCode, response.body());
-            sendResponse(session, proxyResponse);
-            nodeRequestsTimeouts.compute(nodeUrl, (url, t) -> Math.max(t * 2, MIN_TIMEOUT_MILLIS));
-        }).orTimeout(timeout, TimeUnit.MILLISECONDS)
-        .exceptionally(ex -> {
-            nodeRequestsTimeouts.compute(nodeUrl, (url, t) -> Math.min(t / 2, MAX_TIMEOUT_MILLIS));
-            LOG.error("Error after proxy request to {}", nodeUrl, ex);
+        HttpResponse<byte[]> response;
+        try {
+            response = httpClient.send(
+                HttpRequest.newBuilder()
+                    .uri(URI.create(nodeUrl + PATH + "?id=" + idParameter))
+                    .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                    .build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+            );
+        } catch (IOException | InterruptedException e) {
+            LOG.error("Error after proxy request to {}", nodeUrl, e);
             Response proxyResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             sendResponse(session, proxyResponse);
-            return null;
-        });
+            return;
+        }
+        String statusCode;
+        if (response.statusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+            statusCode = Response.NOT_FOUND;
+        } else if (response.statusCode() == HttpURLConnection.HTTP_OK) {
+            statusCode = Response.OK;
+        } else if (response.statusCode() == HttpURLConnection.HTTP_CREATED) {
+            statusCode = Response.CREATED;
+        } else if (response.statusCode() == HttpURLConnection.HTTP_ACCEPTED) {
+            statusCode = Response.ACCEPTED;
+        } else {
+            LOG.error("Unexpected status {} code requesting node {}", response.statusCode(), nodeUrl);
+            statusCode = Response.INTERNAL_ERROR;
+        }
+        Response proxyResponse = new Response(statusCode, response.body());
+        sendResponse(session, proxyResponse);
     }
 
     private void executeLocal(HttpSession session, Request request, String id) {
