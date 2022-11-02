@@ -2,6 +2,7 @@ package ok.dht.test.garanin.db;
 
 import javax.annotation.Nonnull;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 public class Value {
     private final long timestamp;
@@ -9,7 +10,7 @@ public class Value {
     private final byte[] data;
 
     private Value(@Nonnull byte[] data, long timestamp, boolean tombstone) {
-        this.data = data;
+        this.data = Arrays.copyOf(data, data.length);
         this.timestamp = timestamp;
         this.tombstone = tombstone;
     }
@@ -52,7 +53,7 @@ public class Value {
     }
 
     public byte[] data() {
-        return data;
+        return Arrays.copyOf(data, data.length);
     }
 
     public long timestamp() {
