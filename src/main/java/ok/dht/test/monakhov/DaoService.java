@@ -21,13 +21,21 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.sql.Timestamp;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
-import static ok.dht.test.monakhov.utils.ServiceUtils.*;
+import static ok.dht.test.monakhov.utils.ServiceUtils.QUEUE_SIZE;
+import static ok.dht.test.monakhov.utils.ServiceUtils.TIMESTAMP_HEADER;
+import static ok.dht.test.monakhov.utils.ServiceUtils.createConfigFromPort;
+import static ok.dht.test.monakhov.utils.ServiceUtils.isInvalidReplica;
+import static ok.dht.test.monakhov.utils.ServiceUtils.responseBadRequest;
+import static ok.dht.test.monakhov.utils.ServiceUtils.responseMethodNotAllowed;
 
 public class DaoService implements Service {
     private static final Log log = LogFactory.getLog(DaoService.class);
 
-    private static final int CONNECTION_POOL_WORKERS = 32;
+    private static final int CONNECTION_POOL_WORKERS = 8;
     private final ServiceConfig serviceConfig;
     private final NodesRouter nodesRouter;
     private DaoRepository dao;
@@ -45,10 +53,10 @@ public class DaoService implements Service {
         server = new AsyncHttpServer(createConfigFromPort(serviceConfig));
         dao = new DaoRepository(serviceConfig.workingDir().toString());
 
-        // client = HttpClient.newBuilder().executor(new ThreadPoolExecutor(CONNECTION_POOL_WORKERS, CONNECTION_POOL_WORKERS,
-        //     0L, TimeUnit.MILLISECONDS,
-        //     new LinkedBlockingQueue<>(QUEUE_SIZE)
-        // )).build();
+        client = HttpClient.newBuilder().executor(new ThreadPoolExecutor(CONNECTION_POOL_WORKERS, CONNECTION_POOL_WORKERS,
+            0L, TimeUnit.MILLISECONDS,
+            new LinkedBlockingQueue<>(QUEUE_SIZE)
+        )).build();
 
         server.addRequestHandlers(this);
         server.start();
@@ -72,7 +80,8 @@ public class DaoService implements Service {
     public void manageRequest(
         @Param(value = "id") String id, @Param(value = "from") String fromParam,
         @Param(value = "ack") String ackParam, Request request, HttpSession session
-    ) {
+    )
+    {
         try {
             if (id == null || id.isBlank() || isInvalidReplica(ackParam, fromParam)) {
                 session.sendResponse(responseBadRequest());
@@ -109,7 +118,9 @@ public class DaoService implements Service {
                 ));
 
                 String[] nodeUrls = nodesRouter.getNodeUrls(id, from);
-                multicast(request, session, id, nodeUrls, ack, from);
+                ReplicationHandler handler =
+                    new ReplicationHandler(request, session, ack, from, serviceConfig.selfUrl(), id);
+                multicast(request, id, nodeUrls, handler);
                 return;
             }
 
@@ -123,11 +134,9 @@ public class DaoService implements Service {
         }
     }
 
-    private void multicast(Request request, HttpSession session, String id, String[] nodeUrls, int ack, int from) {
+    private void multicast(Request request, String id, String[] nodeUrls, ReplicationHandler handler) {
         Timestamp timestamp = new Timestamp(System.currentTimeMillis());
         String selfUrl = serviceConfig.selfUrl();
-
-        ReplicationHandler handler = new ReplicationHandler(request, session, ack, from, selfUrl, id);
 
         String stringTimestamp = timestamp.toString();
         byte[] body = request.getBody();
