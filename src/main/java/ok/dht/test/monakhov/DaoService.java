@@ -25,17 +25,12 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import static ok.dht.test.monakhov.utils.ServiceUtils.QUEUE_SIZE;
-import static ok.dht.test.monakhov.utils.ServiceUtils.TIMESTAMP_HEADER;
-import static ok.dht.test.monakhov.utils.ServiceUtils.createConfigFromPort;
-import static ok.dht.test.monakhov.utils.ServiceUtils.isInvalidReplica;
-import static ok.dht.test.monakhov.utils.ServiceUtils.responseBadRequest;
-import static ok.dht.test.monakhov.utils.ServiceUtils.responseMethodNotAllowed;
+import static ok.dht.test.monakhov.utils.ServiceUtils.*;
 
 public class DaoService implements Service {
     private static final Log log = LogFactory.getLog(DaoService.class);
 
-    private static final int CONNECTION_POOL_WORKERS = 8;
+    private static final int CONNECTION_POOL_WORKERS = 32;
     private final ServiceConfig serviceConfig;
     private final NodesRouter nodesRouter;
     private DaoRepository dao;
@@ -45,17 +40,15 @@ public class DaoService implements Service {
     public DaoService(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
         nodesRouter = new JumpingNodesRouter(serviceConfig.clusterUrls());
-        // client = HttpClient.newBuilder().build();
-        client = HttpClient.newBuilder().executor(new ThreadPoolExecutor(CONNECTION_POOL_WORKERS, CONNECTION_POOL_WORKERS,
-            0L, TimeUnit.MILLISECONDS,
-            new LinkedBlockingQueue<>(QUEUE_SIZE)
-        )).build();
     }
 
     @Override
     public CompletableFuture<?> start() throws IOException {
         server = new AsyncHttpServer(createConfigFromPort(serviceConfig));
         dao = new DaoRepository(serviceConfig.workingDir().toString());
+        client = HttpClient.newBuilder().executor(new ThreadPoolExecutor(CONNECTION_POOL_WORKERS,
+            CONNECTION_POOL_WORKERS, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(QUEUE_SIZE)
+        )).build();
 
         server.addRequestHandlers(this);
         server.start();
@@ -64,13 +57,14 @@ public class DaoService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        if (server == null || dao == null) {
+        if (server == null || dao == null || client == null) {
             return CompletableFuture.completedFuture(null);
         }
         server.stop();
         dao.close();
 
         server = null;
+        client = null;
         dao = null;
         return CompletableFuture.completedFuture(null);
     }
@@ -87,8 +81,8 @@ public class DaoService implements Service {
             }
 
             if (request.getMethod() != Request.METHOD_GET && request.getMethod() != Request.METHOD_DELETE
-                && request.getMethod() != Request.METHOD_PUT)
-            {
+                && request.getMethod() != Request.METHOD_PUT) {
+
                 session.sendResponse(responseMethodNotAllowed());
                 return;
             }
