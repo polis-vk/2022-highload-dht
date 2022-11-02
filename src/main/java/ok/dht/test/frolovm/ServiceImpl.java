@@ -116,7 +116,7 @@ public class ServiceImpl implements Service {
                 replicationManager.handle(id, request, session, ackNum, from);
             }
             default -> {
-                LOGGER.info("Method is not allowed: " + request.getMethod());
+                LOGGER.error("Method is not allowed: " + request.getMethod());
                 Utils.sendResponse(session, new Response(Response.METHOD_NOT_ALLOWED, Utf8.toBytes(Utils.NO_SUCH_METHOD)));
             }
         }

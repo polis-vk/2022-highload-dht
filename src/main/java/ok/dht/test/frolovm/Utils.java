@@ -3,7 +3,6 @@ package ok.dht.test.frolovm;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.net.Session;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -143,7 +142,7 @@ public final class Utils {
         buffer.putLong(timestamp);
         byte[] resultTime = buffer.array();
 
-        byte[] newArray = new byte[(data != null ? data.length : 0) + resultTime.length + 1];
+        byte[] newArray = new byte[(data == null ? 0 : data.length) + resultTime.length + 1];
         System.arraycopy(resultTime, 0, newArray, 0, resultTime.length);
         if (data == null) {
             newArray[resultTime.length] = 1;

@@ -81,21 +81,24 @@ public class ReplicationManager {
         for (int i = 0; i < from; ++i) {
             Shard shard = algorithm.getShardByIndex(shardIndex);
 
-            handleFinder(id, request, timestamp, shard).thenAcceptAsync(
+            handleFinder(id, request, timestamp, shard).thenAccept(
                     response -> {
                         addSuccessResponse(collectedResponses, response);
                         countReq.incrementAndGet();
                     }
-            ).whenCompleteAsync(
+            ).whenComplete(
                     (resp, exception) -> {
                         boolean isAcks = collectedResponses.size() >= ack;
                         if ((from == countReq.get() || isAcks)) {
                             if (!isAcks) {
-                                Utils.sendResponse(session, new Response(Response.GATEWAY_TIMEOUT, Utils.stringToByte(NOT_ENOUGH_REPLICAS)));
-                            } else {
-                                if (countReq.compareAndSet(from, from + 1)) {
-                                    Utils.sendResponse(session, generateResult(collectedResponses, request.getMethod()));
-                                }
+                                Utils.sendResponse(
+                                        session,
+                                        new Response(Response.GATEWAY_TIMEOUT, Utils.stringToByte(NOT_ENOUGH_REPLICAS))
+                                );
+                                return;
+                            }
+                            if (countReq.compareAndSet(from, from + 1)) {
+                                Utils.sendResponse(session, generateResult(collectedResponses, request.getMethod()));
                             }
                         }
                     }
@@ -106,14 +109,13 @@ public class ReplicationManager {
     }
 
     private CompletableFuture<Response> handleFinder(String id, Request request, long timestamp, Shard shard) {
-        LOGGER.debug("Handle request {} on node {}", id, shard.getName());
+//        LOGGER.debug("Handle request {} on node {}", id, shard.getName());
         if (shard.getName().equals(selfUrl)) {
             return CompletableFuture.completedFuture(requestExecutor.entityHandlerSelf(id, request, timestamp));
         } else {
             return getResponseFromAnotherNode(request, shard);
         }
     }
-
 
     private void addSuccessResponse(List<Response> collectedResponses, Response response) {
         if (isSuccessful(response)) {
@@ -169,7 +171,7 @@ public class ReplicationManager {
         byte[] body = request.getBody() == null ? Response.EMPTY : request.getBody();
         HttpRequest.Builder requestBuilder = getBuilder(request, shard.getName() + request.getURI(), body);
         return client.sendAsync(requestBuilder.build(),
-                HttpResponse.BodyHandlers.ofByteArray()).thenApplyAsync(response -> {
+                HttpResponse.BodyHandlers.ofByteArray()).thenApply(response -> {
                     if (Utils.isServerError(response.statusCode())) {
                         circuitBreaker.incrementFail(shard.getName());
                     } else {

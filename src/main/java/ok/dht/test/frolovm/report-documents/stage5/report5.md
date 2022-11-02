@@ -164,3 +164,4 @@ Transfer/sec:    386.05KB
 
 После этого я посмотрел лекцию [Сергея Куксенко](https://www.youtube.com/watch?v=W7iK74YA5NM) и решил для асинхронного 
 клиента использовать Completable Future.
+
