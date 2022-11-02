@@ -2,7 +2,7 @@ package ok.dht.test.siniachenko.service;
 
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.siniachenko.NodeTaskManager;
+import ok.dht.test.siniachenko.nodetaskmanager.NodeTaskManager;
 import ok.dht.test.siniachenko.TycoonHttpServer;
 import ok.dht.test.siniachenko.rendezvoushashing.NodeMapper;
 import one.nio.http.HttpSession;

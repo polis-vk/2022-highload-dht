@@ -1,4 +1,4 @@
-package ok.dht.test.siniachenko;
+package ok.dht.test.siniachenko.nodetaskmanager;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
