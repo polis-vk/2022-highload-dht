@@ -29,7 +29,6 @@ public class ReplicationManager {
     private final CircuitBreaker circuitBreaker;
     private final HttpClient client;
 
-
     public ReplicationManager(
             ShardingAlgorithm algorithm,
             String selfUrl,
