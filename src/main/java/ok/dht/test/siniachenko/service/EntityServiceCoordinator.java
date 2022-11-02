@@ -6,7 +6,7 @@ import ok.dht.test.siniachenko.Utils;
 import ok.dht.test.siniachenko.exception.BadRequestException;
 import ok.dht.test.siniachenko.exception.NotEnoughReplicasException;
 import ok.dht.test.siniachenko.exception.ServiceInternalErrorException;
-import ok.dht.test.siniachenko.rendezvoushashing.NodeMapper;
+import ok.dht.test.siniachenko.nodemapper.NodeMapper;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.util.Utf8;
@@ -186,11 +186,12 @@ public class EntityServiceCoordinator implements EntityService {
         boolean needLocalWork = false;
         int localIndex = 0;
 
-        long[] nodeUrls = nodeMapper.getNodeUrlsByKey(Utf8.toBytes(id));
+        NodeMapper.Shard[] shards = nodeMapper.getShards();
+        int nodeIndex = nodeMapper.getIndexForKey(Utf8.toBytes(id));
+        LOG.info("KEY INDEX = {}", nodeIndex);
         for (int replicaIndex = 0; replicaIndex < from; ++replicaIndex) {
-            String nodeUrlByKey = nodeMapper.getNodeUrls().get(
-                (int) nodeUrls[replicaIndex]
-            );
+            NodeMapper.Shard shard = shards[(nodeIndex + replicaIndex) % shards.length];
+            String nodeUrlByKey = shard.getUrl();
             if (config.selfUrl().equals(nodeUrlByKey)) {
                 needLocalWork = true;
                 localIndex = replicaIndex;
