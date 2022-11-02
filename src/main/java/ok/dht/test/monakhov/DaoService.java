@@ -45,18 +45,17 @@ public class DaoService implements Service {
     public DaoService(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
         nodesRouter = new JumpingNodesRouter(serviceConfig.clusterUrls());
-        client = HttpClient.newBuilder().build();
+        // client = HttpClient.newBuilder().build();
+        client = HttpClient.newBuilder().executor(new ThreadPoolExecutor(CONNECTION_POOL_WORKERS, CONNECTION_POOL_WORKERS,
+            0L, TimeUnit.MILLISECONDS,
+            new LinkedBlockingQueue<>(QUEUE_SIZE)
+        )).build();
     }
 
     @Override
     public CompletableFuture<?> start() throws IOException {
         server = new AsyncHttpServer(createConfigFromPort(serviceConfig));
         dao = new DaoRepository(serviceConfig.workingDir().toString());
-
-        client = HttpClient.newBuilder().executor(new ThreadPoolExecutor(CONNECTION_POOL_WORKERS, CONNECTION_POOL_WORKERS,
-            0L, TimeUnit.MILLISECONDS,
-            new LinkedBlockingQueue<>(QUEUE_SIZE)
-        )).build();
 
         server.addRequestHandlers(this);
         server.start();
