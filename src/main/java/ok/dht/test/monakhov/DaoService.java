@@ -94,7 +94,7 @@ public class DaoService implements Service {
             }
 
             int clusterSize = serviceConfig.clusterUrls().size();
-            int ack = clusterSize;
+            int ack = (clusterSize + 1) / 2;
             int from = clusterSize;
 
             if (ackParam != null) {
