@@ -31,8 +31,8 @@ public class TimeStampingDao {
         return TimeStampedValue.fromBytes(entry.value().toByteArray());
     }
 
-    public void upsertTimeStamped(String key, @Nullable byte[] value) {
-        TimeStampedValue timeStampedValue = new TimeStampedValue(value, System.currentTimeMillis());
+    public void upsert(String key, @Nullable byte[] value, long time) {
+        TimeStampedValue timeStampedValue = new TimeStampedValue(value, time);
         MemorySegment memorySegmentValue = MemorySegment.ofArray(timeStampedValue.wholeToBytes());
         dao.upsert(new BaseEntry<>(memSegmentOfString(key), memorySegmentValue));
     }

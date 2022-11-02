@@ -53,9 +53,10 @@ public class RandevouzHashingRouter {
         return priorityQueue;
     }
 
-    private static HttpRequest innerHttpRequestOf(String key, String targetUrl, Request request) {
+    private static HttpRequest innerHttpRequestOf(String key, String targetUrl, Request request, long time) {
         HttpRequest.Builder requestBuilder = HttpRequest
-                .newBuilder(URI.create(targetUrl + "/v0/entity?id=" + key + "&inner=true"));
+                .newBuilder(URI.create(targetUrl + "/v0/entity?id=" + key));
+        requestBuilder.header(ServiceImpl.COORDINATOR_TIMESTAMP_HEADER, String.valueOf(time));
         switch (request.getMethod()) {
             case Request.METHOD_GET -> requestBuilder.GET();
             case Request.METHOD_PUT -> requestBuilder.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
@@ -74,14 +75,14 @@ public class RandevouzHashingRouter {
             this.url = url;
         }
 
-        public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(Request request, String key) {
+        public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(Request request, String key, long time) {
             if (isIll) {
                 managePossibleRecovery();
                 if (isIll) {
                     return CompletableFuture.failedFuture(new ConnectException("Node is ill"));
                 }
             }
-            HttpRequest httpRequest = innerHttpRequestOf(key, url, request);
+            HttpRequest httpRequest = innerHttpRequestOf(key, url, request, time);
             return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
         }
 

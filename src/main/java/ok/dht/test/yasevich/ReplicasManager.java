@@ -28,7 +28,7 @@ public class ReplicasManager {
         this.selfUrl = selfUrl;
     }
 
-    void handleReplicatingRequest(HttpSession session, Request request, String key, int ack, int from) {
+    void handleReplicatingRequest(HttpSession session, Request request, String key, long time, int ack, int from) {
         Queue<RandevouzHashingRouter.Node> responsibleNodes = shardingRouter.responsibleNodes(key, from);
         if (responsibleNodes.isEmpty()) {
             ServiceImpl.LOGGER.error("There is no nodes for handling request");
@@ -37,17 +37,17 @@ public class ReplicasManager {
         }
         switch (request.getMethod()) {
             case Request.METHOD_PUT ->
-                    handleUpsert(session, request, key, responsibleNodes, ack, from, Response.CREATED, 201);
+                    handleUpsert(session, request, key, time, responsibleNodes, ack, from, Response.CREATED, 201);
             case Request.METHOD_DELETE ->
-                    handleUpsert(session, request, key, responsibleNodes, ack, from, Response.ACCEPTED, 202);
-            case Request.METHOD_GET -> handleGet(session, request, key, responsibleNodes, ack, from);
+                    handleUpsert(session, request, key, time, responsibleNodes, ack, from, Response.ACCEPTED, 202);
+            case Request.METHOD_GET -> handleGet(session, request, key, time, responsibleNodes, ack, from);
             default -> ServiceImpl.sendResponse(session, new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
     }
 
     private void handleUpsert(
             HttpSession session, Request request,
-            String key,
+            String key, long time,
             Iterable<RandevouzHashingRouter.Node> responsibleNodes,
             int ack, int from,
             String okMessage, int okStatusCode
@@ -63,24 +63,24 @@ public class ReplicasManager {
         };
 
         Runnable daoWork = () -> {
-            doUpsert(request, key);
+            doUpsert(request, key, time);
             responseToUpsertIfNeeded(session, okMessage, counter);
         };
 
-        handle(session, request, key, responsibleNodes, counter, consumer, daoWork);
+        handle(session, request, key, time, responsibleNodes, counter, consumer, daoWork);
     }
 
-    private void doUpsert(Request request, String key) {
+    private void doUpsert(Request request, String key, long time) {
         switch (request.getMethod()) {
-            case Request.METHOD_PUT -> dao.upsertTimeStamped(key, request.getBody());
-            case Request.METHOD_DELETE -> dao.upsertTimeStamped(key, null);
+            case Request.METHOD_PUT -> dao.upsert(key, request.getBody(), time);
+            case Request.METHOD_DELETE -> dao.upsert(key, null, time);
             default -> throw new IllegalArgumentException();
         }
     }
 
     private void handleGet(
             HttpSession session, Request request,
-            String key,
+            String key, long time,
             Iterable<RandevouzHashingRouter.Node> responsibleNodes,
             int ack, int from
     ) {
@@ -96,12 +96,12 @@ public class ReplicasManager {
             responseToGetIfNeeded(session, aggregator, value);
         };
 
-        handle(session, request, key, responsibleNodes, aggregator, consumer, daoOperator);
+        handle(session, request, key, time, responsibleNodes, aggregator, consumer, daoOperator);
     }
 
     private void handle(
             HttpSession session, Request request,
-            String key,
+            String key, long time,
             Iterable<RandevouzHashingRouter.Node> responsibleNodes,
             ReplicatingResponseCounter counter,
             Consumer<HttpResponse<byte[]>> httpResponseConsumer,
@@ -116,7 +116,7 @@ public class ReplicasManager {
                 });
                 continue;
             }
-            node.routedRequestFuture(request, key)
+            node.routedRequestFuture(request, key, time)
                     .orTimeout(ServiceImpl.ROUTED_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                     .whenComplete((httpResponse, throwable) -> {
                         if (throwable == null) {

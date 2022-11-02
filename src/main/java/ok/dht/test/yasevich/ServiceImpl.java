@@ -28,6 +28,7 @@ public class ServiceImpl implements Service {
 
     static final int ROUTED_REQUEST_TIMEOUT_MS = 100;
     static final Log LOGGER = LogFactory.getLog(ServiceImpl.class);
+    static final String COORDINATOR_TIMESTAMP_HEADER = "timestamp-from-coordinator";
     private static final int FLUSH_THRESHOLD = 1024 * 1024;
     private static final int POOL_QUEUE_SIZE = 100;
 
@@ -95,12 +96,13 @@ public class ServiceImpl implements Service {
         @Override
         public void handleRequest(Request request, HttpSession session) throws IOException {
             String key = request.getParameter("id=");
-            String innerRequest = request.getParameter("inner=");
-            if (innerRequest != null) {
+            String timestampFromMaster = request.getHeader(COORDINATOR_TIMESTAMP_HEADER + ':');
+            if (timestampFromMaster != null) {
                 try {
                     workersPool.execute(() -> {
+                        long time = Long.parseLong(timestampFromMaster);
                         try {
-                            Response response = handleInnerRequest(request, key);
+                            Response response = handleInnerRequest(request, key, time);
                             sendResponse(session, response);
                         } catch (IOException e) {
                             sendResponse(session,
@@ -140,7 +142,8 @@ public class ServiceImpl implements Service {
                         sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                         return;
                     }
-                    replicasManager.handleReplicatingRequest(session, request, key, ack, from);
+                    long time = System.currentTimeMillis();
+                    replicasManager.handleReplicatingRequest(session, request, key, time, ack, from);
                 });
             } catch (RejectedExecutionException e) {
                 workersPool.execute(() ->
@@ -148,11 +151,11 @@ public class ServiceImpl implements Service {
             }
         }
 
-        private Response handleInnerRequest(Request request, String id) throws IOException {
+        private Response handleInnerRequest(Request request, String id, long time) throws IOException {
             return switch (request.getMethod()) {
                 case Request.METHOD_GET -> handleGet(id);
-                case Request.METHOD_PUT -> handlePut(id, request);
-                case Request.METHOD_DELETE -> handleDelete(id);
+                case Request.METHOD_PUT -> handlePut(id, request, time);
+                case Request.METHOD_DELETE -> handleDelete(id, time);
                 default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             };
         }
@@ -168,13 +171,13 @@ public class ServiceImpl implements Service {
             return new Response(Response.OK, entry.wholeToBytes());
         }
 
-        private Response handleDelete(String id) {
-            timeStampingDao.upsertTimeStamped(id, null);
+        private Response handleDelete(String id, long time) {
+            timeStampingDao.upsert(id, null, time);
             return new Response(Response.ACCEPTED, Response.EMPTY);
         }
 
-        private Response handlePut(String id, Request request) {
-            timeStampingDao.upsertTimeStamped(id, request.getBody());
+        private Response handlePut(String id, Request request, long time) {
+            timeStampingDao.upsert(id, request.getBody(), time);
             return new Response(Response.CREATED, Response.EMPTY);
         }
 
