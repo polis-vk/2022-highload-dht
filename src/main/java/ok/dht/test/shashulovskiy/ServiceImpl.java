@@ -95,6 +95,18 @@ public class ServiceImpl implements Service {
 
     @Path("/v0/entity")
     public void handle(Request request, HttpSession session) {
+        if (request.getMethod() != Request.METHOD_GET
+                && request.getMethod() != Request.METHOD_PUT
+                && request.getMethod() != Request.METHOD_DELETE
+        ) {
+            try {
+                session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            } catch (IOException e) {
+                LOG.error("Unable to respond with 405 error code on forbidden method");
+            }
+            return;
+        }
+
         try {
             String id = request.getParameter("id=");
 
