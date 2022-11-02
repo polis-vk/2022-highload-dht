@@ -1,22 +1,22 @@
 package ok.dht.test.frolovm;
 
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.net.HttpURLConnection;
-import java.net.SocketException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.http.HttpTimeoutException;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ReplicationManager {
 
@@ -66,59 +66,58 @@ public class ReplicationManager {
         return resultResponse;
     }
 
-    public Response handle(String id, Request request, int ack, int from) {
+    public void handle(String id, Request request, HttpSession session, int ack, int from) {
         if (Utils.isInternal(request)) {
-            return requestExecutor.entityHandlerSelf(id, request, Utils.getTimestamp(request));
+            Utils.sendResponse(session, requestExecutor.entityHandlerSelf(id, request, Utils.getTimestamp(request)));
+            return;
         }
         final long timestamp = System.currentTimeMillis();
         request.addHeader(Utils.TIMESTAMP_ONE_NIO + timestamp);
 
-        List<Response> collectedResponses = new ArrayList<>();
-        int countAck = 0;
+        List<Response> collectedResponses = new CopyOnWriteArrayList<>();
+        AtomicInteger countReq = new AtomicInteger(0);
         int shardIndex = algorithm.chooseShard(id);
 
         for (int i = 0; i < from; ++i) {
             Shard shard = algorithm.getShardByIndex(shardIndex);
 
-            if (shard.getName().equals(selfUrl)) {
-                Response response = requestExecutor.entityHandlerSelf(id, request, timestamp);
-                countAck = addSuccessResponse(request, collectedResponses, countAck, response);
-            } else {
-                if (circuitBreaker.isReady(shard.getName())) {
-                    countAck = requestToAnotherNode(request, collectedResponses, countAck, shard);
-                } else {
-                    LOGGER.error("Node is unavailable right now");
-                }
-            }
-            if (countAck >= ack && (request.getMethod() == Request.METHOD_GET || i + 1 == from)) {
-                return generateResult(collectedResponses, request.getMethod());
-            }
+            handleFinder(id, request, timestamp, shard).thenAcceptAsync(
+                    response -> {
+                        addSuccessResponse(collectedResponses, response);
+                        countReq.incrementAndGet();
+                    }
+            ).whenCompleteAsync(
+                    (resp, exception) -> {
+                        boolean isAcks = collectedResponses.size() >= ack;
+                        if ((from == countReq.get() || isAcks)) {
+                            if (!isAcks) {
+                                Utils.sendResponse(session, new Response(Response.GATEWAY_TIMEOUT, Utils.stringToByte(NOT_ENOUGH_REPLICAS)));
+                            } else {
+                                if (countReq.compareAndSet(from, from + 1)) {
+                                    Utils.sendResponse(session, generateResult(collectedResponses, request.getMethod()));
+                                }
+                            }
+                        }
+                    }
+            );
+
             shardIndex = (shardIndex + 1) % algorithm.getShards().size();
         }
-
-        return new Response(Response.GATEWAY_TIMEOUT, Utils.stringToByte(NOT_ENOUGH_REPLICAS));
     }
 
-    private int requestToAnotherNode(Request request, List<Response> collectedResponses, int countAck, Shard shard) {
-        try {
-            Response response = getResponseFromAnotherNode(request, shard);
-            return addSuccessResponse(request, collectedResponses, countAck, response);
-        } catch (IOException | InterruptedException e) {
-            LOGGER.error("Something bad happens when client answer", e);
-            circuitBreaker.incrementFail(shard.getName());
-            return countAck;
+    private CompletableFuture<Response> handleFinder(String id, Request request, long timestamp, Shard shard) {
+        LOGGER.debug("Handle request {} on node {}", id, shard.getName());
+        if (shard.getName().equals(selfUrl)) {
+            return CompletableFuture.completedFuture(requestExecutor.entityHandlerSelf(id, request, timestamp));
+        } else {
+            return getResponseFromAnotherNode(request, shard);
         }
     }
 
-    private int addSuccessResponse(Request request, List<Response> collectedResponses,
-                                   int countAck, Response response) {
+
+    private void addSuccessResponse(List<Response> collectedResponses, Response response) {
         if (isSuccessful(response)) {
-            if (request.getMethod() == Request.METHOD_GET) {
-                collectedResponses.add(response);
-            }
-            return countAck + 1;
-        } else {
-            return countAck;
+            collectedResponses.add(response);
         }
     }
 
@@ -166,29 +165,21 @@ public class ReplicationManager {
                 || response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND);
     }
 
-    private Response getResponseFromAnotherNode(Request request, Shard shard) throws IOException, InterruptedException {
+    private CompletableFuture<Response> getResponseFromAnotherNode(Request request, Shard shard) {
         byte[] body = request.getBody() == null ? Response.EMPTY : request.getBody();
-        HttpResponse<byte[]> response;
+        HttpRequest.Builder requestBuilder = getBuilder(request, shard.getName() + request.getURI(), body);
+        return client.sendAsync(requestBuilder.build(),
+                HttpResponse.BodyHandlers.ofByteArray()).thenApplyAsync(response -> {
+                    if (Utils.isServerError(response.statusCode())) {
+                        circuitBreaker.incrementFail(shard.getName());
+                    } else {
+                        circuitBreaker.successRequest(shard.getName());
+                    }
 
-        try {
-            HttpRequest.Builder requestBuilder = getBuilder(request, shard.getName() + request.getURI(), body);
-            response = client.send(requestBuilder.build(),
-                    HttpResponse.BodyHandlers.ofByteArray());
-        } catch (HttpTimeoutException | SocketException exception) {
-            circuitBreaker.incrementFail(shard.getName());
-            LOGGER.debug("Can't connect to shard " + shard.getName());
-            return Utils.emptyResponse(Response.GATEWAY_TIMEOUT);
-        }
-
-        if (Utils.isServerError(response.statusCode())) {
-            circuitBreaker.incrementFail(shard.getName());
-        } else {
-            circuitBreaker.successRequest(shard.getName());
-        }
-
-        String responseStatus = Utils.getResponseStatus(response);
-
-        return createInternalResponse(response, responseStatus);
+                    String responseStatus = Utils.getResponseStatus(response);
+                    return createInternalResponse(response, responseStatus);
+                }
+        ).exceptionally(exception -> Utils.emptyResponse(Response.GATEWAY_TIMEOUT));
     }
 
 }

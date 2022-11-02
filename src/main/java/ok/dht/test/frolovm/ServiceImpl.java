@@ -89,10 +89,11 @@ public class ServiceImpl implements Service {
     }
 
     @Path(PATH_ENTITY)
-    public Response entityHandler(@Param(PARAM_ID_NAME) String id, Request request, HttpSession session,
+    public void entityHandler(@Param(PARAM_ID_NAME) String id, Request request, HttpSession session,
                                   @Param(PARAM_ACK_NAME) String ackParam, @Param(PARAM_FROM_NAME) String fromParam) {
         if (!Utils.checkId(id)) {
-            return new Response(Response.BAD_REQUEST, Utf8.toBytes(Utils.BAD_ID));
+            Utils.sendResponse(session, new Response(Response.BAD_REQUEST, Utf8.toBytes(Utils.BAD_ID)));
+            return;
         }
         int ackNum;
         int from;
@@ -106,16 +107,17 @@ public class ServiceImpl implements Service {
         }
 
         if (validateAcks(ackParam, fromParam, ackNum, from)) {
-            return Utils.emptyResponse(Response.BAD_REQUEST);
+            Utils.sendResponse(session, Utils.emptyResponse(Response.BAD_REQUEST));
+            return;
         }
 
         switch (request.getMethod()) {
             case Request.METHOD_PUT, Request.METHOD_GET, Request.METHOD_DELETE -> {
-                return replicationManager.handle(id, request, ackNum, from);
+                replicationManager.handle(id, request, session, ackNum, from);
             }
             default -> {
                 LOGGER.info("Method is not allowed: " + request.getMethod());
-                return new Response(Response.METHOD_NOT_ALLOWED, Utf8.toBytes(Utils.NO_SUCH_METHOD));
+                Utils.sendResponse(session, new Response(Response.METHOD_NOT_ALLOWED, Utf8.toBytes(Utils.NO_SUCH_METHOD)));
             }
         }
     }

@@ -1,11 +1,14 @@
 package ok.dht.test.frolovm;
 
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.util.Map;
@@ -140,18 +143,15 @@ public final class Utils {
         buffer.putLong(timestamp);
         byte[] resultTime = buffer.array();
 
+        byte[] newArray = new byte[(data != null ? data.length : 0) + resultTime.length + 1];
+        System.arraycopy(resultTime, 0, newArray, 0, resultTime.length);
         if (data == null) {
-            byte[] newArray = new byte[resultTime.length + 1];
-            System.arraycopy(resultTime, 0, newArray, 0, resultTime.length);
             newArray[resultTime.length] = 1;
-            return newArray;
         } else {
-            byte[] newArray = new byte[data.length + resultTime.length + 1];
             newArray[resultTime.length] = 0;
-            System.arraycopy(resultTime, 0, newArray, 0, resultTime.length);
             System.arraycopy(data, 0, newArray, resultTime.length + 1, data.length);
-            return newArray;
         }
+        return newArray;
     }
 
     public static String getResponseStatus(HttpResponse<byte[]> response) {
@@ -162,4 +162,11 @@ public final class Utils {
         return responseStatus;
     }
 
+    public static void sendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException exception) {
+            LOGGER.error("Can't send error response ", exception);
+        }
+    }
 }
