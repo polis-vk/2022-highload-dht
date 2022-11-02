@@ -8,47 +8,58 @@ import one.nio.http.Response;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class ResponseProcessor {
-    private Long timestamp = -1L;
-    private byte[] answer = null;
+    private final AtomicReference<ControllerStatus> status;
     private final Integer method;
-    private int need;
+    private final AtomicInteger need;
+    private final AtomicInteger left;
 
-    public ResponseProcessor(Integer method, Integer ack) {
+    public ResponseProcessor(Integer method, Integer ack, Integer from) {
         this.method = method;
-        this.need = ack;
+        this.status = new AtomicReference<>(new ControllerStatus());
+        this.need = new AtomicInteger(ack);
+        this.left = new AtomicInteger(from);
     }
 
     public boolean process(Response response) {
-        if (response == null) {
-            return false;
-        }
-        if (response.getStatus() == HttpURLConnection.HTTP_OK) {
-            try {
-                StoredValue value = UtilsClass.segmentToValue(response.getBody());
-                need--;
-                if (value.timestamp() > timestamp) {
-                    answer = value.value();
-                    timestamp = value.timestamp();
+        if (response != null) {
+            if (response.getStatus() == HttpURLConnection.HTTP_OK) {
+                try {
+                    StoredValue value = UtilsClass.segmentToValue(response.getBody());
+                    ControllerStatus newStatus = new ControllerStatus(value.timestamp(), value.value());
+                    while (true) {
+                        ControllerStatus currentStatus = status.get();
+                        if (newStatus.timestamp > currentStatus.timestamp) {
+                            if (status.compareAndSet(currentStatus, newStatus)) {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                } catch (IOException | ClassNotFoundException ignored) {
+                    Constants.LOG.error("Cannot get value from response");
                 }
-            } catch (IOException | ClassNotFoundException ignored) {
-                Constants.LOG.error("Cannot get value from response");
             }
-        } else {
-            need--;
+            if (need.decrementAndGet() == 0) {
+                return true;
+            }
         }
-        return need == 0;
+        return left.decrementAndGet() == 0;
     }
 
     public Response response() {
-        if (need != 0) {
+        if (need.get() > 0) {
             return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
         }
         switch (this.method) {
             case Request.METHOD_GET -> {
-                if (answer != null) {
-                    return new Response(Response.OK, answer);
+                ControllerStatus currentStatus = status.get();
+                if (currentStatus.answer != null) {
+                    return new Response(Response.OK, currentStatus.answer);
                 } else {
                     return new Response(Response.NOT_FOUND, Response.EMPTY);
                 }

@@ -11,11 +11,7 @@ import ok.dht.test.nadutkin.impl.shards.Sharder;
 import ok.dht.test.nadutkin.impl.utils.Constants;
 import ok.dht.test.nadutkin.impl.utils.StoredValue;
 import ok.dht.test.nadutkin.impl.utils.UtilsClass;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
+import one.nio.http.*;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -52,65 +48,73 @@ public class ServiceImpl extends ReplicaService {
     }
 
     @Path(Constants.PATH)
-    public Response handle(@Param(value = "id") String id,
+    public void handle(@Param(value = "id") String id,
                            Request request,
                            @Param(value = "ack") Integer ack,
-                           @Param(value = "from") Integer from) throws IOException {
+                           @Param(value = "from") Integer from,
+                           HttpSession session) throws IOException {
         if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, getBytes("Id can not be null or empty!"));
+            session.sendResponse(new Response(Response.BAD_REQUEST, getBytes("Id can not be null or empty!")));
+            return;
         }
+
         int neighbours = from == null ? this.config.clusterUrls().size() : from;
         int quorum = ack == null ? neighbours / 2 + 1 : ack;
 
         if (quorum > neighbours || quorum <= 0) {
-            return new Response(Response.BAD_REQUEST,
-                    getBytes("ack and from - two positive ints, ack <= from"));
+            session.sendResponse(new Response(Response.BAD_REQUEST,
+                    getBytes("ack and from - two positive ints, ack <= from")));
+            return;
         }
 
         List<String> urls = sharder.getShardUrls(id, neighbours);
-        ResponseProcessor processor = new ResponseProcessor(request.getMethod(), quorum);
+        ResponseProcessor processor = new ResponseProcessor(request.getMethod(), quorum, neighbours);
         long timestamp = System.currentTimeMillis();
         try {
             byte[] body = request.getMethod() == Request.METHOD_PUT ? request.getBody() : null;
             request.setBody(UtilsClass.valueToSegment(new StoredValue(body, timestamp)));
         } catch (IOException e) {
-            return new Response(Response.BAD_REQUEST,
-                    getBytes("Can't ask other replicas, %s$".formatted(e.getMessage())));
+            session.sendResponse(new Response(Response.BAD_REQUEST,
+                    getBytes("Can't ask other replicas, %s$".formatted(e.getMessage()))));
+            return;
         }
-        for (String url : urls) {
-            Response response = url.equals(config.selfUrl())
-                    ? handleV1(id, request)
+        for (final String url : urls) {
+            CompletableFuture<Response> futureResponse = url.equals(config.selfUrl())
+                    ? CompletableFuture.supplyAsync(() -> handleV1(id, request))
                     : handleProxy(url, request);
-            if (processor.process(response)) {
-                break;
-            }
+            futureResponse.thenAccept(response -> {
+                if (processor.process(response)) {
+                    try {
+                        session.sendResponse(processor.response());
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            });
         }
-        return processor.response();
     }
 
     //endregion
 
-    private Response handleProxy(String url, Request request) {
+    private CompletableFuture<Response> handleProxy(String url, Request request) {
         if (breaker.isWorking(url)) {
-            try {
                 HttpRequest proxyRequest = HttpRequest
                         .newBuilder(URI.create(url + request.getURI().replace(Constants.PATH, Constants.REPLICA_PATH)))
                         .method(
                                 request.getMethodName(),
                                 HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
                         .build();
-                HttpResponse<byte[]> response = client.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
-                if (response.statusCode() == HttpURLConnection.HTTP_UNAVAILABLE) {
-                    fail(url);
-                }
-                breaker.success(url);
-                return new Response(Integer.toString(response.statusCode()), response.body());
-            } catch (InterruptedException | IOException exception) {
-                Constants.LOG.error("Server caught an exception at url {}", url);
-                fail(url);
-            }
+                return client.sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
+                        .handleAsync((response, exception) -> {
+                            if (exception != null || response.statusCode() == HttpURLConnection.HTTP_UNAVAILABLE) {
+                                fail(url);
+                                return null;
+                            }
+                            breaker.success(url);
+                            return new Response(Integer.toString(response.statusCode()), response.body());
+                        });
         }
-        return null;
+        return CompletableFuture.completedFuture(null);
     }
 
     @Path("/statistics/stored")
