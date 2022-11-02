@@ -31,6 +31,8 @@ public class ReplicasManager {
     void handleReplicatingRequest(HttpSession session, Request request, String key, int ack, int from) {
         Queue<RandevouzHashingRouter.Node> responsibleNodes = shardingRouter.responsibleNodes(key, from);
         if (responsibleNodes.isEmpty()) {
+            ServiceImpl.LOGGER.error("There is no nodes for handling request");
+            ServiceImpl.sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             return;
         }
         switch (request.getMethod()) {
@@ -127,13 +129,21 @@ public class ReplicasManager {
         }
     }
 
-    private static void responseToUpsertIfNeeded(HttpSession session, String okMessage, ReplicatingResponseCounter counter) {
+    private static void responseToUpsertIfNeeded(
+            HttpSession session,
+            String okMessage,
+            ReplicatingResponseCounter counter
+    ) {
         if (counter.isTimeToResponseGood()) {
             ServiceImpl.sendResponse(session, new Response(okMessage, Response.EMPTY));
         }
     }
 
-    private static void responseToGetIfNeeded(HttpSession session, ReplicatingGetAggregator counter, TimeStampedValue value) {
+    private static void responseToGetIfNeeded(
+            HttpSession session,
+            ReplicatingGetAggregator counter,
+            TimeStampedValue value
+    ) {
         if (!counter.isTimeToResponseGood()) {
             return;
         }

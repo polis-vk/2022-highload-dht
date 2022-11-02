@@ -17,7 +17,12 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class ServiceImpl implements Service {
 
@@ -58,7 +63,7 @@ public class ServiceImpl implements Service {
     static void sendResponse(HttpSession session, Response response) {
         try {
             session.sendResponse(response);
-        } catch (IOException e) {
+        } catch (Exception e) {
             ServiceImpl.LOGGER.error("Error when sending " + response.getStatus());
             session.close();
         }
@@ -138,7 +143,8 @@ public class ServiceImpl implements Service {
                     replicasManager.handleReplicatingRequest(session, request, key, ack, from);
                 });
             } catch (RejectedExecutionException e) {
-                workersPool.execute(() -> sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY)));
+                workersPool.execute(() ->
+                        sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY)));
             }
         }
 
@@ -182,8 +188,8 @@ public class ServiceImpl implements Service {
                     session.socket().close();
                 }
             }
-            super.stop();
             workersPool.shutdown();
+            super.stop();
         }
 
     }
