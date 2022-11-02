@@ -113,7 +113,12 @@ public class TycoonService implements ok.dht.Service {
             response = httpClient.send(
                 HttpRequest.newBuilder()
                     .uri(URI.create(nodeUrl + PATH + "?id=" + idParameter))
-                    .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                    .method(
+                        request.getMethodName(),
+                        request.getBody() == null
+                            ? HttpRequest.BodyPublishers.noBody()
+                            : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                    )
                     .build(),
                 HttpResponse.BodyHandlers.ofByteArray()
             );
