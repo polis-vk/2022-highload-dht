@@ -6,13 +6,13 @@ import ok.dht.test.ServiceFactory;
 
 import java.io.IOException;
 
-@ServiceFactory(stage = 1, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
+@ServiceFactory(stage = 4, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
 public class MyServiceFactory implements ServiceFactory.Factory {
 
     @Override
     public Service create(ServiceConfig config) {
         try {
-            return new MyService(config);
+            return new MyServiceBase(config);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
