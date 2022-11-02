@@ -18,8 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.ToIntFunction;
 
 public class RandevouzHashingRouter {
-    public static final int ILL_NODE_SKIPPED_REQUESTS = 100;
-    public static final int FAILED_REQUESTS_THRESHOLD = 5;
+    public static final int ILL_NODE_SKIPPED_REQUESTS = 250;
+    public static final int FAILED_REQUESTS_THRESHOLD = 50;
 
     private final List<Node> nodes;
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -29,14 +29,6 @@ public class RandevouzHashingRouter {
         for (String url : clusterUrls) {
             nodes.add(new Node(url));
         }
-    }
-
-    public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(
-            Request request,
-            String key,
-            Node responsibleNode
-    ) {
-        return responsibleNode.routedRequestFuture(httpClient, request, key);
     }
 
     public Queue<Node> responsibleNodes(String key, int nodesNumber) {
@@ -73,7 +65,7 @@ public class RandevouzHashingRouter {
         return requestBuilder.build();
     }
 
-    static class Node {
+    class Node {
         private final AtomicInteger counter = new AtomicInteger();
         final String url;
         private boolean isIll;
@@ -82,11 +74,7 @@ public class RandevouzHashingRouter {
             this.url = url;
         }
 
-        public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(
-                HttpClient httpClient,
-                Request request,
-                String key
-        ) {
+        public CompletableFuture<HttpResponse<byte[]>> routedRequestFuture(Request request, String key) {
             if (isIll) {
                 managePossibleRecovery();
                 if (isIll) {

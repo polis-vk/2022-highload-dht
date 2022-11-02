@@ -17,7 +17,7 @@ import java.util.concurrent.TimeoutException;
  */
 public final class DemoServer {
 
-    public static final int CLUSTER_SIZE = 5;
+    public static final int CLUSTER_SIZE = 3;
 
     private DemoServer() {
         // Only main method

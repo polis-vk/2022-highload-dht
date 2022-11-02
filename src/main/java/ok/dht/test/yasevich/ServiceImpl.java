@@ -17,20 +17,14 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class ServiceImpl implements Service {
 
-    public static final int ROUTED_REQUEST_TIMEOUT_MS = 30;
-    private static final int FLUSH_THRESHOLD = 5 * 1024 * 1024;
-    private static final int POOL_QUEUE_SIZE = 1000;
-    private static final int FIFO_RARENESS = 3;
+    static final int ROUTED_REQUEST_TIMEOUT_MS = 100;
     static final Log LOGGER = LogFactory.getLog(ServiceImpl.class);
+    private static final int FLUSH_THRESHOLD = 1024 * 1024;
+    private static final int POOL_QUEUE_SIZE = 100;
 
     private final ServiceConfig serviceConfig;
     private TimeStampingDao timeStampingDao;
@@ -82,19 +76,15 @@ public class ServiceImpl implements Service {
     private class CustomHttpServer extends HttpServer {
         private static final int CPUs = Runtime.getRuntime().availableProcessors();
 
-        private final BlockingQueue<Runnable> queue = new AlmostLifoQueue(POOL_QUEUE_SIZE, FIFO_RARENESS);
         private final ExecutorService workersPool = new ThreadPoolExecutor(CPUs, CPUs, 0L,
-                TimeUnit.MILLISECONDS, queue);
-        private final ReplicasManager replicasManager;
+                TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(POOL_QUEUE_SIZE));
+        private final ReplicasManager replicasManager = new ReplicasManager(timeStampingDao,
+                new RandevouzHashingRouter(serviceConfig.clusterUrls()), serviceConfig.selfUrl());
 
         public CustomHttpServer(
                 HttpServerConfig config,
                 Object... routers) throws IOException {
-
             super(config, routers);
-            RandevouzHashingRouter shardingRouter = new RandevouzHashingRouter(serviceConfig.clusterUrls());
-            this.replicasManager = new ReplicasManager(timeStampingDao, shardingRouter,
-                    serviceConfig.selfUrl(), workersPool);
         }
 
         @Override
@@ -148,7 +138,7 @@ public class ServiceImpl implements Service {
                     replicasManager.handleReplicatingRequest(session, request, key, ack, from);
                 });
             } catch (RejectedExecutionException e) {
-                session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                workersPool.execute(() -> sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY)));
             }
         }
 

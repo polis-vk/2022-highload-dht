@@ -8,31 +8,25 @@ import one.nio.http.Response;
 import java.net.http.HttpResponse;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 public class ReplicasManager {
-
     public static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
     private final TimeStampingDao dao;
     private final RandevouzHashingRouter shardingRouter;
     private final String selfUrl;
-    private final Executor executor;
 
     public ReplicasManager(
             TimeStampingDao dao,
             RandevouzHashingRouter shardingRouter,
-            String selfUrl,
-            Executor executor
+            String selfUrl
     ) {
         this.dao = dao;
         this.shardingRouter = shardingRouter;
         this.selfUrl = selfUrl;
-        this.executor = executor;
     }
-
 
     void handleReplicatingRequest(HttpSession session, Request request, String key, int ack, int from) {
         Queue<RandevouzHashingRouter.Node> responsibleNodes = shardingRouter.responsibleNodes(key, from);
@@ -120,7 +114,7 @@ public class ReplicasManager {
                 });
                 continue;
             }
-            shardingRouter.routedRequestFuture(request, key, node)
+            node.routedRequestFuture(request, key)
                     .orTimeout(ServiceImpl.ROUTED_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                     .whenComplete((httpResponse, throwable) -> {
                         if (throwable == null) {
