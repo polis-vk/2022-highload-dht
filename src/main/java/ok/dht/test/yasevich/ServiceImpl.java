@@ -135,9 +135,9 @@ public class ServiceImpl implements Service {
 
             try {
                 workersPool.execute(() -> {
-                    if (!request.getPath().equals("/v0/entity") ||
-                            key == null || key.isEmpty() ||
-                            ack > from || ack <= 0) {
+                    if (!request.getPath().equals("/v0/entity")
+                            || key == null || key.isEmpty()
+                            || ack > from || ack <= 0) {
                         sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                         return;
                     }
