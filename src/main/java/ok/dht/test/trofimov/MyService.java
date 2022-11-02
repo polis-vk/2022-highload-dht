@@ -10,6 +10,7 @@ import ok.dht.test.trofimov.dao.MyHttpServer;
 import ok.dht.test.trofimov.dao.impl.InMemoryDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
@@ -17,21 +18,28 @@ import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Base64;
-import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class MyService implements Service {
 
     public static final String PATH_V0_ENTITY = "/v0/entity";
-    private final Logger logger = LoggerFactory.getLogger(MyService.class);
+    private static final Logger logger = LoggerFactory.getLogger(MyService.class);
     private static final long FLUSH_THRESHOLD = 1 << 20;
+    private static final int REQUESTS_MAX_QUEUE_SIZE = 1024;
+    public static final int TIMEOUT_EXECUTOR = 10;
     private final ServiceConfig config;
     private HttpServer server;
     private InMemoryDao dao;
+    private ThreadPoolExecutor requestsExecutor;
 
     public MyService(ServiceConfig config) {
         this.config = config;
@@ -44,67 +52,153 @@ public class MyService implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         dao = new InMemoryDao(createDaoConfig());
+        initExecutor();
         server = new MyHttpServer(createConfigFromPort(config.selfPort()));
         server.start();
         server.addRequestHandlers(this);
         return CompletableFuture.completedFuture(null);
     }
 
+    private void initExecutor() {
+        int threadsCount = Runtime.getRuntime().availableProcessors();
+        requestsExecutor = new ThreadPoolExecutor(threadsCount, threadsCount,
+                0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(REQUESTS_MAX_QUEUE_SIZE),
+                new ThreadPoolExecutor.AbortPolicy());
+        requestsExecutor.prestartAllCoreThreads();
+    }
+
     @Override
     public CompletableFuture<?> stop() throws IOException {
+        requestsExecutor.shutdown();
+        try {
+            if (!requestsExecutor.awaitTermination(TIMEOUT_EXECUTOR, TimeUnit.SECONDS)) {
+                shutdownNowExecutor();
+            }
+        } catch (InterruptedException e) {
+            logger.error("InterruptedException while stopping requestExecutor", e);
+            Thread.currentThread().interrupt();
+            shutdownNowExecutor();
+        }
         server.stop();
         dao.close();
         return CompletableFuture.completedFuture(null);
     }
 
+    private void shutdownNowExecutor() {
+        List<Runnable> listOfRequests = requestsExecutor.shutdownNow();
+        logger.error("Can't stop executor. Shutdown now, number of requests: {}", listOfRequests.size());
+    }
+
     @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id) throws IOException {
-        if (id.isEmpty()) {
-            return emptyResponseFor(Response.BAD_REQUEST);
-        }
-
+    public void handleGet(@Param(value = "id", required = true) String id, HttpSession session) {
         try {
-            Entry<String> entry = dao.get(id);
-            if (entry == null) {
-                return emptyResponseFor(Response.NOT_FOUND);
-            }
-            String value = entry.value();
-            char[] chars = value.toCharArray();
-            return new Response(Response.OK, Base64.decodeFromChars(chars));
-        } catch (Exception e) {
-            return errorResponse(e);
+            doGetRequest(id, session);
+        } catch (RejectedExecutionException e) {
+            logger.error("Reject request {} method get", id, e);
+            sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
+    }
+
+    private void doGetRequest(String id, HttpSession session) {
+        requestsExecutor.execute(() -> {
+            Response response;
+            if (id.isEmpty()) {
+                response = emptyResponseFor(Response.BAD_REQUEST);
+            } else {
+                try {
+                    Entry<String> entry = dao.get(id);
+                    if (entry == null) {
+                        response = emptyResponseFor(Response.NOT_FOUND);
+                    } else {
+                        String value = entry.value();
+                        char[] chars = value.toCharArray();
+                        response = new Response(Response.OK, Base64.decodeFromChars(chars));
+                    }
+                } catch (Exception e) {
+                    logger.error("error get request" + id, e);
+                    response = errorResponse();
+                }
+            }
+            sendResponse(session, response);
+        });
     }
 
     @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(Request request, @Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
-            return emptyResponseFor(Response.BAD_REQUEST);
-        }
-
-        byte[] value = request.getBody();
+    public void handlePut(Request request, @Param(value = "id", required = true) String id, HttpSession session) {
         try {
-            dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
-        } catch (Exception e) {
-            return errorResponse(e);
+            doPutRequest(request, id, session);
+        } catch (RejectedExecutionException e) {
+            logger.error("Reject request {} method put", id, e);
+            sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
-        return emptyResponseFor(Response.CREATED);
+    }
+
+    private void doPutRequest(Request request, String id, HttpSession session) {
+        requestsExecutor.execute(() -> {
+            Response response;
+            if (id.isEmpty()) {
+                response = emptyResponseFor(Response.BAD_REQUEST);
+            } else {
+                byte[] value = request.getBody();
+                try {
+                    dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value))));
+                    response = emptyResponseFor(Response.CREATED);
+                } catch (Exception e) {
+                    logger.error("error put request" + id, e);
+                    response = errorResponse();
+                }
+            }
+            sendResponse(session, response);
+        });
     }
 
     @Path(PATH_V0_ENTITY)
     @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) String id) {
-        if (id.isEmpty()) {
-            return emptyResponseFor(Response.BAD_REQUEST);
-        }
+    public void handleDelete(@Param(value = "id", required = true) String id, HttpSession session) {
         try {
-            dao.upsert(new BaseEntry<>(id, null));
-        } catch (Exception e) {
-            return errorResponse(e);
+            doDeleteRequest(id, session);
+        } catch (RejectedExecutionException e) {
+            logger.error("Reject request {} method delete", id, e);
+            sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
-        return emptyResponseFor(Response.ACCEPTED);
+    }
+
+    private void doDeleteRequest(String id, HttpSession session) {
+        requestsExecutor.execute(() -> {
+            Response response;
+            if (id.isEmpty()) {
+                response = emptyResponseFor(Response.BAD_REQUEST);
+            } else {
+                try {
+                    dao.upsert(new BaseEntry<>(id, null));
+                    response = emptyResponseFor(Response.ACCEPTED);
+                } catch (Exception e) {
+                    logger.error("error delete request" + id, e);
+                    response = errorResponse();
+                }
+            }
+            sendResponse(session, response);
+        });
+    }
+
+    private static void sendResponse(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            logger.error("Error send response", e);
+            closeSession(session);
+        }
+    }
+
+    private static void closeSession(HttpSession session) {
+        try {
+            session.close();
+        } catch (Exception e) {
+            logger.error("Error in closing session", e);
+        }
     }
 
     @Path(PATH_V0_ENTITY)
@@ -117,9 +211,8 @@ public class MyService implements Service {
         return new Response(status, Response.EMPTY);
     }
 
-    private Response errorResponse(Exception e) {
-        logger.error("Error while process request", e);
-        return new Response(Response.INTERNAL_ERROR, Utf8.toBytes(e.toString()));
+    private Response errorResponse() {
+        return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -131,7 +224,7 @@ public class MyService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 1, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 3, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
