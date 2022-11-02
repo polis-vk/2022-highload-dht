@@ -8,10 +8,6 @@ public class ValidationResult {
     private int requiredReplicas;
     private long timestamp;
 
-    public ValidationResult() {
-
-    }
-
     public int getCode() {
         return code;
     }

@@ -16,11 +16,6 @@ public interface RequestState {
 
     boolean onResponseFailure();
 
-    /**
-     * @return <code>true</code> if current thread must trigger leader request handler
-     * It happens if all <code>ack</code> requests are success or
-     * all <code>from</code> requests are finished.
-     */
     boolean onResponseSuccess(Response response);
 
     boolean isSuccess();
