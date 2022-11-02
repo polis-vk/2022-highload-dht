@@ -44,8 +44,6 @@ public class ResponseAccumulator {
     }
 
     public void processSuccess(int statusCode, byte[] body) {
-        int currentAcks = acksCount.incrementAndGet();
-
         // FOR GET REQUESTS ONLY
         if (statusCode == 200 && body.length != 0) {
             // CAS loop
@@ -71,7 +69,7 @@ public class ResponseAccumulator {
             }
         }
 
-        if (currentAcks == requiredAcks) {
+        if (acksCount.incrementAndGet() >= requiredAcks) {
             onAcksCollected();
         }
     }
@@ -83,13 +81,14 @@ public class ResponseAccumulator {
     }
 
     private void onAcksCollected() {
-        // No need to check that response here wasnt sent before since
-        // the condition on entering this function is `acksCount.incrementAndGet() == requiredAcks`
-        // This can only be true once.
-
-        // However we still need to mark response as "attempted" since in onAllRequestsProcessed we need to be able
+        // We need to mark response as "attempted" since in onAllRequestsProcessed we need to be able
         // to tell if we need to respond with 504
-        responseAttempted.set(true);
+        boolean oldValue = responseAttempted.getAndSet(true);
+
+        if (oldValue) {
+            // We have already attempted to send response, no need to do it again
+            return;
+        }
 
         try {
             switch (requestMethod) {
