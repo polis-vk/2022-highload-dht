@@ -96,17 +96,18 @@ public class ServiceImpl implements Service {
         @Override
         public void handleRequest(Request request, HttpSession session) throws IOException {
             String key = request.getParameter("id=");
-            String timestampFromMaster = request.getHeader(COORDINATOR_TIMESTAMP_HEADER + ':');
-            if (timestampFromMaster != null) {
+            String coordinatorTimestamp = request.getHeader(COORDINATOR_TIMESTAMP_HEADER + ':');
+            if (coordinatorTimestamp != null) {
                 try {
                     workersPool.execute(() -> {
-                        long time = Long.parseLong(timestampFromMaster);
                         try {
+                            long time = Long.parseLong(coordinatorTimestamp);
                             Response response = handleInnerRequest(request, key, time);
                             sendResponse(session, response);
+                        } catch (NumberFormatException e) {
+                            sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                         } catch (IOException e) {
-                            sendResponse(session,
-                                    new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                            sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                         }
                     });
                 } catch (RejectedExecutionException e) {
@@ -118,27 +119,25 @@ public class ServiceImpl implements Service {
             String replicasParam = request.getParameter("replicas=");
             String ackParam = request.getParameter("ack=");
             String fromParam = request.getParameter("from=");
-
             String[] replicasParams = replicasParam == null ? null : replicasParam.split("/");
-
-            final int from = replicasParams != null ? Integer.parseInt(replicasParams[1]) :
-                    fromParam != null ? Integer.parseInt(fromParam) : serviceConfig.clusterUrls().size();
-
-            final int ack = replicasParams != null ? Integer.parseInt(replicasParams[0]) :
-                    ackParam != null ? Integer.parseInt(ackParam) :
-                            from / 2 + 1 <= serviceConfig.clusterUrls().size() ? from / 2 + 1 : from;
+            int from;
+            int ack;
+            try {
+                from = replicasParams != null ? Integer.parseInt(replicasParams[1]) :
+                        fromParam != null ? Integer.parseInt(fromParam) : serviceConfig.clusterUrls().size();
+                ack = replicasParams != null ? Integer.parseInt(replicasParams[0]) :
+                        ackParam != null ? Integer.parseInt(ackParam) :
+                                from / 2 + 1 <= serviceConfig.clusterUrls().size() ? from / 2 + 1 : from;
+            } catch (NumberFormatException e) {
+                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
 
             try {
                 workersPool.execute(() -> {
-                    if (!request.getPath().equals("/v0/entity")) {
-                        sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-                        return;
-                    }
-                    if (key == null || key.isEmpty()) {
-                        sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-                        return;
-                    }
-                    if (ack > from || ack <= 0) {
+                    if (!request.getPath().equals("/v0/entity") ||
+                            key == null || key.isEmpty() ||
+                            ack > from || ack <= 0) {
                         sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                         return;
                     }
