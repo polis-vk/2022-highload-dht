@@ -5,7 +5,6 @@ import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.shik.events.HandlerRequest;
 import ok.dht.test.shik.events.HandlerResponse;
-import ok.dht.test.shik.events.HandlerTimedRequest;
 import ok.dht.test.shik.events.LeaderRequestState;
 import ok.dht.test.shik.model.DBValue;
 import ok.dht.test.shik.serialization.ByteArraySerializer;
@@ -113,10 +112,10 @@ public class ServiceImpl implements CustomService {
     }
 
     @Override
-    public void handlePut(HandlerTimedRequest request, HandlerResponse response) {
+    public void handlePut(HandlerRequest request, HandlerResponse response) {
         byte[] key = request.getState().getId().getBytes(StandardCharsets.UTF_8);
         byte[] dbValue = serializer.serialize(
-            new DBValue(request.getState().getRequest().getBody(), request.getTimestamp()));
+            new DBValue(request.getState().getRequest().getBody(), request.getState().getTimestamp()));
         levelDB.put(key, dbValue);
         response.setResponse(new Response(Response.CREATED, Response.EMPTY));
     }
@@ -128,9 +127,9 @@ public class ServiceImpl implements CustomService {
     }
 
     @Override
-    public void handleDelete(HandlerTimedRequest request, HandlerResponse response) {
+    public void handleDelete(HandlerRequest request, HandlerResponse response) {
         byte[] key = request.getState().getId().getBytes(StandardCharsets.UTF_8);
-        levelDB.put(key, serializer.serialize(new DBValue(null, request.getTimestamp())));
+        levelDB.put(key, serializer.serialize(new DBValue(null, request.getState().getTimestamp())));
         response.setResponse(new Response(Response.ACCEPTED, Response.EMPTY));
     }
 

@@ -2,20 +2,14 @@ package ok.dht.test.shik.validator;
 
 public class ValidationResult {
 
-    private final int code;
-    private final String id;
-    private final int requestedReplicas;
-    private final int requiredReplicas;
+    private int code;
+    private String id;
+    private int requestedReplicas;
+    private int requiredReplicas;
+    private long timestamp;
 
-    public ValidationResult(int code, String id, int requestedReplicas, int requiredReplicas) {
-        this.code = code;
-        this.id = id;
-        this.requestedReplicas = requestedReplicas;
-        this.requiredReplicas = requiredReplicas;
-    }
+    public ValidationResult() {
 
-    public ValidationResult(int code) {
-        this(code, null, 0, 0);
     }
 
     public int getCode() {
@@ -32,5 +26,29 @@ public class ValidationResult {
 
     public int getRequiredReplicas() {
         return requiredReplicas;
+    }
+
+    public long getTimestamp() {
+        return timestamp;
+    }
+
+    public void setCode(int code) {
+        this.code = code;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public void setRequestedReplicas(int requestedReplicas) {
+        this.requestedReplicas = requestedReplicas;
+    }
+
+    public void setRequiredReplicas(int requiredReplicas) {
+        this.requiredReplicas = requiredReplicas;
+    }
+
+    public void setTimestamp(long timestamp) {
+        this.timestamp = timestamp;
     }
 }

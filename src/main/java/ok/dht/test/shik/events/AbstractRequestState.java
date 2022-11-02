@@ -8,11 +8,13 @@ public abstract class AbstractRequestState implements RequestState {
     private final Request request;
     private final HttpSession session;
     private final String id;
+    private final long timestamp;
 
-    public AbstractRequestState(Request request, HttpSession session, String id) {
+    public AbstractRequestState(Request request, HttpSession session, String id, long timestamp) {
         this.request = request;
         this.session = session;
         this.id = id;
+        this.timestamp = timestamp;
     }
 
     @Override
@@ -28,6 +30,11 @@ public abstract class AbstractRequestState implements RequestState {
     @Override
     public String getId() {
         return id;
+    }
+
+    @Override
+    public long getTimestamp() {
+        return timestamp;
     }
 
 }

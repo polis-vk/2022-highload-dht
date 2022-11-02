@@ -1,8 +1,5 @@
 package ok.dht.test.shik.utils;
 
-import ok.dht.test.shik.events.HandlerRequest;
-import ok.dht.test.shik.events.HandlerResponse;
-import ok.dht.test.shik.events.RequestState;
 import one.nio.http.HttpSession;
 import one.nio.http.Response;
 import org.apache.commons.logging.Log;
@@ -11,7 +8,6 @@ import org.apache.commons.logging.LogFactory;
 import java.io.IOException;
 import java.nio.BufferOverflowException;
 import java.util.concurrent.TimeoutException;
-import java.util.function.BiConsumer;
 
 public final class HttpServerUtils {
 
@@ -21,13 +17,12 @@ public final class HttpServerUtils {
 
     }
 
-    public static <T extends HandlerRequest, U extends HandlerResponse>
-    void handleConcreteRequest(RequestState state, T request, U response, BiConsumer<T, U> method) {
+    public static void sendResponse(HttpSession session, Response response) {
         try {
-            method.accept(request, response);
-            state.onShardResponseSuccess(response.getResponse());
-        } catch (Exception e) {
-            state.onShardResponseFailure();
+            session.sendResponse(response);
+        } catch (IOException e) {
+            LOG.error("Cannot send response ", e);
+            HttpServerUtils.sendError(session, e);
         }
     }
 

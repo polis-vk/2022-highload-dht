@@ -4,12 +4,14 @@ import one.nio.http.Request;
 
 import java.net.HttpURLConnection;
 import java.util.Set;
+import java.util.function.Function;
 
 public class Validator {
 
     private static final String PATH_PREFIX = "/v0/entity";
     private static final String REQUESTED_REPLICAS = "from=";
     private static final String REQUIRED_REPLICAS = "ack=";
+    private static final String TIMESTAMP = "timestamp=";
     private static final String ID_PARAM = "id=";
     private static final Set<Integer> SUPPORTED_METHODS = Set.of(
         Request.METHOD_GET,
@@ -25,54 +27,64 @@ public class Validator {
 
     public ValidationResult validate(Request request) {
         String path = request.getPath();
+        ValidationResult result = new ValidationResult();
+
         if (!path.startsWith(PATH_PREFIX)) {
-            return new ValidationResult(HttpURLConnection.HTTP_BAD_REQUEST);
+            result.setCode(HttpURLConnection.HTTP_BAD_REQUEST);
+            return result;
         }
 
         String id = request.getParameter(ID_PARAM);
         if (id == null || id.isEmpty()) {
-            return new ValidationResult(HttpURLConnection.HTTP_BAD_REQUEST);
+            result.setCode(HttpURLConnection.HTTP_BAD_REQUEST);
+            return result;
         }
 
         if (request.getMethod() == Request.METHOD_PUT && request.getBody() == null) {
-            return new ValidationResult(HttpURLConnection.HTTP_BAD_REQUEST);
+            result.setCode(HttpURLConnection.HTTP_BAD_REQUEST);
+            return result;
         }
 
-        return validateReplicationParams(request, id);
+        result.setId(id);
+        return validateReplicationParams(request, result);
     }
 
-    private ValidationResult validateReplicationParams(Request request, String id) {
+    private ValidationResult validateReplicationParams(Request request, ValidationResult result) {
         int requestedReplicas;
         int requiredReplicas;
+        long timestamp;
         try {
-            requestedReplicas = getIntParamFromRequest(request, REQUESTED_REPLICAS);
-            requiredReplicas = getIntParamFromRequest(request, REQUIRED_REPLICAS);
+            requestedReplicas = getParamFromRequest(request, REQUESTED_REPLICAS,
+                defaultReplicasCount, Integer::parseInt);
+            requiredReplicas = getParamFromRequest(request, REQUIRED_REPLICAS,
+                defaultReplicasCount, Integer::parseInt);
+            timestamp = getParamFromRequest(request, TIMESTAMP, 0L, Long::parseLong);
 
             if (requiredReplicas <= 0 || requiredReplicas > requestedReplicas) {
-                return new ValidationResult(HttpURLConnection.HTTP_BAD_REQUEST);
+                result.setCode(HttpURLConnection.HTTP_BAD_REQUEST);
+                return result;
             }
         } catch (NumberFormatException e) {
-            return new ValidationResult(HttpURLConnection.HTTP_BAD_REQUEST);
+            result.setCode(HttpURLConnection.HTTP_BAD_REQUEST);
+            return result;
         }
 
-        return validateRequestMethod(request, id, requestedReplicas, requiredReplicas);
+        result.setRequestedReplicas(requestedReplicas);
+        result.setRequiredReplicas(requiredReplicas);
+        result.setTimestamp(timestamp);
+        return validateRequestMethod(request, result);
     }
 
-    private ValidationResult validateRequestMethod(Request request, String id,
-                                                   int requestedReplicas, int requiredReplicas) {
-        if (!SUPPORTED_METHODS.contains(request.getMethod())) {
-            return new ValidationResult(HttpURLConnection.HTTP_BAD_METHOD);
-        }
-
-        return new ValidationResult(HttpURLConnection.HTTP_OK, id, requestedReplicas, requiredReplicas);
+    private ValidationResult validateRequestMethod(Request request, ValidationResult result) {
+        result.setCode(SUPPORTED_METHODS.contains(request.getMethod())
+            ? HttpURLConnection.HTTP_OK : HttpURLConnection.HTTP_BAD_METHOD);
+        return result;
     }
 
-    private int getIntParamFromRequest(Request request, String paramName) {
-        String requestedReplicasParam = request.getParameter(paramName);
-        if (requestedReplicasParam != null) {
-            return Integer.parseInt(requestedReplicasParam);
-        }
-        return defaultReplicasCount;
+    private <T> T getParamFromRequest(Request request, String paramName,
+                                      T defaultValue, Function<String, T> parseString) {
+        String param = request.getParameter(paramName);
+        return param == null ? defaultValue : parseString.apply(param);
     }
 
 }
