@@ -1,7 +1,5 @@
 package ok.dht.test.siniachenko;
 
-import ok.dht.test.siniachenko.service.TycoonService;
-import org.apache.commons.logging.Log;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,8 +13,10 @@ import java.util.concurrent.Semaphore;
 public class NodeTaskManager {
     private static final Logger LOG = LoggerFactory.getLogger(NodeTaskManager.class);
 
-    private final ExecutorService executorService;
-    private final Map<String, Node> urlToNode;
+    final ExecutorService executorService;
+    final Map<String, Node> urlToNode;
+    private final int queueSizePerNode;
+    private final int maxExecutorsPerNode;
 
     public NodeTaskManager(
         ExecutorService executorService, List<String> nodeUrls,
@@ -27,6 +27,8 @@ public class NodeTaskManager {
         for (String nodeUrl : nodeUrls) {
             urlToNode.put(nodeUrl, new Node(maxExecutorsPerNode, queueSizePerNode));
         }
+        this.queueSizePerNode = queueSizePerNode;
+        this.maxExecutorsPerNode = maxExecutorsPerNode;
     }
 
     public boolean tryAddNodeTask(String nodeUrl, Runnable task) {
@@ -35,13 +37,19 @@ public class NodeTaskManager {
             throw new IllegalArgumentException("node url " + nodeUrl + " was not passed to constructor in modeUrls");
         }
         if (task == null) {
-            throw new IllegalArgumentException("task is null");
+            throw new NullPointerException("task is null");
         }
 
         if (node.queuedTasks.tryAcquire()) {
-            if (node.executors.tryAcquire()) {
-                executorService.execute(() -> {
-                    node.nodeTasksQueue.offer(task);
+            node.nodeTasksQueue.offer(task);
+        } else {
+            return false;
+        }
+
+        if (node.executors.tryAcquire()) {
+            executorService.execute(new Runnable() {
+                @Override
+                public void run() {
                     try {
                         while (true) {
                             Runnable pollTask = node.nodeTasksQueue.poll();
@@ -61,26 +69,41 @@ public class NodeTaskManager {
                             }
                         }
                     } finally {
-                        // queue task
-                        // see no executors
-                        // fail
-                    node.executors.release();
-                    }
-                });
-            }
-            node.nodeTasksQueue.offer(task);
+                        node.executors.release();
 
-            return true;
-        } else {
-            return false;
+                        // After we polled null:
+                        // other thread could offer task
+                        // but get false with node.executors.tryAcquire()
+                        // That's why after release we must check the situation, that there are
+                        // no more executors for node, but some tasks are remaining
+
+                        if (noNodeExecutors(node)) {  // no more node executors
+                            if (!noNodeTasks(node)) {  // there are tasks for node
+                                if (node.executors.tryAcquire()) {
+                                    executorService.execute(this);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
         }
 
+        return true;
     }
 
-    private static class Node {
-        private final ConcurrentLinkedQueue<Runnable> nodeTasksQueue;
-        private final Semaphore executors;
-        private final Semaphore queuedTasks;
+    private boolean noNodeTasks(Node node) {
+        return node.queuedTasks.availablePermits() == queueSizePerNode;
+    }
+
+    private boolean noNodeExecutors(Node node) {
+        return node.executors.availablePermits() == maxExecutorsPerNode;
+    }
+
+    static class Node {
+        final ConcurrentLinkedQueue<Runnable> nodeTasksQueue;
+        final Semaphore executors;
+        final Semaphore queuedTasks;
 
         public Node(int maxExecutors, int maxQueueSize) {
             nodeTasksQueue = new ConcurrentLinkedQueue<>();

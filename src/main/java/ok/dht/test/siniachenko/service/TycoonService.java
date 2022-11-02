@@ -2,6 +2,7 @@ package ok.dht.test.siniachenko.service;
 
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.siniachenko.NodeTaskManager;
 import ok.dht.test.siniachenko.TycoonHttpServer;
 import ok.dht.test.siniachenko.rendezvoushashing.NodeMapper;
 import one.nio.http.HttpSession;
@@ -22,8 +23,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -41,6 +40,7 @@ public class TycoonService implements ok.dht.Service {
     private TycoonHttpServer server;
     private ExecutorService executorService;
     private HttpClient httpClient;
+    private NodeTaskManager nodeTaskManager;
 
     public TycoonService(ServiceConfig config) {
         this.config = config;
@@ -63,6 +63,12 @@ public class TycoonService implements ok.dht.Service {
 
         // Http Client
         httpClient = HttpClient.newHttpClient();
+
+        // Node teaks manager
+        nodeTaskManager = new NodeTaskManager(
+            executorService, config.clusterUrls(),
+            THREAD_POOL_QUEUE_CAPACITY, AVAILABLE_PROCESSORS / 2
+        );
 
         // Http Server
         server = new TycoonHttpServer(this, config.selfPort());
@@ -108,41 +114,48 @@ public class TycoonService implements ok.dht.Service {
     }
 
     private void proxyRequest(HttpSession session, Request request, String idParameter, String nodeUrl) {
-        HttpResponse<byte[]> response;
-        try {
-            response = httpClient.send(
-                HttpRequest.newBuilder()
-                    .uri(URI.create(nodeUrl + PATH + "?id=" + idParameter))
-                    .method(
-                        request.getMethodName(),
-                        request.getBody() == null
-                            ? HttpRequest.BodyPublishers.noBody()
-                            : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
-                    )
-                    .build(),
-                HttpResponse.BodyHandlers.ofByteArray()
-            );
-        } catch (IOException | InterruptedException e) {
-            LOG.error("Error after proxy request to {}", nodeUrl, e);
-            Response proxyResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        boolean taskAdded = nodeTaskManager.tryAddNodeTask(nodeUrl, () -> {
+            HttpResponse<byte[]> response;
+            try {
+                response = httpClient.send(
+                    HttpRequest.newBuilder()
+                        .uri(URI.create(nodeUrl + PATH + "?id=" + idParameter))
+                        .method(
+                            request.getMethodName(),
+                            request.getBody() == null
+                                ? HttpRequest.BodyPublishers.noBody()
+                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                        )
+                        .build(),
+                    HttpResponse.BodyHandlers.ofByteArray()
+                );
+            } catch (IOException | InterruptedException e) {
+                LOG.error("Error after proxy request to {}", nodeUrl, e);
+                Response proxyResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                sendResponse(session, proxyResponse);
+                return;
+            }
+            String statusCode;
+            if (response.statusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+                statusCode = Response.NOT_FOUND;
+            } else if (response.statusCode() == HttpURLConnection.HTTP_OK) {
+                statusCode = Response.OK;
+            } else if (response.statusCode() == HttpURLConnection.HTTP_CREATED) {
+                statusCode = Response.CREATED;
+            } else if (response.statusCode() == HttpURLConnection.HTTP_ACCEPTED) {
+                statusCode = Response.ACCEPTED;
+            } else {
+                LOG.error("Unexpected status {} code requesting node {}", response.statusCode(), nodeUrl);
+                statusCode = Response.INTERNAL_ERROR;
+            }
+            Response proxyResponse = new Response(statusCode, response.body());
             sendResponse(session, proxyResponse);
-            return;
+        });
+
+        if (!taskAdded) {
+            LOG.error("Cannot add task to the node {}", nodeUrl);
+            sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
-        String statusCode;
-        if (response.statusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-            statusCode = Response.NOT_FOUND;
-        } else if (response.statusCode() == HttpURLConnection.HTTP_OK) {
-            statusCode = Response.OK;
-        } else if (response.statusCode() == HttpURLConnection.HTTP_CREATED) {
-            statusCode = Response.CREATED;
-        } else if (response.statusCode() == HttpURLConnection.HTTP_ACCEPTED) {
-            statusCode = Response.ACCEPTED;
-        } else {
-            LOG.error("Unexpected status {} code requesting node {}", response.statusCode(), nodeUrl);
-            statusCode = Response.INTERNAL_ERROR;
-        }
-        Response proxyResponse = new Response(statusCode, response.body());
-        sendResponse(session, proxyResponse);
     }
 
     private void executeLocal(HttpSession session, Request request, String id) {
