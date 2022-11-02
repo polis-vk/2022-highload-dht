@@ -3,7 +3,6 @@ package ok.dht.test.armenakyan;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.armenakyan.distribution.SelfNodeHandler;
 import ok.dht.test.armenakyan.distribution.coordinator.ClusterCoordinator;
 import ok.dht.test.armenakyan.distribution.hashing.MD5KeyHasher;
 import ok.dht.test.armenakyan.util.ServiceUtils;
@@ -16,8 +15,10 @@ import one.nio.http.Response;
 import java.io.IOException;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ForkJoinPool;
 
 public class DhtService implements Service {
+    private static final int SERVER_WORKERS = Runtime.getRuntime().availableProcessors();
     private static final String ID_PARAM = "id=";
     private static final String ACK_PARAM = "ack=";
     private static final String FROM_PARAM = "from=";
@@ -29,8 +30,7 @@ public class DhtService implements Service {
     private final ServiceConfig serviceConfig;
     private HttpServer httpServer;
     private ClusterCoordinator coordinator;
-
-    private SelfNodeHandler daoHandler;
+    private ForkJoinPool internalPool;
 
     public DhtService(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
@@ -38,18 +38,20 @@ public class DhtService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        httpServer = new DhtHttpServer(Runtime.getRuntime().availableProcessors(),
-                ServiceUtils.createConfigFromPort(serviceConfig.selfPort()),
-                this);
-
-        daoHandler = new SelfNodeHandler(serviceConfig.workingDir());
-
-        coordinator = new ClusterCoordinator(
-                serviceConfig.selfUrl(),
-                daoHandler,
-                serviceConfig.clusterUrls(),
-                new MD5KeyHasher()
+        internalPool = new ForkJoinPool(
+                SERVER_WORKERS,
+                ForkJoinPool.defaultForkJoinWorkerThreadFactory,
+                null,
+                true
         );
+
+        httpServer = new DhtHttpServer(
+                internalPool,
+                ServiceUtils.createConfigFromPort(serviceConfig.selfPort()),
+                this
+        );
+
+        coordinator = new ClusterCoordinator(serviceConfig, new MD5KeyHasher(), internalPool);
 
         httpServer.start();
 
@@ -59,8 +61,8 @@ public class DhtService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         httpServer.stop();
-        daoHandler.close();
         coordinator.close();
+        internalPool.shutdownNow();
 
         return CompletableFuture.completedFuture(null);
     }
@@ -80,7 +82,7 @@ public class DhtService implements Service {
 
         String timestampHeader = request.getHeader(ServiceUtils.TIMESTAMP_HEADER);
         if (timestampHeader != null) {
-            daoHandler.handleForKey(id, request, session, -1);
+            coordinator.handleLocally(id, request, session);
             return;
         }
 

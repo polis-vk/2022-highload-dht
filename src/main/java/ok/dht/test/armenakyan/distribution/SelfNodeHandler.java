@@ -13,19 +13,23 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
 public class SelfNodeHandler implements NodeRequestHandler {
     private static final String DB_NAME = "rocks";
+    private static final String TIMESTAMP_HEADER = ServiceUtils.TIMESTAMP_HEADER.concat(": ");
     private final RocksDB rocksDB;
+    private final ExecutorService workerPool;
 
     static {
         RocksDB.loadLibrary();
     }
 
-    public SelfNodeHandler(Path dbWorkingDir) throws IOException {
+    public SelfNodeHandler(Path dbWorkingDir, ExecutorService workerPool) throws IOException {
         Files.createDirectories(dbWorkingDir);
         try {
-            rocksDB = RocksDB.open(dbWorkingDir.resolve(DB_NAME).toString());
+            this.rocksDB = RocksDB.open(dbWorkingDir.resolve(DB_NAME).toString());
+            this.workerPool = workerPool;
         } catch (RocksDBException e) {
             throw new IOException(e);
         }
@@ -37,7 +41,7 @@ public class SelfNodeHandler implements NodeRequestHandler {
     }
 
     private Response handleForKey(String id, Request request, long timestamp) {
-        String timestampHeader = request.getHeader(ServiceUtils.TIMESTAMP_HEADER.concat(": "));
+        String timestampHeader = request.getHeader(TIMESTAMP_HEADER);
 
         boolean isProxied = timestamp == -1;
         if (timestampHeader != null && isProxied) {
@@ -66,7 +70,7 @@ public class SelfNodeHandler implements NodeRequestHandler {
 
     @Override
     public CompletableFuture<Response> handleForKeyAsync(String key, Request request, long timestamp) {
-        return CompletableFuture.supplyAsync(() -> handleForKey(key, request, timestamp));
+        return CompletableFuture.supplyAsync(() -> handleForKey(key, request, timestamp), workerPool);
     }
 
     public Response get(String id) throws RocksDBException {
@@ -100,6 +104,7 @@ public class SelfNodeHandler implements NodeRequestHandler {
     @Override
     public void close() throws IOException {
         try {
+            workerPool.shutdownNow();
             rocksDB.closeE();
         } catch (RocksDBException e) {
             throw new IOException(e);

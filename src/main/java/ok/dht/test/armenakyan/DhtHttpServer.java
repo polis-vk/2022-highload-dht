@@ -9,20 +9,15 @@ import one.nio.net.Session;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
 
 public class DhtHttpServer extends HttpServer {
-    private final ForkJoinPool workerPool;
+    private final ExecutorService workerPool;
 
-    public DhtHttpServer(int poolSize, HttpServerConfig config, Object... routers) throws IOException {
+    public DhtHttpServer(ExecutorService workerPool, HttpServerConfig config, Object... routers) throws IOException {
         super(config, routers);
-
-        workerPool = new ForkJoinPool(
-                poolSize,
-                ForkJoinPool.defaultForkJoinWorkerThreadFactory,
-                null,
-                true
-        );
+        this.workerPool = workerPool;
     }
 
     @Override
