@@ -21,13 +21,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ReplicationManager {
 
     public static final String NOT_ENOUGH_REPLICAS = "Not Enough Replicas";
-    private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(1);
+    private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(4);
     private static final Logger LOGGER = LoggerFactory.getLogger(ReplicationManager.class);
     private final ShardingAlgorithm algorithm;
     private final String selfUrl;
     private final RequestExecutor requestExecutor;
     private final CircuitBreaker circuitBreaker;
     private final HttpClient client;
+
 
     public ReplicationManager(
             ShardingAlgorithm algorithm,
@@ -57,8 +58,8 @@ public class ReplicationManager {
         return requestBuilder;
     }
 
-    private static Response createInternalResponse(HttpResponse<byte[]> response, String responseStatus) {
-        Response resultResponse = new Response(responseStatus, response.body());
+    private static Response createInternalResponse(HttpResponse<byte[]> response) {
+        Response resultResponse = new Response(Utils.getResponseStatus(response), response.body());
         HttpHeaders headers = response.headers();
         addHeader(resultResponse, headers, Utils.TOMBSTONE, Utils.TOMBSTONE);
         addHeader(resultResponse, headers, Utils.TIMESTAMP, Utils.TIMESTAMP_ONE_NIO);
@@ -81,12 +82,13 @@ public class ReplicationManager {
         for (int i = 0; i < from; ++i) {
             Shard shard = algorithm.getShardByIndex(shardIndex);
 
-            handleFinder(id, request, timestamp, shard).thenAccept(
+            handleFinder(id, request, timestamp, shard).thenComposeAsync(
                     response -> {
                         addSuccessResponse(collectedResponses, response);
                         countReq.incrementAndGet();
+                        return null;
                     }
-            ).whenComplete(
+            ).whenCompleteAsync(
                     (resp, exception) -> {
                         boolean isAcks = collectedResponses.size() >= ack;
                         if ((from == countReq.get() || isAcks)) {
@@ -109,11 +111,15 @@ public class ReplicationManager {
     }
 
     private CompletableFuture<Response> handleFinder(String id, Request request, long timestamp, Shard shard) {
-//        LOGGER.debug("Handle request {} on node {}", id, shard.getName());
         if (shard.getName().equals(selfUrl)) {
             return CompletableFuture.completedFuture(requestExecutor.entityHandlerSelf(id, request, timestamp));
         } else {
-            return getResponseFromAnotherNode(request, shard);
+            if (circuitBreaker.isReady(shard.getName())) {
+                return getResponseFromAnotherNode(request, shard);
+            } else {
+                LOGGER.error("Node is unavailable right now");
+                return CompletableFuture.completedFuture(Utils.emptyResponse(Response.SERVICE_UNAVAILABLE));
+            }
         }
     }
 
@@ -171,17 +177,16 @@ public class ReplicationManager {
         byte[] body = request.getBody() == null ? Response.EMPTY : request.getBody();
         HttpRequest.Builder requestBuilder = getBuilder(request, shard.getName() + request.getURI(), body);
         return client.sendAsync(requestBuilder.build(),
-                HttpResponse.BodyHandlers.ofByteArray()).thenApply(response -> {
-                    if (Utils.isServerError(response.statusCode())) {
+                HttpResponse.BodyHandlers.ofByteArray()).handleAsync((response, exception) -> {
+                    if (exception != null || Utils.isServerError(response.statusCode())) {
                         circuitBreaker.incrementFail(shard.getName());
+                        return Utils.emptyResponse(Response.GATEWAY_TIMEOUT);
                     } else {
                         circuitBreaker.successRequest(shard.getName());
+                        return createInternalResponse(response);
                     }
-
-                    String responseStatus = Utils.getResponseStatus(response);
-                    return createInternalResponse(response, responseStatus);
                 }
-        ).exceptionally(exception -> Utils.emptyResponse(Response.GATEWAY_TIMEOUT));
+        );
     }
 
 }

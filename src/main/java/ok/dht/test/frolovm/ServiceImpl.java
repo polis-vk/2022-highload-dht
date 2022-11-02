@@ -90,7 +90,7 @@ public class ServiceImpl implements Service {
 
     @Path(PATH_ENTITY)
     public void entityHandler(@Param(PARAM_ID_NAME) String id, Request request, HttpSession session,
-                                  @Param(PARAM_ACK_NAME) String ackParam, @Param(PARAM_FROM_NAME) String fromParam) {
+                              @Param(PARAM_ACK_NAME) String ackParam, @Param(PARAM_FROM_NAME) String fromParam) {
         if (!Utils.checkId(id)) {
             Utils.sendResponse(session, new Response(Response.BAD_REQUEST, Utf8.toBytes(Utils.BAD_ID)));
             return;
@@ -117,7 +117,8 @@ public class ServiceImpl implements Service {
             }
             default -> {
                 LOGGER.error("Method is not allowed: " + request.getMethod());
-                Utils.sendResponse(session, new Response(Response.METHOD_NOT_ALLOWED, Utf8.toBytes(Utils.NO_SUCH_METHOD)));
+                Utils.sendResponse(session, new Response(Response.METHOD_NOT_ALLOWED,
+                        Utf8.toBytes(Utils.NO_SUCH_METHOD)));
             }
         }
     }
