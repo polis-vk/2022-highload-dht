@@ -15,18 +15,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.URISyntaxException;
 import java.net.http.HttpResponse;
 import java.nio.channels.ClosedSelectorException;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class HttpShardServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(HttpShardServer.class);
@@ -134,81 +134,112 @@ public class HttpShardServer extends HttpServer {
                 return;
             }
 
-            final List<String> urlsNode = sharding.getClusterUrlsByCount(id, from);
-            List<CompletableFuture<HttpResponse<byte[]>>> multicast = multicast(request, urlsNode, method, id);
-            ArrayList<HttpResponse<byte[]>> responses = new ArrayList<>();
+            final var urlsNode = sharding.getClusterUrlsByCount(id, from);
+            final var timestamp = Instant.now();
+            final var okResponses = new AtomicInteger(0);
+            final var handleResponses = new AtomicInteger(0);
+            final var multicastWaitingFutures = new ConcurrentHashMap<Integer, CompletableFuture<HttpResponse<byte[]>>>();
+            final var resultDaoEntry = new AtomicReference<DaoEntry>();
 
-            for (var res : multicast) {
-                try {
-                    responses.add(res.get(AWAIT_TERMINATE_SECONDS, TimeUnit.SECONDS));
-                } catch (Exception e) {
-                    logger.error("Fail connect with node", e);
-                }
-            }
+            for (int i = 0; i < urlsNode.size(); i++) {
+                final var future = clientDao.requestNode(
+                        String.format("%s%s%s", urlsNode.get(i), ENDPOINT, "?id=" + id),
+                        method,
+                        timestamp,
+                        request.getBody()
+                );
+                final var curI = i;
 
-            switch (request.getMethod()) {
-                case Request.METHOD_GET -> {
-                    if (ack <= responses.stream()
-                            .filter(r -> r.statusCode() == OK || r.statusCode() == NOT_FOUND).count()) {
-                        DaoEntry result = new DaoEntry(Instant.MIN, request, true);
+                multicastWaitingFutures.put(curI, future);
+                future.handleAsync(
+                        (response, throwable) -> {
+                            try {
+                                if (throwable != null) {
+                                    logger.error("Fail send response!", throwable);
+                                    handleNotEnoughReplicas(session, from, ack, okResponses, handleResponses);
+                                    return null;
+                                }
 
-                        for (var res : responses) {
-                            if (res.statusCode() == NOT_FOUND) {
-                                continue;
+                                multicastWaitingFutures.remove(curI);
+
+                                switch (request.getMethod()) {
+                                    case Request.METHOD_GET -> {
+                                        if (response.statusCode() == OK) {
+                                            DaoEntry newEntry = ObjectMapper.deserialize(response.body());
+
+                                            while (true) {
+                                                DaoEntry oldEntry = resultDaoEntry.get();
+
+                                                if (oldEntry != null && oldEntry.compareTo(newEntry) >= 0
+                                                        || resultDaoEntry.compareAndSet(oldEntry, newEntry)) {
+                                                    break;
+                                                }
+                                            }
+                                        }
+
+                                        var curOk = okResponses.incrementAndGet();
+                                        var last = resultDaoEntry.get();
+
+                                        if (curOk == ack) {
+                                            if (last == null || last.isTombstone) {
+                                                session.sendResponse(responseEmpty(Response.NOT_FOUND));
+                                            } else {
+                                                session.sendResponse(new Response(Response.ok(last.value)));
+                                            }
+                                            multicastWaitingFutures.forEach((k, v) -> v.cancel(false));
+                                        }
+                                    }
+                                    case Request.METHOD_PUT -> {
+                                        if (response.statusCode() == CREATED) {
+                                            var curOk = okResponses.incrementAndGet();
+
+                                            if (curOk == ack) {
+                                                session.sendResponse(responseEmpty(Response.CREATED));
+                                                multicastWaitingFutures.forEach((k, v) -> v.cancel(false));
+                                            }
+                                        }
+                                    }
+                                    case Request.METHOD_DELETE -> {
+                                        if (response.statusCode() == ACCEPTED) {
+                                            var curOk = okResponses.incrementAndGet();
+
+                                            if (curOk == ack) {
+                                                session.sendResponse(responseEmpty(Response.ACCEPTED));
+                                                multicastWaitingFutures.forEach((k, v) -> v.cancel(false));
+                                            }
+                                        }
+                                    }
+                                    default ->
+                                            throw new IllegalArgumentException("Unsupported request method: " + method);
+                                }
+                                handleNotEnoughReplicas(session, from, ack, okResponses, handleResponses);
+                            } catch (IOException | ClassNotFoundException e) {
+                                logger.error("Fail send response!", e);
                             }
-                            DaoEntry current = ObjectMapper.deserialize(res.body());
 
-                            if (current != null && result.compareTo(current) < 0) {
-                                result = current;
-                            }
+                            return null;
                         }
-
-                        if (result.isTombstone) {
-                            session.sendResponse(responseEmpty(Response.NOT_FOUND));
-                        } else {
-                            session.sendResponse(Response.ok(result.value));
-                        }
-                    } else {
-                        session.sendResponse(responseEmpty(NOT_ENOUGH_REPLICAS));
-                    }
-                }
-                case Request.METHOD_PUT -> {
-                    if (ack <= responses.stream().filter(r -> r.statusCode() == CREATED).count()) {
-                        session.sendResponse(responseEmpty(Response.CREATED));
-                    } else {
-                        session.sendResponse(responseEmpty(NOT_ENOUGH_REPLICAS));
-                    }
-                }
-                case Request.METHOD_DELETE -> {
-                    if (ack <= responses.stream().filter(r -> r.statusCode() == ACCEPTED).count()) {
-                        session.sendResponse(responseEmpty(Response.ACCEPTED));
-                    } else {
-                        session.sendResponse(responseEmpty(NOT_ENOUGH_REPLICAS));
-                    }
-                }
-                default -> throw new IllegalArgumentException("Unsupported request method: " + method);
+                );
             }
-        } catch (IOException | URISyntaxException e) {
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private List<CompletableFuture<HttpResponse<byte[]>>> multicast(
-            Request request,
-            List<String> urlsNode,
-            int method,
-            String id
-    ) throws URISyntaxException {
-        final Instant timestamp = Instant.now();
+    private static void handleNotEnoughReplicas(
+            HttpSession session,
+            int from,
+            int ack,
+            AtomicInteger okResponses,
+            AtomicInteger handleResponses
+    ) throws IOException {
+        var currentSnapshot = handleResponses.incrementAndGet();
+        var curOk = okResponses.get();
 
-        return urlsNode
-                .stream()
-                .map(urlNode -> clientDao.requestNode(
-                        String.format("%s%s%s", urlNode, ENDPOINT, "?id=" + id), method, timestamp, request.getBody())
-                )
-                .collect(Collectors.toList());
+        if (currentSnapshot == from && curOk < ack) {
+            session.sendResponse(responseEmpty(NOT_ENOUGH_REPLICAS));
+        }
     }
-
     private void handleRequestInCluster(
             Request request,
             HttpSession session,

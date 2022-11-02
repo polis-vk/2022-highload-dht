@@ -30,12 +30,9 @@ public final class ObjectMapper {
         }
     }
 
-    public static <T> T deserialize(@Nonnull byte[] data) {
+    public static <T> T deserialize(@Nonnull byte[] data) throws IOException, ClassNotFoundException {
         try (ObjectInputStream is = new ObjectInputStream(new ByteArrayInputStream(data))) {
             return (T) is.readObject();
-        } catch (IOException | ClassNotFoundException e) {
-            logger.error("Don't deserialize byte array", e);
-            return null;
         }
     }
 }
