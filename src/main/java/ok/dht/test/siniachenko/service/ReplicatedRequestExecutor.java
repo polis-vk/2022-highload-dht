@@ -40,6 +40,7 @@ public class ReplicatedRequestExecutor {
     private Set<Integer> successStatusCodes;
     private AtomicInteger failureCount;
     private AtomicInteger successCount;
+    private AtomicInteger readyCount;
     byte[][] values;
 
     public ReplicatedRequestExecutor(
@@ -63,6 +64,7 @@ public class ReplicatedRequestExecutor {
         boolean needLocalWork = false;
         failureCount = new AtomicInteger();
         successCount = new AtomicInteger();
+        readyCount = new AtomicInteger();
 
         CompletableFuture<byte[][]> resultFuture = new CompletableFuture<>();
 
@@ -89,7 +91,9 @@ public class ReplicatedRequestExecutor {
                     // could reuse addSuccess method, but code climate wanted to reallocate all arrays...
                     int success = successCount.incrementAndGet();
                     values[success - 1] = value;
-                    if (success == ack) { // first achieve of ack success results
+                    // second atomic is to avoid case when ack threads incremented success, but somebody hasn't set result yet
+                    int ready = readyCount.incrementAndGet();
+                    if (ready == ack) { // first achieve of ack success results
                         resultFuture.complete(values);
                     }
                 });
@@ -152,7 +156,9 @@ public class ReplicatedRequestExecutor {
     private void addSuccess(HttpResponse<byte[]> response, CompletableFuture<byte[][]> resultFuture) {
         int success = successCount.incrementAndGet();
         values[success - 1] = response.body();
-        if (success == ack) { // first achieve of ack success results
+        // second atomic is to avoid case when ack threads incremented success, but somebody hasn't set result yet
+        int ready = readyCount.incrementAndGet();
+        if (ready == ack) { // first achieve of ack success results
             resultFuture.complete(values);
         }
     }
