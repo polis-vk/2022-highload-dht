@@ -21,10 +21,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class MyServer extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(MyServer.class);
@@ -33,7 +33,9 @@ public class MyServer extends HttpServer {
 
     private final MemorySegmentDao dao;
     private final Executor executor;
+    private final Executor daoExecutor;
     private final Executor executorAggregator;
+    private final Executor executorRemoteProcess;
     private final HttpClient client;
     private final ServiceConfig config;
     private final List<Node> nodes;
@@ -44,11 +46,13 @@ public class MyServer extends HttpServer {
         this.config = config;
         dao = new MemorySegmentDao(new Config(config.workingDir(), 1048576L));
         executor = Executors.newFixedThreadPool(16);
-        executorAggregator = Executors.newFixedThreadPool(16);
+        executorAggregator = Executors.newFixedThreadPool(1);
+        executorRemoteProcess = Executors.newFixedThreadPool(4);
+        daoExecutor = Executors.newFixedThreadPool(16);
         client = HttpClient.newHttpClient();
 
         nodes = new ArrayList<>(config.clusterUrls().size());
-        Node currentNode= null;
+        Node currentNode = null;
         for (String url : config.clusterUrls()) {
             Node node = new Node(url);
             nodes.add(node);
@@ -110,7 +114,7 @@ public class MyServer extends HttpServer {
         String remoteHeaderTimestamp = request.getHeader(REMOTE_HEADER_TIMESTAMP + ":");
         if (remoteHeaderTimestamp != null) {
             long timestamp = Long.parseLong(remoteHeaderTimestamp); //todo error
-            boolean process = processNode(currentNode, () -> {
+            executorRemoteProcess.execute(() -> {
                 try {
                     String url = currentNode.url;
                     LOG.debug("Url {} for id {} (my port is {})", url, id, config.selfPort());
@@ -123,120 +127,120 @@ public class MyServer extends HttpServer {
                     sendError(session);
                 }
             });
-            if (!process) {
-                LOG.error("error process handle request");
-                sendError(session);
-            }
             return;
         }
 
 
         int firstIndex = getNodeIndexForKey(id);
         long now = System.currentTimeMillis();
-        HandleResult[] results = new HandleResult[from];
-        CountDownLatch countDownLatch = new CountDownLatch(from);
+        CompletableFuture[] completableFuturesResults = new CompletableFuture[from];
         for (int i = 0; i < from; i++) {
             int iFinal = i;
             Node node = nodes.get((firstIndex + i) % nodes.size());
-            
-            boolean process = processNode(node, () -> {
-                try {
-                    String url = node.url;
-                    LOG.debug("Url {} for id {} (my port is {})", url, id, config.selfPort());
-                    results[iFinal] =
-                            url.equals(config.selfUrl())
-                                    ? handleRequest(request, id, now)
-                                    : proxyRequest(request, url, now);
-                    countDownLatch.countDown();
-                } catch (Exception e) {
-                    LOG.error("error handle request", e);
-                    results[iFinal] = new HandleResult(Response.INTERNAL_ERROR);
-                    countDownLatch.countDown();
-                }
-            });
-            if (!process) {
-                results[iFinal] = new HandleResult(Response.INTERNAL_ERROR);
-                countDownLatch.countDown();
+
+            try {
+                String url = node.url;
+                LOG.debug("Url {} for id {} (my port is {})", url, id, config.selfPort());
+                completableFuturesResults[iFinal] =
+                        url.equals(config.selfUrl())
+                                ? handleRequestAsync(request, id, now)
+                                : proxyRequest(request, url, now);
+            } catch (Exception e) {
+                LOG.error("error handle request", e);
+                completableFuturesResults[iFinal] = CompletableFuture.completedFuture(new HandleResult(Response.INTERNAL_ERROR));
             }
         }
 
-        executorAggregator.execute(() -> {
-            try {
-                countDownLatch.await();
-            } catch (InterruptedException e) {
-                LOG.error("interrupted executor aggregator", e);
-                sendError(session);
-            }
+        AtomicInteger successAtomic = new AtomicInteger();
+        AtomicInteger completed = new AtomicInteger();
+        AtomicReference<HandleResult> winResult = new AtomicReference<>(new HandleResult(Response.GATEWAY_TIMEOUT));
+        for (CompletableFuture<HandleResult> completableFuture : completableFuturesResults) {
+            completableFuture.whenCompleteAsync((result, throwable) -> {
+                if (throwable != null) {
+                    LOG.error("error complete async", throwable);
+                    result = new HandleResult(Response.INTERNAL_ERROR);
+                }
 
-            int success = 0;
-            HandleResult winResult = new HandleResult(Response.GATEWAY_TIMEOUT);
-            for (HandleResult result : results) {
-                if (result.status.equals(Response.OK) 
+                int success = 0;
+                if (result.status.equals(Response.OK)
                         || result.status.equals(Response.CREATED)
                         || result.status.equals(Response.ACCEPTED)
                         || result.status.equals(Response.NOT_FOUND)) {
-                    if (winResult.timestamp <= result.timestamp) {
-                        winResult = result;
+                    boolean compareAndSetResult = false;
+                    while (!compareAndSetResult) {
+                        HandleResult winResultGet = winResult.get();
+                        if (winResultGet.timestamp <= result.timestamp) {
+                            compareAndSetResult = winResult.compareAndSet(winResultGet, result);
+                        } else {
+                            compareAndSetResult = true;
+                        }
                     }
-                    success++;
+                    success = successAtomic.incrementAndGet();
                 }
 
-                if (result.status.equals(Response.METHOD_NOT_ALLOWED)) {
-                    winResult = result;
-                    break;
-                }
-            }
 
-            try {
-                if (success >= ack) {
-                    session.sendResponse(new Response(winResult.status, winResult.data));
-                } else {
-                    session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-                }
-            } catch (IOException e) {
-                LOG.error("executor sendResponse", e);
-                sessionClose(session);
-                return;
-            }
-        });
-    }
-
-    private boolean processNode(Node node, Runnable runnable) {
-
-        int tasks = node.tasksCount.incrementAndGet();
-        if (tasks > Node.MAX_TASKS_ALLOWED) {
-            node.tasksCount.decrementAndGet();
-            return false;
-        }
-
-
-        node.tasks.add(runnable);
-
-
-        if (node.maxWorkersSemaphore.tryAcquire()) {
-            executor.execute(new Runnable() {
-                @Override
-                public void run() {
-                    Runnable poll = node.tasks.poll();
-
-                    if (poll == null) {
-                        node.maxWorkersSemaphore.release();
+                if (success == ack) {
+                    HandleResult winResultGet = winResult.get();
+                    try {
+                        session.sendResponse(new Response(winResultGet.status, winResultGet.data));
+                    } catch (IOException e) {
+                        LOG.error("executor sendResponse", e);
+                        sessionClose(session);
                         return;
                     }
-
-                    try {
-                        poll.run();
-                    } catch (Exception e) {
-                        LOG.error("Unexpected error handle request", e);
-                    } finally {
-                        node.tasksCount.decrementAndGet();
-                        executor.execute(this);
-                    }
+                    return;
                 }
-            });
+                int completedGet = completed.incrementAndGet();
+                if (completedGet == from && success < ack) {
+                    try {
+                        session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+                    } catch (IOException e) {
+                        LOG.error("executor sendResponse", e);
+                        sessionClose(session);
+                        return;
+                    }
+                    return;
+                }
+            }, executorAggregator);
         }
-        return true;
     }
+
+//    private boolean processNode(Node node, Runnable runnable) {
+//
+//        int tasks = node.tasksCount.incrementAndGet();
+//        if (tasks > Node.MAX_TASKS_ALLOWED) {
+//            node.tasksCount.decrementAndGet();
+//            return false;
+//        }
+//
+//
+//        node.tasks.add(runnable);
+//
+//
+//        if (node.maxWorkersSemaphore.tryAcquire()) {
+//            executor.execute(new Runnable() {
+//                @Override
+//                public void run() {
+//                    Runnable poll = node.tasks.poll();
+//
+//                    if (poll == null) {
+//                        node.maxWorkersSemaphore.release();
+//                        return;
+//                    }
+//
+//                    try {
+//                        poll.run();
+//                    } catch (Exception e) {
+//                        LOG.error("Unexpected error handle request", e);
+//                    } finally {
+//                        node.tasksCount.decrementAndGet();
+//                        executor.execute(this);
+//                    }
+//                }
+//            });
+//        }
+//        return true;
+//    }
 
     private int getInt(Request request, String param, int defaultValue) throws Exception_400 {
         String fromStr = request.getParameter(param);
@@ -285,7 +289,7 @@ public class MyServer extends HttpServer {
         }
     }
 
-    private HandleResult proxyRequest(Request request, String url, long now) throws IOException, InterruptedException {
+    private CompletableFuture<HandleResult> proxyRequest(Request request, String url, long now) throws IOException, InterruptedException {
         HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(url + request.getURI()))
                 .header(REMOTE_HEADER_TIMESTAMP, String.valueOf(now))
                 .method(
@@ -295,36 +299,47 @@ public class MyServer extends HttpServer {
                                 : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
                 ).build();
 
-        HttpResponse<byte[]> response = client.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
-        String status = switch (response.statusCode()) {
-            case HttpURLConnection.HTTP_OK -> Response.OK;
-            case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
-            case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
-            case HttpURLConnection.HTTP_NO_CONTENT -> Response.NO_CONTENT;
-            case HttpURLConnection.HTTP_SEE_OTHER -> Response.SEE_OTHER;
-            case HttpURLConnection.HTTP_NOT_MODIFIED -> Response.NOT_MODIFIED;
-            case HttpURLConnection.HTTP_USE_PROXY -> Response.USE_PROXY;
-            case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
-            case HttpURLConnection.HTTP_UNAUTHORIZED -> Response.UNAUTHORIZED;
-            case HttpURLConnection.HTTP_PAYMENT_REQUIRED -> Response.PAYMENT_REQUIRED;
-            case HttpURLConnection.HTTP_FORBIDDEN -> Response.FORBIDDEN;
-            case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
-            case HttpURLConnection.HTTP_NOT_ACCEPTABLE -> Response.NOT_ACCEPTABLE;
-            case HttpURLConnection.HTTP_CONFLICT -> Response.CONFLICT;
-            case HttpURLConnection.HTTP_GONE -> Response.GONE;
-            case HttpURLConnection.HTTP_LENGTH_REQUIRED -> Response.LENGTH_REQUIRED;
-            case HttpURLConnection.HTTP_INTERNAL_ERROR -> Response.INTERNAL_ERROR;
-            case HttpURLConnection.HTTP_NOT_IMPLEMENTED -> Response.NOT_IMPLEMENTED;
-            case HttpURLConnection.HTTP_BAD_GATEWAY -> Response.BAD_GATEWAY;
-            case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> Response.GATEWAY_TIMEOUT;
-            default -> throw new IllegalArgumentException("Unknown status code: " + response.statusCode());
-        };
-        Optional<String> dataHeaderStr = response.headers().firstValue(DATA_HEADER_TIMESTAMP);
-        long timestamp = 0;
-        if (dataHeaderStr.isPresent()) {
-            timestamp = Long.parseLong(dataHeaderStr.get());
-        }
-        return new HandleResult(status, timestamp, response.body());
+        CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture = client.sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
+        return responseCompletableFuture.thenApply(response -> {
+                    String status = switch (response.statusCode()) {
+                        case HttpURLConnection.HTTP_OK -> Response.OK;
+                        case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
+                        case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
+                        case HttpURLConnection.HTTP_NO_CONTENT -> Response.NO_CONTENT;
+                        case HttpURLConnection.HTTP_SEE_OTHER -> Response.SEE_OTHER;
+                        case HttpURLConnection.HTTP_NOT_MODIFIED -> Response.NOT_MODIFIED;
+                        case HttpURLConnection.HTTP_USE_PROXY -> Response.USE_PROXY;
+                        case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
+                        case HttpURLConnection.HTTP_UNAUTHORIZED -> Response.UNAUTHORIZED;
+                        case HttpURLConnection.HTTP_PAYMENT_REQUIRED -> Response.PAYMENT_REQUIRED;
+                        case HttpURLConnection.HTTP_FORBIDDEN -> Response.FORBIDDEN;
+                        case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
+                        case HttpURLConnection.HTTP_NOT_ACCEPTABLE -> Response.NOT_ACCEPTABLE;
+                        case HttpURLConnection.HTTP_CONFLICT -> Response.CONFLICT;
+                        case HttpURLConnection.HTTP_GONE -> Response.GONE;
+                        case HttpURLConnection.HTTP_LENGTH_REQUIRED -> Response.LENGTH_REQUIRED;
+                        case HttpURLConnection.HTTP_INTERNAL_ERROR -> Response.INTERNAL_ERROR;
+                        case HttpURLConnection.HTTP_NOT_IMPLEMENTED -> Response.NOT_IMPLEMENTED;
+                        case HttpURLConnection.HTTP_BAD_GATEWAY -> Response.BAD_GATEWAY;
+                        case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> Response.GATEWAY_TIMEOUT;
+                        default -> throw new IllegalArgumentException("Unknown status code: " + response.statusCode());
+                    };
+                    Optional<String> dataHeaderStr = response.headers().firstValue(DATA_HEADER_TIMESTAMP);
+                    long timestamp = 0;
+                    if (dataHeaderStr.isPresent()) {
+                        timestamp = Long.parseLong(dataHeaderStr.get());
+                    }
+                    return new HandleResult(status, timestamp, response.body());
+                }
+        ).exceptionally(throwable -> {
+            LOG.error("error send async", throwable);
+            return new HandleResult(Response.INTERNAL_ERROR);
+        });
+
+    }
+
+    private CompletableFuture<HandleResult> handleRequestAsync(Request request, String id, long now) {
+        return CompletableFuture.supplyAsync(() -> handleRequest(request, id, now), daoExecutor);
     }
 
     private HandleResult handleRequest(Request request, String id, long now) {
