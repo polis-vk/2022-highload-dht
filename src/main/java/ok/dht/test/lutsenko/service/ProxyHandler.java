@@ -25,10 +25,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ProxyHandler implements Closeable {
 
     private static final int MAX_NODE_FAILS_NUMBER = 5;
-    private static final long RESPONSE_TIMEOUT_SECONDS = 50;
+    private static final long RESPONSE_TIMEOUT_SECONDS = 5;
     private static final int NODE_AS_UNAVAILABLE_MILLIS = 180_000;
     private static final int UNAVAILABLE_NODES_CLEAN_INTERVAL_MILLIS = NODE_AS_UNAVAILABLE_MILLIS / 2;
-    private static final Duration CLIENT_TIMEOUT = Duration.of(50, ChronoUnit.SECONDS);
+    private static final Duration CLIENT_TIMEOUT = Duration.of(5, ChronoUnit.SECONDS);
     private static final Logger LOG = LoggerFactory.getLogger(ProxyHandler.class);
 
     private final Map<String, Long> unavailableNodes = new ConcurrentSkipListMap<>();
