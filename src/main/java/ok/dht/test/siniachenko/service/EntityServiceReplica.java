@@ -53,5 +53,4 @@ public class EntityServiceReplica implements EntityService {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
-
 }

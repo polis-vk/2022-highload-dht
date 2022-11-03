@@ -4,7 +4,6 @@ import ok.dht.ServiceConfig;
 import ok.dht.test.siniachenko.Utils;
 import ok.dht.test.siniachenko.exception.BadRequestException;
 import ok.dht.test.siniachenko.exception.NotEnoughReplicasException;
-import ok.dht.test.siniachenko.exception.ServiceInternalErrorException;
 import ok.dht.test.siniachenko.exception.ServiceUnavailableException;
 import ok.dht.test.siniachenko.nodemapper.NodeMapper;
 import ok.dht.test.siniachenko.nodetaskmanager.NodeTaskManager;
@@ -17,9 +16,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.http.HttpClient;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
-public class EntityServiceCoordinator implements EntityService {
+public class EntityServiceCoordinator implements AsyncEntityService {
     private static final Logger LOG = LoggerFactory.getLogger(EntityServiceCoordinator.class);
 
     public static final String NOT_ENOUGH_REPLICAS_RESULT_CODE = "504 Not Enough Replicas";
@@ -28,17 +30,19 @@ public class EntityServiceCoordinator implements EntityService {
     private final ServiceConfig config;
     private final DB levelDb;
     private final HttpClient httpClient;
+    private final ExecutorService executorService;
     private final NodeTaskManager nodeTaskManager;
     private final NodeMapper nodeMapper;
     private final int defaultFromCount;
     private final int defaultAckCount;
 
     public EntityServiceCoordinator(
-        ServiceConfig config, DB levelDb,
+        ServiceConfig config, DB levelDb, ExecutorService executorService,
         HttpClient httpClient, NodeTaskManager nodeTaskManager
     ) {
         this.config = config;
         this.levelDb = levelDb;
+        this.executorService = executorService;
         this.httpClient = httpClient;
         this.nodeTaskManager = nodeTaskManager;
         this.nodeMapper = new NodeMapper(config.clusterUrls());
@@ -47,7 +51,7 @@ public class EntityServiceCoordinator implements EntityService {
     }
 
     @Override
-    public Response handleGet(Request request, String id) {
+    public CompletableFuture<Response> handleGet(Request request, String id) {
         Supplier<byte[]> localWork = () -> {
             try {
                 return levelDb.get(Utf8.toBytes(id));
@@ -57,23 +61,10 @@ public class EntityServiceCoordinator implements EntityService {
             }
         };
 
-        byte[][] bodies;
-        try {
-            bodies = replicateRequestAndAwait(request, id, localWork);
-        } catch (NotEnoughReplicasException e) {
-            return new Response(NOT_ENOUGH_REPLICAS_RESULT_CODE, Response.EMPTY);
-        } catch (ServiceInternalErrorException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        } catch (BadRequestException e) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        } catch (ServiceUnavailableException e) {
-            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-        }
-
-        return aggregateGetResults(bodies);
+        return replicateRequestAndAwait(request, id, localWork, EntityServiceCoordinator::aggregateGetResults);
     }
 
-    private Response aggregateGetResults(byte[][] bodies) {
+    private static Response aggregateGetResults(byte[][] bodies) {
         byte[] latestBody = null;
         long maxTimeMillis = 0;
         for (byte[] body : bodies) {
@@ -94,7 +85,7 @@ public class EntityServiceCoordinator implements EntityService {
     }
 
     @Override
-    public Response handlePut(Request request, String id) {
+    public CompletableFuture<Response> handlePut(Request request, String id) {
         // coordinator saves its current time millis and false deleted flag in request body
         request.setBody(
             Utils.withCurrentTimestampAndFlagDeleted(request.getBody(), false)
@@ -110,22 +101,11 @@ public class EntityServiceCoordinator implements EntityService {
             return null;
         };
 
-        try {
-            replicateRequestAndAwait(request, id, localWork);
-            return new Response(Response.CREATED, Response.EMPTY);
-        } catch (NotEnoughReplicasException e) {
-            return new Response(NOT_ENOUGH_REPLICAS_RESULT_CODE, Response.EMPTY);
-        } catch (ServiceInternalErrorException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        } catch (BadRequestException e) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        } catch (ServiceUnavailableException e) {
-            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-        }
+        return replicateRequestAndAwait(request, id, localWork, b -> new Response(Response.CREATED, Response.EMPTY));
     }
 
     @Override
-    public Response handleDelete(Request request, String id) {
+    public CompletableFuture<Response> handleDelete(Request request, String id) {
         // coordinator saves its current time millis and true deleted flag in request body
         request.setBody(
             Utils.withCurrentTimestampAndFlagDeleted(request.getBody(), true)
@@ -141,24 +121,12 @@ public class EntityServiceCoordinator implements EntityService {
             return null;
         };
 
-        try {
-            replicateRequestAndAwait(request, id, localWork);
-            return new Response(Response.ACCEPTED, Response.EMPTY);
-        } catch (NotEnoughReplicasException e) {
-            return new Response(NOT_ENOUGH_REPLICAS_RESULT_CODE, Response.EMPTY);
-        } catch (ServiceInternalErrorException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        } catch (BadRequestException e) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        } catch (ServiceUnavailableException e) {
-            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-        }
+        return replicateRequestAndAwait(request, id, localWork, b -> new Response(Response.ACCEPTED, Response.EMPTY));
     }
 
-    private byte[][] replicateRequestAndAwait(
-        Request request, String id, Supplier<byte[]> localWork
-    ) throws ServiceInternalErrorException, NotEnoughReplicasException,
-        BadRequestException, ServiceUnavailableException {
+    private CompletableFuture<Response> replicateRequestAndAwait(
+        Request request, String id, Supplier<byte[]> localWork, Function<byte[][], Response> onSuccess
+    ) {
         final int ack = getIntParameter(request, "ack=", defaultAckCount);
         final int from = getIntParameter(request, "from=", defaultFromCount);
         if (!(
@@ -166,12 +134,23 @@ public class EntityServiceCoordinator implements EntityService {
                 && 0 < ack && ack <= config.clusterUrls().size()
                 && ack <= from
         )) {
-            throw new BadRequestException();
+            return CompletableFuture.completedFuture(new Response(Response.BAD_REQUEST, Response.EMPTY));
         }
 
-        return new ReplicatedRequestExecutor(request, id, localWork, ack, from).execute(
-            config.selfUrl(), nodeMapper, nodeTaskManager, httpClient
+        ReplicatedRequestExecutor replicatedRequestExecutor = new ReplicatedRequestExecutor(
+            executorService, request, id, localWork, ack, from
         );
+
+        return replicatedRequestExecutor.execute(config.selfUrl(), nodeMapper, nodeTaskManager, httpClient)
+            .thenApply(onSuccess)
+            .exceptionally(completionException -> {
+                Throwable cause = completionException.getCause();
+                if (cause instanceof NotEnoughReplicasException) {
+                    return new Response(NOT_ENOUGH_REPLICAS_RESULT_CODE, Response.EMPTY);
+                } else { // cause can be an instance of ServiceInternalErrorException or other unexpected Exception
+                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                }
+            });
     }
 
     private static int getIntParameter(Request request, String parameter, int defaultValue) {

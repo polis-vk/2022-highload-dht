@@ -56,7 +56,7 @@ public class TycoonService implements ok.dht.Service {
         server = new TycoonHttpServer(
             config.selfPort(),
             executorService,
-            new EntityServiceCoordinator(config, levelDb, HttpClient.newHttpClient(), nodeTaskManager),
+            new EntityServiceCoordinator(config, levelDb, executorService, HttpClient.newHttpClient(), nodeTaskManager),
             new EntityServiceReplica(levelDb)
         );
         server.start();

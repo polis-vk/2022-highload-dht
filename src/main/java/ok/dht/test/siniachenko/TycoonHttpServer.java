@@ -1,5 +1,6 @@
 package ok.dht.test.siniachenko;
 
+import ok.dht.test.siniachenko.service.AsyncEntityService;
 import ok.dht.test.siniachenko.service.EntityService;
 import ok.dht.test.siniachenko.service.EntityServiceCoordinator;
 import ok.dht.test.siniachenko.service.EntityServiceReplica;
@@ -15,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -66,10 +68,26 @@ public class TycoonHttpServer extends HttpServer {
         }
 
         if (request.getHeader(REQUEST_TO_REPLICA_HEADER) == null) {
-            processRequest(request, session, idParameter, entityServiceCoordinator);
+            processRequestAsync(request, session, idParameter, entityServiceCoordinator);
         } else {
-            execute(session, () -> processRequest(request, session, idParameter, entityServiceReplica));
+            processRequest(request, session, idParameter, entityServiceReplica);
         }
+    }
+
+    private static void processRequestAsync(
+        Request request, HttpSession session, String idParameter, AsyncEntityService entityService
+    ) {
+        CompletableFuture<Response> responseFuture = switch (request.getMethod()) {
+            case Request.METHOD_GET -> entityService.handleGet(request, idParameter);
+            case Request.METHOD_PUT -> entityService.handlePut(request, idParameter);
+            case Request.METHOD_DELETE -> entityService.handleDelete(request, idParameter);
+            default -> CompletableFuture.completedFuture(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        };
+        responseFuture.exceptionally(e -> {
+            LOG.error("Error processing async request", e);
+            sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            return null;
+        }).thenAccept(response -> sendResponse(session, response));
     }
 
     private static void processRequest(
@@ -82,14 +100,6 @@ public class TycoonHttpServer extends HttpServer {
             default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         };
         sendResponse(session, response);
-    }
-
-    private EntityService getEntityService(Request request) {
-        if (request.getHeader(REQUEST_TO_REPLICA_HEADER) == null) {
-            return entityServiceCoordinator;
-        } else {
-            return entityServiceReplica;
-        }
     }
 
     private void execute(HttpSession session, Runnable runnable) {
