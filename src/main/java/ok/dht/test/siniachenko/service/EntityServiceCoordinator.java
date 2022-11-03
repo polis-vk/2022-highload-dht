@@ -59,7 +59,7 @@ public class EntityServiceCoordinator implements AsyncEntityService {
             }
         };
 
-        return replicateRequestAndAwait(request, id, localWork, EntityServiceCoordinator::aggregateGetResults);
+        return replicateRequestAsync(request, id, localWork, EntityServiceCoordinator::aggregateGetResults);
     }
 
     private static Response aggregateGetResults(byte[][] values) {
@@ -99,7 +99,7 @@ public class EntityServiceCoordinator implements AsyncEntityService {
             return null;
         };
 
-        return replicateRequestAndAwait(request, id, localWork, b -> new Response(Response.CREATED, Response.EMPTY));
+        return replicateRequestAsync(request, id, localWork, b -> new Response(Response.CREATED, Response.EMPTY));
     }
 
     @Override
@@ -119,10 +119,10 @@ public class EntityServiceCoordinator implements AsyncEntityService {
             return null;
         };
 
-        return replicateRequestAndAwait(request, id, localWork, b -> new Response(Response.ACCEPTED, Response.EMPTY));
+        return replicateRequestAsync(request, id, localWork, b -> new Response(Response.ACCEPTED, Response.EMPTY));
     }
 
-    private CompletableFuture<Response> replicateRequestAndAwait(
+    private CompletableFuture<Response> replicateRequestAsync(
         Request request, String id, Supplier<byte[]> localWork, Function<byte[][], Response> onSuccess
     ) {
         final int ack = getIntParameter(request, "ack=", defaultAckCount);

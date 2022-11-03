@@ -74,7 +74,7 @@ public class ReplicatedRequestExecutor {
             if (selfUrl.equals(nodeUrlByKey)) {
                 needLocalWork = true;
             } else {
-                proxyAndHandle(nodeTaskManager, httpClient, nodeUrlByKey, values, resultFuture);
+                proxyAndHandle(nodeTaskManager, httpClient, nodeUrlByKey, resultFuture);
             }
         }
 
@@ -85,15 +85,21 @@ public class ReplicatedRequestExecutor {
                         addFailure(resultFuture);
                         return null;
                     }
-                ).thenAccept(value -> addSuccess(value, resultFuture));
+                ).thenAccept(value -> {
+                    int success = successCount.incrementAndGet();
+                    values[success - 1] = value;
+                    if (success == ack) { // first achieve of ack success results
+                        resultFuture.complete(values);
+                    }
+                });
         }
 
         return resultFuture;
     }
 
     private void proxyAndHandle(
-        NodeTaskManager nodeTaskManager, HttpClient httpClient, String nodeUrlByKey,
-        byte[][] bodies, CompletableFuture<byte[][]> resultFuture
+        NodeTaskManager nodeTaskManager, HttpClient httpClient,
+        String nodeUrlByKey, CompletableFuture<byte[][]> resultFuture
     ) {
         boolean taskAdded = nodeTaskManager.tryAddNodeTask(
             nodeUrlByKey,
@@ -106,7 +112,7 @@ public class ReplicatedRequestExecutor {
                 }, executorService
             ).thenAcceptAsync(response -> {
                     if (successStatusCodes.contains(response.statusCode())) {
-                        addSuccess(response.body(), resultFuture);
+                        addSuccess(response, resultFuture);
                     } else {
                         LOG.error(
                             "Unexpected status code {} after proxy request to {}",
@@ -142,9 +148,9 @@ public class ReplicatedRequestExecutor {
         );
     }
 
-    private void addSuccess(byte[] value, CompletableFuture<byte[][]> resultFuture) {
+    private void addSuccess(HttpResponse<byte[]> response, CompletableFuture<byte[][]> resultFuture) {
         int success = successCount.incrementAndGet();
-        values[success - 1] = value;
+        values[success - 1] = response.body();
         if (success == ack) { // first achieve of ack success results
             resultFuture.complete(values);
         }
