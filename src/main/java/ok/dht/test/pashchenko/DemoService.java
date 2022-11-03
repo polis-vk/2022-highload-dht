@@ -32,7 +32,7 @@ public class DemoService implements Service {
     }
 
 
-    @ServiceFactory(stage = 4, week = 1)
+    @ServiceFactory(stage = 4, week = 2)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

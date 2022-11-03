@@ -21,12 +21,15 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MyServer extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(MyServer.class);
     private static final String REMOTE_HEADER_TIMESTAMP = "remote-ts";
+    private static final String DATA_HEADER_TIMESTAMP = "data-ts";
 
     private final MemorySegmentDao dao;
     private final Executor executor;
@@ -34,6 +37,7 @@ public class MyServer extends HttpServer {
     private final HttpClient client;
     private final ServiceConfig config;
     private final List<Node> nodes;
+    private final Node currentNode;
 
     public MyServer(ServiceConfig config) throws IOException {
         super(createConfigFromPort(config.selfPort()));
@@ -44,9 +48,21 @@ public class MyServer extends HttpServer {
         client = HttpClient.newHttpClient();
 
         nodes = new ArrayList<>(config.clusterUrls().size());
+        Node currentNode= null;
         for (String url : config.clusterUrls()) {
-            nodes.add(new Node(url));
+            Node node = new Node(url);
+            nodes.add(node);
+            if (url.equals(config.selfUrl())) {
+                if (currentNode != null) {
+                    throw new IllegalArgumentException("cluster urls not support");
+                }
+                currentNode = node;
+            }
         }
+        if (currentNode == null) {
+            throw new IllegalArgumentException("cluster urls not support");
+        }
+        this.currentNode = currentNode;
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -62,6 +78,13 @@ public class MyServer extends HttpServer {
     public void handleRequest(Request request, HttpSession session) throws IOException {
         if (!"/v0/entity".equals(request.getPath())) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        if (request.getMethod() != Request.METHOD_PUT
+                && request.getMethod() != Request.METHOD_GET
+                && request.getMethod() != Request.METHOD_DELETE) {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
             return;
         }
 
@@ -85,63 +108,55 @@ public class MyServer extends HttpServer {
             return;
         }
         String remoteHeaderTimestamp = request.getHeader(REMOTE_HEADER_TIMESTAMP + ":");
+        if (remoteHeaderTimestamp != null) {
+            long timestamp = Long.parseLong(remoteHeaderTimestamp); //todo error
+            boolean process = processNode(currentNode, () -> {
+                try {
+                    String url = currentNode.url;
+                    LOG.debug("Url {} for id {} (my port is {})", url, id, config.selfPort());
+                    HandleResult result = handleRequest(request, id, timestamp);
+                    Response response = new Response(result.status, result.data);
+                    response.addHeader(DATA_HEADER_TIMESTAMP + ":" + result.timestamp);
+                    session.sendResponse(response);
+                } catch (Exception e) {
+                    LOG.error("error handle request", e);
+                    sendError(session);
+                }
+            });
+            if (!process) {
+                LOG.error("error process handle request");
+                sendError(session);
+            }
+            return;
+        }
 
 
         int firstIndex = getNodeIndexForKey(id);
-
-        Response[] responses = new Response[from];
+        long now = System.currentTimeMillis();
+        HandleResult[] results = new HandleResult[from];
         CountDownLatch countDownLatch = new CountDownLatch(from);
         for (int i = 0; i < from; i++) {
             int iFinal = i;
             Node node = nodes.get((firstIndex + i) % nodes.size());
-
-            int tasks = node.tasksCount.incrementAndGet();
-            if (tasks > Node.MAX_TASKS_ALLOWED) {
-                node.tasksCount.decrementAndGet();
-                session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
-                return;
-            }
-
-
-            node.tasks.add(() -> {
+            
+            boolean process = processNode(node, () -> {
                 try {
                     String url = node.url;
                     LOG.debug("Url {} for id {} (my port is {})", url, id, config.selfPort());
-                    responses[iFinal] =
+                    results[iFinal] =
                             url.equals(config.selfUrl())
-                                    ? handleRequest(request, id)
-                                    : proxyRequest(request, url);
+                                    ? handleRequest(request, id, now)
+                                    : proxyRequest(request, url, now);
                     countDownLatch.countDown();
                 } catch (Exception e) {
                     LOG.error("error handle request", e);
-                    sendError(session);
-                    responses[iFinal] = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                    results[iFinal] = new HandleResult(Response.INTERNAL_ERROR);
                     countDownLatch.countDown();
                 }
             });
-
-
-            if (node.maxWorkersSemaphore.tryAcquire()) {
-                executor.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        Runnable poll = node.tasks.poll();
-
-                        if (poll == null) {
-                            node.maxWorkersSemaphore.release();
-                            return;
-                        }
-
-                        try {
-                            poll.run();
-                        } catch (Exception e) {
-                            LOG.error("Unexpected error handle request", e);
-                        } finally {
-                            node.tasksCount.decrementAndGet();
-                            executor.execute(this);
-                        }
-                    }
-                });
+            if (!process) {
+                results[iFinal] = new HandleResult(Response.INTERNAL_ERROR);
+                countDownLatch.countDown();
             }
         }
 
@@ -153,10 +168,74 @@ public class MyServer extends HttpServer {
                 sendError(session);
             }
 
-            for (Response response : responses) {
-                //
+            int success = 0;
+            HandleResult winResult = new HandleResult(Response.GATEWAY_TIMEOUT);
+            for (HandleResult result : results) {
+                if (result.status.equals(Response.OK) 
+                        || result.status.equals(Response.CREATED)
+                        || result.status.equals(Response.ACCEPTED)
+                        || result.status.equals(Response.NOT_FOUND)) {
+                    if (winResult.timestamp <= result.timestamp) {
+                        winResult = result;
+                    }
+                    success++;
+                }
+
+                if (result.status.equals(Response.METHOD_NOT_ALLOWED)) {
+                    winResult = result;
+                    break;
+                }
+            }
+
+            try {
+                if (success >= ack) {
+                    session.sendResponse(new Response(winResult.status, winResult.data));
+                } else {
+                    session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+                }
+            } catch (IOException e) {
+                LOG.error("executor sendResponse", e);
+                sessionClose(session);
+                return;
             }
         });
+    }
+
+    private boolean processNode(Node node, Runnable runnable) {
+
+        int tasks = node.tasksCount.incrementAndGet();
+        if (tasks > Node.MAX_TASKS_ALLOWED) {
+            node.tasksCount.decrementAndGet();
+            return false;
+        }
+
+
+        node.tasks.add(runnable);
+
+
+        if (node.maxWorkersSemaphore.tryAcquire()) {
+            executor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    Runnable poll = node.tasks.poll();
+
+                    if (poll == null) {
+                        node.maxWorkersSemaphore.release();
+                        return;
+                    }
+
+                    try {
+                        poll.run();
+                    } catch (Exception e) {
+                        LOG.error("Unexpected error handle request", e);
+                    } finally {
+                        node.tasksCount.decrementAndGet();
+                        executor.execute(this);
+                    }
+                }
+            });
+        }
+        return true;
     }
 
     private int getInt(Request request, String param, int defaultValue) throws Exception_400 {
@@ -206,8 +285,9 @@ public class MyServer extends HttpServer {
         }
     }
 
-    private Response proxyRequest(Request request, String url) throws IOException, InterruptedException {
+    private HandleResult proxyRequest(Request request, String url, long now) throws IOException, InterruptedException {
         HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(url + request.getURI()))
+                .header(REMOTE_HEADER_TIMESTAMP, String.valueOf(now))
                 .method(
                         request.getMethodName(),
                         request.getBody() == null
@@ -239,28 +319,36 @@ public class MyServer extends HttpServer {
             case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> Response.GATEWAY_TIMEOUT;
             default -> throw new IllegalArgumentException("Unknown status code: " + response.statusCode());
         };
-        return new Response(status, response.body());
+        Optional<String> dataHeaderStr = response.headers().firstValue(DATA_HEADER_TIMESTAMP);
+        long timestamp = 0;
+        if (dataHeaderStr.isPresent()) {
+            timestamp = Long.parseLong(dataHeaderStr.get());
+        }
+        return new HandleResult(status, timestamp, response.body());
     }
 
-    private Response handleRequest(Request request, String id) {
+    private HandleResult handleRequest(Request request, String id, long now) {
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
                 Entry entry = dao.get(MemorySegment.ofArray(Utf8.toBytes(id)));
                 if (entry == null) {
-                    return new Response(Response.NOT_FOUND, Response.EMPTY);
+                    return new HandleResult(Response.NOT_FOUND);
                 }
-                return new Response(Response.OK, entry.value().toByteArray());
+                if (entry.isTombstone()) {
+                    return new HandleResult(Response.NOT_FOUND, entry.timestamp());
+                }
+                return new HandleResult(Response.OK, entry.timestamp(), entry.value().toByteArray());
             }
             case Request.METHOD_PUT -> {
-                dao.upsert(new Entry(MemorySegment.ofArray(Utf8.toBytes(id)), MemorySegment.ofArray(request.getBody())));
-                return new Response(Response.CREATED, Response.EMPTY);
+                dao.upsert(new Entry(MemorySegment.ofArray(Utf8.toBytes(id)), MemorySegment.ofArray(request.getBody()), now));
+                return new HandleResult(Response.CREATED);
             }
             case Request.METHOD_DELETE -> {
-                dao.upsert(new Entry(MemorySegment.ofArray(Utf8.toBytes(id)), null));
-                return new Response(Response.ACCEPTED, Response.EMPTY);
+                dao.upsert(new Entry(MemorySegment.ofArray(Utf8.toBytes(id)), null, now));
+                return new HandleResult(Response.ACCEPTED);
             }
             default -> {
-                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                return new HandleResult(Response.METHOD_NOT_ALLOWED);
             }
         }
     }
@@ -292,6 +380,30 @@ public class MyServer extends HttpServer {
 
         Node(String url) {
             this.url = url;
+        }
+    }
+
+    static class HandleResult {
+        final String status;
+        final long timestamp;
+        final byte[] data;
+
+        public HandleResult(String status, long timestamp) {
+            this.status = status;
+            this.timestamp = timestamp;
+            this.data = Response.EMPTY;
+        }
+
+        public HandleResult(String status, long timestamp, byte[] data) {
+            this.status = status;
+            this.timestamp = timestamp;
+            this.data = data;
+        }
+
+        public HandleResult(String status) {
+            this.status = status;
+            this.timestamp = 0;
+            this.data = Response.EMPTY;
         }
     }
 
