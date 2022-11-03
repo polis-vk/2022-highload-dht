@@ -1,11 +1,15 @@
 package ok.dht.test.kazakov.dao;
 
 public interface Entry<D> {
-    D key();
+    D getKey();
 
-    D value();
+    D getValue();
+
+    long getTimestamp();
+
+    byte[] getValueBytes();
 
     default boolean isTombstone() {
-        return value() == null;
+        return getValue() == null;
     }
 }

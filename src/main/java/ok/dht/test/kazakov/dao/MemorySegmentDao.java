@@ -14,6 +14,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -22,8 +23,10 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     private static final Logger LOG = LoggerFactory.getLogger(MemorySegmentDao.class);
 
     private static final MemorySegment VERY_FIRST_KEY = MemorySegment.ofArray(new byte[]{});
+    public static final long FLUSH_AWAIT_TIMEOUT_MILLIS = 1000L;
 
     private final ReadWriteLock upsertLock = new ReentrantReadWriteLock();
+    private final Condition onFlushedCondition = upsertLock.writeLock().newCondition();
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor(
             r -> new Thread(r, "MemorySegmentDaoBG"));
@@ -41,18 +44,17 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
     public Iterator<Entry<MemorySegment>> get(final MemorySegment from, final MemorySegment to) {
         final MemorySegment internalFrom;
         internalFrom = Objects.requireNonNullElse(from, VERY_FIRST_KEY);
-        return getTombstoneFilteringIterator(internalFrom, to);
+        return getInternal(internalFrom, to);
     }
 
-    private TombstoneFilteringIterator getTombstoneFilteringIterator(final MemorySegment from, final MemorySegment to) {
+    private Iterator<Entry<MemorySegment>> getInternal(final MemorySegment from, final MemorySegment to) {
         final DaoState freezedState = accessState();
 
         final List<Iterator<Entry<MemorySegment>>> iterators = freezedState.storage.iterate(from, to);
         iterators.add(freezedState.flushing.get(from, to));
         iterators.add(freezedState.memory.get(from, to));
 
-        final Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
-        return new TombstoneFilteringIterator(mergeIterator);
+        return MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
     }
 
     @Override
@@ -67,7 +69,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             result = freezedState.storage.get(key);
         }
 
-        return (result == null || result.isTombstone()) ? null : result;
+        return result;
     }
 
     // we do not want to wait for background flush here, so future is ignored
@@ -81,7 +83,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         // it is intentionally the read lock!!!
         upsertLock.readLock().lock();
         try {
-            runFlush = freezedState.memory.put(entry.key(), entry);
+            runFlush = freezedState.memory.put(entry.getKey(), entry);
         } finally {
             upsertLock.readLock().unlock();
         }
@@ -96,17 +98,24 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             upsertLock.writeLock().lock();
             try {
                 DaoState freezedState = accessState();
-                if (freezedState.isFlushing()) {
-                    if (tolerateFlushInProgress) {
-                        // or any other completed future
-                        return CompletableFuture.completedFuture(null);
-                    }
-                    continue;
+                if (!freezedState.isFlushing()) {
+                    freezedState = freezedState.prepareForFlush();
+                    this.state = freezedState;
+                    break;
                 }
 
-                freezedState = freezedState.prepareForFlush();
-                this.state = freezedState;
-                break;
+                if (tolerateFlushInProgress) {
+                    // or any other completed future
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                if (!onFlushedCondition.await(FLUSH_AWAIT_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+                    LOG.warn("Timeout on onFlushedCondition.await");
+                }
+            } catch (final InterruptedException e) {
+                LOG.warn("Interrupted while waiting for flush to finish", e);
+                Thread.currentThread().interrupt();
+                return CompletableFuture.completedFuture(null);
             } finally {
                 upsertLock.writeLock().unlock();
             }
@@ -122,6 +131,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
                 upsertLock.writeLock().lock();
                 try {
+                    onFlushedCondition.signal();
                     this.state = freezedState.afterFlush(load);
                 } finally {
                     upsertLock.writeLock().unlock();
