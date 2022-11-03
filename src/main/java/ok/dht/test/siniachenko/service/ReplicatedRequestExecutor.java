@@ -40,6 +40,7 @@ public class ReplicatedRequestExecutor {
     private Set<Integer> successStatusCodes;
     private AtomicInteger failureCount;
     private AtomicInteger successCount;
+    byte[][] values;
 
     public ReplicatedRequestExecutor(
         ExecutorService executorService, Request request, String id,
@@ -58,7 +59,7 @@ public class ReplicatedRequestExecutor {
     ) {
         successStatusCodes = METHOD_NAME_TO_SUCCESS_STATUS_CODES.get(request.getMethodName());
 
-        byte[][] bodies = new byte[from][];
+        values = new byte[from][];
         boolean needLocalWork = false;
         failureCount = new AtomicInteger();
         successCount = new AtomicInteger();
@@ -73,7 +74,7 @@ public class ReplicatedRequestExecutor {
             if (selfUrl.equals(nodeUrlByKey)) {
                 needLocalWork = true;
             } else {
-                proxyAndHandle(nodeTaskManager, httpClient, nodeUrlByKey, bodies, resultFuture);
+                proxyAndHandle(nodeTaskManager, httpClient, nodeUrlByKey, values, resultFuture);
             }
         }
 
@@ -84,7 +85,7 @@ public class ReplicatedRequestExecutor {
                         addFailure(resultFuture);
                         return null;
                     }
-                ).thenAccept(value -> addSuccess(bodies, value, resultFuture));
+                ).thenAccept(value -> addSuccess(value, resultFuture));
         }
 
         return resultFuture;
@@ -105,7 +106,7 @@ public class ReplicatedRequestExecutor {
                 }, executorService
             ).thenAcceptAsync(response -> {
                     if (successStatusCodes.contains(response.statusCode())) {
-                        addSuccess(bodies, response.body(), resultFuture);
+                        addSuccess(response.body(), resultFuture);
                     } else {
                         LOG.error(
                             "Unexpected status code {} after proxy request to {}",
@@ -141,11 +142,11 @@ public class ReplicatedRequestExecutor {
         );
     }
 
-    private void addSuccess(byte[][] bodies, byte[] body, CompletableFuture<byte[][]> resultFuture) {
+    private void addSuccess(byte[] value, CompletableFuture<byte[][]> resultFuture) {
         int success = successCount.incrementAndGet();
-        bodies[success - 1] = body;
+        values[success - 1] = value;
         if (success == ack) { // first achieve of ack success results
-            resultFuture.complete(bodies);
+            resultFuture.complete(values);
         }
     }
 

@@ -62,22 +62,22 @@ public class EntityServiceCoordinator implements AsyncEntityService {
         return replicateRequestAndAwait(request, id, localWork, EntityServiceCoordinator::aggregateGetResults);
     }
 
-    private static Response aggregateGetResults(byte[][] bodies) {
-        byte[] latestBody = null;
+    private static Response aggregateGetResults(byte[][] values) {
+        byte[] latestValue = null;
         long maxTimeMillis = 0;
-        for (byte[] body : bodies) {
-            if (body != null && body.length != 0) {
-                long timeMillis = Utils.readTimeMillisFromBytes(body);
+        for (byte[] value : values) {
+            if (value != null && value.length != 0) {
+                long timeMillis = Utils.readTimeMillisFromBytes(value);
                 if (maxTimeMillis < timeMillis) {
                     maxTimeMillis = timeMillis;
-                    latestBody = body;
+                    latestValue = value;
                 }
             }
         }
-        if (latestBody == null || Utils.readFlagDeletedFromBytes(latestBody)) {
+        if (latestValue == null || Utils.readFlagDeletedFromBytes(latestValue)) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
         } else {
-            byte[] realValue = Utils.readValueFromBytes(latestBody);
+            byte[] realValue = Utils.readValueFromBytes(latestValue);
             return new Response(Response.OK, realValue);
         }
     }
