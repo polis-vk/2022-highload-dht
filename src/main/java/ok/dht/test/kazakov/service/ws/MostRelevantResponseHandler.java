@@ -39,7 +39,6 @@ import java.util.concurrent.atomic.AtomicReference;
                                @Nullable final Throwable throwable) {
         logResponse(currentResponseHolder, throwable);
 
-        final int currentSuccessfulResponses;
         if (isResponseSuccessful(currentResponseHolder)) {
             ResponseHolder bestResponse = responseHolder.get();
             while (currentResponseHolder.isMoreRelevantThan(bestResponse)) {
@@ -49,21 +48,12 @@ import java.util.concurrent.atomic.AtomicReference;
                 bestResponse = responseHolder.get();
             }
 
-            currentSuccessfulResponses = successfulResponses.incrementAndGet();
-
-            if (currentSuccessfulResponses == needAcknowledgements) {
+            if (successfulResponses.incrementAndGet() == needAcknowledgements) {
                 respondToClient(session, responseHolder.get().toResponse());
             }
-        } else {
-            currentSuccessfulResponses = successfulResponses.get();
         }
 
-        final int currentTotalResponses = totalResponses.incrementAndGet();
-        if (currentSuccessfulResponses >= needAcknowledgements) {
-            return;
-        }
-
-        if (currentTotalResponses == totalRequests && successfulResponses.get() < needAcknowledgements) {
+        if (totalResponses.incrementAndGet() == totalRequests && successfulResponses.get() < needAcknowledgements) {
             respondToClient(session, null);
         }
     }
