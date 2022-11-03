@@ -6,6 +6,7 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.armenakyan.util.ServiceUtils;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
+
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -16,6 +17,7 @@ import org.rocksdb.RocksDBException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.concurrent.CompletableFuture;
+
 import java.util.concurrent.ForkJoinPool;
 
 public class DhtService implements Service {
@@ -23,7 +25,9 @@ public class DhtService implements Service {
     private static final String ID_PARAM = "id=";
     private final ServiceConfig serviceConfig;
     private HttpServer httpServer;
+
     private ForkJoinPool workerPool;
+
     private RocksDB rocksDB;
 
     static {
@@ -45,12 +49,14 @@ public class DhtService implements Service {
             throw new IOException(e);
         }
 
+
         workerPool = new ForkJoinPool(
                 Runtime.getRuntime().availableProcessors(),
                 ForkJoinPool.defaultForkJoinWorkerThreadFactory,
                 null,
                 true
         );
+
         httpServer.start();
 
         return CompletableFuture.completedFuture(null);
@@ -120,6 +126,7 @@ public class DhtService implements Service {
 
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
+
 
     @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
