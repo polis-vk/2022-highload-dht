@@ -80,7 +80,7 @@ public class TycoonService implements ok.dht.Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 4, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public ok.dht.Service create(ServiceConfig config) {
