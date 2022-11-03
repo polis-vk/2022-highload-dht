@@ -113,7 +113,14 @@ public class MyServer extends HttpServer {
         }
         String remoteHeaderTimestamp = request.getHeader(REMOTE_HEADER_TIMESTAMP + ":");
         if (remoteHeaderTimestamp != null) {
-            long timestamp = Long.parseLong(remoteHeaderTimestamp); //todo error
+            long timestamp;
+            try {
+                timestamp = Long.parseLong(remoteHeaderTimestamp);
+            } catch (NumberFormatException e) {
+                LOG.error("error parse long", e);
+                sendError(session);
+                return;
+            }
             executorRemoteProcess.execute(() -> {
                 try {
                     String url = currentNode.url;
