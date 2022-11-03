@@ -10,7 +10,6 @@ public class ReplicatingResponseCounter {
     private final int from;
     private final AtomicInteger nonFailed = new AtomicInteger();
     private final AtomicInteger total = new AtomicInteger();
-    private volatile boolean alreadyResponded;
 
     public ReplicatingResponseCounter(int ack, int from) {
         this.ack = ack;
@@ -19,15 +18,11 @@ public class ReplicatingResponseCounter {
 
     public boolean isTimeToResponseGood() {
         total.incrementAndGet();
-        if (nonFailed.incrementAndGet() == ack) {
-            alreadyResponded = true;
-            return true;
-        }
-        return false;
+        return nonFailed.incrementAndGet() == ack;
     }
 
     public void responseFailureIfNeeded(HttpSession session) {
-        if (!alreadyResponded && total.incrementAndGet() == from) {
+        if (total.incrementAndGet() == from && nonFailed.get() < ack) {
             ServiceImpl.sendResponse(session, new Response(ReplicasManager.NOT_ENOUGH_REPLICAS, Response.EMPTY));
         }
     }
