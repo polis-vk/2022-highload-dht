@@ -11,9 +11,7 @@ import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Param;
-import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
@@ -29,9 +27,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutorService;
 
 public class DaoHttpServer extends HttpServer {
@@ -42,7 +38,6 @@ public class DaoHttpServer extends HttpServer {
 
     private final ServiceConfig config;
     private final List<Response> responses;
-    private final Set<Long> activeResponsesNumbers;
     private String currentMethod;
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DaoHttpServer.class);
@@ -55,7 +50,6 @@ public class DaoHttpServer extends HttpServer {
         nodeDeterminer = new NodeDeterminer(config.clusterUrls());
         internalClient = new InternalClient();
         responses = new CopyOnWriteArrayList<>();
-        activeResponsesNumbers = new CopyOnWriteArraySet<>();
     }
 
     @Override
@@ -80,15 +74,16 @@ public class DaoHttpServer extends HttpServer {
             return;
         }
         String fromCoordinator = request.getHeader("fromCoordinator");
+        long timestamp = System.currentTimeMillis();
         executorService.execute(() -> {
             try {
                 if (fromCoordinator == null) {
-                    coordinateRequest(request, session, id, ack, from);
+                    coordinateRequest(request, session, id, ack, from, timestamp);
                 } else {
                     switch (request.getMethodName()) {
-                        case "PUT" -> session.sendResponse(handlePut(id, request));
+                        case "PUT" -> session.sendResponse(handlePut(id, request, timestamp));
                         case "GET" -> session.sendResponse(handleGet(id));
-                        case "DELETE" -> session.sendResponse(handleDelete(id));
+                        case "DELETE" -> session.sendResponse(handleDelete(id, timestamp));
                         default -> {
                             LOGGER.error("Unsupported request method: {}", request.getMethodName());
                             handleDefault(request, session);
@@ -124,8 +119,6 @@ public class DaoHttpServer extends HttpServer {
         super.stop();
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
     public Response handleGet(@Param(value = "id") String id) {
         BaseEntry<byte[], Long> result;
         try {
@@ -147,11 +140,8 @@ public class DaoHttpServer extends HttpServer {
         return new Response(Response.OK, Bytes.concat(timestamp.array(), result.value()));
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(@Param(value = "id") String id, Request putRequest) {
+    public Response handlePut(@Param(value = "id") String id, Request putRequest, long timestamp) {
         try {
-            long timestamp = System.currentTimeMillis();
             dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), putRequest.getBody(), timestamp));
         } catch (Exception e) {
             LOGGER.error("UPSERT operation with id {} from PUT request failed.", id, e);
@@ -160,11 +150,8 @@ public class DaoHttpServer extends HttpServer {
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id") String id) {
+    public Response handleDelete(@Param(value = "id") String id, long timestamp) {
         try {
-            long timestamp = System.currentTimeMillis();
             dao.upsert(new BaseEntry<>(id.getBytes(StandardCharsets.UTF_8), null, timestamp));
         } catch (Exception e) {
             LOGGER.error("UPSERT operation with id {} from DELETE request failed.", id, e);
@@ -173,18 +160,17 @@ public class DaoHttpServer extends HttpServer {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    private void coordinateRequest(Request request, HttpSession session, String id, int ack, int from)
+    private void coordinateRequest(Request request, HttpSession session, String id, int ack, int from, long timestamp)
             throws IOException {
         long number = System.currentTimeMillis();
-        activeResponsesNumbers.add(number);
         currentMethod = request.getMethodName();
         for (ClusterNode targetClusterNode : nodeDeterminer.getNodeUrls(id, from)) {
             if (targetClusterNode.hasUrl(config.selfUrl())) {
                 Response response;
                 switch (request.getMethodName()) {
-                    case "PUT" -> response = handlePut(id, request);
+                    case "PUT" -> response = handlePut(id, request, timestamp);
                     case "GET" -> response = handleGet(id);
-                    case "DELETE" -> response = handleDelete(id);
+                    case "DELETE" -> response = handleDelete(id, timestamp);
                     default -> {
                         LOGGER.error("Unsupported request method: {}", request.getMethodName());
                         handleDefault(request, session);
@@ -258,10 +244,6 @@ public class DaoHttpServer extends HttpServer {
         if (responses.size() < ack) {
             return;
         }
-        if (!activeResponsesNumbers.contains(number)) {
-            responses.removeIf(response -> Long.parseLong(response.getHeader("Number")) == number);
-            return;
-        }
         int successResponses = 0;
         for (Response response : responses) {
             int responseStatus = response.getStatus();
@@ -304,7 +286,7 @@ public class DaoHttpServer extends HttpServer {
         } catch (IOException e) {
             LOGGER.error("Error handling request.", e);
         } finally {
-            clearResponses(responses);
+            responses.clear();
         }
     }
 
@@ -329,11 +311,6 @@ public class DaoHttpServer extends HttpServer {
             }
         }
         return body;
-    }
-
-    private void clearResponses(List<Response> responses) {
-        activeResponsesNumbers.clear();
-        responses.clear();
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
