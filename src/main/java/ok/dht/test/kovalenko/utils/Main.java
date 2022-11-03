@@ -43,13 +43,13 @@ public class Main {
     public static void main(String[] args) {
         try {
             Map<String, MyServiceBase> urlsServices = new HashMap<>();
-            for (ServiceConfig serviceConfig : configs) {
-                MyServiceBase service = new MyServiceBase(serviceConfig);
+            for (int i = 0; i < configs.size(); ++i) {
+                MyServiceBase service = new MyServiceBase(configs.get(i));
                 service.start().get(1, TimeUnit.SECONDS);
                 log.debug("Socket is ready: {}", service.selfUrl());
                 urlsServices.put(service.selfUrl(), service);
             }
-            urlsServices.get(urls.get(2)).stop();
+            //urlsServices.get(urls.get(1)).stop();
             //DaoFiller.fillDaos(urlsServices, 1, 1);
             log.debug("END");
         } catch (Exception e) {

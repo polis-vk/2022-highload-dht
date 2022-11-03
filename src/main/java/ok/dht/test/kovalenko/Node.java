@@ -1,15 +1,16 @@
 package ok.dht.test.kovalenko;
 
+import ok.dht.test.kovalenko.utils.HttpUtils;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 
 import java.io.IOException;
 import java.net.http.HttpResponse;
 import java.util.concurrent.ExecutionException;
+import static ok.dht.test.kovalenko.utils.HttpUtils.CLIENT;
 
 public class Node {
 
-    private static final Client client = new Client();
     private final String selfUrl;
     private boolean isIll = false;
 
@@ -23,12 +24,12 @@ public class Node {
             throw new IllegalAccessException("Node is ill!");
         }
 
-        client.setUrl(selfUrl);
+        HttpUtils.CLIENT.setUrl(selfUrl);
 
         return switch (request.getMethod()) {
-            case Request.METHOD_GET -> client.get(id, request.getBody(), session);
-            case Request.METHOD_PUT -> client.put(id, request.getBody(), session);
-            case Request.METHOD_DELETE -> client.delete(id, request.getBody(), session);
+            case Request.METHOD_GET -> HttpUtils.CLIENT.get(id, request.getBody(), session);
+            case Request.METHOD_PUT -> HttpUtils.CLIENT.put(id, request.getBody(), session);
+            case Request.METHOD_DELETE -> HttpUtils.CLIENT.delete(id, request.getBody(), session);
             default -> throw new IllegalArgumentException("Unexpected request method to be proxied: "
                     + request.getMethod());
         };

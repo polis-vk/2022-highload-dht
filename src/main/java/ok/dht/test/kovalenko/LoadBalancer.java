@@ -36,11 +36,11 @@ public final class LoadBalancer {
 
         switch (request.getMethod()) {
             case Request.METHOD_GET ->
-                    handleRequest(requestId, request, session, service::handleGet, service, responsibleNodeForKey);
+                    handleRequest(requestId, request, session, service, responsibleNodeForKey);
             case Request.METHOD_PUT ->
-                    handleRequest(requestId, request, session, service::handlePut, service, responsibleNodeForKey);
+                    handleRequest(requestId, request, session, service, responsibleNodeForKey);
             case Request.METHOD_DELETE ->
-                    handleRequest(requestId, request, session, service::handleDelete, service, responsibleNodeForKey);
+                    handleRequest(requestId, request, session, service, responsibleNodeForKey);
             default -> throw new IllegalArgumentException("Unexpected request method to be balanced: "
                     + request.getMethod());
         }
@@ -76,16 +76,16 @@ public final class LoadBalancer {
         return (key + serviceUrl).hashCode() % size;
     }
 
-    private void handleRequest(String id, Request request, MyHttpSession session, Handler handler,
+    private void handleRequest(String id, Request request, MyHttpSession session,
                                MyServiceBase service, Node responsibleNodeForKey) throws IOException {
-        Handler finalHandler = service.selfUrl().equals(responsibleNodeForKey.selfUrl())
-                ? handler
+        MyServiceBase.Handler finalHandler = service.selfUrl().equals(responsibleNodeForKey.selfUrl())
+                ? service::handle
                 : responsibleNodeForKey::proxyRequest;
         handleRequestAndSendResponse(id, request, responsibleNodeForKey, finalHandler, session);
     }
 
     private void handleRequestAndSendResponse(String id, Request request,
-                                              Node responsibleNodeForKey, Handler handler, MyHttpSession session) {
+                                              Node responsibleNodeForKey, MyServiceBase.Handler handler, MyHttpSession session) {
         Response response;
         try {
             Object nodedResponse = nodeRequest(id, request, responsibleNodeForKey, handler, session);
@@ -104,21 +104,20 @@ public final class LoadBalancer {
         HttpUtils.safeHttpRequest(session, log, netRequest);
     }
 
-    private Object nodeRequest(String id, Request request, Node node, Handler handler, MyHttpSession session) {
+    private Object nodeRequest(String id, Request request, Node node, MyServiceBase.Handler handler, MyHttpSession session) {
         try {
             return handler.handle(id, request, session);
         } catch (ConnectException e) {
             return MyServiceBase.emptyResponseFor(Response.GATEWAY_TIMEOUT);
         } catch (Exception e) {
-            node.setIll(true);
+            makeNodeIll(node.selfUrl());
             log.error("Node {} is ill", node.selfUrl(), e);
             return MyServiceBase.emptyResponseFor(Response.NOT_FOUND);
         }
     }
 
-    private interface Handler {
-        Object handle(String id, Request request, MyHttpSession session)
-                throws IOException, ExecutionException, InterruptedException, IllegalAccessException;
+    public void makeNodeIll(String nodeUrl) {
+        nodes.get(nodeUrl).setIll(true);
     }
 
 }
