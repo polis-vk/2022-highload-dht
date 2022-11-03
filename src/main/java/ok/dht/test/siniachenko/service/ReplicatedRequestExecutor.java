@@ -86,6 +86,7 @@ public class ReplicatedRequestExecutor {
                         return null;
                     }
                 ).thenAccept(value -> {
+                    // could reuse addSuccess method, but code climate wanted to reallocate all arrays...
                     int success = successCount.incrementAndGet();
                     values[success - 1] = value;
                     if (success == ack) { // first achieve of ack success results
