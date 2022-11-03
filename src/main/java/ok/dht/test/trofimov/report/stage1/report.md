@@ -201,10 +201,10 @@ Transfer/sec:      1.35KB
 
 ### Heatmap
 
-[PUT cpu](./put_cpu.html)  
-[PUT alloc](./put_alloc.html)  
-[GET cpu](./get_cpu.html)  
-[GET alloc](./get_alloc.html)
+[PUT cpu](put_cpu.html)  
+[PUT alloc](put_alloc.html)  
+[GET cpu](get_cpu.html)  
+[GET alloc](get_alloc.html)
 
 ### Анализ PUT
 
