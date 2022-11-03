@@ -26,10 +26,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class MyServer extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(MyServer.class);
+    private static final String REMOTE_HEADER_TIMESTAMP = "remote-ts";
 
     private final MemorySegmentDao dao;
     private final Executor executor;
-    private final Executor executorInt;
+    private final Executor executorAggregator;
     private final HttpClient client;
     private final ServiceConfig config;
     private final List<Node> nodes;
@@ -39,7 +40,7 @@ public class MyServer extends HttpServer {
         this.config = config;
         dao = new MemorySegmentDao(new Config(config.workingDir(), 1048576L));
         executor = Executors.newFixedThreadPool(16);
-        executorInt = Executors.newFixedThreadPool(16);
+        executorAggregator = Executors.newFixedThreadPool(16);
         client = HttpClient.newHttpClient();
 
         nodes = new ArrayList<>(config.clusterUrls().size());
@@ -75,20 +76,24 @@ public class MyServer extends HttpServer {
         try {
             from = getInt(request, "from=", nodes.size());
             ack = getInt(request, "ack=", (nodes.size() / 2) + 1);
+            if (ack > from || ack <= 0) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
         } catch (Exception_400 e) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
-        String header = request.getHeader("i=");
+        String remoteHeaderTimestamp = request.getHeader(REMOTE_HEADER_TIMESTAMP + ":");
 
 
-        int index = getNodeIndexForKey(id);
+        int firstIndex = getNodeIndexForKey(id);
 
-        Response[] response = new Response[from];
+        Response[] responses = new Response[from];
         CountDownLatch countDownLatch = new CountDownLatch(from);
-        for (int i = index; i < from; i++) {
+        for (int i = 0; i < from; i++) {
             int iFinal = i;
-            Node node = nodes.get(index);
+            Node node = nodes.get((firstIndex + i) % nodes.size());
 
             int tasks = node.tasksCount.incrementAndGet();
             if (tasks > Node.MAX_TASKS_ALLOWED) {
@@ -102,7 +107,7 @@ public class MyServer extends HttpServer {
                 try {
                     String url = node.url;
                     LOG.debug("Url {} for id {} (my port is {})", url, id, config.selfPort());
-                    response[iFinal] =
+                    responses[iFinal] =
                             url.equals(config.selfUrl())
                                     ? handleRequest(request, id)
                                     : proxyRequest(request, url);
@@ -110,7 +115,7 @@ public class MyServer extends HttpServer {
                 } catch (Exception e) {
                     LOG.error("error handle request", e);
                     sendError(session);
-                    response[iFinal] = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                    responses[iFinal] = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
                     countDownLatch.countDown();
                 }
             });
@@ -138,20 +143,20 @@ public class MyServer extends HttpServer {
                     }
                 });
             }
+        }
 
-            executorInt.execute( () -> {
+        executorAggregator.execute(() -> {
             try {
                 countDownLatch.await();
-                for (Response response1 : response) {
-                    // 
-                }
             } catch (InterruptedException e) {
-           ///
+                LOG.error("interrupted executor aggregator", e);
+                sendError(session);
             }
 
-            });
-        }
-//        }
+            for (Response response : responses) {
+                //
+            }
+        });
     }
 
     private int getInt(Request request, String param, int defaultValue) throws Exception_400 {
