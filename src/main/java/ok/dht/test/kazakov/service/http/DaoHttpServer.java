@@ -1,6 +1,7 @@
 package ok.dht.test.kazakov.service.http;
 
 import ok.dht.Service;
+import ok.dht.test.kazakov.service.ExceptionUtils;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -98,13 +99,18 @@ public class DaoHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        super.stop();
+        Exception stopException = ExceptionUtils.tryExecute(null, super::stop);
 
         // closing all connections
         for (final SelectorThread selector : selectors) {
             for (final Session session : selector.selector) {
-                session.close();
+                stopException = ExceptionUtils.tryExecute(stopException, session::close);
             }
+        }
+
+        if (stopException != null) {
+            LOG.error("Exception caught during DaoHttpServer.stop()", stopException);
+            throw new RuntimeException(stopException);
         }
     }
 

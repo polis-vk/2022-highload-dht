@@ -137,19 +137,19 @@ public class ServiceConfigurer implements Service {
 
         return CompletableFuture.runAsync(() -> {
             final long measureTimeFrom = clock.millis();
-            try {
-                asyncExecutor.shutdownNow();
-                server.stop();
-                daoService.close();
-                lamportClock.close();
-                asyncExecutor = null;
-            } catch (final IOException e) {
-                LOG.error("Unexpected IOException during DaoWebService.stop()", e);
-                throw new UncheckedIOException(e);
-            }
 
+            Exception exception = ExceptionUtils.tryExecute(null, asyncExecutor::shutdownNow);
+            exception = ExceptionUtils.tryExecute(exception, server::stop);
+            exception = ExceptionUtils.tryExecute(exception, daoService::close);
+            exception = ExceptionUtils.tryExecute(exception, lamportClock::close);
+
+            asyncExecutor = null;
             final long measureTimeTo = clock.millis();
             LOG.info("DaoWebService stopped in {}ms", measureTimeTo - measureTimeFrom);
+
+            if (exception != null) {
+                LOG.error("Unexpected exception during DaoWebService.stop()", exception);
+            }
         }, asyncExecutor);
     }
 
