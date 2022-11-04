@@ -674,6 +674,5 @@ Transfer/sec:    163.94KB
 ----
 
 После бонусного дедлайна был дополнительно отрефакторен `MostRelevantResponseHandler`.
-Тест на jcstress был обновлен и успешно пройден. 
-Был написан [тест](./jcstress/refactored/MostRelevantResponseHandlerStressTest.java.md) с использованием jcstress,
+[Тест](./jcstress/refactored/MostRelevantResponseHandlerStressTest.java.md) на jcstress был обновлен и успешно пройден. 
 
