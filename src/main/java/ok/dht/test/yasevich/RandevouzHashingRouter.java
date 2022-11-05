@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.ToIntFunction;
 
@@ -22,10 +23,11 @@ public class RandevouzHashingRouter {
     public static final int FAILED_REQUESTS_THRESHOLD = 50;
 
     private final List<Node> nodes;
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final HttpClient httpClient;
 
-    public RandevouzHashingRouter(List<String> clusterUrls) {
+    public RandevouzHashingRouter(List<String> clusterUrls, Executor executor) {
         this.nodes = new ArrayList<>(clusterUrls.size());
+        this.httpClient = HttpClient.newBuilder().executor(executor).build();
         for (String url : clusterUrls) {
             nodes.add(new Node(url));
         }
@@ -66,12 +68,12 @@ public class RandevouzHashingRouter {
         return requestBuilder.build();
     }
 
-    class Node {
-        private final AtomicInteger counter = new AtomicInteger();
+    public class Node {
         final String url;
+        private final AtomicInteger counter = new AtomicInteger();
         private boolean isIll;
 
-        public Node(String url) {
+        private Node(String url) {
             this.url = url;
         }
 

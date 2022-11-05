@@ -20,7 +20,7 @@ import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -83,10 +83,12 @@ public class ServiceImpl implements Service {
     private class CustomHttpServer extends HttpServer {
         private static final int CPUs = Runtime.getRuntime().availableProcessors();
 
+        private final ExecutorService httpClientPool = Executors.newFixedThreadPool(16);
         private final ExecutorService workersPool = new ThreadPoolExecutor(CPUs, CPUs, 0L,
-                TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(POOL_QUEUE_SIZE));
+                TimeUnit.MILLISECONDS, new AlmostLifoQueue(POOL_QUEUE_SIZE, 3));
+
         private final ReplicasManager replicasManager = new ReplicasManager(timeStampingDao,
-                new RandevouzHashingRouter(serviceConfig.clusterUrls()), serviceConfig.selfUrl());
+                new RandevouzHashingRouter(serviceConfig.clusterUrls(), httpClientPool), serviceConfig.selfUrl());
 
         public CustomHttpServer(
                 HttpServerConfig config,
@@ -186,6 +188,7 @@ public class ServiceImpl implements Service {
                 }
             }
             workersPool.shutdown();
+            httpClientPool.shutdown();
             super.stop();
         }
 
