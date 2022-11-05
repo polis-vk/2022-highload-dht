@@ -151,29 +151,31 @@ public abstract class Node {
                     requestBuilderForKey(nodeAddress, key).GET().build(),
                     HttpResponse.BodyHandlers.ofByteArray()
             );
-            return sendAsyncFuture.thenApply((response) -> {
-                        if (response.statusCode() == 200) {
-                            return getEntryFromByteArray(response.body());
-                        } else if (response.statusCode() == 404) {
-                            return new BaseEntry<Timestamp, byte[]>(null, null);
-                        } else {
-                            return null;
-                        }
-                    }).exceptionally((e) -> {
-                        if (errorCount.incrementAndGet() > FATAL_ERROR_AMOUNT) {
-                            isAlive = false;
-                        }
-                        LOGGER.debug(String.format("%nExceptionally sending GET to Node %s with key: %s%n",
-                                nodeAddress,
-                                key
-                        ), e);
-                        return null;
-                    })
-                    .whenComplete((entry, throwable) -> {
+            CompletableFuture<Entry<Timestamp, byte[]>> returnFuture = sendAsyncFuture.thenApply((response) -> {
+                if (response.statusCode() == 200) {
+                    return getEntryFromByteArray(response.body());
+                } else if (response.statusCode() == 404) {
+                    return new BaseEntry<Timestamp, byte[]>(null, null);
+                } else {
+                    return null;
+                }
+            }).exceptionally((e) -> {
+                if (errorCount.incrementAndGet() > FATAL_ERROR_AMOUNT) {
+                    isAlive = false;
+                }
+                LOGGER.debug(String.format("%nExceptionally sending GET to Node %s with key: %s%n",
+                        nodeAddress,
+                        key
+                ), e);
+                return null;
+            });
+            returnFuture.whenComplete((entry, throwable) -> {
                         if (!sendAsyncFuture.isDone()) {
+                            LOGGER.info("Canceling useless GET requests by key: " + key);
                             sendAsyncFuture.cancel(true);
                         }
                     });
+            return returnFuture;
         }
 
         @Override
