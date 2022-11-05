@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -50,11 +51,14 @@ public abstract class Node {
         return Objects.hashCode(nodeAddress);
     }
 
+    // First value is for cancellation
+    // Second is response future:
     // If null was returned -> some error
     // If (null,null) -> Not Found
     // If (timestamp, null) -> tombstone
     // If (timestamp, value) -> everything is OK
-    public abstract CompletableFuture<Entry<Timestamp, byte[]>> get(String key);
+    public abstract Entry<CompletableFuture<HttpResponse<byte[]>>,
+            CompletableFuture<Entry<Timestamp, byte[]>>> get(String key);
 
     // If true -> everything is OK
     // If false -> smth went wrong
@@ -74,9 +78,11 @@ public abstract class Node {
         }
 
         @Override
-        public CompletableFuture<Entry<Timestamp, byte[]>> get(String key) {
+        public Entry<CompletableFuture<HttpResponse<byte[]>>,
+                CompletableFuture<Entry<Timestamp, byte[]>>> get(String key) {
             Entry<Timestamp, byte[]> entry = getFromDao(key);
-            return CompletableFuture.completedFuture(entry);
+            return new BaseEntry<>(CompletableFuture.completedFuture(null),
+                    CompletableFuture.completedFuture(entry));
         }
 
         public Entry<Timestamp, byte[]> getFromDao(String key) {
@@ -142,31 +148,37 @@ public abstract class Node {
         }
 
         @Override
-        public CompletableFuture<Entry<Timestamp, byte[]>> get(String key) {
+        public Entry<CompletableFuture<HttpResponse<byte[]>>,
+                CompletableFuture<Entry<Timestamp, byte[]>>> get(String key) {
             if (!isAlive) {
-                return CompletableFuture.completedFuture(null);
+                return new BaseEntry<>(CompletableFuture.completedFuture(null),
+                        CompletableFuture.completedFuture(null));
             }
-            return httpClient.sendAsync(
+            CompletableFuture<HttpResponse<byte[]>> httpResponseCompletableFuture = httpClient.sendAsync(
                     requestBuilderForKey(nodeAddress, key).GET().build(),
                     HttpResponse.BodyHandlers.ofByteArray()
-            ).thenApply((response) -> {
-                if (response.statusCode() == 200) {
-                    return getEntryFromByteArray(response.body());
-                } else if (response.statusCode() == 404) {
-                    return new BaseEntry<Timestamp, byte[]>(null, null);
-                } else {
-                    return null;
-                }
-            }).exceptionally((e) -> {
-                if (errorCount.incrementAndGet() > FATAL_ERROR_AMOUNT) {
-                    isAlive = false;
-                }
-                LOGGER.debug(String.format("%nExceptionally sending GET to Node %s with key: %s%n",
-                        nodeAddress,
-                        key
-                ), e);
-                return null;
-            });
+            );
+            return new BaseEntry<>(httpResponseCompletableFuture,
+                    httpResponseCompletableFuture.thenApply((response) -> {
+                        if (response.statusCode() == 200) {
+                            return getEntryFromByteArray(response.body());
+                        } else if (response.statusCode() == 404) {
+                            return new BaseEntry<Timestamp, byte[]>(null, null);
+                        } else {
+                            return null;
+                        }
+                    }).exceptionally((e) -> {
+                        if (!(e instanceof CancellationException)) {
+                            if (errorCount.incrementAndGet() > FATAL_ERROR_AMOUNT) {
+                                isAlive = false;
+                            }
+                            LOGGER.debug(String.format("%nExceptionally sending GET to Node %s with key: %s%n",
+                                    nodeAddress,
+                                    key
+                            ), e);
+                        }
+                        return null;
+                    }));
         }
 
         @Override

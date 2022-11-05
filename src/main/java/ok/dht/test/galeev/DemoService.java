@@ -67,7 +67,7 @@ public class DemoService implements Service {
 
         server = new CustomHttpServer(createConfigFromPort(config.selfPort()), workersExecutor);
         server.addRequestHandlers(DEFAULT_PATH,
-                new int[]{Request.METHOD_PUT, Request.METHOD_GET, Request.METHOD_DELETE},this::universalHandler);
+                new int[]{Request.METHOD_PUT, Request.METHOD_GET, Request.METHOD_DELETE}, this::universalHandler);
         server.addRequestHandlers(LOCAL_PATH, new int[]{Request.METHOD_GET}, this::localHandleGet);
         server.addRequestHandlers(LOCAL_PATH, new int[]{Request.METHOD_PUT}, this::localHandlePutDelete);
         server.start();
@@ -105,16 +105,20 @@ public class DemoService implements Service {
                     handler.onSuccess(optional);
                     barrier.success();
                 }
+                if (barrier.isNeedToResponse()) {
+                    try {
+                        if (barrier.isAckAchieved()) {
+                            session.sendResponse(handler.responseOk());
+                        } else {
+                            session.sendResponse(handler.responseError());
+                        }
+                    } catch (IOException e) {
+                        LOGGER.error("Error, while sending response to client", e);
+                    } finally {
+                        handler.finishResponse();
+                    }
+                }
             });
-        }
-
-        barrier.waitContinueBarrier(session,
-                String.format("%nInterrupted while awaiting GET responses key: %s%n", header.getKey()));
-
-        if (barrier.isAckAchieved()) {
-            session.sendResponse(handler.responseOk());
-        } else {
-            session.sendResponse(handler.responseError());
         }
     }
 
@@ -152,7 +156,7 @@ public class DemoService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 4, week = 2, bonuses = {"SingleNodeTest#respectFileFolder"})
+    @ServiceFactory(stage = 5, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
