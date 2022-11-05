@@ -22,14 +22,13 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -43,16 +42,13 @@ public class MyHttpServer extends HttpServer {
     private final InMemoryDao dao;
     private ThreadPoolExecutor requestsExecutor;
     private final HttpClient client;
-    private static final Map<String, Integer> urlsMurmur = new HashMap<>();
+    public static final int TIMEOUT_EXECUTOR = 10;
 
     public MyHttpServer(ServiceConfig config) throws IOException {
         super(createConfigFromPort(config.selfPort()));
         client = HttpClient.newHttpClient();
         this.config = config;
         dao = new InMemoryDao(createDaoConfig());
-        for (String clusterUrl : config.clusterUrls()) {
-            urlsMurmur.put(clusterUrl, Hash.murmur3(clusterUrl));
-        }
         initExecutor();
     }
 
@@ -61,9 +57,9 @@ public class MyHttpServer extends HttpServer {
     }
 
     private void initExecutor() {
-        int threadsCount = Runtime.getRuntime().availableProcessors();
+        int threadsCount = Runtime.getRuntime().availableProcessors() - 2;
         requestsExecutor = new ThreadPoolExecutor(threadsCount, threadsCount, 0L, TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(REQUESTS_MAX_QUEUE_SIZE), new ThreadPoolExecutor.DiscardOldestPolicy());
+                new ArrayBlockingQueue<>(REQUESTS_MAX_QUEUE_SIZE), new ThreadPoolExecutor.AbortPolicy());
         requestsExecutor.prestartAllCoreThreads();
     }
 
@@ -95,6 +91,15 @@ public class MyHttpServer extends HttpServer {
             return;
         }
 
+        try {
+            processRequest(request, session, id);
+        } catch (RejectedExecutionException e) {
+            logger.error("Reject request {} method get", id, e);
+            sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
+    }
+
+    private void processRequest(Request request, HttpSession session, String id) {
         requestsExecutor.execute(() -> {
             String localRequest = request.getHeader("local", null);
 
@@ -179,7 +184,6 @@ public class MyHttpServer extends HttpServer {
             }
 
         });
-
     }
 
     public static String getResponseStatusCode(int statusCode) {
@@ -231,7 +235,7 @@ public class MyHttpServer extends HttpServer {
         Queue<HashItem> urls = new PriorityQueue<>(clusterUrls.size());
 
         for (String url : clusterUrls) {
-            int hash = urlsMurmur.get(url) + Hash.murmur3(key);
+            int hash = Hash.murmur3(url + key);
             urls.add(new HashItem(url, hash));
         }
         return urls.stream().limit(from).toList();
@@ -324,14 +328,28 @@ public class MyHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
+        requestsExecutor.shutdown();
+        try {
+            if (!requestsExecutor.awaitTermination(TIMEOUT_EXECUTOR, TimeUnit.SECONDS)) {
+                shutdownNowExecutor();
+            }
+        } catch (InterruptedException e) {
+            logger.error("InterruptedException while stopping requestExecutor", e);
+            Thread.currentThread().interrupt();
+            shutdownNowExecutor();
+        }
         closeSessions();
         super.stop();
-        requestsExecutor.shutdownNow();
         try {
             dao.close();
         } catch (IOException e) {
             logger.error("Error while closing dao", e);
         }
+    }
+
+    private void shutdownNowExecutor() {
+        List<Runnable> listOfRequests = requestsExecutor.shutdownNow();
+        logger.error("Can't stop executor. Shutdown now, number of requests: {}", listOfRequests.size());
     }
 
     private void closeSessions() {
