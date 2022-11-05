@@ -28,7 +28,11 @@ public class ReplicasManager {
         this.selfUrl = selfUrl;
     }
 
-    public void handleReplicatingRequest(HttpSession session, Request request, String key, long time, int ack, int from) {
+    public void handleReplicatingRequest(
+            HttpSession session, Request request,
+            String key, long time,
+            int ack, int from
+    ) {
         Queue<RandevouzHashingRouter.Node> responsibleNodes = shardingRouter.responsibleNodes(key, from);
         if (responsibleNodes.isEmpty()) {
             ServiceImpl.LOGGER.error("There is no nodes for handling request");
