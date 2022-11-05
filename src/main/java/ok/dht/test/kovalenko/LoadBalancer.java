@@ -72,6 +72,10 @@ public final class LoadBalancer {
         service.clusterUrls().forEach(nodes::remove);
     }
 
+    public void makeNodeIll(String nodeUrl) {
+        nodes.get(nodeUrl).setIll(true);
+    }
+
     private int hash(String key, String serviceUrl, int size) {
         return (key + serviceUrl).hashCode() % size;
     }
@@ -106,7 +110,7 @@ public final class LoadBalancer {
 
     private Object nodeRequest(String id, Request request, Node node, MyServiceBase.Handler handler, MyHttpSession session) {
         try {
-            return handler.handle(id, request, session);
+            return handler.handle(request, session);
         } catch (ConnectException e) {
             return MyServiceBase.emptyResponseFor(Response.GATEWAY_TIMEOUT);
         } catch (Exception e) {
@@ -114,10 +118,6 @@ public final class LoadBalancer {
             log.error("Node {} is ill", node.selfUrl(), e);
             return MyServiceBase.emptyResponseFor(Response.NOT_FOUND);
         }
-    }
-
-    public void makeNodeIll(String nodeUrl) {
-        nodes.get(nodeUrl).setIll(true);
     }
 
 }

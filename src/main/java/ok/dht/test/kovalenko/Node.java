@@ -18,7 +18,7 @@ public class Node {
         this.selfUrl = selfUrl;
     }
 
-    public HttpResponse<byte[]> proxyRequest(String id, Request request, MyHttpSession session)
+    public HttpResponse<byte[]> proxyRequest(Request request, MyHttpSession session)
             throws ExecutionException, InterruptedException, IllegalAccessException, IOException {
         if (isIll()) {
             throw new IllegalAccessException("Node is ill!");
@@ -27,9 +27,9 @@ public class Node {
         HttpUtils.CLIENT.setUrl(selfUrl);
 
         return switch (request.getMethod()) {
-            case Request.METHOD_GET -> HttpUtils.CLIENT.get(id, request.getBody(), session);
-            case Request.METHOD_PUT -> HttpUtils.CLIENT.put(id, request.getBody(), session);
-            case Request.METHOD_DELETE -> HttpUtils.CLIENT.delete(id, request.getBody(), session);
+            case Request.METHOD_GET -> HttpUtils.CLIENT.get(request.getBody(), session, false);
+            case Request.METHOD_PUT -> HttpUtils.CLIENT.put(request.getBody(), session, false);
+            case Request.METHOD_DELETE -> HttpUtils.CLIENT.delete(request.getBody(), session, false);
             default -> throw new IllegalArgumentException("Unexpected request method to be proxied: "
                     + request.getMethod());
         };

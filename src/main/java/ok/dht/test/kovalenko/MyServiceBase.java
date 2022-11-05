@@ -48,14 +48,14 @@ public class MyServiceBase implements Service {
     static {
         try {
             Class<Client> clientClass = Client.class;
-            clientGet = clientClass.getMethod("get", String.class, byte[].class, MyHttpSession.class);
-            clientPut = clientClass.getMethod("put", String.class, byte[].class, MyHttpSession.class);
-            clientDelete = clientClass.getMethod("delete", String.class, byte[].class, MyHttpSession.class);
+            clientGet = clientClass.getMethod("get", byte[].class, MyHttpSession.class, boolean.class);
+            clientPut = clientClass.getMethod("put", byte[].class, MyHttpSession.class, boolean.class);
+            clientDelete = clientClass.getMethod("delete", byte[].class, MyHttpSession.class, boolean.class);
 
             Class<MyServiceBase> serviceClass = MyServiceBase.class;
-            serviceHandleGet = serviceClass.getMethod("handleGet", String.class, Request.class, MyHttpSession.class);
-            serviceHandlePut = serviceClass.getMethod("handlePut", String.class, Request.class, MyHttpSession.class);
-            serviceHandleDelete = serviceClass.getMethod("handleDelete", String.class, Request.class, MyHttpSession.class);
+            serviceHandleGet = serviceClass.getMethod("handleGet", Request.class, MyHttpSession.class);
+            serviceHandlePut = serviceClass.getMethod("handlePut", Request.class, MyHttpSession.class);
+            serviceHandleDelete = serviceClass.getMethod("handleDelete", Request.class, MyHttpSession.class);
         } catch (ReflectiveOperationException ex) {
             throw new RuntimeException(ex);
         }
@@ -104,35 +104,46 @@ public class MyServiceBase implements Service {
         }
     }
 
+    // For outer calls
     @Path("/v0/entity")
     public void handle(Request request, HttpSession session)
             throws IOException, ExecutionException, InterruptedException {
         MyHttpSession myHttpSession = (MyHttpSession) session;
         ReplicasUtils.Replicas replicas = ReplicasUtils.recreate(myHttpSession.getReplicas(), clusterUrls().size());
         myHttpSession.setReplicas(replicas);
-        loadBalancer.balance(this, myHttpSession.getRequestId(), request, myHttpSession);
+        if (request.getHeader("replica") != null) {
+            switch (request.getMethod()) {
+                case (Request.METHOD_GET) -> handleGet(request, myHttpSession);
+                case (Request.METHOD_PUT) -> handlePut(request, myHttpSession);
+                case (Request.METHOD_DELETE) -> handleDelete(request, myHttpSession);
+                default -> throw new IllegalArgumentException("Illegal request method: " + HttpUtils.toOneNio(request.getMethod()));
+            }
+        } else {
+            loadBalancer.balance(this, myHttpSession.getRequestId(), request, myHttpSession);
+        }
     }
 
-    public Response handle(String id, Request request, MyHttpSession session)
+    // For inner calls
+    public Response handle(Request request, MyHttpSession session)
             throws IOException, InvocationTargetException, IllegalAccessException {
         int ack = session.getReplicas().ack();
 
         return switch(request.getMethod()) {
             case Request.METHOD_GET
-                    -> handleReplicas(serviceHandleGet, clientGet, HttpURLConnection.HTTP_OK, ack, id, request, session);
+                    -> handleReplicas(serviceHandleGet, clientGet, HttpURLConnection.HTTP_OK, ack, request, session);
             case Request.METHOD_PUT
-                    -> handleReplicas(serviceHandlePut, clientPut, HttpURLConnection.HTTP_CREATED, ack, id, request, session);
+                    -> handleReplicas(serviceHandlePut, clientPut, HttpURLConnection.HTTP_CREATED, ack, request, session);
             case Request.METHOD_DELETE
-                    -> handleReplicas(serviceHandleDelete, clientDelete, HttpURLConnection.HTTP_ACCEPTED, ack, id, request, session);
+                    -> handleReplicas(serviceHandleDelete, clientDelete, HttpURLConnection.HTTP_ACCEPTED, ack, request, session);
             default
                     -> throw new IllegalArgumentException("Illegal request method");
         };
     }
 
     private Response handleReplicas(Method selfHandler, Method clientHandler, int expectingResponseStatusCode, int ack,
-                                    String id, Request request, MyHttpSession session)
+                                    Request request, MyHttpSession session)
             throws InvocationTargetException, IllegalAccessException {
-        Response masterNodeResponse = (Response) selfHandler.invoke(this, id, request, session);
+        Response masterNodeResponse = (Response) selfHandler.invoke(this, request, session);
         if (masterNodeResponse.getStatus() != expectingResponseStatusCode) {
             return masterNodeResponse; // transfer error up the call hierarchy
         }
@@ -140,11 +151,10 @@ public class MyServiceBase implements Service {
         for (int i = 0; i < clusterUrls().size() && nApproves != ack; ++i) { // FIXME replicas order
             String nodeUrl = clusterUrls().get(i);
             if (!nodeUrl.equals(selfUrl())) {
-                HttpResponse<byte[]> replicaResponse = (HttpResponse<byte[]>) clientHandler.invoke(HttpUtils.CLIENT, id, request, session);
+                HttpResponse<byte[]> replicaResponse
+                        = (HttpResponse<byte[]>) clientHandler.invoke(HttpUtils.CLIENT, session.getRequestId(), request, session, true);
                 if (replicaResponse.statusCode() == expectingResponseStatusCode) {
                     ++nApproves;
-                } else {
-                    loadBalancer.makeNodeIll(nodeUrl);
                 }
             }
         }
@@ -153,23 +163,23 @@ public class MyServiceBase implements Service {
                 : emptyResponseFor(HttpUtils.NOT_ENOUGH_REPLICAS);
     }
 
-    public Response handleGet(String id, Request request, MyHttpSession session) throws IOException {
-        ByteBuffer key = daoFactory.fromString(id);
+    public Response handleGet(Request request, MyHttpSession session) throws IOException {
+        ByteBuffer key = daoFactory.fromString(session.getRequestId());
         TypedBaseEntry found = TypedBaseTimedEntry.withoutTime(this.dao.get(key));
         return found == null
                 ? emptyResponseFor(Response.NOT_FOUND)
                 : Response.ok(daoFactory.toBytes(found.value()));
     }
 
-    public Response handlePut(String id, Request request, MyHttpSession session) throws IOException {
-        ByteBuffer key = daoFactory.fromString(id);
+    public Response handlePut(Request request, MyHttpSession session) throws IOException {
+        ByteBuffer key = daoFactory.fromString(session.getRequestId());
         ByteBuffer value = ByteBuffer.wrap(request.getBody());
         this.dao.upsert(entryFor(key, value));
         return emptyResponseFor(Response.CREATED);
     }
 
-    public Response handleDelete(String id, Request request, MyHttpSession session) throws IOException {
-        ByteBuffer key = daoFactory.fromString(id);
+    public Response handleDelete(Request request, MyHttpSession session) throws IOException {
+        ByteBuffer key = daoFactory.fromString(session.getRequestId());
         this.dao.upsert(entryFor(key, null));
         return emptyResponseFor(Response.ACCEPTED);
     }
@@ -195,7 +205,7 @@ public class MyServiceBase implements Service {
     }
 
     public interface Handler {
-        Object handle(String id, Request request, MyHttpSession session)
+        Object handle(Request request, MyHttpSession session)
                 throws IOException, ExecutionException, InterruptedException, IllegalAccessException, InvocationTargetException;
     }
 }

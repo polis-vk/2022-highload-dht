@@ -18,33 +18,43 @@ public class Client {
         this.url = url;
     }
 
-    public HttpResponse<byte[]> get(String key, byte[] data, MyHttpSession session) throws IOException, InterruptedException {
+    public HttpResponse<byte[]> get(byte[] data, MyHttpSession session, boolean isRequestForReplica)
+            throws IOException, InterruptedException {
         return javaNetClient.send(
-                requestForKey(key, session).GET().build(),
+                requestForKey(session, isRequestForReplica).GET().build(),
                 HttpResponse.BodyHandlers.ofByteArray()
         );
     }
 
-    public HttpResponse<byte[]> put(String key, byte[] data, MyHttpSession session) throws IOException, InterruptedException {
+    public HttpResponse<byte[]> put(byte[] data, MyHttpSession session, boolean isRequestForReplica)
+            throws IOException, InterruptedException {
         return javaNetClient.send(
-                requestForKey(key, session).PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
+                requestForKey(session, isRequestForReplica).PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
                 HttpResponse.BodyHandlers.ofByteArray()
         );
     }
 
-    public HttpResponse<byte[]> delete(String key, byte[] data, MyHttpSession session) throws IOException, InterruptedException {
+    public HttpResponse<byte[]> delete(byte[] data, MyHttpSession session, boolean isRequestForReplica)
+            throws IOException, InterruptedException {
         return javaNetClient.send(
-                requestForKey(key, session).DELETE().build(),
+                requestForKey(session, isRequestForReplica).DELETE().build(),
                 HttpResponse.BodyHandlers.ofByteArray()
         );
     }
 
-    private HttpRequest.Builder requestForKey(String key, MyHttpSession session) {
-        return request("/v0/entity?id=" + key + session.getReplicas().toHttpString());
+    private HttpRequest.Builder requestForKey(MyHttpSession session, boolean isRequestForReplica) {
+        return request(
+                "/v0/entity?id=" + session.getRequestId() + session.getReplicas().toHttpString(),
+                isRequestForReplica
+        );
     }
 
-    private HttpRequest.Builder request(String path) {
-        return HttpRequest.newBuilder(URI.create(url + path)).timeout(TIMEOUT);
+    private HttpRequest.Builder request(String path, boolean isRequestForReplica) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url + path)).timeout(TIMEOUT);
+        if (isRequestForReplica) {
+            builder.header("replica", "");
+        }
+        return builder;
     }
 
 }
