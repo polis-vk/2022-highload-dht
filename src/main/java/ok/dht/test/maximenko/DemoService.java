@@ -38,7 +38,7 @@ public class DemoService implements Service {
 
     static private Response badRequest = new Response(
             String.valueOf(HttpURLConnection.HTTP_BAD_REQUEST),
-            new byte[0]
+            Response.EMPTY
     );
     private final ServiceConfig config;
     private HttpServer server;
