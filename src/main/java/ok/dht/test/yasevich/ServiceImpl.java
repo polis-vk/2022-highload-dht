@@ -5,11 +5,7 @@ import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.yasevich.artyomdrozdov.MemorySegmentDao;
 import ok.dht.test.yasevich.dao.Config;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Request;
-import one.nio.http.Response;
+import one.nio.http.*;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
@@ -20,7 +16,7 @@ import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -34,7 +30,6 @@ public class ServiceImpl implements Service {
     private static final int POOL_QUEUE_SIZE = 100;
 
     private final ServiceConfig serviceConfig;
-    private TimeStampingDao timeStampingDao;
     private HttpServer server;
 
     public ServiceImpl(ServiceConfig config) {
@@ -43,9 +38,7 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        Config daoConfig = new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD);
-        timeStampingDao = new TimeStampingDao(new MemorySegmentDao(daoConfig));
-        server = new CustomHttpServer(createConfigFromPort(serviceConfig.selfPort()), timeStampingDao);
+        server = new CustomHttpServer(createConfigFromPort(serviceConfig.selfPort()));
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
@@ -55,9 +48,6 @@ public class ServiceImpl implements Service {
     public CompletableFuture<?> stop() throws IOException {
         if (server != null) {
             server.stop();
-        }
-        if (timeStampingDao != null) {
-            timeStampingDao.close();
         }
         return CompletableFuture.completedFuture(null);
     }
@@ -82,6 +72,9 @@ public class ServiceImpl implements Service {
 
     private class CustomHttpServer extends HttpServer {
         private static final int CPUs = Runtime.getRuntime().availableProcessors();
+
+        private final TimeStampingDao timeStampingDao = new TimeStampingDao(
+                new MemorySegmentDao(new Config(serviceConfig.workingDir(), FLUSH_THRESHOLD)));
 
         private final ExecutorService workersPool = new ThreadPoolExecutor(CPUs, CPUs, 0L,
                 TimeUnit.MILLISECONDS, new AlmostLifoQueue(POOL_QUEUE_SIZE, 3));
