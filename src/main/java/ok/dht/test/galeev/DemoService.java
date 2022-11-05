@@ -98,6 +98,9 @@ public class DemoService implements Service {
         List<Node> routerNode = consistentHashRouter.getNode(header.getKey(), header.getFrom());
         for (Node node : routerNode) {
             handler.action(node, header.getKey()).thenAccept((optional) -> {
+                if (optional == null) {
+                    return;
+                }
                 if (optional.isEmpty()) {
                     handler.onError();
                     barrier.unSuccess();

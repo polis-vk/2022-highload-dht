@@ -15,10 +15,6 @@ public class AckBarrier {
     private final int from;
     private volatile boolean isNeedToSendResponseToClient;
 
-    public boolean isNeedToSendResponseToClient() {
-        return isNeedToSendResponseToClient && hasAnswered.compareAndSet(false, true);
-    }
-
     public AckBarrier(int ack, int from) {
         this.ack = ack;
         this.from = from;
@@ -41,5 +37,9 @@ public class AckBarrier {
 
     public boolean isAckAchieved() {
         return successfulResponses.get() >= ack;
+    }
+
+    public boolean isNeedToSendResponseToClient() {
+        return isNeedToSendResponseToClient && hasAnswered.compareAndSet(false, true);
     }
 }

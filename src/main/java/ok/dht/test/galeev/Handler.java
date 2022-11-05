@@ -47,12 +47,16 @@ public interface Handler<T> {
         private final AtomicReference<Entry<Timestamp, byte[]>> newestEntry = new AtomicReference<>();
         private final LinkedBlockingQueue<CompletableFuture<Entry<Timestamp, byte[]>>> listOfSendFutures
                 = new LinkedBlockingQueue<>();
+        private volatile boolean hasFinished;
 
         public GetHandler(Request ignored) {
         }
 
         @Override
         public CompletableFuture<Optional<Entry<Timestamp, byte[]>>> action(Node node, String key) {
+            if (hasFinished) {
+                return CompletableFuture.completedFuture(null);
+            }
             CompletableFuture<Entry<Timestamp, byte[]>> nodeGetFuture = node.get(key);
             listOfSendFutures.add(nodeGetFuture);
             return nodeGetFuture.thenApply(entry -> {
@@ -93,6 +97,7 @@ public interface Handler<T> {
 
         @Override
         public void finishResponse() {
+            hasFinished = true;
             listOfSendFutures.forEach((cancelFuture) -> {
                 if (!cancelFuture.isDone()) {
                     cancelFuture.complete(null);

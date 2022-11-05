@@ -170,11 +170,11 @@ public abstract class Node {
                 return null;
             });
             returnFuture.whenComplete((entry, throwable) -> {
-                        if (!sendAsyncFuture.isDone()) {
-                            LOGGER.info("Canceling useless GET requests by key: " + key);
-                            sendAsyncFuture.cancel(true);
-                        }
-                    });
+                if (!sendAsyncFuture.isDone()) {
+                    LOGGER.debug("Canceling useless GET requests by key: " + key);
+                    sendAsyncFuture.cancel(true);
+                }
+            });
             return returnFuture;
         }
 
