@@ -1,4 +1,4 @@
-package ok.dht.test.yasevich;
+package ok.dht.test.yasevich.service;
 
 import one.nio.http.Request;
 import one.nio.util.Hash;
@@ -18,7 +18,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.ToIntFunction;
 
-public class RandevouzHashingRouter {
+class RandevouzHashingRouter {
     public static final int ILL_NODE_SKIPPED_REQUESTS = 250;
     public static final int FAILED_REQUESTS_THRESHOLD = 50;
 
