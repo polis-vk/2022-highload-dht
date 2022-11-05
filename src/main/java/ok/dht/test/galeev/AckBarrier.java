@@ -13,10 +13,10 @@ public class AckBarrier {
     private final AtomicBoolean hasAnswered;
     private final int ack;
     private final int from;
-    private volatile boolean isNeedToResponse;
+    private volatile boolean isNeedToSendResponseToClient;
 
-    public boolean isNeedToResponse() {
-        return isNeedToResponse && hasAnswered.compareAndSet(false, true);
+    public boolean isNeedToSendResponseToClient() {
+        return isNeedToSendResponseToClient && hasAnswered.compareAndSet(false, true);
     }
 
     public AckBarrier(int ack, int from) {
@@ -29,13 +29,13 @@ public class AckBarrier {
 
     public void success() {
         if (successfulResponses.incrementAndGet() >= ack) {
-            isNeedToResponse = true;
+            isNeedToSendResponseToClient = true;
         }
     }
 
     public void unSuccess() {
         if (unsuccessfulResponses.incrementAndGet() >= (from - ack + 1)) {
-            isNeedToResponse = true;
+            isNeedToSendResponseToClient = true;
         }
     }
 

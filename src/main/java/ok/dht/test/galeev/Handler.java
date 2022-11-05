@@ -5,7 +5,6 @@ import ok.dht.test.shestakova.exceptions.MethodNotAllowedException;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
-import java.net.http.HttpResponse;
 import java.sql.Timestamp;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -46,7 +45,7 @@ public interface Handler<T> {
 
     class GetHandler implements Handler<Entry<Timestamp, byte[]>> {
         private final AtomicReference<Entry<Timestamp, byte[]>> newestEntry = new AtomicReference<>();
-        private final LinkedBlockingQueue<CompletableFuture<HttpResponse<byte[]>>> listOfSendFutures
+        private final LinkedBlockingQueue<CompletableFuture<Entry<Timestamp, byte[]>>> listOfSendFutures
                 = new LinkedBlockingQueue<>();
 
         public GetHandler(Request ignored) {
@@ -54,10 +53,9 @@ public interface Handler<T> {
 
         @Override
         public CompletableFuture<Optional<Entry<Timestamp, byte[]>>> action(Node node, String key) {
-            Entry<CompletableFuture<HttpResponse<byte[]>>, CompletableFuture<Entry<Timestamp, byte[]>>>
-                    entryOfCancelAndResponseFutures = node.get(key);
-            listOfSendFutures.add(entryOfCancelAndResponseFutures.key());
-            return entryOfCancelAndResponseFutures.value().thenApply(entry -> {
+            CompletableFuture<Entry<Timestamp, byte[]>> nodeGetFuture = node.get(key);
+            listOfSendFutures.add(nodeGetFuture);
+            return nodeGetFuture.thenApply(entry -> {
                 if (entry == null) {
                     return Optional.empty();
                 } else {
@@ -97,7 +95,7 @@ public interface Handler<T> {
         public void finishResponse() {
             listOfSendFutures.forEach((cancelFuture) -> {
                 if (!cancelFuture.isDone()) {
-                    cancelFuture.cancel(true);
+                    cancelFuture.complete(null);
                 }
             });
         }

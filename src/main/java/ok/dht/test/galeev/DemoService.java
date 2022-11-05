@@ -105,7 +105,7 @@ public class DemoService implements Service {
                     handler.onSuccess(optional);
                     barrier.success();
                 }
-                if (barrier.isNeedToResponse()) {
+                if (barrier.isNeedToSendResponseToClient()) {
                     try {
                         if (barrier.isAckAchieved()) {
                             session.sendResponse(handler.responseOk());

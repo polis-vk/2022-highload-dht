@@ -21,7 +21,6 @@ import java.nio.file.Files;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -52,13 +51,11 @@ public abstract class Node {
     }
 
     // First value is for cancellation
-    // Second is response future:
     // If null was returned -> some error
     // If (null,null) -> Not Found
     // If (timestamp, null) -> tombstone
     // If (timestamp, value) -> everything is OK
-    public abstract Entry<CompletableFuture<HttpResponse<byte[]>>,
-            CompletableFuture<Entry<Timestamp, byte[]>>> get(String key);
+    public abstract CompletableFuture<Entry<Timestamp, byte[]>> get(String key);
 
     // If true -> everything is OK
     // If false -> smth went wrong
@@ -78,11 +75,9 @@ public abstract class Node {
         }
 
         @Override
-        public Entry<CompletableFuture<HttpResponse<byte[]>>,
-                CompletableFuture<Entry<Timestamp, byte[]>>> get(String key) {
+        public CompletableFuture<Entry<Timestamp, byte[]>> get(String key) {
             Entry<Timestamp, byte[]> entry = getFromDao(key);
-            return new BaseEntry<>(CompletableFuture.completedFuture(null),
-                    CompletableFuture.completedFuture(entry));
+            return CompletableFuture.completedFuture(entry);
         }
 
         public Entry<Timestamp, byte[]> getFromDao(String key) {
@@ -148,18 +143,15 @@ public abstract class Node {
         }
 
         @Override
-        public Entry<CompletableFuture<HttpResponse<byte[]>>,
-                CompletableFuture<Entry<Timestamp, byte[]>>> get(String key) {
+        public CompletableFuture<Entry<Timestamp, byte[]>> get(String key) {
             if (!isAlive) {
-                return new BaseEntry<>(CompletableFuture.completedFuture(null),
-                        CompletableFuture.completedFuture(null));
+                return CompletableFuture.completedFuture(null);
             }
-            CompletableFuture<HttpResponse<byte[]>> httpResponseCompletableFuture = httpClient.sendAsync(
+            CompletableFuture<HttpResponse<byte[]>> sendAsyncFuture = httpClient.sendAsync(
                     requestBuilderForKey(nodeAddress, key).GET().build(),
                     HttpResponse.BodyHandlers.ofByteArray()
             );
-            return new BaseEntry<>(httpResponseCompletableFuture,
-                    httpResponseCompletableFuture.thenApply((response) -> {
+            return sendAsyncFuture.thenApply((response) -> {
                         if (response.statusCode() == 200) {
                             return getEntryFromByteArray(response.body());
                         } else if (response.statusCode() == 404) {
@@ -168,17 +160,20 @@ public abstract class Node {
                             return null;
                         }
                     }).exceptionally((e) -> {
-                        if (!(e instanceof CancellationException)) {
-                            if (errorCount.incrementAndGet() > FATAL_ERROR_AMOUNT) {
-                                isAlive = false;
-                            }
-                            LOGGER.debug(String.format("%nExceptionally sending GET to Node %s with key: %s%n",
-                                    nodeAddress,
-                                    key
-                            ), e);
+                        if (errorCount.incrementAndGet() > FATAL_ERROR_AMOUNT) {
+                            isAlive = false;
                         }
+                        LOGGER.debug(String.format("%nExceptionally sending GET to Node %s with key: %s%n",
+                                nodeAddress,
+                                key
+                        ), e);
                         return null;
-                    }));
+                    })
+                    .whenComplete((entry, throwable) -> {
+                        if (!sendAsyncFuture.isDone()) {
+                            sendAsyncFuture.cancel(true);
+                        }
+                    });
         }
 
         @Override
