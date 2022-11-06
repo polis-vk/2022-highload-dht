@@ -32,7 +32,6 @@ import java.util.concurrent.ExecutionException;
 public class MyServiceBase implements Service {
 
     private static final ByteBufferDaoFactoryB daoFactory = new ByteBufferDaoFactoryB();
-    private static final Logger log = LoggerFactory.getLogger(MyServiceBase.class);
     private static final Method clientGet;
     private static final Method clientPut;
     private static final Method clientDelete;
@@ -48,9 +47,9 @@ public class MyServiceBase implements Service {
     static {
         try {
             Class<Client> clientClass = Client.class;
-            clientGet = clientClass.getMethod("get", byte[].class, MyHttpSession.class, boolean.class);
-            clientPut = clientClass.getMethod("put", byte[].class, MyHttpSession.class, boolean.class);
-            clientDelete = clientClass.getMethod("delete", byte[].class, MyHttpSession.class, boolean.class);
+            clientGet = clientClass.getMethod("get", String.class, byte[].class, MyHttpSession.class, boolean.class);
+            clientPut = clientClass.getMethod("put", String.class, byte[].class, MyHttpSession.class, boolean.class);
+            clientDelete = clientClass.getMethod("delete", String.class, byte[].class, MyHttpSession.class, boolean.class);
 
             Class<MyServiceBase> serviceClass = MyServiceBase.class;
             serviceHandleGet = serviceClass.getMethod("handleGet", Request.class, MyHttpSession.class);
@@ -112,12 +111,13 @@ public class MyServiceBase implements Service {
         ReplicasUtils.Replicas replicas = ReplicasUtils.recreate(myHttpSession.getReplicas(), clusterUrls().size());
         myHttpSession.setReplicas(replicas);
         if (request.getHeader("replica") != null) {
-            switch (request.getMethod()) {
-                case (Request.METHOD_GET) -> handleGet(request, myHttpSession);
-                case (Request.METHOD_PUT) -> handlePut(request, myHttpSession);
-                case (Request.METHOD_DELETE) -> handleDelete(request, myHttpSession);
+            Response response = switch (request.getMethod()) {
+                case Request.METHOD_GET -> handleGet(request, myHttpSession);
+                case Request.METHOD_PUT -> handlePut(request, myHttpSession);
+                case Request.METHOD_DELETE -> handleDelete(request, myHttpSession);
                 default -> throw new IllegalArgumentException("Illegal request method: " + HttpUtils.toOneNio(request.getMethod()));
-            }
+            };
+            session.sendResponse(response);
         } else {
             loadBalancer.balance(this, myHttpSession.getRequestId(), request, myHttpSession);
         }
@@ -126,40 +126,39 @@ public class MyServiceBase implements Service {
     // For inner calls
     public Response handle(Request request, MyHttpSession session)
             throws IOException, InvocationTargetException, IllegalAccessException {
-        int ack = session.getReplicas().ack();
-
         return switch(request.getMethod()) {
             case Request.METHOD_GET
-                    -> handleReplicas(serviceHandleGet, clientGet, HttpURLConnection.HTTP_OK, ack, request, session);
+                    -> handleReplicas(serviceHandleGet, clientGet, HttpURLConnection.HTTP_OK, request, session);
             case Request.METHOD_PUT
-                    -> handleReplicas(serviceHandlePut, clientPut, HttpURLConnection.HTTP_CREATED, ack, request, session);
+                    -> handleReplicas(serviceHandlePut, clientPut, HttpURLConnection.HTTP_CREATED, request, session);
             case Request.METHOD_DELETE
-                    -> handleReplicas(serviceHandleDelete, clientDelete, HttpURLConnection.HTTP_ACCEPTED, ack, request, session);
+                    -> handleReplicas(serviceHandleDelete, clientDelete, HttpURLConnection.HTTP_ACCEPTED, request, session);
             default
                     -> throw new IllegalArgumentException("Illegal request method");
         };
     }
 
-    private Response handleReplicas(Method selfHandler, Method clientHandler, int expectingResponseStatusCode, int ack,
+    private Response handleReplicas(Method selfHandler, Method clientHandler, int expectingResponseStatusCode,
                                     Request request, MyHttpSession session)
             throws InvocationTargetException, IllegalAccessException {
         Response masterNodeResponse = (Response) selfHandler.invoke(this, request, session);
         if (masterNodeResponse.getStatus() != expectingResponseStatusCode) {
             return masterNodeResponse; // transfer error up the call hierarchy
         }
-        int nApproves = 0;
+        int nApproves = 1;
+        int ack = session.getReplicas().ack();
         for (int i = 0; i < clusterUrls().size() && nApproves != ack; ++i) { // FIXME replicas order
             String nodeUrl = clusterUrls().get(i);
             if (!nodeUrl.equals(selfUrl())) {
                 HttpResponse<byte[]> replicaResponse
-                        = (HttpResponse<byte[]>) clientHandler.invoke(HttpUtils.CLIENT, session.getRequestId(), request, session, true);
+                        = (HttpResponse<byte[]>) clientHandler.invoke(HttpUtils.CLIENT,  nodeUrl, request.getBody(), session, true);
                 if (replicaResponse.statusCode() == expectingResponseStatusCode) {
                     ++nApproves;
                 }
             }
         }
         return nApproves == ack
-                ? emptyResponseFor(HttpUtils.toOneNio(expectingResponseStatusCode))
+                ? new Response(HttpUtils.toOneNio(expectingResponseStatusCode), masterNodeResponse.getBody())
                 : emptyResponseFor(HttpUtils.NOT_ENOUGH_REPLICAS);
     }
 

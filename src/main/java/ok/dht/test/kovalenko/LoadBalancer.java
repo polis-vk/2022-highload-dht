@@ -10,13 +10,18 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.ConnectException;
+import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import javax.sound.sampled.AudioFormat;
 
 public final class LoadBalancer {
 
@@ -34,16 +39,7 @@ public final class LoadBalancer {
             return;
         }
 
-        switch (request.getMethod()) {
-            case Request.METHOD_GET ->
-                    handleRequest(requestId, request, session, service, responsibleNodeForKey);
-            case Request.METHOD_PUT ->
-                    handleRequest(requestId, request, session, service, responsibleNodeForKey);
-            case Request.METHOD_DELETE ->
-                    handleRequest(requestId, request, session, service, responsibleNodeForKey);
-            default -> throw new IllegalArgumentException("Unexpected request method to be balanced: "
-                    + request.getMethod());
-        }
+        handleRequest(request, session, service, responsibleNodeForKey);
     }
 
     // Rendezvous hashing
@@ -80,19 +76,19 @@ public final class LoadBalancer {
         return (key + serviceUrl).hashCode() % size;
     }
 
-    private void handleRequest(String id, Request request, MyHttpSession session,
-                               MyServiceBase service, Node responsibleNodeForKey) throws IOException {
+    private void handleRequest(Request request, MyHttpSession session,
+                               MyServiceBase service, Node responsibleNodeForKey) {
         MyServiceBase.Handler finalHandler = service.selfUrl().equals(responsibleNodeForKey.selfUrl())
                 ? service::handle
                 : responsibleNodeForKey::proxyRequest;
-        handleRequestAndSendResponse(id, request, responsibleNodeForKey, finalHandler, session);
+        handleRequestAndSendResponse(request, responsibleNodeForKey, finalHandler, session);
     }
 
-    private void handleRequestAndSendResponse(String id, Request request,
+    private void handleRequestAndSendResponse(Request request,
                                               Node responsibleNodeForKey, MyServiceBase.Handler handler, MyHttpSession session) {
         Response response;
         try {
-            Object nodedResponse = nodeRequest(id, request, responsibleNodeForKey, handler, session);
+            Object nodedResponse = nodeRequest(request, responsibleNodeForKey, handler, session);
             if (nodedResponse instanceof Response) {
                 response = (Response) nodedResponse;
             } else {
@@ -103,19 +99,23 @@ public final class LoadBalancer {
             log.error("Fatal error", e);
             response = MyServiceBase.emptyResponseFor(Response.NOT_FOUND);
         }
+
+        if (response.getStatus() == HttpURLConnection.HTTP_GATEWAY_TIMEOUT) {
+            makeNodeIll(responsibleNodeForKey.selfUrl());
+            log.error("Node {} is ill", responsibleNodeForKey.selfUrl(), new Exception(Arrays.toString(response.getBody())));
+        }
+
         Response finalResponse = response;
         HttpUtils.NetRequest netRequest = () -> session.sendResponse(finalResponse);
         HttpUtils.safeHttpRequest(session, log, netRequest);
     }
 
-    private Object nodeRequest(String id, Request request, Node node, MyServiceBase.Handler handler, MyHttpSession session) {
+    private Object nodeRequest(Request request, Node responsibleNodeForKey, MyServiceBase.Handler handler, MyHttpSession session) {
         try {
             return handler.handle(request, session);
-        } catch (ConnectException e) {
-            return MyServiceBase.emptyResponseFor(Response.GATEWAY_TIMEOUT);
         } catch (Exception e) {
-            makeNodeIll(node.selfUrl());
-            log.error("Node {} is ill", node.selfUrl(), e);
+            makeNodeIll(responsibleNodeForKey.selfUrl());
+            log.error("Node {} is ill", responsibleNodeForKey.selfUrl(), e);
             return MyServiceBase.emptyResponseFor(Response.NOT_FOUND);
         }
     }

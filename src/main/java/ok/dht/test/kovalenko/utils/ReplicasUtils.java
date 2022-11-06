@@ -11,22 +11,10 @@ import java.util.regex.Pattern;
 public class ReplicasUtils {
 
     private static final Logger log = LoggerFactory.getLogger(ReplicasUtils.class);
-    private static final Map<Integer /*from*/, Integer /*ack*/> defaultQuorums = new HashMap<>();
-    private static final String REPLICAS_PARAMETERS_SEPARATOR = "/";
-    private static final Pattern REPLICAS_PATTERN
-            = Pattern.compile("(\\d+)" + REPLICAS_PARAMETERS_SEPARATOR + "(\\d+)");
-
-    static {
-        defaultQuorums.put(1, 1);
-        defaultQuorums.put(2, 2);
-        defaultQuorums.put(3, 2);
-        defaultQuorums.put(4, 3);
-        defaultQuorums.put(5, 3);
-    }
 
     public static Replicas recreate(Replicas replicas, int clusterSize) {
         return replicas == null
-                ? new Replicas(defaultQuorums.get(clusterSize), clusterSize)
+                ? new Replicas(clusterSize / 2 + 1, clusterSize)
                 : replicas;
     }
 
@@ -49,7 +37,7 @@ public class ReplicasUtils {
 
             return new ReplicasValidation(true, new Replicas(intAck, intFrom));
         } catch (Exception e) {
-            log.error("Unexpected error", e);
+            log.error("Error when validating replicas parameter", e);
             return ReplicasValidation.INVALID;
         }
     }

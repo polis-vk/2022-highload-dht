@@ -24,12 +24,10 @@ public class Node {
             throw new IllegalAccessException("Node is ill!");
         }
 
-        HttpUtils.CLIENT.setUrl(selfUrl);
-
         return switch (request.getMethod()) {
-            case Request.METHOD_GET -> HttpUtils.CLIENT.get(request.getBody(), session, false);
-            case Request.METHOD_PUT -> HttpUtils.CLIENT.put(request.getBody(), session, false);
-            case Request.METHOD_DELETE -> HttpUtils.CLIENT.delete(request.getBody(), session, false);
+            case Request.METHOD_GET -> HttpUtils.CLIENT.get(selfUrl, request.getBody(), session, false);
+            case Request.METHOD_PUT -> HttpUtils.CLIENT.put(selfUrl, request.getBody(), session, false);
+            case Request.METHOD_DELETE -> HttpUtils.CLIENT.delete(selfUrl, request.getBody(), session, false);
             default -> throw new IllegalArgumentException("Unexpected request method to be proxied: "
                     + request.getMethod());
         };

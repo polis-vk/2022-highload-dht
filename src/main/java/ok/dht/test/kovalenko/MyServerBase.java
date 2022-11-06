@@ -27,11 +27,11 @@ public class MyServerBase extends HttpServer {
     private static final int N_WORKERS = 2 * (Runtime.getRuntime().availableProcessors() + 1);
     private static final int QUEUE_CAPACITY = 10 * N_WORKERS;
     private final Logger log = LoggerFactory.getLogger(MyServerBase.class);
-    private final PoolKeeper workers;
+    private final PoolKeeper workersHandlers;
 
     public MyServerBase(HttpServerConfig config, Object... routers) throws IOException {
         super(config, routers);
-        this.workers = new PoolKeeper(
+        this.workersHandlers = new PoolKeeper(
                 new ThreadPoolExecutor(1, N_WORKERS,
                         60, TimeUnit.SECONDS,
                         new LinkedBlockingQueue<>(QUEUE_CAPACITY),
@@ -78,7 +78,7 @@ public class MyServerBase extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        workers.close();
+        workersHandlers.close();
         for (SelectorThread selectorThread : selectors) {
             if (selectorThread.selector.isOpen()) {
                 for (Session session : selectorThread.selector) {
@@ -96,7 +96,7 @@ public class MyServerBase extends HttpServer {
 
     private void handle(Request request, MyHttpSession myHttpSession) {
         HttpUtils.NetRequest netRequest = () -> super.handleRequest(request, myHttpSession);
-        workers.submit(() -> HttpUtils.safeHttpRequest(myHttpSession, log, netRequest));
+        workersHandlers.submit(() -> HttpUtils.safeHttpRequest(myHttpSession, log, netRequest));
     }
 
 }

@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit;
 public class Main {
 
     private static final Logger log = LoggerFactory.getLogger(Main.class);
-    private static final List<Integer> ports = List.of(19234, 19235, 19236);
+    private static final List<Integer> ports = List.of(19234, 19235);
     protected static final List<String> urls = ports.stream().map(p -> "http://localhost:" + p).toList();
     protected static final List<ServiceConfig> configs = new ArrayList<>(urls.size());
 
@@ -49,7 +49,6 @@ public class Main {
                 log.debug("Socket is ready: {}", service.selfUrl());
                 urlsServices.put(service.selfUrl(), service);
             }
-            //urlsServices.get(urls.get(1)).stop();
             //DaoFiller.fillDaos(urlsServices, 1, 1);
             log.debug("END");
         } catch (Exception e) {
