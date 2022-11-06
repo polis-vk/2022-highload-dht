@@ -1,5 +1,5 @@
 request_path = "/v0/entity?id="
-max_value = 200000
+max_value = 50000
 math.randomseed(os.time())
 
 request = function()
