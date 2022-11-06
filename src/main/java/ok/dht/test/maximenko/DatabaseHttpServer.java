@@ -50,12 +50,16 @@ public class DatabaseHttpServer extends HttpServer {
             return;
         }
 
-        requestHandlers.submit(() -> {
+        requestHandlers.execute(() -> {
             try {
                 Response response = handleMethod(key, request.getMethod(), request.getBody());
                 session.sendResponse(response);
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                try {
+                    session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                } catch (IOException ex) {
+                    throw new RuntimeException(ex);
+                }
             }
         });
     }
