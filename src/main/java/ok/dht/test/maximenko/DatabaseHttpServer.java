@@ -9,16 +9,16 @@ import ok.dht.test.maximenko.dao.MemorySegmentDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.mgt.Management;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 
 public class DatabaseHttpServer extends HttpServer {
@@ -29,6 +29,8 @@ public class DatabaseHttpServer extends HttpServer {
             Response.EMPTY
     );
     private Dao dao;
+    private ExecutorService requestHandlers;
+
     private final java.nio.file.Path workDir;
     public DatabaseHttpServer(HttpServerConfig config, java.nio.file.Path workDir) throws IOException {
         super(config);
@@ -48,9 +50,14 @@ public class DatabaseHttpServer extends HttpServer {
             return;
         }
 
-        Response response = handleMethod(key, request.getMethod(), request.getBody());
-        session.sendResponse(response);
-
+        requestHandlers.submit(() -> {
+            try {
+                Response response = handleMethod(key, request.getMethod(), request.getBody());
+                session.sendResponse(response);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 
     Response handleMethod(String key, int method, byte[] body) throws IOException {
@@ -106,6 +113,7 @@ public class DatabaseHttpServer extends HttpServer {
     @Override
     public synchronized void start() {
         Config daoConfig = new Config(workDir, flushDaoThresholdBytes);
+        requestHandlers = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
         try {
             dao = new MemorySegmentDao(daoConfig);
         } catch (IOException e) {
@@ -116,7 +124,9 @@ public class DatabaseHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
+        requestHandlers.shutdown();
         super.stop();
+
         for (SelectorThread thread : selectors) {
             for (Session session : thread.selector) {
                 session.close();
