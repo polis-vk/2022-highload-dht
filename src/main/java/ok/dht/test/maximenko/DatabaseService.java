@@ -21,29 +21,25 @@ import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 
-public class DemoService implements Service {
-    static int flushDaoThresholdBytes = 100000;
-    static java.nio.file.Path daoFilesPath;
+public class DatabaseService implements Service {
+    static final int flushDaoThresholdBytes = 10000000;
+    final private java.nio.file.Path daoFilesPath = Files.createTempDirectory("dao_files");
+    static final Logger logger = Logger.getLogger("Service");
 
-    static {
-        try {
-            daoFilesPath = Files.createTempDirectory("dao_files");
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    static private Response badRequest = new Response(
+    static final private Response badRequest = new Response(
             String.valueOf(HttpURLConnection.HTTP_BAD_REQUEST),
             Response.EMPTY
     );
     private final ServiceConfig config;
     private HttpServer server;
     private Dao dao;
-    public DemoService(ServiceConfig config) {
+    public DatabaseService(ServiceConfig config) throws IOException {
         this.config = config;
     }
 
@@ -65,8 +61,8 @@ public class DemoService implements Service {
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(Request request) throws IOException {
-        String keyString = request.getParameter("id");
-        if (keyString == null || keyString.equals("=")) {
+        String keyString = request.getParameter("id=");
+        if (keyString == null) {
             return badRequest;
         }
         MemorySegment key = MemorySegment.ofArray(keyString.getBytes());
@@ -80,15 +76,15 @@ public class DemoService implements Service {
 
         return new Response(
                 String.valueOf(HttpURLConnection.HTTP_NOT_FOUND),
-                new byte[0]
+                Response.EMPTY
         );
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(Request request) throws IOException {
-        String keyString = request.getParameter("id");
-        if (keyString == null || keyString.equals("=")) {
+        String keyString = request.getParameter("id=");
+        if (keyString == null) {
             return badRequest;
         }
         MemorySegment key = MemorySegment.ofArray(keyString.getBytes(StandardCharsets.UTF_8));
@@ -96,15 +92,15 @@ public class DemoService implements Service {
         dao.upsert(entry);
         return new Response(
                 String.valueOf(HttpURLConnection.HTTP_ACCEPTED),
-                new byte[0]
+                Response.EMPTY
         );
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(Request request) {
-        String keyString = request.getParameter("id");
-        if (keyString == null || keyString.equals("=")) {
+        String keyString = request.getParameter("id=");
+        if (keyString == null) {
             return badRequest;
         }
         MemorySegment key = MemorySegment.ofArray(keyString.getBytes(StandardCharsets.UTF_8));
@@ -113,7 +109,7 @@ public class DemoService implements Service {
         dao.upsert(entry);
         return new Response(
                 String.valueOf(HttpURLConnection.HTTP_CREATED),
-                new byte[0]
+                Response.EMPTY
         );
     }
 
@@ -122,13 +118,8 @@ public class DemoService implements Service {
     public Response handlePost() {
         return new Response(
                 String.valueOf(HttpURLConnection.HTTP_BAD_METHOD),
-                new byte[0]
+                Response.EMPTY
         );
-    }
-
-    @Path("/*")
-    public Response handleWrongUrl() {
-        return badRequest;
     }
 
     private static HttpServerConfig createConfig(int port) {
@@ -150,7 +141,12 @@ public class DemoService implements Service {
 
         @Override
         public Service create(ServiceConfig config) {
-            return new DemoService(config);
+            try {
+                return new DatabaseService(config);
+            } catch (IOException e) {
+                logger.log(Level.SEVERE, "Can't create a service");
+                return null;
+            }
         }
     }
 }

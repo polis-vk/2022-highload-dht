@@ -19,7 +19,7 @@ public class Server {
                 Collections.singletonList(url),
                 Files.createTempDirectory("server")
         );
-        new DemoService(cfg).start().get(1, TimeUnit.SECONDS);
+        new DatabaseService(cfg).start().get(1, TimeUnit.SECONDS);
         System.out.println("Server is listening on port: " + port);
     }
 }
