@@ -90,16 +90,18 @@ public class ReplicationManager {
                     }
             ).whenCompleteAsync(
                     (resp, exception) -> {
-                        boolean isAcks = collectedResponses.size() >= ackNumber;
-                        if ((from == countReq.get() || isAcks)) {
-                            if (!isAcks) {
+                        final int currentCount = countReq.get();
+                        final int currentSize = collectedResponses.size();
+                        boolean cantBeSuccess = (from - currentCount) < ackNumber - currentSize;
+                        if (cantBeSuccess) {
+                            if (canISendResponse(from, countReq, currentCount)) {
                                 Utils.sendResponse(
                                         session,
                                         new Response(Response.GATEWAY_TIMEOUT, Utils.stringToByte(NOT_ENOUGH_REPLICAS))
                                 );
-                                return;
                             }
-                            if (countReq.compareAndSet(from, from + 1)) {
+                        } else if (currentSize >= ackNumber) {
+                            if (canISendResponse(from, countReq, currentCount)) {
                                 Utils.sendResponse(session, generateResult(collectedResponses, request.getMethod()));
                             }
                         }
@@ -108,6 +110,10 @@ public class ReplicationManager {
 
             shardIndex = (shardIndex + 1) % algorithm.getShards().size();
         }
+    }
+
+    private static boolean canISendResponse(int from, AtomicInteger countReq, int currentCount) {
+        return currentCount < from + 1 && countReq.compareAndSet(currentCount, from + 1);
     }
 
     private CompletableFuture<Response> handleFinder(String id, Request request, long timestamp, Shard shard) {
