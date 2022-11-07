@@ -3,6 +3,7 @@ package ok.dht.test;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 
+import java.io.IOException;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -17,7 +18,7 @@ public @interface ServiceFactory {
     String[] bonuses() default {};
 
     interface Factory {
-        Service create(ServiceConfig config);
+        Service create(ServiceConfig config) throws IOException;
     }
 
 }
