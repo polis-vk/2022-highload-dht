@@ -29,20 +29,11 @@ public class MyHttpServer extends HttpServer {
 
     private void closeSessions() {
         for (SelectorThread selector : selectors) {
-            for (Session session : selector.selector) {
-                session.close();
+            if (selector.selector.isOpen()) {
+                for (Session session : selector.selector) {
+                    session.close();
+                }
             }
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
