@@ -29,6 +29,7 @@ public class PoolKeeper implements Closeable {
         }
     }
 
+    @SuppressWarnings("CheckReturnValue")
     public void submit(Runnable r) {
         this.service.submit(r);
     }

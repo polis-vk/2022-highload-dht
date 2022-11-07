@@ -15,7 +15,7 @@ import java.time.Duration;
 public class Client {
 
     private static final java.net.http.HttpClient javaNetClient = java.net.http.HttpClient.newHttpClient();
-    private static final Duration TIMEOUT = Duration.ofSeconds(3);
+    private static final Duration TIMEOUT = Duration.ofSeconds(2);
 
     private static HttpResponse<byte[]> gatewayResponse(Exception e) {
         return new MyHttpResponse(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, e);

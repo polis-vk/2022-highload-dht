@@ -23,6 +23,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class MyServerBase extends HttpServer {
+
     private static final Set<Integer /*HTTP-method id*/> availableMethods
             = Set.of(Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE);
     private static final int N_WORKERS = 2 * (Runtime.getRuntime().availableProcessors() + 1);
