@@ -19,10 +19,12 @@ public class Validator {
         Request.METHOD_DELETE
     );
 
-    private final int defaultReplicasCount;
+    private final int defaultAckCount;
+    private final int defaultFromCount;
 
-    public Validator(int defaultReplicasCount) {
-        this.defaultReplicasCount = defaultReplicasCount;
+    public Validator(int clusterSize) {
+        defaultFromCount = clusterSize;
+        defaultAckCount = (clusterSize + 1) / 2;
     }
 
     public ValidationResult validate(Request request) {
@@ -55,9 +57,9 @@ public class Validator {
         long timestamp;
         try {
             requestedReplicas = getParamFromRequest(request, REQUESTED_REPLICAS,
-                defaultReplicasCount, Integer::parseInt);
+                defaultFromCount, Integer::parseInt);
             requiredReplicas = getParamFromRequest(request, REQUIRED_REPLICAS,
-                defaultReplicasCount, Integer::parseInt);
+                defaultAckCount, Integer::parseInt);
             timestamp = getParamFromRequest(request, TIMESTAMP, 0L, Long::parseLong);
 
             if (requiredReplicas <= 0 || requiredReplicas > requestedReplicas) {

@@ -4,23 +4,25 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
-import java.util.LinkedList;
 import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class LeaderRequestState extends AbstractRequestState {
 
-    private int remainOverall;
-    private int remainToSuccess;
+    private final AtomicInteger remainOverall;
+    private final AtomicInteger remainToSuccess;
     private final Queue<Response> shardResponses;
-    private boolean completed;
+    private final AtomicBoolean completed;
 
     public LeaderRequestState(int requestedReplicas, int requiredReplicas,
                               Request request, HttpSession session, String id, long timestamp) {
         super(request, session, id, timestamp);
-        remainOverall = requestedReplicas;
-        remainToSuccess = requiredReplicas;
-        shardResponses = new LinkedList<>();
-        completed = false;
+        remainOverall = new AtomicInteger(requestedReplicas);
+        remainToSuccess = new AtomicInteger(requiredReplicas);
+        shardResponses = new ConcurrentLinkedQueue<>();
+        completed = new AtomicBoolean(false);
     }
 
     public Queue<Response> getShardResponses() {
@@ -28,30 +30,58 @@ public class LeaderRequestState extends AbstractRequestState {
     }
 
     @Override
-    public synchronized boolean onResponseFailure() {
-        --remainOverall;
-        if (remainOverall == 0 && !completed) {
-            completed = true;
-            return true;
+    public boolean onResponseFailure() {
+        while (true) {
+            boolean curCompleted = completed.get();
+            int curRemainOverall = remainOverall.get();
+
+            if (curCompleted) {
+                return false;
+            }
+
+            if (remainOverall.compareAndSet(curRemainOverall, curRemainOverall - 1)) {
+                return casCompleted(curRemainOverall);
+            }
         }
-        return false;
     }
 
     @Override
-    public synchronized boolean onResponseSuccess(Response response) {
-        shardResponses.add(response);
-        --remainToSuccess;
-        --remainOverall;
-        if (remainToSuccess == 0 && !completed) {
-            completed = true;
-            return true;
+    public boolean onResponseSuccess(Response response) {
+        while (true) {
+            boolean curCompleted = completed.get();
+            int curRemainOverall = remainOverall.get();
+            int curRemainToSuccess = remainToSuccess.get();
+
+            if (isCompletedOnSuccess(curCompleted, curRemainToSuccess)) {
+                return false;
+            }
+
+            if (remainOverall.compareAndSet(curRemainOverall, curRemainOverall - 1)) {
+                return processOnSuccessAfterCas(curRemainToSuccess, response);
+            }
         }
-        return false;
+    }
+
+    private static boolean isCompletedOnSuccess(boolean curCompleted, int curRemainToSuccess) {
+        return curCompleted || curRemainToSuccess == 0;
+    }
+
+    private boolean processOnSuccessAfterCas(int curRemainToSuccess, Response response) {
+        while (curRemainToSuccess > 0 && !remainToSuccess.compareAndSet(curRemainToSuccess, curRemainToSuccess - 1)) {
+            curRemainToSuccess = remainToSuccess.get();
+        }
+        shardResponses.add(response);
+
+        return casCompleted(curRemainToSuccess);
+    }
+
+    private boolean casCompleted(int curRemain) {
+        return curRemain == 1 && completed.compareAndSet(false, true);
     }
 
     @Override
     public boolean isSuccess() {
-        return remainToSuccess == 0;
+        return remainToSuccess.get() == 0;
     }
 
     @Override

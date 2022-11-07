@@ -91,7 +91,7 @@ public class CustomHttpServer extends HttpServer {
             .build();
         selfUrl = serviceConfig.selfUrl();
         illNodesService = new IllNodesService(clusterUrls);
-        validator = new Validator((clusterUrls.size() + 1) / 2);
+        validator = new Validator(clusterUrls.size());
     }
 
     private static ExecutorService createExecutor(WorkersConfig config) {
