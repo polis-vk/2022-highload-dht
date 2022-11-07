@@ -14,8 +14,8 @@ public final class Main {
 
     private static final Logger log = LoggerFactory.getLogger(Main.class);
     private static final List<Integer> ports = List.of(19234, 19235, 19236);
-    protected static final List<String> urls = ports.stream().map(p -> "http://localhost:" + p).toList();
-    protected static final List<ServiceConfig> configs = new ArrayList<>(urls.size());
+    private static final List<String> urls = ports.stream().map(p -> "http://localhost:" + p).toList();
+    private static final List<ServiceConfig> configs = new ArrayList<>(urls.size());
 
     static {
         for (int i = 0; i < urls.size(); ++i) {

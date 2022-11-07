@@ -8,7 +8,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Optional;
-
 import javax.net.ssl.SSLSession;
 
 public class MyHttpResponse implements HttpResponse<byte[]> {

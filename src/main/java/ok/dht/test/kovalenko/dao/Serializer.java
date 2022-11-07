@@ -30,7 +30,7 @@ public final class Serializer {
 
     public TypedTimedEntry readEntry(MappedPairedFiles mappedFilePair, int indexesPos) {
         int dataPos = readDataFileOffset(mappedFilePair.indexesFile(), indexesPos);
-        long timestamp = readTimestamp(mappedFilePair.dataFile(), dataPos);
+        final long timestamp = readTimestamp(mappedFilePair.dataFile(), dataPos);
         dataPos += Long.BYTES;
         byte tombstone = readByte(mappedFilePair.dataFile(), dataPos);
         ++dataPos;
