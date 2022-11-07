@@ -1,13 +1,12 @@
 package ok.dht.test.kovalenko;
 
 import ok.dht.test.kovalenko.utils.HttpUtils;
-import one.nio.http.HttpSession;
+import ok.dht.test.kovalenko.utils.MyHttpSession;
 import one.nio.http.Request;
 
 import java.io.IOException;
 import java.net.http.HttpResponse;
 import java.util.concurrent.ExecutionException;
-import static ok.dht.test.kovalenko.utils.HttpUtils.CLIENT;
 
 public class Node {
 
@@ -25,9 +24,9 @@ public class Node {
         }
 
         return switch (request.getMethod()) {
-            case Request.METHOD_GET -> HttpUtils.CLIENT.get(selfUrl, request.getBody(), session, false);
-            case Request.METHOD_PUT -> HttpUtils.CLIENT.put(selfUrl, request.getBody(), session, false);
-            case Request.METHOD_DELETE -> HttpUtils.CLIENT.delete(selfUrl, request.getBody(), session, false);
+            case Request.METHOD_GET -> HttpUtils.CLIENT.get(selfUrl, request.getBody(), session, true);
+            case Request.METHOD_PUT -> HttpUtils.CLIENT.put(selfUrl, request.getBody(), session, true);
+            case Request.METHOD_DELETE -> HttpUtils.CLIENT.delete(selfUrl, request.getBody(), session, true);
             default -> throw new IllegalArgumentException("Unexpected request method to be proxied: "
                     + request.getMethod());
         };

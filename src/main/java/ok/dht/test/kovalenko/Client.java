@@ -1,7 +1,7 @@
 package ok.dht.test.kovalenko;
 
-import ok.dht.test.kovalenko.dao.base.DaoFactoryB;
-import ok.dht.test.kovalenko.utils.HttpUtils;
+import ok.dht.test.kovalenko.utils.MyHttpResponse;
+import ok.dht.test.kovalenko.utils.MyHttpSession;
 
 import java.io.IOException;
 import java.net.ConnectException;
@@ -10,14 +10,16 @@ import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Arrays;
 
 public class Client {
 
     private static final java.net.http.HttpClient javaNetClient = java.net.http.HttpClient.newHttpClient();
     private static final Duration TIMEOUT = Duration.ofSeconds(3);
+
+    private static HttpResponse<byte[]> gatewayResponse(Exception e) {
+        return new MyHttpResponse(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, e);
+    }
 
     public HttpResponse<byte[]> get(String url, byte[] data, MyHttpSession session, boolean isRequestForReplica)
             throws IOException, InterruptedException {
@@ -66,13 +68,9 @@ public class Client {
     private HttpRequest.Builder request(String url, String path, boolean isRequestForReplica) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url + path)).timeout(TIMEOUT);
         if (isRequestForReplica) {
-            builder.header("replica", "");
+            builder.header("Replica", "");
         }
         return builder;
-    }
-
-    private static HttpResponse<byte[]> gatewayResponse(Exception e) {
-        return new HttpUtils.MyHttpResponse(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, e);
     }
 
 }

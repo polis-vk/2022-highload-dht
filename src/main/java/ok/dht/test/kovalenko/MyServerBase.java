@@ -2,6 +2,7 @@ package ok.dht.test.kovalenko;
 
 import ok.dht.test.kovalenko.dao.utils.PoolKeeper;
 import ok.dht.test.kovalenko.utils.HttpUtils;
+import ok.dht.test.kovalenko.utils.MyHttpSession;
 import ok.dht.test.kovalenko.utils.ReplicasUtils;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;

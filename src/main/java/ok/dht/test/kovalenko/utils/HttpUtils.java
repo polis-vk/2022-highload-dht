@@ -7,15 +7,7 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpHeaders;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.Optional;
-import javax.net.ssl.SSLSession;
 
 public final class HttpUtils {
 
@@ -51,8 +43,12 @@ public final class HttpUtils {
         };
     }
 
-    public static Response toOneNio(HttpResponse<byte[]> r) {
-        return new Response(toOneNio(r.statusCode()), r.body());
+    public static MyOneNioResponse toOneNio(HttpResponse<byte[]> r) throws IllegalAccessException {
+        String statusCode = toOneNio(r.statusCode());
+        byte[] body = r.body();
+        long time = r.headers().firstValueAsLong("time")
+                .orElseThrow(() -> new IllegalAccessException("Response " + r + " doesn't contain header 'time'"));
+        return new MyOneNioResponse(statusCode, body, time);
     }
 
     public static void sendError(String responseCode, Exception e, HttpSession session, Logger log) {
@@ -77,57 +73,6 @@ public final class HttpUtils {
 
     public interface NetRequest {
         void execute() throws Exception;
-    }
-
-    public static final class MyHttpResponse implements HttpResponse<byte[]> {
-
-        private final int statusCode;
-        private final byte[] body;
-
-        public MyHttpResponse(int statusCode, Exception e) {
-            this.statusCode = statusCode;
-            this.body = Arrays.toString(e.getStackTrace()).getBytes(StandardCharsets.UTF_8);
-        }
-
-        @Override
-        public int statusCode() {
-            return statusCode;
-        }
-
-        @Override
-        public HttpRequest request() {
-            return null;
-        }
-
-        @Override
-        public Optional<HttpResponse<byte[]>> previousResponse() {
-            return Optional.empty();
-        }
-
-        @Override
-        public HttpHeaders headers() {
-            return null;
-        }
-
-        @Override
-        public byte[] body() {
-            return body;
-        }
-
-        @Override
-        public Optional<SSLSession> sslSession() {
-            return Optional.empty();
-        }
-
-        @Override
-        public URI uri() {
-            return null;
-        }
-
-        @Override
-        public HttpClient.Version version() {
-            return null;
-        }
     }
 
 }

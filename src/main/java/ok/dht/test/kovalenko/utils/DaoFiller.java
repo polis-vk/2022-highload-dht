@@ -1,6 +1,5 @@
 package ok.dht.test.kovalenko.utils;
 
-import ok.dht.ServiceConfig;
 import ok.dht.test.kovalenko.LoadBalancer;
 import ok.dht.test.kovalenko.MyServiceBase;
 import ok.dht.test.kovalenko.Node;
@@ -10,11 +9,8 @@ import ok.dht.test.kovalenko.dao.aliases.TypedTimedEntry;
 import ok.dht.test.kovalenko.dao.base.ByteBufferDaoFactoryB;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 public final class DaoFiller {
 
@@ -39,13 +35,16 @@ public final class DaoFiller {
             throws InterruptedException, IOException {
         int sleepTreshold = 10_000 * urlsServices.size();
         LoadBalancer loadBalancer = new LoadBalancer();
-        loadBalancer.add((MyServiceBase) urlsServices.values().toArray()[0]);
+        Map<String, Node> urls = new HashMap<>();
+        for (String url : urlsServices.keySet()) {
+            urls.put(url, new Node(url));
+        }
         for (int i = idxEntryFrom; i <= idxEntryTo; ++i) {
             if (i % sleepTreshold == 0) {
                 Thread.sleep(100);
             }
             TypedTimedEntry entry = entryAt(i);
-            Node responsibleNodeForKey = loadBalancer.responsibleNodeForKey(daoFactory.toString(entry.key()));
+            Node responsibleNodeForKey = loadBalancer.responsibleNodeForKey(daoFactory.toString(entry.key()), urls);
             urlsServices.get(responsibleNodeForKey.selfUrl()).getDao().upsert(entry);
         }
         for (Map.Entry<String, MyServiceBase> service : urlsServices.entrySet()) {

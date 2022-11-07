@@ -1,6 +1,9 @@
 package ok.dht.test.kovalenko;
 
 import ok.dht.test.kovalenko.utils.HttpUtils;
+import ok.dht.test.kovalenko.utils.MyHttpSession;
+import ok.dht.test.kovalenko.utils.MyOneNioResponse;
+import ok.dht.test.kovalenko.utils.ResponseComparator;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import org.slf4j.Logger;
@@ -14,6 +17,8 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.Queue;
 import java.util.concurrent.ExecutionException;
 
 public final class LoadBalancer {
@@ -23,26 +28,28 @@ public final class LoadBalancer {
 
     public void balance(MyServiceBase service, Request request, MyHttpSession session)
             throws IOException, ExecutionException, InterruptedException {
-        List<Node> replicasNodeForKey = replicasForKey(session.getRequestId(), session.getReplicas().ack());
-        Response response;
+        makeAllNodesHealthy(); // parody on CircuitBreaker
+        int ack = session.getReplicas().ack();
+        MyOneNioResponse response;
+        if (nodes.size() < ack) {
+            response = MyServiceBase.emptyResponseFor(HttpUtils.NOT_ENOUGH_REPLICAS);
+            session.sendResponse(response);
+            return;
+        }
 
-        for (Node node : nodes.values()) {
-            if (node.isIll()) {
-                response = MyServiceBase.emptyResponseFor(HttpUtils.NOT_ENOUGH_REPLICAS);
-                session.sendResponse(response);
-                return;
-            }
-         }
+        List<Node> replicasNodeForKey = replicasForKey(session.getRequestId(), ack);
+
+        if (replicasNodeForKey.size() != session.getReplicas().ack()) {
+            response = MyServiceBase.emptyResponseFor(HttpUtils.NOT_ENOUGH_REPLICAS);
+            session.sendResponse(response);
+            return;
+        }
 
         handleWithReplicas(request, session, service, replicasNodeForKey);
     }
 
     // Rendezvous hashing
-    public Node responsibleNodeForKey(String key) {
-        if (nodes.isEmpty()) {
-            throw new IllegalArgumentException("Got empty array of URL's for hashing");
-        }
-
+    public Node responsibleNodeForKey(String key, Map<String, Node> nodes) {
         int maxHash = Integer.MIN_VALUE;
         String maxHashUrl = null;
         for (String url : nodes.keySet()) {
@@ -67,18 +74,22 @@ public final class LoadBalancer {
         nodes.get(nodeUrl).setIll(true);
     }
 
-    private List<Node> replicasForKey(String key, int ack) {
-        if (nodes.isEmpty()) {
-            throw new IllegalArgumentException("Got empty array of URL's for hashing");
+    public void makeAllNodesHealthy() {
+        for (Node node : nodes.values()) {
+            node.setIll(false);
         }
+    }
 
+    private List<Node> replicasForKey(String key, int ack) {
         List<Node> replicasForKey = new ArrayList<>(ack);
         int gotReplicas = 0;
         while (gotReplicas != ack && !nodes.isEmpty()) {
-            Node replicaForKey = responsibleNodeForKey(key);
-            replicasForKey.add(replicaForKey);
+            Node replicaForKey = responsibleNodeForKey(key, nodes);
             nodes.remove(replicaForKey.selfUrl());
-            ++gotReplicas;
+            if (!replicaForKey.isIll()) {
+                replicasForKey.add(replicaForKey);
+                ++gotReplicas;
+            }
         }
         replicasForKey.forEach(r -> nodes.put(r.selfUrl(), r));
         return replicasForKey;
@@ -89,31 +100,35 @@ public final class LoadBalancer {
     }
 
     private void handleWithReplicas(Request request, MyHttpSession session,
-                               MyServiceBase service, List<Node> replicasForKey) {
-        Response response;
+                                    MyServiceBase service, List<Node> replicasForKey) {
+        MyOneNioResponse response;
         try {
-            request.addHeader("replica");
+            request.addHeader("Replica");
             int nApproves = 0;
-            List<Response> replicaGoodResponses = new ArrayList<>(replicasForKey.size());
+            Queue<MyOneNioResponse> replicaGoodResponses = new PriorityQueue<>(ResponseComparator.INSTANSE);
+            boolean wasSelfSaving = false;
             for (Node replicaForKey : replicasForKey) {
-                Response replicaResponse;
+                MyServiceBase.Handler handler;
                 if (replicaForKey.selfUrl().equals(service.selfUrl())) {
-                    replicaResponse = nodeRequest(request, service::handle, session);
+                    handler = service::handle;
+                    wasSelfSaving = true;
                 } else {
-                    replicaResponse = nodeRequest(request, replicaForKey::proxyRequest, session);
+                    handler = replicaForKey::proxyRequest;
                 }
 
-                if (isGoodResponse(replicaResponse)) {
-                    ++nApproves;
-                    replicaGoodResponses.add(replicaResponse);
-                } else {
-                    makeNodeIll(replicaForKey.selfUrl());
-                    log.error("Node {} is ill", replicaForKey.selfUrl(), new Exception(Arrays.toString(replicaResponse.getBody())));
-                }
+                nApproves += requestForReplica(request, session, handler, replicaGoodResponses, service.selfUrl())
+                        ? 1
+                        : 0;
+            }
+
+            if (nApproves != session.getReplicas().ack() && !wasSelfSaving) {
+                nApproves += requestForReplica(request, session, service::handle, replicaGoodResponses, service.selfUrl())
+                        ? 1
+                        : 0;
             }
 
             if (nApproves == session.getReplicas().ack()) {
-                response = replicaGoodResponses.get(0);
+                response = replicaGoodResponses.peek();
             } else {
                 response = MyServiceBase.emptyResponseFor(HttpUtils.NOT_ENOUGH_REPLICAS);
             }
@@ -126,11 +141,24 @@ public final class LoadBalancer {
         HttpUtils.safeHttpRequest(session, log, () -> session.sendResponse(finalResponse));
     }
 
-    private Response nodeRequest(Request request, MyServiceBase.Handler handler, MyHttpSession session) {
+    private boolean requestForReplica(Request request, MyHttpSession session,
+                                      MyServiceBase.Handler handler, Queue<MyOneNioResponse> replicaGoodResponses, String url) {
+        MyOneNioResponse replicaResponse = nodeRequest(request, handler, session);
+        if (isGoodResponse(replicaResponse)) {
+            replicaGoodResponses.add(replicaResponse);
+            return true;
+        } else {
+            makeNodeIll(url);
+            log.error("Node {} is ill", url, new Exception(Arrays.toString(replicaResponse.getBody())));
+            return false;
+        }
+    }
+
+    private MyOneNioResponse nodeRequest(Request request, MyServiceBase.Handler handler, MyHttpSession session) {
         try {
-            Object nodedResponse =  handler.handle(request, session);
-            if (nodedResponse instanceof Response) {
-                return (Response) nodedResponse;
+            Object nodedResponse = handler.handle(request, session);
+            if (nodedResponse instanceof MyOneNioResponse) {
+                return (MyOneNioResponse) nodedResponse;
             } else {
                 HttpResponse<byte[]> httpResponse = (HttpResponse<byte[]>) nodedResponse;
                 return HttpUtils.toOneNio(httpResponse);

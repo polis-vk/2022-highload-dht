@@ -61,6 +61,16 @@ public class Main {
             MyServiceBase service = new MyServiceBase(configs.get(serviceOrdinal - 1));
             service.start().get(1, TimeUnit.SECONDS);
             log.debug("Socket is ready: {}", service.selfUrl());
+            if (serviceOrdinal == 1) {
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(10_000);
+                        service.stop();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }).start();
+            }
         } catch (Exception e) {
             log.error("Socket wasn't started: {}", urls.get(serviceOrdinal - 1), e);
         }

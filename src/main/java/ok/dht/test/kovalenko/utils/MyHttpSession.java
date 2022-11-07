@@ -1,6 +1,5 @@
-package ok.dht.test.kovalenko;
+package ok.dht.test.kovalenko.utils;
 
-import ok.dht.test.kovalenko.utils.ReplicasUtils;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.net.Socket;

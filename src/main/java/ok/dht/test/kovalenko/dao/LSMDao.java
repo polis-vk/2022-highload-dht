@@ -72,7 +72,7 @@ public class LSMDao implements Dao<ByteBuffer, TypedTimedEntry> {
             if (res == null) {
                 res = this.diskStorage.get(key);
             }
-            return res == null || res.isTombstone() ? null : res;
+            return res; // including tombstone
         } catch (ReflectiveOperationException ex) {
             throw new RuntimeException(ex);
         }
