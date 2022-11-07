@@ -17,10 +17,6 @@ public class Client {
     private static final java.net.http.HttpClient javaNetClient = java.net.http.HttpClient.newHttpClient();
     private static final Duration TIMEOUT = Duration.ofSeconds(2);
 
-    private static HttpResponse<byte[]> gatewayResponse(Exception e) {
-        return new MyHttpResponse(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, e);
-    }
-
     public HttpResponse<byte[]> get(String url, MyHttpSession session, boolean isRequestForReplica)
             throws IOException, InterruptedException {
         try {
@@ -83,6 +79,10 @@ public class Client {
             builder.header("Replica", "");
         }
         return builder;
+    }
+
+    private static HttpResponse<byte[]> gatewayResponse(Exception e) {
+        return new MyHttpResponse(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, e);
     }
 
 }

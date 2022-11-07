@@ -1,5 +1,6 @@
 package ok.dht.test.kovalenko.utils;
 
+import javax.net.ssl.SSLSession;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
@@ -8,7 +9,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Optional;
-import javax.net.ssl.SSLSession;
 
 public class MyHttpResponse implements HttpResponse<byte[]> {
 
