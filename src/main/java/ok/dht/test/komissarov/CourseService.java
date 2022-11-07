@@ -5,6 +5,7 @@ import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.komissarov.database.MemorySegmentDao;
+import ok.dht.test.komissarov.database.exceptions.BadParamException;
 import ok.dht.test.komissarov.database.models.BaseEntry;
 import ok.dht.test.komissarov.database.models.Config;
 import ok.dht.test.komissarov.database.models.Entry;
@@ -78,14 +79,6 @@ public class CourseService implements Service {
             int code = responses[i].getStatus();
             if (code == 200 || code == 201 || code == 202 || code == 404) {
                 success++;
-            }
-
-            if (success >= params.ack() && request.getMethod() != Request.METHOD_GET) {
-                return switch (request.getMethod()) {
-                    case Request.METHOD_PUT -> new Response(Response.CREATED, Response.EMPTY);
-                    case Request.METHOD_DELETE -> new Response(Response.ACCEPTED, Response.EMPTY);
-                    default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-                };
             }
         }
         boolean isSuccess = success >= params.ack();
@@ -189,7 +182,16 @@ public class CourseService implements Service {
             return new Response(mapCode(answer.getStatus()),
                     Arrays.copyOfRange(answer.getBody(), 8, answer.getBody().length));
         }
-        return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+
+        return switch (method) {
+            case Request.METHOD_PUT -> isSuccess
+                    ? new Response(Response.CREATED, Response.EMPTY)
+                    : new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            case Request.METHOD_DELETE -> isSuccess
+                    ? new Response(Response.ACCEPTED, Response.EMPTY)
+                    : new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+            default -> throw new IllegalStateException();
+        };
     }
 
     private boolean checkMethod(int method) {
