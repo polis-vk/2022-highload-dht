@@ -37,7 +37,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -78,6 +77,7 @@ public class CustomHttpServer extends HttpServer {
     public CustomHttpServer(HttpServerConfig config,
                             ServiceConfig serviceConfig,
                             WorkersConfig workersConfig,
+                            WorkersConfig httpClientWorkersConfig,
                             ShardingConfig shardingConfig,
                             Object... routers) throws IOException {
         super(config, routers);
@@ -86,7 +86,7 @@ public class CustomHttpServer extends HttpServer {
         consistentHash = new ConsistentHash(shardingConfig.getVNodesNumber(), clusterUrls);
 
         httpClient = HttpClient.newBuilder()
-            .executor(createExecutor(workersConfig))
+            .executor(createExecutor(httpClientWorkersConfig))
             .connectTimeout(Duration.ofMillis(TIMEOUT_MILLIS))
             .build();
         selfUrl = serviceConfig.selfUrl();
@@ -100,7 +100,7 @@ public class CustomHttpServer extends HttpServer {
             : new ThreadPoolExecutor.DiscardOldestPolicy();
         return new ThreadPoolExecutor(config.getCorePoolSize(), config.getMaxPoolSize(),
             config.getKeepAliveTime(), config.getUnit(), new ArrayBlockingQueue<>(config.getQueueCapacity()),
-            Executors.defaultThreadFactory(), rejectedHandler);
+            r -> new Thread(r, "httpClientThread"), rejectedHandler);
     }
 
     public void setRequestHandler(CustomService requestHandler) {
@@ -200,7 +200,7 @@ public class CustomHttpServer extends HttpServer {
 
     private void sendProxyRequest(HttpRequest httpRequest, LeaderRequestState state) {
         httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-            .thenAccept(httpResponse -> {
+            .thenAcceptAsync(httpResponse -> {
                 Response failureResponse = checkProxyResponseFailure(httpRequest, httpResponse);
                 if (failureResponse != null) {
                     handleResponseFailure(state);
@@ -215,11 +215,11 @@ public class CustomHttpServer extends HttpServer {
                     Response response = new Response(statusCode, body);
                     handleResponseSuccess(state, response);
                 }
-            })
-            .exceptionally(e -> {
+            }, workersService.getExecutorReference())
+            .exceptionallyAsync(e -> {
                 handleResponseFailure(state);
                 return null;
-            });
+            }, workersService.getExecutorReference());
     }
 
     private Response checkProxyResponseFailure(HttpRequest httpRequest, HttpResponse<byte[]> httpResponse) {

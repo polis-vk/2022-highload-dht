@@ -31,7 +31,7 @@ public class WorkersService {
 
         pool = new ThreadPoolExecutor(config.getCorePoolSize(), config.getMaxPoolSize(),
             config.getKeepAliveTime(), config.getUnit(), new ArrayBlockingQueue<>(config.getQueueCapacity()),
-            Executors.defaultThreadFactory(), rejectedHandler);
+            r -> new Thread(r, "workersServiceThread"), rejectedHandler);
     }
 
     // В данный момент мой HttpServer не использует возвращаемое значение
@@ -57,5 +57,9 @@ public class WorkersService {
 
     public void submitTask(Runnable runnable) {
          pool.submit(runnable);
+    }
+
+    public ExecutorService getExecutorReference() {
+        return pool;
     }
 }

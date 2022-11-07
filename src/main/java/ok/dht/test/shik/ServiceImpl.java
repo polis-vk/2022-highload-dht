@@ -35,6 +35,7 @@ public class ServiceImpl implements CustomService {
 
     private final ServiceConfig config;
     private final WorkersConfig workersConfig;
+    private final WorkersConfig httpClientWorkersConfig;
     private final ShardingConfig shardingConfig;
     private final ByteArraySerializer serializer;
 
@@ -42,12 +43,14 @@ public class ServiceImpl implements CustomService {
     private DB levelDB;
 
     public ServiceImpl(ServiceConfig config) {
-        this(config, new WorkersConfig(), new ShardingConfig());
+        this(config, new WorkersConfig(), new WorkersConfig(), new ShardingConfig());
     }
 
-    public ServiceImpl(ServiceConfig config, WorkersConfig workersConfig, ShardingConfig shardingConfig) {
+    public ServiceImpl(ServiceConfig config, WorkersConfig workersConfig,
+                       WorkersConfig httpClientWorkersConfig, ShardingConfig shardingConfig) {
         this.config = config;
         this.workersConfig = workersConfig;
+        this.httpClientWorkersConfig = httpClientWorkersConfig;
         this.shardingConfig = shardingConfig;
         serializer = ByteArraySerializerFactory.latest();
     }
@@ -60,7 +63,7 @@ public class ServiceImpl implements CustomService {
             LOG.error("Error while starting database: ", e);
             throw e;
         }
-        server = new CustomHttpServer(createHttpConfig(config), config, workersConfig, shardingConfig);
+        server = new CustomHttpServer(createHttpConfig(config), config, workersConfig, httpClientWorkersConfig, shardingConfig);
         server.setRequestHandler(this);
         server.start();
         return CompletableFuture.completedFuture(null);

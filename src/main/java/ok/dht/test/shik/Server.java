@@ -39,13 +39,22 @@ public final class Server {
         ),
         DEFAULT_DATABASE_DIR
     );
-    private static final int MAX_WORKERS = 8;
+    private static final int CORE_WORKERS = 2;
+    private static final int MAX_WORKERS = 4;
+    private static final int HTTP_CLIENT_MAX_WORKERS = 4;
     private static final long KEEP_ALIVE_TIME = 20;
     private static final WorkersConfig.QueuePolicy QUEUE_POLICY = WorkersConfig.QueuePolicy.FIFO;
     private static final int QUEUE_CAPACITY = 100;
     private static final WorkersConfig WORKERS_CONFIG = new WorkersConfig.Builder()
         .corePoolSize(0)
         .maxPoolSize(MAX_WORKERS)
+        .keepAliveTime(KEEP_ALIVE_TIME)
+        .queuePolicy(QUEUE_POLICY)
+        .queueCapacity(QUEUE_CAPACITY)
+        .build();
+    private static final WorkersConfig HTTP_CLIENT_WORKERS_CONFIG = new WorkersConfig.Builder()
+        .corePoolSize(CORE_WORKERS)
+        .maxPoolSize(HTTP_CLIENT_MAX_WORKERS)
         .keepAliveTime(KEEP_ALIVE_TIME)
         .queuePolicy(QUEUE_POLICY)
         .queueCapacity(QUEUE_CAPACITY)
@@ -60,7 +69,7 @@ public final class Server {
 
     public static void main(String[] args) throws IOException,
         ExecutionException, InterruptedException, TimeoutException {
-        new ServiceImpl(DEFAULT_CONFIG1, WORKERS_CONFIG, SHARDING_CONFIG)
+        new ServiceImpl(DEFAULT_CONFIG1, WORKERS_CONFIG, HTTP_CLIENT_WORKERS_CONFIG, SHARDING_CONFIG)
             .start().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         LOG.info("Socket is ready: " + DEFAULT_URL1);
     }
