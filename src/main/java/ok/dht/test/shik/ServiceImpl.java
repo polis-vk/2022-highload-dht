@@ -63,7 +63,8 @@ public class ServiceImpl implements CustomService {
             LOG.error("Error while starting database: ", e);
             throw e;
         }
-        server = new CustomHttpServer(createHttpConfig(config), config, workersConfig, httpClientWorkersConfig, shardingConfig);
+        server = new CustomHttpServer(createHttpConfig(config), config, workersConfig,
+            httpClientWorkersConfig, shardingConfig);
         server.setRequestHandler(this);
         server.start();
         return CompletableFuture.completedFuture(null);
