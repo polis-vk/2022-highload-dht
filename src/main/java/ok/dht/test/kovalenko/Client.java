@@ -17,7 +17,7 @@ import java.util.Arrays;
 public class Client {
 
     private static final java.net.http.HttpClient javaNetClient = java.net.http.HttpClient.newHttpClient();
-    private static final Duration TIMEOUT = Duration.ofSeconds(300);
+    private static final Duration TIMEOUT = Duration.ofSeconds(3);
 
     public HttpResponse<byte[]> get(String url, byte[] data, MyHttpSession session, boolean isRequestForReplica)
             throws IOException, InterruptedException {

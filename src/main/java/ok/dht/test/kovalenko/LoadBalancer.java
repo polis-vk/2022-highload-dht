@@ -1,45 +1,40 @@
 package ok.dht.test.kovalenko;
 
-import ok.dht.test.kovalenko.dao.utils.PoolKeeper;
 import ok.dht.test.kovalenko.utils.HttpUtils;
-import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.ConnectException;
 import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
-import java.net.http.HttpTimeoutException;
-import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import javax.sound.sampled.AudioFormat;
 
 public final class LoadBalancer {
 
     private static final Logger log = LoggerFactory.getLogger(LoadBalancer.class);
     private final Map<String, Node> nodes = new HashMap<>();
 
-    public void balance(MyServiceBase service, String requestId, Request request, MyHttpSession session)
+    public void balance(MyServiceBase service, Request request, MyHttpSession session)
             throws IOException, ExecutionException, InterruptedException {
-        Node responsibleNodeForKey = responsibleNodeForKey(requestId);
+        List<Node> replicasNodeForKey = replicasForKey(session.getRequestId(), session.getReplicas().ack());
         Response response;
 
-        if (responsibleNodeForKey.isIll()) {
-            response = MyServiceBase.emptyResponseFor(Response.NOT_FOUND);
-            session.sendResponse(response);
-            return;
-        }
+        for (Node node : nodes.values()) {
+            if (node.isIll()) {
+                response = MyServiceBase.emptyResponseFor(HttpUtils.NOT_ENOUGH_REPLICAS);
+                session.sendResponse(response);
+                return;
+            }
+         }
 
-        handleRequest(request, session, service, responsibleNodeForKey);
+        handleWithReplicas(request, session, service, replicasNodeForKey);
     }
 
     // Rendezvous hashing
@@ -72,52 +67,85 @@ public final class LoadBalancer {
         nodes.get(nodeUrl).setIll(true);
     }
 
+    private List<Node> replicasForKey(String key, int ack) {
+        if (nodes.isEmpty()) {
+            throw new IllegalArgumentException("Got empty array of URL's for hashing");
+        }
+
+        List<Node> replicasForKey = new ArrayList<>(ack);
+        int gotReplicas = 0;
+        while (gotReplicas != ack && !nodes.isEmpty()) {
+            Node replicaForKey = responsibleNodeForKey(key);
+            replicasForKey.add(replicaForKey);
+            nodes.remove(replicaForKey.selfUrl());
+            ++gotReplicas;
+        }
+        replicasForKey.forEach(r -> nodes.put(r.selfUrl(), r));
+        return replicasForKey;
+    }
+
     private int hash(String key, String serviceUrl, int size) {
         return (key + serviceUrl).hashCode() % size;
     }
 
-    private void handleRequest(Request request, MyHttpSession session,
-                               MyServiceBase service, Node responsibleNodeForKey) {
-        MyServiceBase.Handler finalHandler = service.selfUrl().equals(responsibleNodeForKey.selfUrl())
-                ? service::handle
-                : responsibleNodeForKey::proxyRequest;
-        handleRequestAndSendResponse(request, responsibleNodeForKey, finalHandler, session);
-    }
-
-    private void handleRequestAndSendResponse(Request request,
-                                              Node responsibleNodeForKey, MyServiceBase.Handler handler, MyHttpSession session) {
+    private void handleWithReplicas(Request request, MyHttpSession session,
+                               MyServiceBase service, List<Node> replicasForKey) {
         Response response;
         try {
-            Object nodedResponse = nodeRequest(request, responsibleNodeForKey, handler, session);
-            if (nodedResponse instanceof Response) {
-                response = (Response) nodedResponse;
+            request.addHeader("replica");
+            int nApproves = 0;
+            List<Response> replicaGoodResponses = new ArrayList<>(replicasForKey.size());
+            for (Node replicaForKey : replicasForKey) {
+                Response replicaResponse;
+                if (replicaForKey.selfUrl().equals(service.selfUrl())) {
+                    replicaResponse = nodeRequest(request, service::handle, session);
+                } else {
+                    replicaResponse = nodeRequest(request, replicaForKey::proxyRequest, session);
+                }
+
+                if (isGoodResponse(replicaResponse)) {
+                    ++nApproves;
+                    replicaGoodResponses.add(replicaResponse);
+                } else {
+                    makeNodeIll(replicaForKey.selfUrl());
+                    log.error("Node {} is ill", replicaForKey.selfUrl(), new Exception(Arrays.toString(replicaResponse.getBody())));
+                }
+            }
+
+            if (nApproves == session.getReplicas().ack()) {
+                response = replicaGoodResponses.get(0);
             } else {
-                HttpResponse<byte[]> httpResponse = (HttpResponse<byte[]>) nodedResponse;
-                response = HttpUtils.toOneNio(httpResponse);
+                response = MyServiceBase.emptyResponseFor(HttpUtils.NOT_ENOUGH_REPLICAS);
             }
         } catch (Exception e) {
             log.error("Fatal error", e);
-            response = MyServiceBase.emptyResponseFor(Response.NOT_FOUND);
-        }
-
-        if (response.getStatus() == HttpURLConnection.HTTP_GATEWAY_TIMEOUT) {
-            makeNodeIll(responsibleNodeForKey.selfUrl());
-            log.error("Node {} is ill", responsibleNodeForKey.selfUrl(), new Exception(Arrays.toString(response.getBody())));
+            response = MyServiceBase.emptyResponseFor(Response.INTERNAL_ERROR);
         }
 
         Response finalResponse = response;
-        HttpUtils.NetRequest netRequest = () -> session.sendResponse(finalResponse);
-        HttpUtils.safeHttpRequest(session, log, netRequest);
+        HttpUtils.safeHttpRequest(session, log, () -> session.sendResponse(finalResponse));
     }
 
-    private Object nodeRequest(Request request, Node responsibleNodeForKey, MyServiceBase.Handler handler, MyHttpSession session) {
+    private Response nodeRequest(Request request, MyServiceBase.Handler handler, MyHttpSession session) {
         try {
-            return handler.handle(request, session);
+            Object nodedResponse =  handler.handle(request, session);
+            if (nodedResponse instanceof Response) {
+                return (Response) nodedResponse;
+            } else {
+                HttpResponse<byte[]> httpResponse = (HttpResponse<byte[]>) nodedResponse;
+                return HttpUtils.toOneNio(httpResponse);
+            }
         } catch (Exception e) {
-            makeNodeIll(responsibleNodeForKey.selfUrl());
-            log.error("Node {} is ill", responsibleNodeForKey.selfUrl(), e);
-            return MyServiceBase.emptyResponseFor(Response.NOT_FOUND);
+            return MyServiceBase.emptyResponseFor(Response.INTERNAL_ERROR);
         }
+    }
+
+    // FIXME explicit http-codes
+    private boolean isGoodResponse(Response response) {
+        return response.getStatus() == HttpURLConnection.HTTP_OK
+                || response.getStatus() == HttpURLConnection.HTTP_CREATED
+                || response.getStatus() == HttpURLConnection.HTTP_ACCEPTED
+                || response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND;
     }
 
 }

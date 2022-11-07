@@ -2,6 +2,7 @@ package ok.dht.test.kovalenko.shards;
 
 import ok.dht.ServiceConfig;
 import ok.dht.test.kovalenko.MyServiceBase;
+import ok.dht.test.kovalenko.utils.Main;
 
 import java.io.IOException;
 
@@ -13,7 +14,7 @@ public class MyService1 extends MyServiceBase {
         super(config);
     }
 
-//    public static void main(String[] args) {
-//        MyServiceBase.main(ORDINAL);
-//    }
+    public static void main(String[] args) {
+        Main.main(ORDINAL);
+    }
 }

@@ -32,33 +32,11 @@ import java.util.concurrent.ExecutionException;
 public class MyServiceBase implements Service {
 
     private static final ByteBufferDaoFactoryB daoFactory = new ByteBufferDaoFactoryB();
-    private static final Method clientGet;
-    private static final Method clientPut;
-    private static final Method clientDelete;
-    private static final Method serviceHandleGet;
-    private static final Method serviceHandlePut;
-    private static final Method serviceHandleDelete;
     // One LoadBalancer per Service, one Service per Server
     private final LoadBalancer loadBalancer = new LoadBalancer();
     private final ServiceConfig config;
     private LSMDao dao;
     private HttpServer server;
-
-    static {
-        try {
-            Class<Client> clientClass = Client.class;
-            clientGet = clientClass.getMethod("get", String.class, byte[].class, MyHttpSession.class, boolean.class);
-            clientPut = clientClass.getMethod("put", String.class, byte[].class, MyHttpSession.class, boolean.class);
-            clientDelete = clientClass.getMethod("delete", String.class, byte[].class, MyHttpSession.class, boolean.class);
-
-            Class<MyServiceBase> serviceClass = MyServiceBase.class;
-            serviceHandleGet = serviceClass.getMethod("handleGet", Request.class, MyHttpSession.class);
-            serviceHandlePut = serviceClass.getMethod("handlePut", Request.class, MyHttpSession.class);
-            serviceHandleDelete = serviceClass.getMethod("handleDelete", Request.class, MyHttpSession.class);
-        } catch (ReflectiveOperationException ex) {
-            throw new RuntimeException(ex);
-        }
-    }
 
     public MyServiceBase(ServiceConfig config) throws IOException {
         this.config = config;
@@ -119,7 +97,7 @@ public class MyServiceBase implements Service {
             };
             session.sendResponse(response);
         } else {
-            loadBalancer.balance(this, myHttpSession.getRequestId(), request, myHttpSession);
+            loadBalancer.balance(this, request, myHttpSession);
         }
     }
 
@@ -127,39 +105,11 @@ public class MyServiceBase implements Service {
     public Response handle(Request request, MyHttpSession session)
             throws IOException, InvocationTargetException, IllegalAccessException {
         return switch(request.getMethod()) {
-            case Request.METHOD_GET
-                    -> handleReplicas(serviceHandleGet, clientGet, HttpURLConnection.HTTP_OK, request, session);
-            case Request.METHOD_PUT
-                    -> handleReplicas(serviceHandlePut, clientPut, HttpURLConnection.HTTP_CREATED, request, session);
-            case Request.METHOD_DELETE
-                    -> handleReplicas(serviceHandleDelete, clientDelete, HttpURLConnection.HTTP_ACCEPTED, request, session);
-            default
-                    -> throw new IllegalArgumentException("Illegal request method");
+            case Request.METHOD_GET -> handleGet(request, session);
+            case Request.METHOD_PUT -> handlePut(request, session);
+            case Request.METHOD_DELETE -> handleDelete(request, session);
+            default -> throw new IllegalArgumentException("Illegal request method: " + HttpUtils.toOneNio(request.getMethod()));
         };
-    }
-
-    private Response handleReplicas(Method selfHandler, Method clientHandler, int expectingResponseStatusCode,
-                                    Request request, MyHttpSession session)
-            throws InvocationTargetException, IllegalAccessException {
-        Response masterNodeResponse = (Response) selfHandler.invoke(this, request, session);
-        if (masterNodeResponse.getStatus() != expectingResponseStatusCode) {
-            return masterNodeResponse; // transfer error up the call hierarchy
-        }
-        int nApproves = 1;
-        int ack = session.getReplicas().ack();
-        for (int i = 0; i < clusterUrls().size() && nApproves != ack; ++i) { // FIXME replicas order
-            String nodeUrl = clusterUrls().get(i);
-            if (!nodeUrl.equals(selfUrl())) {
-                HttpResponse<byte[]> replicaResponse
-                        = (HttpResponse<byte[]>) clientHandler.invoke(HttpUtils.CLIENT,  nodeUrl, request.getBody(), session, true);
-                if (replicaResponse.statusCode() == expectingResponseStatusCode) {
-                    ++nApproves;
-                }
-            }
-        }
-        return nApproves == ack
-                ? new Response(HttpUtils.toOneNio(expectingResponseStatusCode), masterNodeResponse.getBody())
-                : emptyResponseFor(HttpUtils.NOT_ENOUGH_REPLICAS);
     }
 
     public Response handleGet(Request request, MyHttpSession session) throws IOException {
