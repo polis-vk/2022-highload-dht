@@ -2,9 +2,12 @@ package ok.dht.test.komissarov;
 
 import ok.dht.ServiceConfig;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public final class CourseServer {
 
@@ -12,7 +15,8 @@ public final class CourseServer {
         // Only main method
     }
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws IOException, ExecutionException,
+            InterruptedException, TimeoutException {
         int[] ports = new int[]{19234, 19235, 19236};
 
         for (int port : ports) {
