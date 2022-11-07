@@ -24,7 +24,7 @@ public class Validator {
 
     public Validator(int clusterSize) {
         defaultFromCount = clusterSize;
-        defaultAckCount = (clusterSize + 1) / 2;
+        defaultAckCount = clusterSize / 2 + 1;
     }
 
     public ValidationResult validate(Request request) {

@@ -67,12 +67,14 @@ public class LeaderRequestState extends AbstractRequestState {
     }
 
     private boolean processOnSuccessAfterCas(int curRemainToSuccess, Response response) {
-        while (curRemainToSuccess > 0 && !remainToSuccess.compareAndSet(curRemainToSuccess, curRemainToSuccess - 1)) {
-            curRemainToSuccess = remainToSuccess.get();
+        int currentRemainToSuccess = curRemainToSuccess;
+        while (currentRemainToSuccess > 0
+            && !remainToSuccess.compareAndSet(currentRemainToSuccess, currentRemainToSuccess - 1)) {
+            currentRemainToSuccess = remainToSuccess.get();
         }
         shardResponses.add(response);
 
-        return casCompleted(curRemainToSuccess);
+        return casCompleted(currentRemainToSuccess);
     }
 
     private boolean casCompleted(int curRemain) {
