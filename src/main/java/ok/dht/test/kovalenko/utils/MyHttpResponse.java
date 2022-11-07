@@ -8,6 +8,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Optional;
+
 import javax.net.ssl.SSLSession;
 
 public class MyHttpResponse implements HttpResponse<byte[]> {
@@ -42,7 +43,9 @@ public class MyHttpResponse implements HttpResponse<byte[]> {
 
     @Override
     public byte[] body() {
-        return body;
+        byte[] thisBody = new byte[body.length];
+        System.arraycopy(body, 0, thisBody, 0, body.length);
+        return thisBody;
     }
 
     @Override

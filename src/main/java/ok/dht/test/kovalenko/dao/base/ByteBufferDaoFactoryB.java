@@ -42,5 +42,4 @@ public class ByteBufferDaoFactoryB implements DaoFactoryB.Factory<ByteBuffer, Ty
         return bytes;
     }
 
-
 }

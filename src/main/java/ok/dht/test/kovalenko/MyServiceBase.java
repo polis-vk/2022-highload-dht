@@ -113,7 +113,8 @@ public class MyServiceBase implements Service {
             case Request.METHOD_PUT -> handlePut(request, session);
             case Request.METHOD_DELETE -> handleDelete(request, session);
             default ->
-                    throw new IllegalArgumentException("Illegal request method: " + HttpUtils.toOneNio(request.getMethod()));
+                    throw new IllegalArgumentException("Illegal request method: "
+                            + HttpUtils.toOneNio(request.getMethod()));
         };
     }
 
@@ -158,6 +159,7 @@ public class MyServiceBase implements Service {
 
     public interface Handler {
         Object handle(Request request, MyHttpSession session)
-                throws IOException, ExecutionException, InterruptedException, IllegalAccessException, InvocationTargetException;
+                throws IOException, ExecutionException,
+                InterruptedException, IllegalAccessException, InvocationTargetException;
     }
 }

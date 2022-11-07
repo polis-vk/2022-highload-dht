@@ -104,7 +104,7 @@ public final class LoadBalancer {
         MyOneNioResponse response;
         try {
             request.addHeader("Replica");
-            int nApproves = 0;
+            int numApproves = 0;
             Queue<MyOneNioResponse> replicaGoodResponses = new PriorityQueue<>(ResponseComparator.INSTANSE);
             boolean wasSelfSaving = false;
             for (Node replicaForKey : replicasForKey) {
@@ -116,18 +116,20 @@ public final class LoadBalancer {
                     handler = replicaForKey::proxyRequest;
                 }
 
-                nApproves += requestForReplica(request, session, handler, replicaGoodResponses, service.selfUrl())
+                numApproves
+                        += requestForReplica(request, session, service.selfUrl(), handler, replicaGoodResponses)
                         ? 1
                         : 0;
             }
 
-            if (nApproves != session.getReplicas().ack() && !wasSelfSaving) {
-                nApproves += requestForReplica(request, session, service::handle, replicaGoodResponses, service.selfUrl())
+            if (numApproves != session.getReplicas().ack() && !wasSelfSaving) {
+                numApproves
+                        += requestForReplica(request, session, service.selfUrl(), service::handle, replicaGoodResponses)
                         ? 1
                         : 0;
             }
 
-            if (nApproves == session.getReplicas().ack()) {
+            if (numApproves == session.getReplicas().ack()) {
                 response = replicaGoodResponses.peek();
             } else {
                 response = MyServiceBase.emptyResponseFor(HttpUtils.NOT_ENOUGH_REPLICAS);
@@ -141,8 +143,8 @@ public final class LoadBalancer {
         HttpUtils.safeHttpRequest(session, log, () -> session.sendResponse(finalResponse));
     }
 
-    private boolean requestForReplica(Request request, MyHttpSession session,
-                                      MyServiceBase.Handler handler, Queue<MyOneNioResponse> replicaGoodResponses, String url) {
+    private boolean requestForReplica(Request request, MyHttpSession session, String url,
+                                      MyServiceBase.Handler handler, Queue<MyOneNioResponse> replicaGoodResponses) {
         MyOneNioResponse replicaResponse = nodeRequest(request, handler, session);
         if (isGoodResponse(replicaResponse)) {
             replicaGoodResponses.add(replicaResponse);
@@ -168,7 +170,6 @@ public final class LoadBalancer {
         }
     }
 
-    // FIXME explicit http-codes
     private boolean isGoodResponse(Response response) {
         return response.getStatus() == HttpURLConnection.HTTP_OK
                 || response.getStatus() == HttpURLConnection.HTTP_CREATED

@@ -21,11 +21,15 @@ public class Client {
         return new MyHttpResponse(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, e);
     }
 
-    public HttpResponse<byte[]> get(String url, byte[] data, MyHttpSession session, boolean isRequestForReplica)
+    public HttpResponse<byte[]> get(String url, MyHttpSession session, boolean isRequestForReplica)
             throws IOException, InterruptedException {
         try {
             return javaNetClient.send(
-                    requestForKey(url, session, isRequestForReplica).GET().build(),
+                    requestForKey(
+                            url,
+                            session,
+                            isRequestForReplica
+                    ).GET().build(),
                     HttpResponse.BodyHandlers.ofByteArray()
             );
         } catch (ConnectException | HttpTimeoutException e) {
@@ -37,7 +41,11 @@ public class Client {
             throws IOException, InterruptedException {
         try {
             return javaNetClient.send(
-                    requestForKey(url, session, isRequestForReplica).PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
+                    requestForKey(
+                            url,
+                            session,
+                            isRequestForReplica
+                    ).PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
                     HttpResponse.BodyHandlers.ofByteArray()
             );
         } catch (ConnectException | HttpTimeoutException e) {
@@ -45,11 +53,15 @@ public class Client {
         }
     }
 
-    public HttpResponse<byte[]> delete(String url, byte[] data, MyHttpSession session, boolean isRequestForReplica)
+    public HttpResponse<byte[]> delete(String url, MyHttpSession session, boolean isRequestForReplica)
             throws IOException, InterruptedException {
         try {
             return javaNetClient.send(
-                    requestForKey(url, session, isRequestForReplica).DELETE().build(),
+                    requestForKey(
+                            url,
+                            session,
+                            isRequestForReplica
+                    ).DELETE().build(),
                     HttpResponse.BodyHandlers.ofByteArray()
             );
         } catch (ConnectException | HttpTimeoutException e) {

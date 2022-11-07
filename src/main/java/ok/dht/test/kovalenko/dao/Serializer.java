@@ -141,10 +141,9 @@ public final class Serializer {
     private int writeEntry(TypedTimedEntry entry, RandomAccessFile dataFile) throws IOException {
         int bbSize = MemorySSTable.sizeOf(entry);
         ByteBuffer pair = ByteBuffer.allocate(bbSize);
-        long timestamp = entry.timestamp();
         byte tombstone = MergeIteratorUtils.getTombstoneValue(entry);
 
-        pair.putLong(timestamp);
+        pair.putLong(entry.timestamp());
         pair.put(tombstone);
         pair.putInt(entry.key().remaining());
         pair.put(entry.key());

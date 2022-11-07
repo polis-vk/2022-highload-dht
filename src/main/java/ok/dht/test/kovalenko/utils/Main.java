@@ -7,12 +7,10 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-public class Main {
+public final class Main {
 
     private static final Logger log = LoggerFactory.getLogger(Main.class);
     private static final List<Integer> ports = List.of(19234, 19235, 19236);
@@ -38,6 +36,9 @@ public class Main {
                 throw new RuntimeException(e);
             }
         }
+    }
+
+    private Main() {
     }
 
     public static void main(String[] args) {

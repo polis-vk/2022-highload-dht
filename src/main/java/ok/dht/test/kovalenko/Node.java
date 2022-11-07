@@ -24,9 +24,9 @@ public class Node {
         }
 
         return switch (request.getMethod()) {
-            case Request.METHOD_GET -> HttpUtils.CLIENT.get(selfUrl, request.getBody(), session, true);
+            case Request.METHOD_GET -> HttpUtils.CLIENT.get(selfUrl, session, true);
             case Request.METHOD_PUT -> HttpUtils.CLIENT.put(selfUrl, request.getBody(), session, true);
-            case Request.METHOD_DELETE -> HttpUtils.CLIENT.delete(selfUrl, request.getBody(), session, true);
+            case Request.METHOD_DELETE -> HttpUtils.CLIENT.delete(selfUrl, session, true);
             default -> throw new IllegalArgumentException("Unexpected request method to be proxied: "
                     + request.getMethod());
         };
