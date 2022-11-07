@@ -25,8 +25,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -42,7 +40,6 @@ public class CourseService implements Service {
     private HttpServer server;
     private HttpClient client;
     private MemorySegmentDao dao;
-    private MemorySegmentDao tsmpDao;
 
     public CourseService(ServiceConfig config) {
         this.config = config;
@@ -55,10 +52,6 @@ public class CourseService implements Service {
                 config.workingDir(),
                 1 << 20
         ));
-        tsmpDao = new MemorySegmentDao(new Config(
-                getPath(config.workingDir().toString() + "/timestamps"),
-                1 << 20
-        ));
         server = new CustomHttpServer(config, this);
         server.start();
         return CompletableFuture.completedFuture(null);
@@ -67,12 +60,15 @@ public class CourseService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         dao.close();
-        tsmpDao.close();
         server.stop();
         return CompletableFuture.completedFuture(null);
     }
 
     public Response executeRequests(Request request, String id, PairParams params) {
+        if (checkMethod(request.getMethod())) {
+            return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+        }
+
         String[] urls = getNodes(id, params.from());
         Response[] responses = new Response[urls.length];
         int success = 0;
@@ -82,6 +78,14 @@ public class CourseService implements Service {
             int code = responses[i].getStatus();
             if (code == 200 || code == 201 || code == 202 || code == 404) {
                 success++;
+            }
+
+            if (success >= params.ack() && request.getMethod() != Request.METHOD_GET) {
+                return switch (request.getMethod()) {
+                    case Request.METHOD_PUT -> new Response(Response.CREATED, Response.EMPTY);
+                    case Request.METHOD_DELETE -> new Response(Response.ACCEPTED, Response.EMPTY);
+                    default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                };
             }
         }
         boolean isSuccess = success >= params.ack();
@@ -124,38 +128,29 @@ public class CourseService implements Service {
                 if (entry == null) {
                     return new Response(Response.NOT_FOUND, Response.EMPTY);
                 }
-                Entry<MemorySegment> time = tsmpDao.get(fromString(id));
+                byte[] time = convertToBytes(entry.timestamp());
                 if (entry.isTombstone()) {
-                    return new Response(Response.NOT_FOUND, time.value().toByteArray());
+                    return new Response(Response.NOT_FOUND, time);
                 }
-                return new Response(Response.OK, setBody(time.value(), entry.value()));
+                return new Response(Response.OK, setBody(time, entry.value()));
             }
             case Request.METHOD_PUT -> {
                 MemorySegment segmentId = fromString(id);
                 Entry<MemorySegment> entry = new BaseEntry<>(
                         segmentId,
-                        MemorySegment.ofArray(request.getBody())
-                );
-                Entry<MemorySegment> time = new BaseEntry<>(
-                        segmentId,
-                        MemorySegment.ofArray(convertToLong(System.currentTimeMillis()))
+                        MemorySegment.ofArray(request.getBody()),
+                        System.currentTimeMillis()
                 );
                 dao.upsert(entry);
-                tsmpDao.upsert(time);
                 return new Response(Response.CREATED, Response.EMPTY);
             }
             case Request.METHOD_DELETE -> {
                 Entry<MemorySegment> removedEntry = new BaseEntry<>(
                         fromString(id),
-                        null
+                        null,
+                        System.currentTimeMillis()
                 );
                 dao.upsert(removedEntry);
-                long time = System.currentTimeMillis();
-                tsmpDao.upsert(
-                        new BaseEntry<>(
-                        fromString(id),
-                        MemorySegment.ofArray(convertToLong(time))
-                        ));
                 return new Response(Response.ACCEPTED, Response.EMPTY);
             }
             default -> {
@@ -174,7 +169,7 @@ public class CourseService implements Service {
             long maxTime = Long.MIN_VALUE;
             Response answer = null;
             for (Response response : responses) {
-                long time = convertToBytes(Arrays.copyOfRange(response.getBody(), 0, 8));
+                long time = convertToLong(Arrays.copyOfRange(response.getBody(), 0, 8));
                 if (time > maxTime) {
                     maxTime = time;
                     if (response.getStatus() == 404 && response.getBody().length > 0) {
@@ -194,15 +189,13 @@ public class CourseService implements Service {
             return new Response(mapCode(answer.getStatus()),
                     Arrays.copyOfRange(answer.getBody(), 8, answer.getBody().length));
         }
+        return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
+    }
 
+    private boolean checkMethod(int method) {
         return switch (method) {
-            case Request.METHOD_PUT -> isSuccess
-                    ? new Response(Response.CREATED, Response.EMPTY)
-                    : new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
-            case Request.METHOD_DELETE -> isSuccess
-                    ? new Response(Response.ACCEPTED, Response.EMPTY)
-                    : new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
-            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            case Request.METHOD_GET, Request.METHOD_DELETE, Request.METHOD_PUT -> false;
+            default -> true;
         };
     }
 
@@ -227,37 +220,25 @@ public class CourseService implements Service {
         return hashes.values().stream().limit(from).toArray(String[]::new);
     }
 
-    private byte[] setBody(MemorySegment time, MemorySegment value) {
-        byte[] timeBytes = time.toByteArray();
+    private byte[] setBody(byte[] time, MemorySegment value) {
         byte[] valueBytes = value.toByteArray();
 
-        byte[] result = Arrays.copyOf(timeBytes, timeBytes.length + valueBytes.length);
-        System.arraycopy(valueBytes, 0, result, timeBytes.length, valueBytes.length);
+        byte[] result = Arrays.copyOf(time, time.length + valueBytes.length);
+        System.arraycopy(valueBytes, 0, result, time.length, valueBytes.length);
         return result;
     }
 
-    public byte[] convertToLong(long x) {
+    public byte[] convertToBytes(long x) {
         ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
         buffer.putLong(x);
         return buffer.array();
     }
 
-    public long convertToBytes(byte[] bytes) {
+    public long convertToLong(byte[] bytes) {
         ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
         buffer.put(bytes);
         buffer.flip();
         return buffer.getLong();
-    }
-
-    private static Path getPath(String name) {
-        Path path = Path.of(name);
-        if (Files.notExists(path)) {
-            boolean isCreated = path.toFile().mkdirs();
-            if (!isCreated) {
-                throw new RuntimeException();
-            }
-        }
-        return path;
     }
 
     @ServiceFactory(stage = 4, week = 1)
