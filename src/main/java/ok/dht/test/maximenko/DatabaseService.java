@@ -34,7 +34,7 @@ public class DatabaseService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        server = new DatabaseHttpServer(httpServerConfig, config.workingDir());
+        server = new DatabaseHttpServer(httpServerConfig, config);
         server.start();
         return CompletableFuture.completedFuture(null);
     }

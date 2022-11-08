@@ -173,6 +173,9 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         if (!scope.isAlive()) {
             return;
         }
+        if (flusher.isShutdown()) {
+            return;
+        }
         flush();
         flusher.shutdown();
         compactor.shutdown();
