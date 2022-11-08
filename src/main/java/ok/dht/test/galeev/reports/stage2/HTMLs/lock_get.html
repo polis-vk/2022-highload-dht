@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 10px; background-color: #ffffff}
+	h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {margin: 5px 0 5px 0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {overflow: hidden; white-space: nowrap}
+	#match {overflow: hidden; white-space: nowrap; display: none; float: right; text-align: right}
+	#reset {cursor: pointer}
+	#canvas {width: 100%; height: 448px}
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+<h1>Flame Graph</h1>
+<header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
+<header style='text-align: right'>Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a></header>
+<canvas id='canvas'></canvas>
+<div id='hl'><span></span></div>
+<p id='match'>Matched: <span id='matchval'></span> <span id='reset' title='Clear'>&#x274c;</span></p>
+<p id='status'>&nbsp;</p>
+<script>
+	// Copyright 2020 Andrei Pangin
+	// Licensed under the Apache License, Version 2.0.
+	'use strict';
+	var root, rootLevel, px, pattern;
+	var reverse = false;
+	const levels = Array(28);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	const c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	const canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+	const palette = [
+		[0xb2e1b2, 20, 20, 20],
+		[0x50e150, 30, 30, 30],
+		[0x50cccc, 30, 30, 30],
+		[0xe15a5a, 30, 40, 40],
+		[0xc8c83c, 30, 30, 10],
+		[0xe17d00, 30, 30,  0],
+		[0xcce880, 20, 20, 20],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(level, left, width, type, title, inln, c1, int) {
+		levels[level].push({left: left, width: width, color: getColor(palette[type]), title: title,
+			details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
+		});
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+	function search(r) {
+		if (r === true && (r = prompt('Enter regexp to search:', '')) === null) {
+			return;
+		}
+
+		pattern = r ? RegExp(r) : undefined;
+		const matched = render(root, rootLevel);
+		document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+		document.getElementById('match').style.display = r ? 'inherit' : 'none';
+	}
+
+	function render(newRoot, newLevel) {
+		if (root) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+		const marked = [];
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+				c.fillStyle = pattern && f.title.match(pattern) && mark(f) ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+
+				if (f.width * px >= 21) {
+					const chars = Math.floor(f.width * px / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, f.width * px - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+				}
+			}
+		}
+
+		for (let h = 0; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				if (f != root) getSelection().removeAllRanges();
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				canvas.title = f.title + '\n(' + samples(f.width) + f.details + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f != root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.textContent = '\xa0';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = '';
+	}
+
+	canvas.ondblclick = function() {
+		getSelection().selectAllChildren(hl);
+	}
+
+	document.getElementById('reverse').onclick = function() {
+		reverse = !reverse;
+		render();
+	}
+
+	document.getElementById('search').onclick = function() {
+		search(true);
+	}
+
+	document.getElementById('reset').onclick = function() {
+		search(false);
+	}
+
+	window.onkeydown = function() {
+		if (event.ctrlKey && event.keyCode === 70) {
+			event.preventDefault();
+			search(true);
+		} else if (event.keyCode === 27) {
+			search(false);
+		}
+	}
+
+f(0,0,112260,3,'all')
+f(1,0,93134,1,'java/lang/Thread.run')
+f(2,0,93134,1,'java/util/concurrent/ThreadPoolExecutor$Worker.run')
+f(3,0,93134,1,'java/util/concurrent/ThreadPoolExecutor.runWorker')
+f(4,0,209,1,'java/util/concurrent/FutureTask.run')
+f(5,0,209,1,'java/util/concurrent/Executors$RunnableAdapter.call')
+f(6,0,209,1,'ok/dht/test/galeev/CustomHttpServer$RunnableForRequestHandler.run')
+f(7,0,31,1,'java/lang/reflect/Method.invoke')
+f(8,0,31,1,'jdk/internal/reflect/DelegatingMethodAccessorImpl.invoke')
+f(9,0,31,1,'jdk/internal/reflect/NativeMethodAccessorImpl.invoke')
+f(10,0,31,1,'jdk/internal/reflect/NativeMethodAccessorImpl.invoke0')
+f(11,0,31,1,'ok/dht/test/galeev/DemoService.handleGet')
+f(12,0,3,2,'int[]')
+f(12,3,27,1,'ok/dht/test/galeev/dao/DaoMiddleLayer.get')
+f(13,3,27,1,'ok/dht/test/galeev/dao/MemorySegmentDao.get')
+f(14,3,27,1,'ok/dht/test/galeev/dao/utils/DBReader.get')
+f(15,3,18,1,'java/util/TreeSet.descendingSet')
+f(16,3,18,1,'java/util/TreeMap.descendingMap')
+f(17,3,2,2,'int[]')
+f(17,5,16,1,'java/util/TreeMap$DescendingSubMap.<init>')
+f(18,5,16,1,'java/util/Collections.reverseOrder')
+f(19,5,12,2,'int[]')
+f(19,17,1,1,'java/util/Collections$ReverseComparator.<clinit>')
+f(20,17,1,2,'int[]')
+f(19,18,1,1,'java/util/Collections$ReverseComparator2.<clinit>')
+f(20,18,1,2,'int[]')
+f(19,19,2,1,'java/util/Comparators$NaturalOrderComparator.<clinit>')
+f(20,19,2,2,'int[]')
+f(15,21,4,1,'java/util/TreeSet.iterator')
+f(16,21,4,1,'java/util/TreeMap$KeySet.iterator')
+f(17,21,4,1,'java/util/TreeMap$DescendingSubMap.keyIterator')
+f(18,21,4,2,'int[]')
+f(15,25,5,1,'ok/dht/test/galeev/dao/utils/FileDBReader.getEntryByKey')
+f(16,25,1,1,'ok/dht/test/galeev/dao/utils/FileDBReader.getPosByKey')
+f(17,25,1,1,'ok/dht/test/galeev/dao/utils/MemorySegmentComparator.compare')
+f(18,25,1,1,'ok/dht/test/galeev/dao/utils/MemorySegmentComparator.compare')
+f(19,25,1,1,'jdk/internal/foreign/AbstractMemorySegmentImpl.mismatch')
+f(20,25,1,1,'jdk/incubator/foreign/MemoryAccess.getByte')
+f(21,25,1,1,'jdk/incubator/foreign/MemoryAccess.getByteAtOffset')
+f(22,25,1,1,'java/lang/invoke/MethodHandleNatives.findMethodHandleType')
+f(23,25,1,1,'java/lang/invoke/MethodType.makeImpl')
+f(24,25,1,1,'java/lang/invoke/MethodType$ConcurrentWeakInternSet.add')
+f(25,25,1,1,'java/util/concurrent/ConcurrentHashMap.putIfAbsent')
+f(26,25,1,1,'java/util/concurrent/ConcurrentHashMap.putVal')
+f(27,25,1,2,'java.util.concurrent.ConcurrentHashMap$Node')
+f(16,26,4,1,'ok/dht/test/galeev/dao/utils/FileDBReader.readEntryByPos')
+f(17,26,4,1,'ok/dht/test/galeev/dao/utils/FileDBReader.readEntryByLink')
+f(18,26,4,1,'java/lang/ClassLoader.loadClass')
+f(19,26,4,1,'jdk/internal/loader/ClassLoaders$AppClassLoader.loadClass')
+f(20,26,4,1,'jdk/internal/loader/BuiltinClassLoader.loadClass')
+f(21,26,4,1,'jdk/internal/loader/BuiltinClassLoader.loadClassOrNull')
+f(22,26,4,2,'java.lang.Object')
+f(12,30,1,1,'one/nio/http/Response.<clinit>')
+f(13,30,1,2,'int[]')
+f(7,31,174,1,'one/nio/http/HttpSession.sendResponse')
+f(8,31,174,2,'one.nio.http.HttpSession')
+f(7,205,4,1,'one/nio/http/Request.getParameter')
+f(8,205,2,2,'int[]')
+f(8,207,2,1,'java/lang/ClassLoader.loadClass')
+f(9,207,2,1,'jdk/internal/loader/ClassLoaders$AppClassLoader.loadClass')
+f(10,207,2,1,'jdk/internal/loader/BuiltinClassLoader.loadClass')
+f(11,207,2,1,'jdk/internal/loader/BuiltinClassLoader.loadClassOrNull')
+f(12,207,2,2,'java.lang.Object')
+f(4,209,92925,1,'java/util/concurrent/ThreadPoolExecutor.getTask')
+f(5,209,92925,1,'java/util/concurrent/ArrayBlockingQueue.take')
+f(6,209,7588,1,'java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await')
+f(7,209,7588,1,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(8,209,7588,1,'java/util/concurrent/locks/LockSupport.park')
+f(9,209,7588,1,'jdk/internal/misc/Unsafe.park')
+f(10,209,7588,2,'java.util.concurrent.locks.ReentrantLock$NonfairSync')
+f(6,7797,85337,1,'java/util/concurrent/locks/ReentrantLock.lockInterruptibly')
+f(7,7797,85337,1,'java/util/concurrent/locks/ReentrantLock$Sync.lockInterruptibly')
+f(8,7797,85337,1,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquireInterruptibly')
+f(9,7797,85337,1,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(10,7797,85337,1,'java/util/concurrent/locks/LockSupport.park')
+f(11,7797,85337,1,'jdk/internal/misc/Unsafe.park')
+f(12,7797,85337,2,'java.util.concurrent.locks.ReentrantLock$NonfairSync')
+f(1,93134,19126,1,'one/nio/server/SelectorThread.run')
+f(2,93134,6,1,'one/nio/net/NativeSelector.select')
+f(3,93134,4,2,'int[]')
+f(3,93138,2,1,'java/lang/ClassLoader.loadClass')
+f(4,93138,2,1,'jdk/internal/loader/ClassLoaders$AppClassLoader.loadClass')
+f(5,93138,2,1,'jdk/internal/loader/BuiltinClassLoader.loadClass')
+f(6,93138,2,1,'jdk/internal/loader/BuiltinClassLoader.loadClassOrNull')
+f(7,93138,2,2,'java.lang.Object')
+f(2,93140,19120,1,'one/nio/net/Session.process')
+f(3,93140,473,2,'one.nio.http.HttpSession')
+f(3,93613,18647,1,'one/nio/http/HttpSession.processRead')
+f(4,93613,18647,1,'one/nio/http/HttpSession.processHttpBuffer')
+f(5,93613,18644,1,'one/nio/http/HttpSession.handleParsedRequest')
+f(6,93613,18644,1,'ok/dht/test/galeev/CustomHttpServer.handleRequest')
+f(7,93613,18644,1,'ok/dht/test/galeev/CustomHttpServer$$Lambda$86.0x0000000800cc3a50.handleRequest')
+f(8,93613,18644,1,'ok/dht/test/galeev/CustomHttpServer.lambda$addRequestHandlers$0')
+f(9,93613,4,2,'int[]')
+f(9,93617,1,1,'java/lang/ClassLoader.loadClass')
+f(10,93617,1,1,'jdk/internal/loader/ClassLoaders$AppClassLoader.loadClass')
+f(11,93617,1,1,'jdk/internal/loader/BuiltinClassLoader.loadClass')
+f(12,93617,1,1,'jdk/internal/loader/BuiltinClassLoader.loadClassOrNull')
+f(13,93617,1,2,'java.lang.Object')
+f(9,93618,18639,1,'java/util/concurrent/AbstractExecutorService.submit')
+f(10,93618,4,1,'java/util/concurrent/AbstractExecutorService.newTaskFor')
+f(11,93618,1,2,'int[]')
+f(11,93619,3,1,'java/util/concurrent/FutureTask.<init>')
+f(12,93619,3,1,'java/util/concurrent/Executors.callable')
+f(13,93619,3,2,'int[]')
+f(10,93622,18635,1,'java/util/concurrent/ThreadPoolExecutor.execute')
+f(11,93622,18635,1,'java/util/concurrent/ArrayBlockingQueue.offer')
+f(12,93622,18635,1,'java/util/concurrent/locks/ReentrantLock.lock')
+f(13,93622,18635,1,'java/util/concurrent/locks/ReentrantLock$Sync.lock')
+f(14,93622,18635,1,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(15,93622,18635,1,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(16,93622,18635,1,'java/util/concurrent/locks/LockSupport.park')
+f(17,93622,18635,1,'jdk/internal/misc/Unsafe.park')
+f(18,93622,18635,2,'java.util.concurrent.locks.ReentrantLock$NonfairSync')
+f(5,112257,2,1,'one/nio/http/HttpSession.parseRequest')
+f(6,112257,2,1,'one/nio/util/Utf8.read')
+f(7,112257,2,1,'one/nio/util/Utf8.read')
+f(8,112257,2,1,'one/nio/util/Utf8.toAsciiString')
+f(9,112257,2,1,'java/lang/invoke/LambdaForm$MH.0x0000000800cc4800.invokeExact_MT')
+f(10,112257,2,1,'java/lang/invoke/Invokers.checkCustomized')
+f(11,112257,2,1,'java/lang/invoke/Invokers.maybeCustomize')
+f(12,112257,2,1,'java/lang/invoke/MethodHandle.maybeCustomize')
+f(13,112257,2,1,'java/lang/invoke/MethodHandle.customize')
+f(14,112257,2,2,'int[]')
+f(5,112259,1,1,'one/nio/util/Utf8.read')
+f(6,112259,1,1,'one/nio/util/Utf8.read')
+f(7,112259,1,1,'one/nio/util/Utf8.toAsciiString')
+f(8,112259,1,1,'java/lang/invoke/LambdaForm$MH.0x0000000800cc4800.invokeExact_MT')
+f(9,112259,1,1,'java/lang/invoke/Invokers.checkCustomized')
+f(10,112259,1,1,'java/lang/invoke/Invokers.maybeCustomize')
+f(11,112259,1,1,'java/lang/invoke/MethodHandle.maybeCustomize')
+f(12,112259,1,1,'java/lang/invoke/MethodHandle.customize')
+f(13,112259,1,2,'int[]')
+
+search();
+</script></body></html>
