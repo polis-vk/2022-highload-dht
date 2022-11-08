@@ -1,31 +1,65 @@
 package ok.dht.test.panov;
 
+import one.nio.http.HttpSession;
 import one.nio.http.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.util.List;
+import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class ResponseResolver {
 
-    private final ReplicasAcknowledgment replicasAcknowledgment;
+    private static final Logger LOGGER = LoggerFactory.getLogger(ResponseResolver.class);
 
-    public ResponseResolver(ReplicasAcknowledgment replicasAcknowledgment) {
+    private final ReplicasAcknowledgment replicasAcknowledgment;
+    private final AtomicInteger acknowledgedReqs = new AtomicInteger(0);
+    private final AtomicInteger readyReqs = new AtomicInteger(0);
+    private final AtomicInteger totalReqs = new AtomicInteger(0);
+    private final AtomicReference<Response> actualResponse = new AtomicReference<>(null);
+
+    private final ExecutorService executorService;
+
+    public ResponseResolver(ReplicasAcknowledgment replicasAcknowledgment, ExecutorService executorService) {
         this.replicasAcknowledgment = replicasAcknowledgment;
+        this.executorService = executorService;
     }
 
-    public Response resolve(List<Response> responses) {
-        Response actualResponse = null;
+    public void add(CompletableFuture<Response> response, HttpSession session) {
+        response.whenCompleteAsync((resp, throwable) -> {
+            int tReqs = totalReqs.incrementAndGet();
 
-        List<Response> filteredResponses = responses.stream().filter(resp -> resp.getStatus() < 500).toList();
+            int rReqs = readyReqs.get();
 
-        if (filteredResponses.size() < replicasAcknowledgment.ack) {
-            return new Response("504 Not Enough Replicas", Response.EMPTY);
-        }
+            try {
+                if (throwable == null && resp.getStatus() < 500) {
+                    int ackReqs = acknowledgedReqs.incrementAndGet();
+                    while (true) {
+                        Response curResponse = actualResponse.get();
+                        Response relevantResponse = moreRelevant(curResponse, resp);
 
-        for (Response resp : filteredResponses) {
-            actualResponse = moreRelevant(actualResponse, resp);
-        }
+                        if (ackReqs <= replicasAcknowledgment.ack &&
+                                actualResponse.compareAndSet(curResponse, relevantResponse)) {
+                            rReqs = readyReqs.incrementAndGet();
+                            break;
+                        }
+                    }
 
-        return actualResponse;
+                    if (rReqs == replicasAcknowledgment.ack) {
+                        session.sendResponse(actualResponse.get());
+                    }
+                }
+
+                if (tReqs == replicasAcknowledgment.from && rReqs < replicasAcknowledgment.ack) {
+                    session.sendResponse(new Response("504 Not Enough Replicas", Response.EMPTY));
+                }
+            } catch (IOException e) {
+                LOGGER.error("Error during response sending");
+            }
+        }, executorService);
     }
 
     private static Response moreRelevant(Response first, Response second) {

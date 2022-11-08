@@ -9,13 +9,10 @@ import ok.dht.test.panov.dao.Config;
 import ok.dht.test.panov.dao.Entry;
 import ok.dht.test.panov.dao.lsm.MemorySegmentDao;
 import ok.dht.test.panov.hash.NodeRouter;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.Response;
+import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
@@ -24,15 +21,13 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 
 public class ServiceImpl implements Service {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ServiceImpl.class);
 
     private static final long FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
     private static final long AWAIT_TIMEOUT_MILLISECONDS = 1000;
@@ -42,11 +37,17 @@ public class ServiceImpl implements Service {
     static final String DELEGATE_HEADER = JAVA_NET_DELEGATE_HEADER + ':';
     static final String DEFAULT_ROOT = "/v0/entity";
 
+    private static final int CORE_POOL_SIZE = 4;
+    private static final int MAXIMUM_POOL_SIZE = 8;
+    private static final long KEEP_ALIVE_TIME = 0;
+
     private final ServiceConfig config;
     private HttpServer server;
     private HttpClient client;
     private MemorySegmentDao dao;
     private NodeRouter router;
+    private ExecutorService executorService;
+
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -54,8 +55,16 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
+        executorService = new ThreadPoolExecutor(
+                CORE_POOL_SIZE,
+                MAXIMUM_POOL_SIZE,
+                KEEP_ALIVE_TIME,
+                TimeUnit.MICROSECONDS,
+                new ArrayBlockingQueue<>(1024)
+        );
         server = new ConcurrentHttpServer(
                 createConfigFromPort(config.selfPort()),
+                executorService,
                 new RoutingConfig(config.selfUrl(), config.clusterUrls())
         );
         server.addRequestHandlers(this);
@@ -84,60 +93,71 @@ public class ServiceImpl implements Service {
     }
 
     @Path(DEFAULT_ROOT)
-    public Response handleEntity(
+    public void handleEntity(
             final Request request,
+            final HttpSession session,
             @Param(value = "id", required = true) final String id,
             @Param(value = "from") final String from,
             @Param(value = "ack") final String ack
     ) {
-        if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, "Id is empty".getBytes(StandardCharsets.UTF_8));
-        }
-
-        if (!ALLOWED_METHODS.contains(request.getMethod())) {
-            return new Response(Response.METHOD_NOT_ALLOWED, "Unhandled method".getBytes(StandardCharsets.UTF_8));
-        }
-
-        ReplicasAcknowledgment acknowledgmentParams;
-
         try {
-            acknowledgmentParams = new ReplicasAcknowledgment(ack, from, config.clusterUrls().size());
-        } catch (IllegalAcknowledgmentArgumentsException e) {
-            return new Response(Response.BAD_REQUEST, e.getMessage().getBytes(StandardCharsets.UTF_8));
-        }
-
-        String delegateValue = request.getHeader(DELEGATE_HEADER);
-        if (delegateValue == null) {
-            request.addHeader(DELEGATE_HEADER + System.currentTimeMillis());
-            List<String> targetUrls = router.getUrls(id.getBytes(StandardCharsets.UTF_8), acknowledgmentParams);
-
-            List<Response> responses = new ArrayList<>();
-            for (final String targetUrl : targetUrls) {
-                responses.add(handleRequest(request, id, targetUrl));
+            if (id == null || id.isEmpty()) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, "Id is empty".getBytes(StandardCharsets.UTF_8)));
+                return;
             }
 
-            ResponseResolver responseResolver = new ResponseResolver(acknowledgmentParams);
-            return responseResolver.resolve(responses);
-        } else {
-            return handleRequest(request, id, config.selfUrl());
+            if (!ALLOWED_METHODS.contains(request.getMethod())) {
+                session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, "Unhandled method".getBytes(StandardCharsets.UTF_8)));
+                return;
+            }
+
+            ReplicasAcknowledgment acknowledgmentParams;
+
+            try {
+                acknowledgmentParams = new ReplicasAcknowledgment(ack, from, config.clusterUrls().size());
+            } catch (IllegalAcknowledgmentArgumentsException e) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, e.getMessage().getBytes(StandardCharsets.UTF_8)));
+                return;
+            }
+
+            String delegateValue = request.getHeader(DELEGATE_HEADER);
+            if (delegateValue == null) {
+                request.addHeader(DELEGATE_HEADER + System.currentTimeMillis());
+                List<String> targetUrls = router.getUrls(id.getBytes(StandardCharsets.UTF_8), acknowledgmentParams);
+
+                ResponseResolver responseResolver = new ResponseResolver(acknowledgmentParams, executorService);
+                for (final String targetUrl : targetUrls) {
+                    responseResolver.add(handleRequest(request, id, targetUrl), session);
+                }
+            } else {
+                try {
+                    session.sendResponse(handleRequest(request, id, config.selfUrl()).get(AWAIT_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS));
+                } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                    session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                }
+            }
+        } catch (IOException e) {
+            LOGGER.error("Error during response sending");
         }
 
     }
 
-    private Response handleRequest(final Request request, final String id, final String targetUrl) {
+    private CompletableFuture<Response> handleRequest(final Request request, final String id, final String targetUrl) {
         String timeHeader = request.getHeader(DELEGATE_HEADER);
         long timestamp = Long.parseLong(timeHeader);
 
         if (targetUrl.equals(config.selfUrl())) {
             int requestMethod = request.getMethod();
 
+            CompletableFuture<Response> response;
             if (requestMethod == Request.METHOD_GET) {
-                return getEntity(id);
+                response = CompletableFuture.supplyAsync(() -> getEntity(id));
             } else if (requestMethod == Request.METHOD_PUT) {
-                return putEntity(request, id, timestamp);
+                response = CompletableFuture.supplyAsync(() -> putEntity(request, id, timestamp));
             } else {
-                return deleteEntity(id, timestamp);
+                response = CompletableFuture.supplyAsync(() -> deleteEntity(id, timestamp));
             }
+            return  response;
         } else {
             byte[] requestBody = request.getBody();
             if (requestBody == null) requestBody = new byte[]{};
@@ -150,19 +170,16 @@ public class ServiceImpl implements Service {
                     .uri(URI.create(targetUrl + DEFAULT_ROOT + "?id=" + id))
                     .build();
 
-            try {
-                HttpResponse<byte[]> response = client
-                        .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
-                        .get(AWAIT_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS);
+            CompletableFuture<HttpResponse<byte[]>> response = client
+                    .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
 
-                Response resp = new Response(String.valueOf(response.statusCode()), response.body());
-                Optional<String> headerValue = response.headers().firstValue(JAVA_NET_DELEGATE_HEADER);
+            return response.thenApply(httpResponse -> {
+                Response resp = new Response(String.valueOf(httpResponse.statusCode()), httpResponse.body());
+                Optional<String> headerValue = httpResponse.headers().firstValue(JAVA_NET_DELEGATE_HEADER);
                 headerValue.ifPresent(s -> resp.addHeader(DELEGATE_HEADER + s));
 
                 return resp;
-            } catch (TimeoutException | InterruptedException | ExecutionException e) {
-                return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-            }
+            });
         }
     }
 
