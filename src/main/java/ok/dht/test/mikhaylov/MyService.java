@@ -1,35 +1,44 @@
 package ok.dht.test.mikhaylov;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.mikhaylov.dao.BaseEntry;
-import ok.dht.test.mikhaylov.dao.Config;
-import ok.dht.test.mikhaylov.dao.Entry;
-import ok.dht.test.mikhaylov.dao.artyomdrozdov.MemorySegmentDao;
+import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
+import org.rocksdb.RocksDB;
+import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class MyService implements Service {
 
     private final ServiceConfig config;
+
     private HttpServer server;
 
-    private MemorySegmentDao dao;
+    private RocksDB db;
+
+    private ExecutorService requestHandlers;
+
+    private static final byte[] EMPTY_ID_RESPONSE_BODY = strToBytes("Empty id");
+    private static final int REQUEST_HANDLERS = 4;
+    private static final int MAX_REQUESTS = 128;
 
     public MyService(ServiceConfig config) {
         this.config = config;
@@ -37,26 +46,21 @@ public class MyService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        server = new HttpServer(createServerConfigFromPort(config.selfPort())) {
-            @Override
-            public void handleDefault(Request request, HttpSession session) throws IOException {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            }
-
-            @Override
-            public synchronized void stop() {
-                for (SelectorThread selectorThread : selectors) {
-                    for (Session session : selectorThread.selector) {
-                        session.close();
-                    }
-                }
-                super.stop();
-            }
-        };
+        requestHandlers = new ThreadPoolExecutor(
+                REQUEST_HANDLERS,
+                REQUEST_HANDLERS,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new LinkedBlockingDeque<>(MAX_REQUESTS)
+        );
+        try {
+            db = RocksDB.open(config.workingDir().toString());
+        } catch (RocksDBException e) {
+            throw new IOException(e);
+        }
+        server = new MyHttpServer(createServerConfigFromPort(config.selfPort()));
         server.addRequestHandlers(this);
         server.start();
-        int flushThresholdBytes = 1024 * 1024;
-        dao = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
         return CompletableFuture.completedFuture(null);
     }
 
@@ -73,8 +77,13 @@ public class MyService implements Service {
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
         server = null;
-        dao.close();
-        dao = null;
+        requestHandlers.shutdownNow();
+        try {
+            db.closeE();
+        } catch (RocksDBException e) {
+            throw new IOException(e);
+        }
+        db = null;
         return CompletableFuture.completedFuture(null);
     }
 
@@ -82,49 +91,106 @@ public class MyService implements Service {
         return s.getBytes(StandardCharsets.UTF_8);
     }
 
-    private static MemorySegment strToSegment(String s) {
-        return MemorySegment.ofArray(strToBytes(s));
+    @Path("/v0/entity")
+    public Response handle(Request request) {
+        String id = request.getParameter("id=");
+        if (id == null || id.isEmpty()) {
+            return new Response(Response.BAD_REQUEST, EMPTY_ID_RESPONSE_BODY);
+        }
+        try {
+            switch (request.getMethod()) {
+                case Request.METHOD_GET:
+                    return handleGet(id);
+                case Request.METHOD_PUT:
+                    return handlePut(id, request.getBody());
+                case Request.METHOD_DELETE:
+                    return handleDelete(id);
+                default:
+                    return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            }
+        } catch (RocksDBException e) {
+            return new Response(Response.INTERNAL_ERROR, strToBytes("Could not access database"));
+        }
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) final String id) {
-        if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, strToBytes("Empty id"));
-        }
-        Entry<MemorySegment> entry = dao.get(strToSegment(id));
-        if (entry == null) {
+    private Response handleGet(final String id) throws RocksDBException {
+        byte[] value = db.get(strToBytes(id));
+        if (value == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
+        } else {
+            return new Response(Response.OK, value);
         }
-        return new Response(Response.OK, entry.value().toByteArray());
     }
 
-    private Response upsert(String id, MemorySegment newValue, Response onSuccess) {
-        if (id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, strToBytes("Empty id"));
-        }
-        dao.upsert(new BaseEntry<>(strToSegment(id), newValue));
-        return onSuccess;
+    private Response handlePut(final String id, final byte[] body) throws RocksDBException {
+        db.put(strToBytes(id), body);
+        return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(@Param(value = "id", required = true) final String id, final Request request) {
-        return upsert(id, MemorySegment.ofArray(request.getBody()), new Response(Response.CREATED, Response.EMPTY));
+    private Response handleDelete(final String id) throws RocksDBException {
+        db.delete(strToBytes(id));
+        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) final String id) {
-        return upsert(id, null, new Response(Response.ACCEPTED, Response.EMPTY));
-    }
-
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
         public Service create(ServiceConfig config) {
             return new MyService(config);
+        }
+    }
+
+    private class MyHttpServer extends HttpServer {
+        public MyHttpServer(HttpServerConfig config) throws IOException {
+            super(config);
+        }
+
+        @Override
+        public void handleRequest(Request request, HttpSession session) throws IOException {
+            try {
+                requestHandlers.submit(() -> handleRequestImpl(request, session));
+            } catch (RejectedExecutionException ignored) {
+                session.sendError(Response.SERVICE_UNAVAILABLE, "Server is overloaded");
+            }
+        }
+
+        private void handleRequestImpl(Request request, HttpSession session) {
+            try {
+                super.handleRequest(request, session);
+            } catch (Exception e) {
+                handleRequestException(e, session);
+            }
+        }
+
+        private static void handleRequestException(Exception e, HttpSession session) {
+            try {
+                // missing required parameter
+                if (e instanceof HttpException && e.getCause() instanceof NoSuchElementException) {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                } else {
+                    session.sendError(Response.INTERNAL_ERROR, e.getMessage());
+                }
+            } catch (IOException ex) {
+                RuntimeException re = new RuntimeException(ex);
+                re.addSuppressed(e);
+                throw re;
+            }
+        }
+
+        @Override
+        public void handleDefault(Request request, HttpSession session) throws IOException {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        }
+
+        @Override
+        public synchronized void stop() {
+            for (SelectorThread selectorThread : selectors) {
+                for (Session session : selectorThread.selector) {
+                    session.close();
+                }
+            }
+            super.stop();
         }
     }
 }
