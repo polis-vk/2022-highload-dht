@@ -19,6 +19,7 @@ import one.nio.util.Hash;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -27,8 +28,6 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class ServiceImpl implements Service {
@@ -45,7 +44,7 @@ public class ServiceImpl implements Service {
     private final ShardingAlgorithm algorithm;
     private final HttpClient client = HttpClient.newHttpClient();
     private final CircuitBreakerImpl circuitBreaker;
-    
+
     private MemorySegmentDao dao;
     private HttpServerImpl server;
 
@@ -62,7 +61,7 @@ public class ServiceImpl implements Service {
     private static HttpServerConfig createConfigFromPort(int port) {
         HttpServerConfig httpConfig = new HttpServerConfig();
         AcceptorConfig acceptor = createAcceptorConfig(port);
-        httpConfig.acceptors = new AcceptorConfig[] {acceptor};
+        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
         return httpConfig;
     }
 
