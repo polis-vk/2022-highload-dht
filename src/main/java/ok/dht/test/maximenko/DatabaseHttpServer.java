@@ -29,6 +29,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 
 public class DatabaseHttpServer extends HttpServer {
@@ -49,7 +51,10 @@ public class DatabaseHttpServer extends HttpServer {
     public DatabaseHttpServer(HttpServerConfig httpConfig, ServiceConfig config) throws IOException {
         super(httpConfig);
         this.workDir = config.workingDir();
-        keyDispatcher = new KeyDispatcher(config.clusterUrls().size());
+        List<Integer> nodesIds = IntStream.range(0, config.clusterUrls().size())
+                                        .boxed()
+                .                       collect(Collectors.toList());
+        keyDispatcher = new KeyDispatcher(nodesIds);
         this.clusterConfig = config.clusterUrls().toArray(new String[0]);
         selfId = config.clusterUrls().indexOf(config.selfUrl());
         httpClient = HttpClient.newHttpClient();
