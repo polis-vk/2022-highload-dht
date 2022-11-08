@@ -14,23 +14,23 @@ final class Util {
     private Util() {
     }
 
-    static HttpRequest createProxyRequest(String url, Request request)
+    static HttpRequest createProxyRequest(String url, Request request, long timestamp)
             throws InternalErrorException {
         return switch (request.getMethod()) {
             case Request.METHOD_GET -> HttpRequest.newBuilder()
                     .method("GET", HttpRequest.BodyPublishers.noBody())
                     .uri(URI.create(url + request.getPath() + "?id=" + request.getParameter("id=")))
-                    .header("Proxy", "")
+                    .header("Proxy", Long.toString(timestamp))
                     .build();
             case Request.METHOD_PUT -> HttpRequest.newBuilder()
                     .method("PUT", HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
                     .uri(URI.create(url + request.getPath() + "?id=" + request.getParameter("id=")))
-                    .header("Proxy", "")
+                    .header("Proxy", Long.toString(timestamp))
                     .build();
             case Request.METHOD_DELETE -> HttpRequest.newBuilder()
                     .method("DELETE", HttpRequest.BodyPublishers.noBody())
                     .uri(URI.create(url + request.getPath() + "?id=" + request.getParameter("id=")))
-                    .header("Proxy", "")
+                    .header("Proxy", Long.toString(timestamp))
                     .build();
             default -> throw new InternalErrorException();
         };
@@ -82,6 +82,6 @@ final class Util {
 
     @FunctionalInterface
     interface RequestExecution {
-        Response execute(String id, byte[] body) throws InternalErrorException;
+        Response execute(String id, byte[] body, long timestamp) throws InternalErrorException;
     }
 }
