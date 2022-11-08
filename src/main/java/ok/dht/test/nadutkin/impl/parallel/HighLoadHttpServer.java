@@ -22,8 +22,8 @@ public class HighLoadHttpServer extends HttpServer {
 
     public HighLoadHttpServer(HttpServerConfig config, Object... routers) throws IOException {
         super(config, routers);
-        final int maximumPoolSize = 8;
-        final int corePoolSize = 4;
+        final int maximumPoolSize = Runtime.getRuntime().availableProcessors();
+        final int corePoolSize = Math.max(1, maximumPoolSize / 2);
         final long keepAliveTime = 0;
         this.executors = new ThreadPoolExecutor(corePoolSize,
                 maximumPoolSize,

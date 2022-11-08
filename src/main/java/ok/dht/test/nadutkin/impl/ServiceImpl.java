@@ -11,7 +11,13 @@ import ok.dht.test.nadutkin.impl.shards.Sharder;
 import ok.dht.test.nadutkin.impl.utils.Constants;
 import ok.dht.test.nadutkin.impl.utils.StoredValue;
 import ok.dht.test.nadutkin.impl.utils.UtilsClass;
-import one.nio.http.*;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
+
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -49,10 +55,10 @@ public class ServiceImpl extends ReplicaService {
 
     @Path(Constants.PATH)
     public void handle(@Param(value = "id") String id,
-                           Request request,
-                           @Param(value = "ack") Integer ack,
-                           @Param(value = "from") Integer from,
-                           HttpSession session) throws IOException {
+                       Request request,
+                       @Param(value = "ack") Integer ack,
+                       @Param(value = "from") Integer from,
+                       HttpSession session) throws IOException {
         if (id == null || id.isEmpty()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, getBytes("Id can not be null or empty!")));
             return;
@@ -70,6 +76,7 @@ public class ServiceImpl extends ReplicaService {
         List<String> urls = sharder.getShardUrls(id, neighbours);
         ResponseProcessor processor = new ResponseProcessor(request.getMethod(), quorum, neighbours);
         long timestamp = System.currentTimeMillis();
+
         try {
             byte[] body = request.getMethod() == Request.METHOD_PUT ? request.getBody() : null;
             request.setBody(UtilsClass.valueToSegment(new StoredValue(body, timestamp)));
@@ -78,17 +85,19 @@ public class ServiceImpl extends ReplicaService {
                     getBytes("Can't ask other replicas, %s$".formatted(e.getMessage()))));
             return;
         }
+
         for (final String url : urls) {
             CompletableFuture<Response> futureResponse = url.equals(config.selfUrl())
                     ? CompletableFuture.supplyAsync(() -> handleV1(id, request))
                     : handleProxy(url, request);
-            futureResponse.thenAccept(response -> {
-                if (processor.process(response)) {
-                    try {
-                        session.sendResponse(processor.response());
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
+            futureResponse.whenCompleteAsync((response, throwable) -> {
+                if (!processor.process(response)) {
+                    return;
+                }
+                try {
+                    session.sendResponse(processor.response());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
                 }
             });
         }
@@ -98,21 +107,21 @@ public class ServiceImpl extends ReplicaService {
 
     private CompletableFuture<Response> handleProxy(String url, Request request) {
         if (breaker.isWorking(url)) {
-                HttpRequest proxyRequest = HttpRequest
-                        .newBuilder(URI.create(url + request.getURI().replace(Constants.PATH, Constants.REPLICA_PATH)))
-                        .method(
-                                request.getMethodName(),
-                                HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                        .build();
-                return client.sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
-                        .handleAsync((response, exception) -> {
-                            if (exception != null || response.statusCode() == HttpURLConnection.HTTP_UNAVAILABLE) {
-                                fail(url);
-                                return null;
-                            }
-                            breaker.success(url);
-                            return new Response(Integer.toString(response.statusCode()), response.body());
-                        });
+            HttpRequest proxyRequest = HttpRequest
+                    .newBuilder(URI.create(url + request.getURI().replace(Constants.PATH, Constants.REPLICA_PATH)))
+                    .method(
+                            request.getMethodName(),
+                            HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                    .build();
+            return client.sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
+                    .handleAsync((response, exception) -> {
+                        if (exception != null || response.statusCode() == HttpURLConnection.HTTP_UNAVAILABLE) {
+                            fail(url);
+                            return null;
+                        }
+                        breaker.success(url);
+                        return new Response(Integer.toString(response.statusCode()), response.body());
+                    });
         }
         return CompletableFuture.completedFuture(null);
     }
