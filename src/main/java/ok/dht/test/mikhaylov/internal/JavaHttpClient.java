@@ -14,9 +14,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.CompletableFuture;
 
 public class JavaHttpClient extends InternalHttpClient {
 
@@ -34,8 +32,7 @@ public class JavaHttpClient extends InternalHttpClient {
 
     @Override
     @Nullable
-    public Response proxyRequest(Request request, String shard) throws ExecutionException, InterruptedException,
-            TimeoutException {
+    public CompletableFuture<Response> proxyRequest(Request request, String shard) {
         byte[] body = request.getBody();
         HttpRequest.BodyPublisher publisher = body == null ? HttpRequest.BodyPublishers.noBody() :
                 HttpRequest.BodyPublishers.ofByteArray(body);
@@ -46,13 +43,13 @@ public class JavaHttpClient extends InternalHttpClient {
                 .handleAsync((response, throwable) -> {
                     if (throwable != null) {
                         logger.error("Could not proxy request to {}", shard, throwable);
-                        return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                        return null;
                     }
                     return new Response(
                             responseCodeToStatusText(response.statusCode()),
                             response.body()
                     );
-                }).get(1, TimeUnit.SECONDS);
+                });
     }
 
     public static String responseCodeToStatusText(int code) {

@@ -5,15 +5,18 @@ import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.mikhaylov.internal.InternalHttpClient;
 import ok.dht.test.mikhaylov.internal.JavaHttpClient;
-import ok.dht.test.mikhaylov.internal.OneNioHttpClient;
+import ok.dht.test.mikhaylov.internal.ReplicaRequirements;
+import ok.dht.test.mikhaylov.internal.ShardResponseProcessor;
 import ok.dht.test.mikhaylov.resolver.ConsistentHashingResolver;
 import ok.dht.test.mikhaylov.resolver.ShardResolver;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
-import one.nio.http.Path;
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.SelectorThread;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.slf4j.Logger;
@@ -28,6 +31,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 
@@ -75,11 +83,10 @@ public class MyService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        internalHttpClient = new OneNioHttpClient(config.clusterUrls());
+        internalHttpClient = new JavaHttpClient();
         try {
             db = RocksDB.open(config.workingDir().toString());
         } catch (RocksDBException e) {
-            logger.error("Could not open RocksDB", e);
             throw new IOException(e);
         }
         server = new MyHttpServer(createServerConfigFromPort(config.selfPort()));
@@ -99,6 +106,7 @@ public class MyService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
+        internalHttpClient.close();
         if (server != null) {
             server.stop();
         }
@@ -108,7 +116,6 @@ public class MyService implements Service {
                 db.closeE();
             }
         } catch (RocksDBException e) {
-            logger.error("Error while closing db", e);
             throw new IOException(e);
         }
         db = null;
@@ -119,42 +126,49 @@ public class MyService implements Service {
         return s.getBytes(StandardCharsets.UTF_8);
     }
 
-    @Path(ENTITY_PATH)
-    public Response handle(Request request) {
+    public void route(Request request, HttpSession session) throws IOException {
+        String path = request.getPath();
+        switch (path) {
+            case ENTITY_PATH -> handle(request, session);
+            case ENTITY_INTERNAL_PATH -> session.sendResponse(handleInternal(request));
+            default -> session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        }
+    }
+
+    public void handle(Request request, HttpSession session) throws IOException {
         String id = request.getParameter("id=");
         if (id == null || id.isEmpty()) {
-            return new Response(Response.BAD_REQUEST, EMPTY_ID_RESPONSE_BODY);
+            session.sendResponse(new Response(Response.BAD_REQUEST, EMPTY_ID_RESPONSE_BODY));
+            return;
         }
         if (!ALLOWED_METHODS.contains(request.getMethod())) {
-            return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            return;
         }
         int shard = shardResolver.resolve(id);
-        Replicas replicas;
+        ReplicaRequirements replicaRequirements;
         try {
-            replicas = new Replicas(request, config.clusterUrls().size());
+            replicaRequirements = new ReplicaRequirements(request, config.clusterUrls().size());
         } catch (IllegalArgumentException e) {
             logger.error("Could not parse replicas", e);
-            return new Response(Response.BAD_REQUEST, strToBytes(e.getMessage()));
+            session.sendResponse(new Response(Response.BAD_REQUEST, strToBytes(e.getMessage())));
+            return;
         }
         if (request.getMethod() == Request.METHOD_PUT) {
             request = DatabaseUtilities.attachMeta(request);
         }
-        List<Response> shardResponses = new ArrayList<>();
-        for (int i = 0; i < replicas.getFrom(); i++) {
+        var responseProcessor = new ShardResponseProcessor(session, replicaRequirements, request.getMethod());
+        for (int i = 0; i < replicaRequirements.getFrom(); i++) {
             int shardIndex = (shard + i) % config.clusterUrls().size();
             if (shardIndex == selfShardIndex) {
-                shardResponses.add(handleLocalRequest(request, id));
+                responseProcessor.process(handleLocalRequest(request, id));
             } else {
-                Response response = proxyRequest(request, shardIndex);
-                if (response != null) {
-                    shardResponses.add(response);
-                }
+                responseProcessor.process(proxyRequest(request, shardIndex));
             }
         }
-        return processShardResponses(request.getMethod(), replicas, shardResponses);
     }
 
-    private static Response processShardResponses(int requestMethod, Replicas replicas, List<Response> shardResponses) {
+    private static Response processShardResponses(int requestMethod, ReplicaRequirements replicaRequirements, List<Response> shardResponses) {
         return switch (requestMethod) {
             case Request.METHOD_PUT -> {
                 int acks = 0;
@@ -163,7 +177,7 @@ public class MyService implements Service {
                         acks++;
                     }
                 }
-                yield acks >= replicas.getAck() ? new Response(Response.CREATED, Response.EMPTY) :
+                yield acks >= replicaRequirements.getAck() ? new Response(Response.CREATED, Response.EMPTY) :
                         new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
             }
             case Request.METHOD_GET -> {
@@ -185,7 +199,7 @@ public class MyService implements Service {
                         }
                     }
                 }
-                if (respondedCount < replicas.getAck()) {
+                if (respondedCount < replicaRequirements.getAck()) {
                     yield new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
                 } else if (allNotFound || latestBody == null || DatabaseUtilities.isTombstone(latestBody)) {
                     yield new Response(Response.NOT_FOUND, Response.EMPTY);
@@ -201,7 +215,7 @@ public class MyService implements Service {
                         acks++;
                     }
                 }
-                yield acks >= replicas.getAck() ? new Response(Response.ACCEPTED, Response.EMPTY) :
+                yield acks >= replicaRequirements.getAck() ? new Response(Response.ACCEPTED, Response.EMPTY) :
                         new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
             }
             // Should never happen
@@ -212,15 +226,13 @@ public class MyService implements Service {
         };
     }
 
-    // Assumes everything is valid and the shard containing the id is this node
-    @Path(ENTITY_INTERNAL_PATH)
+    // Assumes everything is valid
     public Response handleInternal(Request request) {
         // todo: verify that the request is not coming from outside
         String id = request.getParameter("id=");
         return handleLocalRequest(request, id);
     }
 
-    // shard is null if the shard is this node
     private Response handleLocalRequest(Request request, String id) {
         try {
             return switch (request.getMethod()) {
@@ -243,7 +255,8 @@ public class MyService implements Service {
     private Response proxyRequest(Request request, int shardIndex) {
         String shard = sortedShardUrls.get(shardIndex);
         try {
-            return internalHttpClient.proxyRequest(request, shard);
+            CompletableFuture<Response> response = internalHttpClient.proxyRequest(request, shard);
+            return response == null ? null : response.get(1, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.error("Interrupted while proxying request to shard {}", shard, e);
@@ -278,7 +291,7 @@ public class MyService implements Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
@@ -287,48 +300,54 @@ public class MyService implements Service {
         }
     }
 
-    private static class Replicas {
-        private final int ack;
+    class MyHttpServer extends HttpServer {
+        private final ExecutorService requestHandlers;
 
-        private final int from;
+        private static final int REQUEST_HANDLERS = 4;
+        private static final int MAX_REQUESTS = 128;
 
-        public Replicas(Request request, int clusterSize) {
-            String ackStr = request.getParameter("ack=");
-            String fromStr = request.getParameter("from=");
-            if (ackStr == null && fromStr == null) {
-                ack = clusterSize / 2 + 1;
-                from = clusterSize;
-            } else if (ackStr == null || fromStr == null) {
-                throw new IllegalArgumentException("Both ack and from must be specified (or neither)");
-            } else {
-                try {
-                    ack = Integer.parseInt(ackStr);
-                    from = Integer.parseInt(fromStr);
-                } catch (NumberFormatException e) {
-                    throw new IllegalArgumentException("Could not parse ack or from", e);
-                }
-                if (ack <= 0) {
-                    throw new IllegalArgumentException("Ack must be positive");
-                }
-                if (from <= 0) {
-                    throw new IllegalArgumentException("From must be positive");
-                }
-                if (from > clusterSize) {
-                    throw new IllegalArgumentException("From must be less than cluster size");
-                }
-                if (ack > from) {
-                    throw new IllegalArgumentException("Ack must be less than or equal to from");
-                }
+        public MyHttpServer(HttpServerConfig config) throws IOException {
+            super(config);
+            requestHandlers = new ThreadPoolExecutor(
+                    REQUEST_HANDLERS,
+                    REQUEST_HANDLERS,
+                    0L,
+                    TimeUnit.MILLISECONDS,
+                    new LinkedBlockingDeque<>(MAX_REQUESTS)
+            );
+        }
+
+        @Override
+        public void handleRequest(Request request, HttpSession session) throws IOException {
+            try {
+                requestHandlers.submit(() -> {
+                    try {
+                        route(request, session);
+                    } catch (IOException e) {
+                        logger.error("Could not send response to {}", session, e);
+                    }
+                });
+            } catch (RejectedExecutionException ignored) {
+                session.sendError(Response.SERVICE_UNAVAILABLE, "Server is overloaded");
             }
         }
 
-        public int getAck() {
-            return ack;
-        }
-
-        public int getFrom() {
-            return from;
+        @Override
+        public synchronized void stop() {
+            requestHandlers.shutdown();
+            try {
+                if (!requestHandlers.awaitTermination(1, TimeUnit.SECONDS)) {
+                    requestHandlers.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            for (SelectorThread selectorThread : selectors) {
+                for (Session session : selectorThread.selector) {
+                    session.close();
+                }
+            }
+            super.stop();
         }
     }
-
 }
