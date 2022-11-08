@@ -26,6 +26,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class ServiceImpl implements Service {
 
@@ -41,6 +45,7 @@ public class ServiceImpl implements Service {
     private final ShardingAlgorithm algorithm;
     private final HttpClient client = HttpClient.newHttpClient();
     private final CircuitBreakerImpl circuitBreaker;
+    
     private MemorySegmentDao dao;
     private HttpServerImpl server;
 
@@ -76,7 +81,15 @@ public class ServiceImpl implements Service {
     public CompletableFuture<?> start() throws IOException {
         if (dao == null) {
             createDao();
+            requestService = new ThreadPoolExecutor(
+                    CORE_POLL_SIZE,
+                    CORE_POLL_SIZE,
+                    KEEP_ALIVE_TIME,
+                    TimeUnit.SECONDS,
+                    new ArrayBlockingQueue<>(QUEUE_CAPACITY)
+            );
         }
+
         server = new HttpServerImpl(createConfigFromPort(config.selfPort()));
         server.addRequestHandlers(this);
         server.start();
@@ -164,6 +177,21 @@ public class ServiceImpl implements Service {
         MemorySegment bodySegment = MemorySegment.ofArray(request.getBody());
         dao.upsert(new Entry(Utils.stringToSegment(id), bodySegment));
         return Utils.emptyResponse(Response.CREATED);
+    }
+
+    private void closeExecutorPool(ExecutorService pool) {
+        pool.shutdown();
+        try {
+            if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
+                pool.shutdownNow();
+                if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
+                    LOGGER.error("Pool didn't terminate");
+                }
+            }
+        } catch (InterruptedException ie) {
+            pool.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     private Response deleteHandler(String id) {
