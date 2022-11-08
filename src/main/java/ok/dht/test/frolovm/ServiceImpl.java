@@ -171,21 +171,6 @@ public class ServiceImpl implements Service {
         return Utils.emptyResponse(Response.CREATED);
     }
 
-    private void closeExecutorPool(ExecutorService pool) {
-        pool.shutdown();
-        try {
-            if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
-                pool.shutdownNow();
-                if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
-                    LOGGER.error("Pool didn't terminate");
-                }
-            }
-        } catch (InterruptedException ie) {
-            pool.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-    }
-
     private Response deleteHandler(String id) {
         dao.upsert(new Entry(Utils.stringToSegment(id), null));
         return Utils.emptyResponse(Response.ACCEPTED);
