@@ -21,7 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.http.HttpClient;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.*;
 
 public class ServiceImpl implements Service {
 
@@ -34,10 +34,14 @@ public class ServiceImpl implements Service {
 
     private static final int MAX_REQUEST_TRIES = 100;
 
+    private static final int CORE_POLL_SIZE = 2;
+    private static final int KEEP_ALIVE_TIME = 0;
+    private static final int QUEUE_CAPACITY = 1024;
+
     private static final Logger LOGGER = LoggerFactory.getLogger(ServiceImpl.class);
     private final ServiceConfig config;
     private final ShardingAlgorithm algorithm;
-    private final HttpClient client = HttpClient.newHttpClient();
+    private final HttpClient client;
     private ReplicationManager replicationManager;
     private HttpServerImpl server;
 
@@ -50,6 +54,13 @@ public class ServiceImpl implements Service {
     public ServiceImpl(ServiceConfig config, Hasher hasher) {
         this.config = config;
         this.algorithm = new RendezvousHashing(config.clusterUrls(), hasher);
+        this.client = HttpClient.newBuilder().executor(new ThreadPoolExecutor(
+                CORE_POLL_SIZE,
+                CORE_POLL_SIZE,
+                KEEP_ALIVE_TIME,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(QUEUE_CAPACITY)
+        )).build();
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -75,6 +86,7 @@ public class ServiceImpl implements Service {
         if (dao == null) {
             createDao();
         }
+
         server = new HttpServerImpl(createConfigFromPort(config.selfPort()));
         server.addRequestHandlers(this);
         server.start();
