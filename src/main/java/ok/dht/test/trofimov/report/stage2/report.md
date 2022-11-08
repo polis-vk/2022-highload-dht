@@ -151,7 +151,7 @@ Transfer/sec:     65.36KB
 ---
 
 ```  
-./wrk -c 64 -t 4 -d 60s -R 10000 http://host.docker.internal:19234 -s put.lua -L
+./wrk -c 64 -t 4 -d 60s -R 2000 http://host.docker.internal:19234 -s put.lua -L
 Running 1m test @ http://host.docker.internal:19234
   4 threads and 64 connections
   Thread calibration: mean lat.: 0.330ms, rate sampling interval: 10ms
