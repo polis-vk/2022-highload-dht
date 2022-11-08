@@ -91,7 +91,8 @@ public class ReplicatedRequestExecutor {
                     // could reuse addSuccess method, but code climate wanted to reallocate all arrays...
                     int success = successCount.incrementAndGet();
                     values[success - 1] = value;
-                    // second atomic is to avoid case when ack threads incremented success, but somebody hasn't set result yet
+                    // second atomic is to avoid case when ack threads incremented success,
+                    // but somebody hasn't set result yet
                     int ready = readyCount.incrementAndGet();
                     if (ready == ack) { // first achieve of ack success results
                         resultFuture.complete(values);
