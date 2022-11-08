@@ -41,12 +41,12 @@ import java.util.function.Function;
 
 public class RocksDBService implements Service {
     public static final int N_SELECTOR_THREADS = 3;
-    public static final int N_WORKER_THREADS = 3;
-    public static final int N_WORKER1_THREADS = 2;
+    public static final int N_EXECUTOR_THREADS = 3;
+    public static final int N_PROXY_EXECUTOR_THREADS = 2;
     public static final int EXECUTOR_QUEUE_CAPACITY = 2000;
-    public static final int EXECUTOR1_QUEUE_CAPACITY = 2000;
+    public static final int PROXY_EXECUTOR_QUEUE_CAPACITY = 2000;
     public static final int EXECUTOR_AWAIT_SHUTDOWN_TIMEOUT_MINUTES = 1;
-    public static final int EXECUTOR_AWAIT1_SHUTDOWN_TIMEOUT_MINUTES = 1;
+    public static final int PROXY_EXECUTOR_AWAIT_SHUTDOWN_TIMEOUT_MINUTES = 1;
     public static final int NODE_QUEUE_TASKS_LIMIT = 128;
     public static final int NODE_QUEUE_TASKS_ON_EXECUTOR_LIMIT = 3;
 
@@ -60,7 +60,7 @@ public class RocksDBService implements Service {
     private HttpServer httpServer;
 
     private ExecutorService executor;
-    private ExecutorService executor1;
+    private ExecutorService proxyExecutor;
     private HttpClient client;
 
     public RocksDBService(ServiceConfig config) {
@@ -76,17 +76,17 @@ public class RocksDBService implements Service {
         LOG.debug("start node {}", config.selfUrl());
 
         executor = new ThreadPoolExecutor(
-                N_WORKER_THREADS,
-                N_WORKER_THREADS,
+                N_EXECUTOR_THREADS,
+                N_EXECUTOR_THREADS,
                 0L, TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>(EXECUTOR_QUEUE_CAPACITY)
         );
 
-        executor1 = new ThreadPoolExecutor(
-                N_WORKER1_THREADS,
-                N_WORKER1_THREADS,
+        proxyExecutor = new ThreadPoolExecutor(
+                N_PROXY_EXECUTOR_THREADS,
+                N_PROXY_EXECUTOR_THREADS,
                 0L, TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>(EXECUTOR1_QUEUE_CAPACITY)
+                new LinkedBlockingQueue<>(PROXY_EXECUTOR_QUEUE_CAPACITY)
         );
 
         client = HttpClient.newBuilder()
@@ -112,7 +112,7 @@ public class RocksDBService implements Service {
     @Override
     public CompletableFuture<?> stop() throws IOException {
         if (httpServer == null && db == null
-                && executor == null && executor1 == null) {
+                && executor == null && proxyExecutor == null) {
             return CompletableFuture.completedFuture(null);
         }
 
@@ -129,17 +129,17 @@ public class RocksDBService implements Service {
         db = null;
 
         executor.shutdown();
-        executor1.shutdown();
+        proxyExecutor.shutdown();
 
         return CompletableFuture.runAsync(() -> {
             try {
                 executor.awaitTermination(EXECUTOR_AWAIT_SHUTDOWN_TIMEOUT_MINUTES, TimeUnit.MINUTES);
-                executor1.awaitTermination(EXECUTOR_AWAIT1_SHUTDOWN_TIMEOUT_MINUTES, TimeUnit.MINUTES);
+                proxyExecutor.awaitTermination(PROXY_EXECUTOR_AWAIT_SHUTDOWN_TIMEOUT_MINUTES, TimeUnit.MINUTES);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             } finally {
                 executor = null;
-                executor1 = null;
+                proxyExecutor = null;
             }
         });
     }
@@ -408,7 +408,7 @@ public class RocksDBService implements Service {
                         } else {
                             replicatingRequestsAggregator.failure();
                         }
-                    }, executor1);
+                    }, proxyExecutor);
         }
     }
 
