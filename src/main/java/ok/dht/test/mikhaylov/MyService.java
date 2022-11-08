@@ -168,64 +168,6 @@ public class MyService implements Service {
         }
     }
 
-    private static Response processShardResponses(int requestMethod, ReplicaRequirements replicaRequirements, List<Response> shardResponses) {
-        return switch (requestMethod) {
-            case Request.METHOD_PUT -> {
-                int acks = 0;
-                for (Response response : shardResponses) {
-                    if (JavaHttpClient.responseCodeToStatusText(response.getStatus()).equals(Response.CREATED)) {
-                        acks++;
-                    }
-                }
-                yield acks >= replicaRequirements.getAck() ? new Response(Response.CREATED, Response.EMPTY) :
-                        new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
-            }
-            case Request.METHOD_GET -> {
-                int respondedCount = shardResponses.size();
-                byte[] latestBody = null;
-                long latestTimestamp = 0;
-                boolean allNotFound = true;
-                for (Response response : shardResponses) {
-                    String statusText = JavaHttpClient.responseCodeToStatusText(response.getStatus());
-                    if (!statusText.equals(Response.NOT_FOUND)) {
-                        allNotFound = false;
-                    }
-                    if (statusText.equals(Response.OK)) {
-                        byte[] body = response.getBody();
-                        long timestamp = DatabaseUtilities.getTimestamp(body);
-                        if (timestamp > latestTimestamp) {
-                            latestBody = body;
-                            latestTimestamp = timestamp;
-                        }
-                    }
-                }
-                if (respondedCount < replicaRequirements.getAck()) {
-                    yield new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
-                } else if (allNotFound || latestBody == null || DatabaseUtilities.isTombstone(latestBody)) {
-                    yield new Response(Response.NOT_FOUND, Response.EMPTY);
-                } else {
-                    byte[] value = DatabaseUtilities.getValue(latestBody);
-                    yield new Response(Response.OK, value);
-                }
-            }
-            case Request.METHOD_DELETE -> {
-                int acks = 0;
-                for (Response response : shardResponses) {
-                    if (JavaHttpClient.responseCodeToStatusText(response.getStatus()).equals(Response.ACCEPTED)) {
-                        acks++;
-                    }
-                }
-                yield acks >= replicaRequirements.getAck() ? new Response(Response.ACCEPTED, Response.EMPTY) :
-                        new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
-            }
-            // Should never happen
-            default -> {
-                logger.error("Unexpected method: {}", requestMethod);
-                throw new IllegalArgumentException("Method " + requestMethod + " is not allowed");
-            }
-        };
-    }
-
     // Assumes everything is valid
     public Response handleInternal(Request request) {
         // todo: verify that the request is not coming from outside

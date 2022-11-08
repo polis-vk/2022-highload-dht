@@ -33,7 +33,9 @@ public class ShardResponseProcessor {
         this.session = session;
         this.requirements = requirements;
         responses = new AtomicReferenceArray<>(requirements.getAck());
-        if (requestMethod != Request.METHOD_GET && requestMethod != Request.METHOD_PUT && requestMethod != Request.METHOD_DELETE) {
+        if (requestMethod != Request.METHOD_GET
+                && requestMethod != Request.METHOD_PUT
+                && requestMethod != Request.METHOD_DELETE) {
             throw new IllegalArgumentException("Unsupported request method: " + requestMethod);
         }
         this.requestMethod = requestMethod;
