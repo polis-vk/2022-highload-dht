@@ -90,7 +90,11 @@ public class ServiceImpl extends ReplicaService {
         }
     }
 
-    private void collectResponse(String id, Request request, HttpSession session, ResponseProcessor processor, String url) {
+    private void collectResponse(String id,
+                                 Request request,
+                                 HttpSession session,
+                                 ResponseProcessor processor,
+                                 String url) {
         CompletableFuture<Response> futureResponse = url.equals(config.selfUrl())
                 ? CompletableFuture.supplyAsync(() -> handleV1(id, request))
                 : handleProxy(url, request);
