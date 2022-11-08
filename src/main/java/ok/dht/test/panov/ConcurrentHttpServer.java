@@ -12,35 +12,22 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.StreamSupport;
 
 public class ConcurrentHttpServer extends HttpServer {
 
-    private static final int CORE_POOL_SIZE = 4;
-    private static final int MAXIMUM_POOL_SIZE = 8;
-    private static final long KEEP_ALIVE_TIME = 0;
     private static final Logger LOGGER = LoggerFactory.getLogger(ConcurrentHttpServer.class);
 
-    private ExecutorService executorService;
+    ExecutorService executorService;
 
-    public ConcurrentHttpServer(HttpServerConfig config, Object... routers) throws IOException {
+    public ConcurrentHttpServer(HttpServerConfig config, ExecutorService executorService, Object... routers) throws IOException {
         super(config, routers);
+        this.executorService = executorService;
     }
 
     @Override
     public synchronized void start() {
-        executorService = new ThreadPoolExecutor(
-                CORE_POOL_SIZE,
-                MAXIMUM_POOL_SIZE,
-                KEEP_ALIVE_TIME,
-                TimeUnit.MICROSECONDS,
-                new ArrayBlockingQueue<>(64)
-        );
-
         super.start();
     }
 
