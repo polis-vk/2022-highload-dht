@@ -100,10 +100,8 @@ public class ReplicationManager {
                                         new Response(Response.GATEWAY_TIMEOUT, Utils.stringToByte(NOT_ENOUGH_REPLICAS))
                                 );
                             }
-                        } else if (currentSize >= ackNumber) {
-                            if (canISendResponse(from, countReq, currentCount)) {
-                                Utils.sendResponse(session, generateResult(collectedResponses, request.getMethod()));
-                            }
+                        } else if (currentSize >= ackNumber && canISendResponse(from, countReq, currentCount)) {
+                            Utils.sendResponse(session, generateResult(collectedResponses, request.getMethod()));
                         }
                     }
             );
