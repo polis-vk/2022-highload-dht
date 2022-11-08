@@ -3,6 +3,8 @@ package ok.dht.test.ushkov;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.ushkov.dao.Entry;
+import ok.dht.test.ushkov.dao.RocksDBDao;
 import ok.dht.test.ushkov.exception.BadPathException;
 import ok.dht.test.ushkov.exception.InternalErrorException;
 import ok.dht.test.ushkov.exception.InvalidParamsException;
@@ -28,7 +30,6 @@ import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -56,7 +57,7 @@ public class RocksDBService implements Service {
     private final ServiceConfig config;
     private final KeyManager keyManager = new ConsistentHashing();
 
-    public RocksDB db;
+    private RocksDBDao dao;
     private HttpServer httpServer;
 
     private ExecutorService executor;
@@ -96,7 +97,7 @@ public class RocksDBService implements Service {
                 .build();
 
         try {
-            db = RocksDB.open(config.workingDir().toString());
+            dao = new RocksDBDao(RocksDB.open(config.workingDir().toString()));
         } catch (RocksDBException e) {
             throw new IOException(e);
         }
@@ -111,7 +112,7 @@ public class RocksDBService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        if (httpServer == null && db == null
+        if (httpServer == null && dao == null
                 && executor == null && proxyExecutor == null) {
             return CompletableFuture.completedFuture(null);
         }
@@ -122,11 +123,11 @@ public class RocksDBService implements Service {
         httpServer = null;
 
         try {
-            db.closeE();
+            dao.getDb().closeE();
         } catch (RocksDBException e) {
             throw new IOException(e);
         }
-        db = null;
+        dao = null;
 
         executor.shutdown();
         proxyExecutor.shutdown();
@@ -216,36 +217,21 @@ public class RocksDBService implements Service {
     private void v0EntityGet(Request request, HttpSession session)
             throws InvalidParamsException, InternalErrorException {
         executeReplicatingRequest(request, session,
-                (id, body) -> executeV0EntityGet(id), this::aggregateV0EntityGet);
+                (id, body, timestamp) -> executeV0EntityGet(id), this::aggregateV0EntityGet);
     }
 
     private Response executeV0EntityGet(String id) throws InternalErrorException {
         try {
-            byte[] value = db.get(Utf8.toBytes(id));
-
-            if (value == null) {
+            Entry entry = dao.get(Utf8.toBytes(id));
+            if (entry.value() == null) {
                 Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
-                response.addHeader("Timestamp: " + 0);
+                response.addHeader("Timestamp: " + entry.timestamp());
+                return response;
+            } else {
+                Response response = new Response(Response.OK, entry.value());
+                response.addHeader("Timestamp: " + entry.timestamp());
                 return response;
             }
-
-            ByteBuffer buffer = ByteBuffer.wrap(value);
-
-            long timestamp = buffer.getLong();
-            byte tombstone = buffer.get();
-
-            if (tombstone == 1) {
-                Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
-                response.addHeader("Timestamp: " + timestamp);
-                return response;
-            }
-
-            byte[] body = new byte[buffer.remaining()];
-            buffer.get(Long.BYTES, body);
-
-            Response response = new Response(Response.OK, body);
-            response.addHeader("Timestamp: " + timestamp);
-            return response;
         } catch (RocksDBException e) {
             throw new InternalErrorException();
         }
@@ -271,16 +257,9 @@ public class RocksDBService implements Service {
                 this::executeV0EntityPut, this::aggregateV0EntityPut);
     }
 
-    private Response executeV0EntityPut(String id, byte[] body) throws InternalErrorException {
+    private Response executeV0EntityPut(String id, byte[] body, long timestamp) throws InternalErrorException {
         try {
-            long timestamp = System.currentTimeMillis();
-
-            ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES + 1 + body.length);
-            buffer.putLong(timestamp);
-            buffer.put((byte) 0);
-            buffer.put(Long.BYTES, body);
-
-            db.put(Utf8.toBytes(id), buffer.array());
+            dao.put(Utf8.toBytes(id), body, timestamp);
 
             Response response = new Response(Response.CREATED, Response.EMPTY);
             response.addHeader("Timestamp: " + timestamp);
@@ -307,19 +286,12 @@ public class RocksDBService implements Service {
     private void v0EntityDelete(Request request, HttpSession session)
             throws InvalidParamsException, InternalErrorException {
         executeReplicatingRequest(request, session,
-                (id, body) -> executeV0EntityDelete(id), this::aggregateV0EntityDelete);
+                (id, body, timestamp) -> executeV0EntityDelete(id, timestamp), this::aggregateV0EntityDelete);
     }
 
-    private Response executeV0EntityDelete(String id) throws InternalErrorException {
+    private Response executeV0EntityDelete(String id, long timestamp) throws InternalErrorException {
         try {
-            long timestamp = System.currentTimeMillis();
-
-            ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES + 1);
-            buffer.putLong(timestamp);
-            // tombstone
-            buffer.put((byte) 1);
-
-            db.put(Utf8.toBytes(id), buffer.array());
+            dao.delete(Utf8.toBytes(id), timestamp);
 
             Response response = new Response(Response.ACCEPTED, Response.EMPTY);
             response.addHeader("Timestamp: " + timestamp);
@@ -363,8 +335,14 @@ public class RocksDBService implements Service {
         }
 
         // if request is proxied from another node, execute it and leave
-        if (request.getHeader("Proxy") != null) {
-            Response response = requestExecution.execute(id, request.getBody());
+        if (request.getHeader("Proxy: ") != null) {
+            long timestamp;
+            try {
+                timestamp = Long.parseLong(request.getHeader("Proxy: "));
+            } catch (NumberFormatException e) {
+                throw new InternalErrorException();
+            }
+            Response response = requestExecution.execute(id, request.getBody(), timestamp);
             try {
                 session.sendResponse(response);
             } catch (IOException e) {
@@ -372,6 +350,8 @@ public class RocksDBService implements Service {
             }
             return;
         }
+
+        long timestamp = System.currentTimeMillis();
 
         List<String> urls = keyManager.getNodeIdsByKey(id, from);
         ReplicatingRequestsAggregator replicatingRequestsAggregator
@@ -382,7 +362,7 @@ public class RocksDBService implements Service {
             executor.execute(() -> {
                 Response response;
                 try {
-                    response = requestExecution.execute(id, request.getBody());
+                    response = requestExecution.execute(id, request.getBody(), timestamp);
                 } catch (InternalErrorException e) {
                     replicatingRequestsAggregator.failure();
                     return;
@@ -393,7 +373,7 @@ public class RocksDBService implements Service {
 
         // send request to other nodes
         for (String url : urls) {
-            HttpRequest proxyRequest = Util.createProxyRequest(url, request);
+            HttpRequest proxyRequest = Util.createProxyRequest(url, request, timestamp);
             client.sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
                     .whenCompleteAsync((javaNetResponse, e) -> {
                         Response oneNioResponse;
