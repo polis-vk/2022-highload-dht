@@ -18,7 +18,6 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 
-
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -87,20 +86,24 @@ public class ServiceImpl extends ReplicaService {
         }
 
         for (final String url : urls) {
-            CompletableFuture<Response> futureResponse = url.equals(config.selfUrl())
-                    ? CompletableFuture.supplyAsync(() -> handleV1(id, request))
-                    : handleProxy(url, request);
-            futureResponse.whenCompleteAsync((response, throwable) -> {
-                if (!processor.process(response)) {
-                    return;
-                }
-                try {
-                    session.sendResponse(processor.response());
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            });
+            collectResponse(id, request, session, processor, url);
         }
+    }
+
+    private void collectResponse(String id, Request request, HttpSession session, ResponseProcessor processor, String url) {
+        CompletableFuture<Response> futureResponse = url.equals(config.selfUrl())
+                ? CompletableFuture.supplyAsync(() -> handleV1(id, request))
+                : handleProxy(url, request);
+        futureResponse.whenCompleteAsync((response, throwable) -> {
+            if (!processor.process(response)) {
+                return;
+            }
+            try {
+                session.sendResponse(processor.response());
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 
     //endregion
