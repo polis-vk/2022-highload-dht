@@ -14,12 +14,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ProxyHandler implements Closeable {
@@ -31,6 +26,12 @@ public class ProxyHandler implements Closeable {
     private static final Duration CLIENT_TIMEOUT = Duration.of(5, ChronoUnit.SECONDS);
     private static final Logger LOG = LoggerFactory.getLogger(ProxyHandler.class);
 
+    private final ForkJoinPool.ForkJoinWorkerThreadFactory proxyPoolFactory = pool -> {
+        final ForkJoinWorkerThread worker = ForkJoinPool.defaultForkJoinWorkerThreadFactory.newThread(pool);
+        worker.setName("proxy-pool-" + worker.getPoolIndex());
+        return worker;
+    };
+    private final ForkJoinPool proxyPool = new ForkJoinPool(8, proxyPoolFactory, null, false);
     private final Map<String, Long> unavailableNodes = new ConcurrentSkipListMap<>();
     private final Map<String, AtomicInteger> nodesFailsNumberMap = new ConcurrentSkipListMap<>();
     private final ScheduledExecutorService unavailableNodesCleaner = Executors.newSingleThreadScheduledExecutor();
@@ -55,7 +56,7 @@ public class ProxyHandler implements Closeable {
             return CompletableFuture.completedFuture(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
         return proxyRequestAsync(request, externalUrl, requestTime)
-                .thenApply(ServiceUtils::toResponse)
+                .thenApplyAsync(ServiceUtils::toResponse, proxyPool)
                 .orTimeout(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .exceptionally(throwable -> {
                     LOG.error("Failed while getting response from external node", throwable);
