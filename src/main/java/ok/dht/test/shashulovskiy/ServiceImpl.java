@@ -32,6 +32,9 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ForkJoinPool;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
@@ -46,7 +49,8 @@ public class ServiceImpl implements Service {
 
     private final ServiceConfig config;
     private HttpServer server;
-    private final HttpClient client = HttpClient.newHttpClient();
+    private ExecutorService asyncRequestsThreadPool;
+    private HttpClient client ;
 
     private DB dao;
 
@@ -78,6 +82,9 @@ public class ServiceImpl implements Service {
 
         this.circuitBreaker = new CircuitBreaker(config.clusterUrls().size());
 
+        this.asyncRequestsThreadPool = new ForkJoinPool();
+        this.client = HttpClient.newBuilder().executor(asyncRequestsThreadPool).build();
+
         server = new HttpServerImpl(createConfigFromPort(config.selfPort()), config.clusterUrls().size());
         server.addRequestHandlers(this);
         server.start();
@@ -89,6 +96,8 @@ public class ServiceImpl implements Service {
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
         dao.close();
+
+        Utils.shutdownAndAwaitTermination(asyncRequestsThreadPool);
 
         return CompletableFuture.completedFuture(null);
     }
@@ -218,7 +227,7 @@ public class ServiceImpl implements Service {
                 }
                 responseAccumulator.processAny();
                 return null;
-            });
+            }, asyncRequestsThreadPool);
         } else {
             responseAccumulator.processAny();
         }
