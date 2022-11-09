@@ -6,6 +6,7 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.monakhov.hashing.JumpingNodesRouter;
 import ok.dht.test.monakhov.hashing.NodesRouter;
 import ok.dht.test.monakhov.repository.DaoRepository;
+import ok.dht.test.monakhov.utils.ExecutorUtils;
 import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
@@ -21,6 +22,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.sql.Timestamp;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -38,6 +40,7 @@ public class DaoService implements Service {
     private static final int CONNECTION_POOL_WORKERS = 32;
     private final ServiceConfig serviceConfig;
     private final NodesRouter nodesRouter;
+    private ExecutorService replicationExecutor;
     private DaoRepository dao;
     private HttpClient client;
     private AsyncHttpServer server;
@@ -52,9 +55,10 @@ public class DaoService implements Service {
         server = new AsyncHttpServer(createConfigFromPort(serviceConfig));
         dao = new DaoRepository(serviceConfig.workingDir().toString());
 
-        client = HttpClient.newBuilder().executor(new ThreadPoolExecutor(CONNECTION_POOL_WORKERS,
-            CONNECTION_POOL_WORKERS, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(QUEUE_SIZE)
-        )).build();
+        replicationExecutor = new ThreadPoolExecutor(CONNECTION_POOL_WORKERS, CONNECTION_POOL_WORKERS,
+            0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(QUEUE_SIZE)
+        );
+        client = HttpClient.newBuilder().executor(replicationExecutor).build();
 
         server.addRequestHandlers(this);
         server.start();
@@ -68,10 +72,12 @@ public class DaoService implements Service {
         }
         server.stop();
         dao.close();
+        ExecutorUtils.shutdownGracefully(replicationExecutor, log);
 
         server = null;
         client = null;
         dao = null;
+        replicationExecutor = null;
         return CompletableFuture.completedFuture(null);
     }
 
@@ -145,7 +151,7 @@ public class DaoService implements Service {
                 CompletableFuture.runAsync(() -> {
                     Response response = dao.executeDaoOperation(id, request, timestamp);
                     handler.handleLocalResponse(response, nodeUrl);
-                });
+                },  replicationExecutor);
                 continue;
             }
 
