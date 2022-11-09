@@ -44,8 +44,8 @@ public final class ServerLocalImpl {
                 .anyMatch(Objects::isNull) || !checkIfNumber(args[0])) {
             LOGGER.warn("Wrong arguments!");
             
-            LOGGER.warn("Program arguments should be: <n - count of clusters> <1. cluster port> ... <n. " +
-                    "cluster's port>");
+            LOGGER.warn("Program arguments should be:" +
+                    " <n - count of clusters> <1. cluster port> ... <n. cluster's port>");
             
             return false;
         }

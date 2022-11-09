@@ -102,7 +102,6 @@ public final class EntityHandler extends AbstractEntityHandler {
                             if (response.statusCode() == OK) {
                                 Entity gotEntity = Entity.deserialize(response.body());
                                 
-                                
                                 while (true) {
                                     Entity old = entity.get();
                                     

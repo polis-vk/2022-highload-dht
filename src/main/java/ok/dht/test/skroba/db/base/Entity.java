@@ -17,7 +17,7 @@ public class Entity implements Comparable<Entity> {
     public Entity(final boolean tombstone, final long timestamp, final byte[] value) {
         this.tombstone = tombstone;
         this.timestamp = timestamp;
-        this.value = value;
+        this.value = value.clone();
     }
     
     public Entity(final long timestamp, final byte[] value) {
