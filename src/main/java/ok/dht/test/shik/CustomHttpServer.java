@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.RejectedExecutionHandler;
@@ -142,8 +143,8 @@ public class CustomHttpServer extends HttpServer {
             return;
         }
 
-        LeaderRequestState state = new LeaderRequestState(requestedReplicas, requiredReplicas, request,
-            session, id, System.currentTimeMillis());
+        LeaderRequestState state = new LeaderRequestState(requestedReplicas, requiredReplicas,
+            request, session, id, System.currentTimeMillis());
         for (String shardUrl : shardUrls) {
             if (!illNodesService.isIllNode(shardUrl)) {
                 workersService.submitTask(() -> {
@@ -199,10 +200,12 @@ public class CustomHttpServer extends HttpServer {
     }
 
     private void sendProxyRequest(HttpRequest httpRequest, LeaderRequestState state) {
-        httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+        CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+        future
             .thenAcceptAsync(httpResponse -> {
                 Response failureResponse = checkProxyResponseFailure(httpRequest, httpResponse);
                 if (failureResponse != null) {
+                    illNodesService.markNodeIll(httpRequest.uri());
                     handleResponseFailure(state);
                 }
 
@@ -210,6 +213,7 @@ public class CustomHttpServer extends HttpServer {
                 String statusCode = HTTP_CODE_TO_MESSAGE.get(httpResponse.statusCode());
                 if (statusCode == null) {
                     LOG.error("Unexpected error code from other shard: " + httpResponse.statusCode());
+                    illNodesService.markNodeIll(httpRequest.uri());
                     handleResponseFailure(state);
                 } else {
                     Response response = new Response(statusCode, body);
@@ -217,9 +221,11 @@ public class CustomHttpServer extends HttpServer {
                 }
             }, workersService.getExecutorReference())
             .exceptionallyAsync(e -> {
+                illNodesService.markNodeIll(httpRequest.uri());
                 handleResponseFailure(state);
                 return null;
             }, workersService.getExecutorReference());
+        state.addReplicaRequestFuture(future);
     }
 
     private Response checkProxyResponseFailure(HttpRequest httpRequest, HttpResponse<byte[]> httpResponse) {

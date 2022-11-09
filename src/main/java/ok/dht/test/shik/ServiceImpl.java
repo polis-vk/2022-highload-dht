@@ -88,7 +88,7 @@ public class ServiceImpl implements CustomService {
             return;
         }
 
-        Optional<byte[]> latestValue = ((LeaderRequestState) request.getState()).getShardResponses().stream()
+        Optional<byte[]> latestValue = ((LeaderRequestState) request.getState()).getReplicaResponses().stream()
             .filter(resp -> resp.getBody().length != 0)
             .map(resp -> ByteArraySerializerFactory.latest().deserialize(resp.getBody()))
             .max(DBValue.COMPARATOR)
