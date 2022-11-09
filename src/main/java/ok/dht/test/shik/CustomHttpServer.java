@@ -203,6 +203,7 @@ public class CustomHttpServer extends HttpServer {
             .thenAcceptAsync(httpResponse -> {
                 Response failureResponse = checkProxyResponseFailure(httpRequest, httpResponse);
                 if (failureResponse != null) {
+                    illNodesService.markNodeIll(httpRequest.uri());
                     handleResponseFailure(state);
                 }
 
@@ -210,6 +211,7 @@ public class CustomHttpServer extends HttpServer {
                 String statusCode = HTTP_CODE_TO_MESSAGE.get(httpResponse.statusCode());
                 if (statusCode == null) {
                     LOG.error("Unexpected error code from other shard: " + httpResponse.statusCode());
+                    illNodesService.markNodeIll(httpRequest.uri());
                     handleResponseFailure(state);
                 } else {
                     Response response = new Response(statusCode, body);
@@ -217,6 +219,7 @@ public class CustomHttpServer extends HttpServer {
                 }
             }, workersService.getExecutorReference())
             .exceptionallyAsync(e -> {
+                illNodesService.markNodeIll(httpRequest.uri());
                 handleResponseFailure(state);
                 return null;
             }, workersService.getExecutorReference());
