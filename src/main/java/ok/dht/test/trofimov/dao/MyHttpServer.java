@@ -3,6 +3,7 @@ package ok.dht.test.trofimov.dao;
 import ok.dht.ServiceConfig;
 import ok.dht.test.trofimov.common.Responses;
 import ok.dht.test.trofimov.dao.impl.InMemoryDao;
+import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -28,9 +29,14 @@ import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class MyHttpServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(MyHttpServer.class);
@@ -41,8 +47,11 @@ public class MyHttpServer extends HttpServer {
     private final ServiceConfig config;
     private final InMemoryDao dao;
     private ThreadPoolExecutor requestsExecutor;
+    private ExecutorService clientExecutor;
+    private ExecutorService aggregatorExecutor;
     private final HttpClient client;
     public static final int TIMEOUT_EXECUTOR = 10;
+    public static final int CLIENT_EXECUTOR_THREADS = 2;
 
     public MyHttpServer(ServiceConfig config) throws IOException {
         super(createConfigFromPort(config.selfPort()));
@@ -61,6 +70,12 @@ public class MyHttpServer extends HttpServer {
         requestsExecutor = new ThreadPoolExecutor(threadsCount, threadsCount, 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(REQUESTS_MAX_QUEUE_SIZE), new ThreadPoolExecutor.AbortPolicy());
         requestsExecutor.prestartAllCoreThreads();
+
+        clientExecutor = Executors.newFixedThreadPool(CLIENT_EXECUTOR_THREADS,
+                new CustomThreadFactory("client-executor"));
+
+        aggregatorExecutor = Executors.newFixedThreadPool(CLIENT_EXECUTOR_THREADS,
+                new CustomThreadFactory("aggregator-executor"));
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -125,63 +140,83 @@ public class MyHttpServer extends HttpServer {
             }
 
             List<HashItem> nodes = getArrayOfNodesFor(config.clusterUrls(), id, from);
-            int success = 0;
-            Response[] responses = new Response[ack];
+            AtomicInteger success = new AtomicInteger(0);
+            AtomicInteger completed = new AtomicInteger(0);
+            AtomicBoolean requestHandled = new AtomicBoolean(false);
+            AtomicInteger anySuccessIndex = new AtomicInteger();
+            Response[] responses = new Response[from];
             request.addHeader(TIMESTAMP_HEADER + System.currentTimeMillis());
             for (int i = 0; i < from; i++) {
-                if (success == ack) {
-                    break;
-                }
-                HashItem node = nodes.get(i);
-                try {
-                    if (node.url.equals(config.selfUrl())) {
-                        responses[success] = handleRequest(request, id);
-                    } else {
-                        responses[success] = proxyRequest(node.url, request);
+                int finalI = i;
+                CompletableFuture.runAsync(() -> {
+                    HashItem node = nodes.get(finalI);
+                    try {
+                        if (node.url.equals(config.selfUrl())) {
+                            responses[finalI] = handleRequest(request, id);
+                        } else {
+                            responses[finalI] = proxyRequest(node.url, request);
+                        }
+                        anySuccessIndex.set(finalI);
+                        success.incrementAndGet();
+                    } catch (IOException e) {
+                        logger.error("Exception while proxy request to {}", node.url, e);
+                    } catch (InterruptedException e) {
+                        logger.error("Interrupted while proxy request to {}", node.url, e);
+                        Thread.currentThread().interrupt();
+                    } finally {
+                        completed.incrementAndGet();
                     }
-                    success++;
-                } catch (IOException e) {
-                    logger.error("Exception while proxy request to {}", node.url, e);
-                } catch (InterruptedException e) {
-                    logger.error("Interrupted while proxy request to {}", node.url, e);
-                    Thread.currentThread().interrupt();
-                }
-            }
-            if (success < ack) {
-                sendResponse(session, new Response(Responses.NOT_ENOUGH_REPLICAS, Response.EMPTY));
-                return;
+                }, clientExecutor).whenCompleteAsync((v, throwable) -> {
+                    int curSuccess = success.get();
+                    if (completed.get() == from && curSuccess < ack) {
+                        if (requestHandled.compareAndSet(false, true)) {
+                            sendResponse(session, new Response(Responses.NOT_ENOUGH_REPLICAS, Response.EMPTY));
+                        }
+                        return;
+                    }
+
+                    if (curSuccess >= ack && requestHandled.compareAndSet(false, true)) {
+                        logger.debug("success handle request {} {} for key {}, from = {}", request.getMethod(), config.selfPort(), id, from);
+                        if (request.getMethod() == Request.METHOD_GET) {
+                            int countNotFound = 0;
+                            long freshestEntryTimestamp = -1;
+                            Response freshestResponse = null;
+                            for (Response item : responses) {
+                                if (item == null) {
+                                    continue;
+                                }
+                                if (item.getStatus() == HttpURLConnection.HTTP_NOT_FOUND) {
+                                    countNotFound++;
+                                    continue;
+                                }
+                                long timestamp = Long.parseLong(item.getHeader(TIMESTAMP_HEADER));
+                                if (timestamp > freshestEntryTimestamp) {
+                                    freshestEntryTimestamp = timestamp;
+                                    freshestResponse = item;
+                                }
+                            }
+                            Response result;
+                            if (countNotFound == ack
+                                    || freshestResponse == null
+                                    || (freshestResponse.getBody().length == 0
+                                    && freshestResponse.getHeader(X_TOMB_HEADER) != null)) {
+                                result = new Response(Response.NOT_FOUND, Response.EMPTY);
+                            } else {
+                                result = new Response(Response.OK, freshestResponse.getBody());
+                            }
+                            sendResponse(session, result);
+                        } else {
+                            int anyIndex = anySuccessIndex.get();
+                            String responseStatusCode = getResponseStatusCode(responses[anyIndex].getStatus());
+                            Response response = new Response(responseStatusCode, responses[anyIndex].getBody());
+                            sendResponse(session, response);
+                        }
+                    } else {
+                        logger.debug("waiting handle request {} {} for key {}, from = {}, curSuccess = {}, ack ={}, reqHan= {} ", request.getMethod(), config.selfPort(), id, from, curSuccess, ack, requestHandled.get());
+                    }
+                }, aggregatorExecutor);
             }
 
-            if (request.getMethod() == Request.METHOD_GET) {
-                int countNotFound = 0;
-                long freshestEntryTimestamp = -1;
-                Response freshestResponse = null;
-                for (Response item : responses) {
-                    if (item.getStatus() == HttpURLConnection.HTTP_NOT_FOUND) {
-                        countNotFound++;
-                        continue;
-                    }
-                    long timestamp = Long.parseLong(item.getHeader(TIMESTAMP_HEADER));
-                    if (timestamp > freshestEntryTimestamp) {
-                        freshestEntryTimestamp = timestamp;
-                        freshestResponse = item;
-                    }
-                }
-                Response result;
-                if (countNotFound == ack
-                        || freshestResponse == null
-                        || (freshestResponse.getBody().length == 0
-                        && freshestResponse.getHeader(X_TOMB_HEADER) != null)) {
-                    result = new Response(Response.NOT_FOUND, Response.EMPTY);
-                } else {
-                    result = new Response(Response.OK, freshestResponse.getBody());
-                }
-                sendResponse(session, result);
-            } else {
-                String responseStatusCode = getResponseStatusCode(responses[0].getStatus());
-                Response response = new Response(responseStatusCode, responses[0].getBody());
-                sendResponse(session, response);
-            }
 
         });
     }
@@ -253,8 +288,7 @@ public class MyHttpServer extends HttpServer {
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            HashItem hashItem = (HashItem) o;
+            if (o == null || !(o instanceof HashItem hashItem)) return false;
             return hash == hashItem.hash;
         }
 
@@ -328,16 +362,10 @@ public class MyHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        requestsExecutor.shutdown();
-        try {
-            if (!requestsExecutor.awaitTermination(TIMEOUT_EXECUTOR, TimeUnit.SECONDS)) {
-                shutdownNowExecutor();
-            }
-        } catch (InterruptedException e) {
-            logger.error("InterruptedException while stopping requestExecutor", e);
-            Thread.currentThread().interrupt();
-            shutdownNowExecutor();
-        }
+        shutdownExecutor(requestsExecutor);
+        shutdownExecutor(clientExecutor);
+        shutdownExecutor(aggregatorExecutor);
+
         closeSessions();
         super.stop();
         try {
@@ -347,8 +375,21 @@ public class MyHttpServer extends HttpServer {
         }
     }
 
-    private void shutdownNowExecutor() {
-        List<Runnable> listOfRequests = requestsExecutor.shutdownNow();
+    private void shutdownExecutor(ExecutorService threadPoolExecutor) {
+        threadPoolExecutor.shutdown();
+        try {
+            if (!threadPoolExecutor.awaitTermination(TIMEOUT_EXECUTOR, TimeUnit.SECONDS)) {
+                shutdownNowExecutor(threadPoolExecutor);
+            }
+        } catch (InterruptedException e) {
+            logger.error("InterruptedException while stopping requestExecutor", e);
+            Thread.currentThread().interrupt();
+            shutdownNowExecutor(threadPoolExecutor);
+        }
+    }
+
+    private void shutdownNowExecutor(ExecutorService threadPoolExecutor) {
+        List<Runnable> listOfRequests = threadPoolExecutor.shutdownNow();
         logger.error("Can't stop executor. Shutdown now, number of requests: {}", listOfRequests.size());
     }
 
