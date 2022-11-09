@@ -45,8 +45,8 @@ public class DaoHttpServer extends HttpServer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DaoHttpServer.class);
 
-    public DaoHttpServer(ServiceConfig config, ExecutorService executorService, PersistentDao dao,
-                         int poolSize) throws IOException {
+    public DaoHttpServer(ServiceConfig config, ExecutorService executorService, PersistentDao dao, int poolSize)
+            throws IOException {
         super(createConfigFromPort(config.selfPort()));
         this.config = config;
         this.executorService = executorService;
