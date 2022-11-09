@@ -3,7 +3,6 @@ package ok.dht.test.mikhaylov.internal;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
-import javax.annotation.Nullable;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
