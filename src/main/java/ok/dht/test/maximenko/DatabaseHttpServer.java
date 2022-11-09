@@ -106,13 +106,14 @@ public class DatabaseHttpServer extends HttpServer {
             quorum = Integer.valueOf(quorumString);
         }
 
-        if (replicasAmount > clusterSize || quorum > replicasAmount) {
+        if ((replicasAmount > clusterSize) || (quorum > replicasAmount) || (quorum == 0)) {
             session.sendResponse(badRequest);
         }
 
         ArrayDeque<Integer> replicasIds = keyDispatcher.getReplicas(key, replicasAmount);
         Integer successCount = 0;
-        Response response = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        Response response;
+        Response successfulResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         for (Integer replica : replicasIds) {
             if (replica != selfId) {
                 response = proxyRequest(replica, key, request);
@@ -122,13 +123,14 @@ public class DatabaseHttpServer extends HttpServer {
 
             int responseCode = response.getStatus();
             if (responseCode < 500) {
+                successfulResponse = response;
                 successCount += 1;
             }
         }
 
         if (successCount >= quorum) {
             try {
-                session.sendResponse(response);
+                session.sendResponse(successfulResponse);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
