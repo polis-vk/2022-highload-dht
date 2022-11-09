@@ -27,6 +27,7 @@ import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -136,6 +137,7 @@ public class DatabaseHttpServer extends HttpServer {
                 if (responseCode != 404) {
                     long time = getTimeFromResponse(response);
                     if (mostRecentResponseTime <= time) {
+                        mostRecentResponseTime = time;
                         successfulResponse = response;
                         if (response.getStatus() == DELETED_RECORD_MESSAGE) {
                             successfulResponse = new Response(Response.NOT_FOUND, Response.EMPTY);
@@ -187,7 +189,12 @@ public class DatabaseHttpServer extends HttpServer {
 
         try {
             HttpResponse<byte[]> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-            return new Response(convertStatusCode(response.statusCode()), response.body());
+            Optional<String> timeHeader = response.headers().firstValue("time");
+            Response result = new Response(convertStatusCode(response.statusCode()), response.body());
+            if (timeHeader.isPresent()) {
+                result.addHeader("time: " + timeHeader.get());
+            }
+            return result;
         } catch (Exception e) {
             return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
