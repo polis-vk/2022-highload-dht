@@ -1,6 +1,8 @@
 package ok.dht.test.maximenko;
 
+import java.util.ArrayDeque;
 import java.util.List;
+import java.util.Map;
 import java.util.TreeMap;
 
 public class KeyDispatcher {
@@ -24,5 +26,16 @@ public class KeyDispatcher {
         int hash = Math.abs(key.hashCode());
         int node = virtualNodes.higherEntry(hash).getValue();
         return node;
+    }
+
+    public ArrayDeque<Integer> getReplicas(String key, int replicasAmount) {
+        ArrayDeque<Integer> result = new ArrayDeque<>();
+        int hash = Math.abs(key.hashCode());
+        for (int i = 0; i < replicasAmount; i++) {
+            Map.Entry<Integer, Integer> virtualNode = virtualNodes.higherEntry(hash);
+            result.add(virtualNode.getValue());
+            hash = virtualNode.getKey() + 1;
+        }
+        return result;
     }
 }

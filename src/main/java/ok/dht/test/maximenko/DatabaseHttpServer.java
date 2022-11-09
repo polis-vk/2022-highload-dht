@@ -23,9 +23,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Arrays;
+import java.util.ArrayDeque;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -37,7 +36,7 @@ public class DatabaseHttpServer extends HttpServer {
     static final int flushDaoThresholdBytes = 10000000;
     private final static String requestPath = "/v0/entity";
     static final private Response badRequest = new Response(
-            String.valueOf(HttpURLConnection.HTTP_BAD_REQUEST),
+            Response.BAD_REQUEST,
             Response.EMPTY
     );
     private Dao dao;
@@ -46,6 +45,9 @@ public class DatabaseHttpServer extends HttpServer {
     private final HttpClient httpClient;
     private ExecutorService requestHandlers;
     private final String[] clusterConfig;
+    private final int clusterSize;
+    private static final String notSpreadHeader = "notSpread";
+    private static final String notSpreadHeaderValue = "true";
     private final java.nio.file.Path workDir;
     private final int selfId;
     public DatabaseHttpServer(HttpServerConfig httpConfig, ServiceConfig config) throws IOException {
@@ -55,13 +57,26 @@ public class DatabaseHttpServer extends HttpServer {
                                         .boxed()
                 .                       collect(Collectors.toList());
         keyDispatcher = new KeyDispatcher(nodesIds);
-        this.clusterConfig = config.clusterUrls().toArray(new String[0]);
+        clusterConfig = config.clusterUrls().toArray(new String[0]);
+        clusterSize = config.clusterUrls().size();
         selfId = config.clusterUrls().indexOf(config.selfUrl());
         httpClient = HttpClient.newHttpClient();
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        requestHandlers.execute(()-> {
+                    try {
+                        handleRequestTask(request, session);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+        );
+
+    }
+
+    public void handleRequestTask(Request request, HttpSession session) throws IOException {
         if (!request.getPath().equals(requestPath)) {
             session.sendResponse(badRequest);
             return;
@@ -69,35 +84,69 @@ public class DatabaseHttpServer extends HttpServer {
 
         String key = request.getParameter("id=");
         if (key == null || key.equals("")) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            session.sendResponse(badRequest);
             return;
         }
 
-        int targetNodeId = keyDispatcher.getNode(key);
-        if (targetNodeId != selfId) {
-            requestHandlers.execute(() -> {
-                Response response = proxyRequest(targetNodeId, key, request);
-                try {
-                    session.sendResponse(response);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            });
+        String spreadHeaderValue = request.getHeader(notSpreadHeader);
+        if (spreadHeaderValue != null && spreadHeaderValue.equals(": " + notSpreadHeaderValue)) {
+            session.sendResponse(localRequest(key, request));
             return;
         }
 
-        requestHandlers.execute(() -> {
+        String replicasString = request.getParameter("from=");
+        int replicasAmount = clusterSize;
+        if (replicasString != null && !replicasString.equals("")) {
+            replicasAmount = Integer.valueOf(replicasString);
+        }
+
+        String quorumString = request.getParameter("ack=");
+        int quorum = clusterSize / 2 + 1;
+        if (quorumString != null && !quorumString.equals("")) {
+            quorum = Integer.valueOf(quorumString);
+        }
+
+        if (replicasAmount > clusterSize || quorum > replicasAmount) {
+            session.sendResponse(badRequest);
+        }
+
+        ArrayDeque<Integer> replicasIds = keyDispatcher.getReplicas(key, replicasAmount);
+        Integer successCount = 0;
+        Response response = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        for (Integer replica : replicasIds) {
+            if (replica != selfId) {
+                response = proxyRequest(replica, key, request);
+            } else {
+                response = localRequest(key, request);
+            }
+
+            int responseCode = response.getStatus();
+            if (responseCode < 500) {
+                successCount += 1;
+            }
+        }
+
+        if (successCount >= quorum) {
             try {
-                Response response = handleMethod(key, request.getMethod(), request.getBody());
                 session.sendResponse(response);
             } catch (IOException e) {
-                try {
-                    session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                } catch (IOException ex) {
-                    throw new RuntimeException(ex);
-                }
+                throw new RuntimeException(e);
             }
-        });
+        } else {
+            try {
+                session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    private Response localRequest(String key, Request request) {
+        try {
+            return handleMethod(key, request.getMethod(), request.getBody());
+        } catch (IOException e) {
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        }
     }
 
     private Response proxyRequest(int targetNodeId, String key, Request request) {
@@ -105,6 +154,7 @@ public class DatabaseHttpServer extends HttpServer {
                 .uri(URI.create(clusterConfig[targetNodeId] + requestPath + "?id=" + key))
                 .timeout(Duration.ofSeconds(1))
                 .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .header(notSpreadHeader, notSpreadHeaderValue)
                 .build();
 
         try {
