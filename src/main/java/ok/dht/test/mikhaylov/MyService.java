@@ -22,21 +22,17 @@ import org.rocksdb.RocksDBException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 
 public class MyService implements Service {
@@ -55,6 +51,12 @@ public class MyService implements Service {
 
     private InternalHttpClient internalHttpClient;
 
+    private ExecutorService shardProcessorExecutor;
+
+    private static final int SHARD_PROCESSOR_THREADS = 2;
+
+    private static final int MAX_AGGREGATOR_REQUESTS = 4096;
+
     private static final Logger logger = LoggerFactory.getLogger(MyService.class);
 
     private static final byte[] EMPTY_ID_RESPONSE_BODY = strToBytes("Empty id");
@@ -67,8 +69,6 @@ public class MyService implements Service {
     private static final String ENTITY_INTERNAL_PATH = "/v0/internal/entity";
 
     private static final Pattern ENTITY_PATH_PATTERN = Pattern.compile(ENTITY_PATH);
-
-    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
     public MyService(ServiceConfig config, ShardResolver shardResolver) {
         this.config = config;
@@ -83,6 +83,11 @@ public class MyService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
+        shardProcessorExecutor = new ThreadPoolExecutor(
+                SHARD_PROCESSOR_THREADS, SHARD_PROCESSOR_THREADS,
+                0L, TimeUnit.MILLISECONDS,
+                new LinkedBlockingDeque<>(MAX_AGGREGATOR_REQUESTS)
+        );
         internalHttpClient = new JavaHttpClient();
         try {
             db = RocksDB.open(config.workingDir().toString());
@@ -161,9 +166,16 @@ public class MyService implements Service {
         for (int i = 0; i < replicaRequirements.getFrom(); i++) {
             int shardIndex = (shard + i) % config.clusterUrls().size();
             if (shardIndex == selfShardIndex) {
-                responseProcessor.process(handleLocalRequest(request, id));
+                Request finalRequest = request;
+                shardProcessorExecutor.execute(() -> {
+                    try {
+                        responseProcessor.process(handleLocalRequest(finalRequest, id));
+                    } catch (IOException e) {
+                        logger.error("Could not process local request", e);
+                    }
+                });
             } else {
-                responseProcessor.process(proxyRequest(request, shardIndex));
+                proxyRequest(request, shardIndex, responseProcessor);
             }
         }
     }
@@ -193,20 +205,21 @@ public class MyService implements Service {
         }
     }
 
-    @Nullable
-    private Response proxyRequest(Request request, int shardIndex) {
+    private void proxyRequest(Request request, int shardIndex, ShardResponseProcessor responseProcessor) {
         String shard = sortedShardUrls.get(shardIndex);
-        try {
-            CompletableFuture<Response> response = internalHttpClient.proxyRequest(request, shard);
-            return response == null ? null : response.get(1, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.error("Interrupted while proxying request to shard {}", shard, e);
-            return null;
-        } catch (ExecutionException | TimeoutException e) {
-            logger.error("Could not proxy request to shard {}", shard, e);
-            return null;
-        }
+        internalHttpClient.proxyRequest(request, shard)
+                .whenCompleteAsync((response, throwable) -> {
+                    try {
+                        if (throwable != null) {
+                            logger.error("Error while proxying request: {}", request, throwable);
+                            responseProcessor.process(null);
+                        } else {
+                            responseProcessor.process(response);
+                        }
+                    } catch (IOException e) {
+                        logger.error("Could not process response", e);
+                    }
+                }, shardProcessorExecutor);
     }
 
     private Response dbGet(final String id) throws RocksDBException {
@@ -250,13 +263,8 @@ public class MyService implements Service {
 
         public MyHttpServer(HttpServerConfig config) throws IOException {
             super(config);
-            requestHandlers = new ThreadPoolExecutor(
-                    REQUEST_HANDLERS,
-                    REQUEST_HANDLERS,
-                    0L,
-                    TimeUnit.MILLISECONDS,
-                    new LinkedBlockingDeque<>(MAX_REQUESTS)
-            );
+            requestHandlers = new ThreadPoolExecutor(REQUEST_HANDLERS, REQUEST_HANDLERS, 0L, TimeUnit.MILLISECONDS,
+                    new LinkedBlockingDeque<>(MAX_REQUESTS));
         }
 
         @Override

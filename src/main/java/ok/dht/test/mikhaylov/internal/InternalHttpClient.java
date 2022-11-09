@@ -16,7 +16,7 @@ public abstract class InternalHttpClient implements Closeable {
 
     private static final int NUM_THREADS = 4;
 
-    private static final int MAX_REQUESTS = 128;
+    private static final int MAX_REQUESTS = 2048;
 
     private final ExecutorService executor;
 
@@ -30,7 +30,6 @@ public abstract class InternalHttpClient implements Closeable {
         );
     }
 
-    @Nullable
     public abstract CompletableFuture<Response> proxyRequest(Request request, String shard);
 
     protected ExecutorService getExecutor() {

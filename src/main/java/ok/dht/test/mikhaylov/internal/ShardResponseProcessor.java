@@ -53,7 +53,9 @@ public class ShardResponseProcessor {
         if (curAcks > requirements.getAck()) {
             return; // we have responded already or are responding right now
         }
-        responses.set(curAcks - 1, response);
+        if (requestMethod == Request.METHOD_GET) {
+            responses.set(curAcks - 1, response);
+        }
         if (curAcks < requirements.getAck()) {
             return;
         }

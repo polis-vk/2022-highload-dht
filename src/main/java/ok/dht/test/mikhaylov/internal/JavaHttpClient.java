@@ -15,6 +15,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 public class JavaHttpClient extends InternalHttpClient {
 
@@ -31,13 +32,13 @@ public class JavaHttpClient extends InternalHttpClient {
     }
 
     @Override
-    @Nullable
     public CompletableFuture<Response> proxyRequest(Request request, String shard) {
         byte[] body = request.getBody();
         HttpRequest.BodyPublisher publisher = body == null ? HttpRequest.BodyPublishers.noBody() :
                 HttpRequest.BodyPublishers.ofByteArray(body);
         HttpRequest httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(shard + MyService.convertPathToInternal(request.getURI())))
+//                .timeout(Duration.ofSeconds(1))
                 .method(request.getMethodName(), publisher).build();
         return client.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
                 .handleAsync((response, throwable) -> {
