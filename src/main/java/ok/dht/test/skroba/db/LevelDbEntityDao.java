@@ -47,10 +47,6 @@ public class LevelDbEntityDao implements EntityDao {
     
     @Override
     public void open() {
-        if (db != null) {
-            return;
-        }
-        
         Options options = new Options();
         options.createIfMissing(true);
         

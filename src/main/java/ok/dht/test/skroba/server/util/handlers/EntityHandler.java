@@ -64,21 +64,17 @@ public final class EntityHandler extends AbstractEntityHandler {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
-        
         final List<String> nodes = manager.getUrls(id, from);
-        
         final long timestamp = Instant.now()
                 .toEpochMilli();
-        final Entity localEntity = new Entity(timestamp, request.getBody());
+        final Entity localEntity = new Entity(timestamp, request.getBody() == null ? new byte[0] : request.getBody());
         final AtomicInteger ok = new AtomicInteger(0);
         final AtomicInteger handled = new AtomicInteger(0);
         final AtomicReference<Entity> entity = new AtomicReference<>();
         final Map<Integer, CompletableFuture<HttpResponse<byte[]>>> futures = new ConcurrentHashMap<>();
-        
         for (int i = 0; i < nodes.size(); i++) {
             final int index = i;
             
-            LOGGER.warn(nodes.get(index) + INTERNAL_ENTITY.getPath() + "?id=" + id);
             final CompletableFuture<HttpResponse<byte[]>> result = client.sendRequest(
                     nodes.get(index) + INTERNAL_ENTITY.getPath() + "?id=" + id, request.getMethod(),
                     localEntity.serialize()
@@ -105,7 +101,7 @@ public final class EntityHandler extends AbstractEntityHandler {
                                 while (true) {
                                     Entity old = entity.get();
                                     
-                                    if (old != null && old.compareTo(gotEntity) >= 0 || entity.compareAndSet(old,
+                                    if ((old != null && old.compareTo(gotEntity) >= 0) || entity.compareAndSet(old,
                                             gotEntity)) {
                                         break;
                                     }

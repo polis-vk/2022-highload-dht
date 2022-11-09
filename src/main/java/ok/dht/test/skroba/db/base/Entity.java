@@ -31,11 +31,11 @@ public class Entity implements Comparable<Entity> {
     public static Entity deserialize(final byte[] item) {
         final int metaPos = 1 + Long.BYTES;
         final int valueLength = item.length - metaPos;
-        final boolean tombstone = item[0] == 1;
+        final boolean tombstone = item[0] == Byte.MIN_VALUE;
         final byte[] value = new byte[valueLength];
         long timestamp = 0;
         
-        for (int i = 0; i < Long.BYTES; i++) {
+        for (int i = 1; i < Long.BYTES + 1; i++) {
             timestamp <<= Byte.SIZE;
             timestamp |= (item[i] & 0xFF);
         }
@@ -57,11 +57,11 @@ public class Entity implements Comparable<Entity> {
         
         final byte[] result = new byte[value.length + Long.BYTES + 1];
         
-        result[0] = (byte) (isTombstone() ? 1 : 0);
+        result[0] = isTombstone() ? Byte.MIN_VALUE : Byte.MAX_VALUE;
         
         long timestampLocal = this.timestamp;
         
-        for (int i = Long.BYTES - 1; i >= 0; i--) {
+        for (int i = Long.BYTES; i >= 1; i--) {
             result[i] = (byte) (timestampLocal & 0xFF);
             timestampLocal >>= Byte.SIZE;
         }

@@ -31,7 +31,6 @@ public abstract class AbstractEntityHandler implements RequestHandler {
             switch (method) {
                 case Request.METHOD_GET -> {
                     final byte[] entity = dao.get(id);
-                    
                     if (entity == null) {
                         session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
                     } else {
