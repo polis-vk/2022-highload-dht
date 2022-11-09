@@ -176,7 +176,8 @@ public class MyHttpServer extends HttpServer {
                     }
 
                     if (curSuccess >= ack && requestHandled.compareAndSet(false, true)) {
-                        logger.debug("success handle request {} {} for key {}, from = {}", request.getMethod(), config.selfPort(), id, from);
+                        logger.debug("success handle request {} {} for key {}, from = {}", request.getMethod(),
+                                config.selfPort(), id, from);
                         if (request.getMethod() == Request.METHOD_GET) {
                             int countNotFound = 0;
                             long freshestEntryTimestamp = -1;
@@ -212,12 +213,18 @@ public class MyHttpServer extends HttpServer {
                             sendResponse(session, response);
                         }
                     } else {
-                        logger.debug("waiting handle request {} {} for key {}, from = {}, curSuccess = {}, ack ={}, reqHan= {} ", request.getMethod(), config.selfPort(), id, from, curSuccess, ack, requestHandled.get());
+                        logger.debug("waiting handle request {} {} for key {}, from = {}, curSuccess = {},"
+                                        + " ack ={}, reqHan= {} ", request.getMethod(), config.selfPort(), id, from,
+                                curSuccess, ack, requestHandled.get());
                     }
-                }, aggregatorExecutor);
+                }, aggregatorExecutor).exceptionally(throwable -> {
+                    logger.error("error while processing on {}:{} for key {}", config.selfUrl(),
+                            config.selfPort(), id, throwable);
+                    sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+
+                    return null;
+                });
             }
-
-
         });
     }
 
