@@ -9,13 +9,10 @@ import ok.dht.test.skroba.dao.base.BaseEntry;
 import ok.dht.test.skroba.dao.base.Config;
 import ok.dht.test.skroba.dao.base.Entry;
 import one.nio.http.HttpServer;
-import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.net.Session;
-import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,24 +57,7 @@ public class MyServiceImpl implements Service {
     
     @Override
     public CompletableFuture<?> start() throws IOException {
-        server = new HttpServer(MyServiceUtils.createConfigFromPort(config.selfPort())) {
-            @Override
-            public void handleDefault(
-                    Request request,
-                    HttpSession session
-            ) throws IOException {
-                session.sendResponse(MyServiceUtils.getEmptyResponse(Response.BAD_REQUEST));
-            }
-            
-            @Override
-            public synchronized void stop() {
-                for (SelectorThread thread : selectors) {
-                    thread.selector.forEach(Session::close);
-                }
-                
-                super.stop();
-            }
-        };
+        server = new MyConcurrentHttpServer(MyServiceUtils.createConfigFromPort(config.selfPort()));
         dao = createDaoFromDir(config.workingDir());
         server.addRequestHandlers(this);
         server.start();
@@ -93,7 +73,7 @@ public class MyServiceImpl implements Service {
     @one.nio.http.Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
     public Response handleGet(
-            @Param(value = "id", required = true) String id
+            @Param(value = "id") String id
     ) {
         if (isBadId(id)) {
             return MyServiceUtils.getResponseOnBadId();
@@ -137,7 +117,7 @@ public class MyServiceImpl implements Service {
     @one.nio.http.Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
     public Response handlePut(
-            @Param(value = "id", required = true) String id,
+            @Param(value = "id") String id,
             Request request
     ) {
         
@@ -151,7 +131,7 @@ public class MyServiceImpl implements Service {
     @one.nio.http.Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
     public Response handleDelete(
-            @Param(value = "id", required = true) String id
+            @Param(value = "id") String id
     ) {
         return isBadId(id) ? MyServiceUtils.getResponseOnBadId() : upsert(
                 id,
@@ -160,7 +140,7 @@ public class MyServiceImpl implements Service {
         );
     }
     
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         
         @Override
