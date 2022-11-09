@@ -60,17 +60,21 @@ public class LeaderRequestState extends AbstractRequestState {
             }
 
             if (remainToSuccess.compareAndSet(currentRemain, currentRemain - 1)) {
-                if (response != null) {
-                    replicaResponses.add(response);
-
-                    if (isSuccess() && currentRemain + requiredReplicas == requestedReplicas) {
-                        cancelRedundantFutures();
-                    }
-                }
-
-                return casCompleted(currentRemain);
+                return processAfterSuccessCas(currentRemain, response);
             }
         }
+    }
+
+    private boolean processAfterSuccessCas(int currentRemain, Response response) {
+        if (response != null) {
+            replicaResponses.add(response);
+        }
+
+        if (isSuccess() && currentRemain + requiredReplicas == requestedReplicas) {
+            cancelRedundantFutures();
+        }
+
+        return casCompleted(currentRemain);
     }
 
     private boolean casCompleted(int currentRemain) {

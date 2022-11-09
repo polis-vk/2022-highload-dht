@@ -200,7 +200,8 @@ public class CustomHttpServer extends HttpServer {
     }
 
     private void sendProxyRequest(HttpRequest httpRequest, LeaderRequestState state) {
-        CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+        CompletableFuture<HttpResponse<byte[]>> future =
+            httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
         future
             .thenAcceptAsync(httpResponse -> {
                 Response failureResponse = checkProxyResponseFailure(httpRequest, httpResponse);
