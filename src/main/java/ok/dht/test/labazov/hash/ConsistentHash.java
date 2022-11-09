@@ -43,6 +43,6 @@ public final class ConsistentHash {
     }
 
     public void removeShard(final Node shard) {
-        circle.values().removeIf((Node x) -> x.url.equals(shard.url));
+        circle.values().removeIf((Node x) -> x.url().equals(shard.url()));
     }
 }

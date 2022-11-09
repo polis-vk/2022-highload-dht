@@ -6,8 +6,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 public class RequestGather {
     private static final Logger LOG = LoggerFactory.getLogger(RequestGather.class);
@@ -15,34 +15,31 @@ public class RequestGather {
     public final int acks;
     public final int froms;
 
-    private final List<Response> responses = new ArrayList<>();
-    private int finishedTasks;
-    private boolean replied;
+    private final AtomicReferenceArray<Response> responses;
+    private final AtomicInteger finishedTasks = new AtomicInteger(0);
+    private final AtomicInteger failedTasks = new AtomicInteger(0);
 
     public RequestGather(int acks, int froms) {
         this.acks = acks;
         this.froms = froms;
+        responses = new AtomicReferenceArray<>(froms);
     }
 
-    public synchronized void submitGoodResponse(HttpSession session, Response response) {
-        finishedTasks++;
-        if (!replied) {
-            responses.add(response);
-            if (responses.size() >= acks) {
-                replied = true;
-                long maxTimestamp = -1;
-                Response result = null;
-                for (final Response resp : responses) {
-                    final long timestamp = getTimestamp(resp);
-                    if (maxTimestamp < timestamp) {
-                        maxTimestamp = timestamp;
-                        result = resp;
-                    }
+    public void submitGoodResponse(HttpSession session, Response response) {
+        int sz = finishedTasks.incrementAndGet();
+        responses.set(sz - 1, response);
+        if (sz == acks) {
+            long maxTimestamp = -1;
+            Response result = null;
+            for (int i = 0; i < acks; i++) {
+                final Response resp = responses.get(i);
+                final long timestamp = getTimestamp(resp);
+                if (maxTimestamp < timestamp) {
+                    maxTimestamp = timestamp;
+                    result = resp;
                 }
-                forwardResponse(session, result);
-            } else {
-                checkFailureAndTryResponse(session);
             }
+            forwardResponse(session, result);
         }
     }
 
@@ -51,10 +48,10 @@ public class RequestGather {
         return timestampHeader == null ? 0 : Long.parseLong(timestampHeader);
     }
 
-    public synchronized void submitFailure(HttpSession session) {
-        finishedTasks++;
-        if (!replied) {
-            checkFailureAndTryResponse(session);
+    public void submitFailure(HttpSession session) {
+        int failed = failedTasks.incrementAndGet();
+        if (froms - acks < failed) {
+            forwardResponse(session, new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
         }
     }
 
@@ -66,10 +63,4 @@ public class RequestGather {
         }
     }
 
-    private void checkFailureAndTryResponse(final HttpSession session) {
-        if (froms - finishedTasks < acks - responses.size()) {
-            replied = true;
-            forwardResponse(session, new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-        }
-    }
 }

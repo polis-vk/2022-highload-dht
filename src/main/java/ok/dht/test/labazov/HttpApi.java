@@ -9,7 +9,6 @@ import ok.dht.test.labazov.dao.Entry;
 import ok.dht.test.labazov.dao.MemorySegmentDao;
 import ok.dht.test.labazov.hash.ConsistentHash;
 import ok.dht.test.labazov.hash.Node;
-import one.nio.http.HttpClient;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -18,7 +17,6 @@ import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.net.ConnectionString;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
@@ -27,6 +25,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.util.HashSet;
 import java.util.List;
@@ -39,6 +42,7 @@ public final class HttpApi extends HttpServer {
     private static final int FLUSH_THRESHOLD_BYTES = 8 * 1024 * 1024;
     private static final Logger LOG = LoggerFactory.getLogger(HttpApi.class);
     private final ConsistentHash shards;
+    private HttpClient client;
     private final ServiceConfig config;
     private Dao<MemorySegment, Entry<MemorySegment>> dao;
     private ExecutorService threadPool;
@@ -116,6 +120,10 @@ public final class HttpApi extends HttpServer {
             dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
             int nproc = Runtime.getRuntime().availableProcessors();
             threadPool = Executors.newFixedThreadPool(nproc / 2 + 1);
+
+            client = HttpClient.newBuilder()
+                    .executor(threadPool)
+                    .build();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -131,6 +139,7 @@ public final class HttpApi extends HttpServer {
         }
 
         super.stop();
+        client = null;
         shutdownAndAwaitTermination(threadPool);
         try {
             dao.close();
@@ -189,47 +198,57 @@ public final class HttpApi extends HttpServer {
         final List<Node> targetShards = shards.getShards(key, froms);
         final RequestGather gather = new RequestGather(acks, froms);
         for (final Node shard : targetShards) {
-            int tasks = shard.tasksCount.incrementAndGet();
-            if (tasks > Node.MAX_TASKS_ALLOWED) {
-                shard.tasksCount.decrementAndGet();
-                session.sendResponse(getEmptyResponse(Response.SERVICE_UNAVAILABLE));
-                return;
-            }
-
-            shard.tasks.offer(() -> {
-                Request redirectedRequest = new Request(request);
-                redirectedRequest.addHeader("Proxy: true");
-                try (final HttpClient httpClient = new HttpClient(new ConnectionString(shard.url))) {
-                    final Response response = httpClient.invoke(redirectedRequest, 500);
-                    switch (response.getStatus()) {
-                        case 200, 201, 202, 404 -> gather.submitGoodResponse(session, response);
-                        default -> gather.submitFailure(session);
-                    }
-                } catch (Exception e) {
-                    LOG.error("Exception during forwarding", e);
-                    gather.submitFailure(session);
-                }
-            });
-
-            if (tasks <= Node.MAX_WORKERS_ALLOWED) {
-                threadPool.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        Runnable poll = shard.tasks.poll();
-                        if (poll != null) {
-                            try {
-                                poll.run();
-                            } catch (Exception e) {
-                                LOG.error("Unexpected error handle request", e);
-                            } finally {
-                                shard.tasksCount.decrementAndGet();
-                                threadPool.execute(this);
+            client.sendAsync(convertRequest(request, shard.url()),
+                            HttpResponse.BodyHandlers.ofByteArray())
+                    .whenCompleteAsync(((httpResponse, throwable) -> {
+                        if (throwable == null) {
+                            final Response response = convertResponse(httpResponse);
+                            switch (response.getStatus()) {
+                                case 200, 201, 202, 404 -> gather.submitGoodResponse(session, response);
+                                default -> gather.submitFailure(session);
                             }
+                        } else {
+                            gather.submitFailure(session);
                         }
-                    }
-                });
-            }
+                    }), threadPool);
         }
+    }
+
+    private static HttpRequest convertRequest(Request request, String url) {
+        return HttpRequest.newBuilder(URI.create(url + request.getURI()))
+                .method(
+                        request.getMethodName(),
+                        request.getBody() == null
+                                ? HttpRequest.BodyPublishers.noBody()
+                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
+                )
+                .header("Proxy", "true").build();
+    }
+    private static Response convertResponse(HttpResponse<byte[]> response) {
+        String status = switch (response.statusCode()) {
+            case HttpURLConnection.HTTP_OK -> Response.OK;
+            case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
+            case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
+            case HttpURLConnection.HTTP_NO_CONTENT -> Response.NO_CONTENT;
+            case HttpURLConnection.HTTP_SEE_OTHER -> Response.SEE_OTHER;
+            case HttpURLConnection.HTTP_NOT_MODIFIED -> Response.NOT_MODIFIED;
+            case HttpURLConnection.HTTP_USE_PROXY -> Response.USE_PROXY;
+            case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
+            case HttpURLConnection.HTTP_UNAUTHORIZED -> Response.UNAUTHORIZED;
+            case HttpURLConnection.HTTP_PAYMENT_REQUIRED -> Response.PAYMENT_REQUIRED;
+            case HttpURLConnection.HTTP_FORBIDDEN -> Response.FORBIDDEN;
+            case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
+            case HttpURLConnection.HTTP_NOT_ACCEPTABLE -> Response.NOT_ACCEPTABLE;
+            case HttpURLConnection.HTTP_CONFLICT -> Response.CONFLICT;
+            case HttpURLConnection.HTTP_GONE -> Response.GONE;
+            case HttpURLConnection.HTTP_LENGTH_REQUIRED -> Response.LENGTH_REQUIRED;
+            case HttpURLConnection.HTTP_INTERNAL_ERROR -> Response.INTERNAL_ERROR;
+            case HttpURLConnection.HTTP_NOT_IMPLEMENTED -> Response.NOT_IMPLEMENTED;
+            case HttpURLConnection.HTTP_BAD_GATEWAY -> Response.BAD_GATEWAY;
+            case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> Response.GATEWAY_TIMEOUT;
+            default -> throw new IllegalArgumentException("Unknown status code: " + response.statusCode());
+        };
+        return new Response(status, response.body());
     }
 
     private void genericExceptionHandler(Request request, HttpSession session) {
@@ -323,8 +342,8 @@ public final class HttpApi extends HttpServer {
             session.sendResponse(getEmptyResponse(Response.BAD_REQUEST));
             return true;
         }
-        if ((shards.getShard(key).url.equals(config.selfUrl()) && acks == 1 && froms == 1)
-                || req.getHeader("Proxy: ") != null) {
+        if (shards.getShard(key).url().equals(config.selfUrl()) && acks == 1 && froms == 1
+            || req.getHeader("Proxy: ") != null) {
             return false;
         }
         forwardRequestByKey(req, session, key, acks, froms);
