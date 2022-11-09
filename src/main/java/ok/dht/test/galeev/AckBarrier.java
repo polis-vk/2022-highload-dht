@@ -1,13 +1,9 @@
 package ok.dht.test.galeev;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class AckBarrier {
-    private static final Logger LOGGER = LoggerFactory.getLogger(AckBarrier.class);
     private final AtomicInteger successfulResponses;
     private final AtomicInteger unsuccessfulResponses;
     private final AtomicBoolean hasAnswered;
