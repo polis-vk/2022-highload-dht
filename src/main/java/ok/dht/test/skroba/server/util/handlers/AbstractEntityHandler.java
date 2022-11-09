@@ -11,7 +11,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.time.Instant;
 
 public abstract class AbstractEntityHandler implements RequestHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractEntityHandler.class);
@@ -33,7 +32,7 @@ public abstract class AbstractEntityHandler implements RequestHandler {
                     final byte[] entity = dao.get(id);
                     
                     if (entity == null) {
-                        session.sendResponse(new Response(Response.NOT_FOUND));
+                        session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
                     } else {
                         session.sendResponse(Response.ok(entity));
                     }
@@ -46,7 +45,8 @@ public abstract class AbstractEntityHandler implements RequestHandler {
                 }
                 
                 case Request.METHOD_DELETE -> {
-                    Entity entity = Entity.TOMBSTONE(Entity.deserialize(body).getTimestamp());
+                    Entity entity = Entity.TOMBSTONE(Entity.deserialize(body)
+                            .getTimestamp());
                     dao.put(id, entity.serialize());
                     session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
                 }

@@ -42,8 +42,8 @@ public final class ServerLocalImpl {
     private static boolean validateArguments(final String[] args) {
         if (args == null || args.length == 0 || Arrays.stream(args)
                 .anyMatch(Objects::isNull) || !checkIfNumber(args[0])) {
-            System.out.println("Wrong arguments!");
-            System.out.println("Program arguments should be: <n - count of clusters> <1. cluster port> ... <n. " +
+            LOGGER.warn("Wrong arguments!");
+            LOGGER.warn("Program arguments should be: <n - count of clusters> <1. cluster port> ... <n. " +
                     "cluster's port>");
             return false;
         }
@@ -51,20 +51,20 @@ public final class ServerLocalImpl {
         final int countOfClusters = Integer.parseInt(args[0]);
         
         if (countOfClusters < 1 || countOfClusters > MAX_COUNT_OF_CLUSTERS) {
-            System.out.println("Count of clusters must be positive number less than: " + MAX_COUNT_OF_CLUSTERS);
+            LOGGER.warn("Count of clusters must be positive number less than: " + MAX_COUNT_OF_CLUSTERS);
             return false;
         }
         
         if (args.length != countOfClusters + 1) {
-            System.out.println("Wrong amount of ports in args!");
-            System.out.println("Got: " + (args.length - 1));
-            System.out.println("Should be: " + countOfClusters);
+            LOGGER.warn("Wrong amount of ports in args!");
+            LOGGER.warn("Got: " + (args.length - 1));
+            LOGGER.warn("Should be: " + countOfClusters);
             return false;
         }
         
         for (int i = 1; i < args.length; i++) {
             if (!checkIfValidPort(args[i])) {
-                System.out.println("Invalid port on position: " + i + ", value: " + args[i]);
+                LOGGER.warn("Invalid port on position: " + i + ", value: " + args[i]);
                 return false;
             }
         }

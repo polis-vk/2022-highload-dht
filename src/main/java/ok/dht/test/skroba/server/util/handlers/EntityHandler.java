@@ -105,7 +105,7 @@ public final class EntityHandler extends AbstractEntityHandler {
                                 while (true) {
                                     Entity old = entity.get();
                                     
-                                    if ((old != null && old.compareTo(gotEntity) >= 0) || entity.compareAndSet(old,
+                                    if (old != null && old.compareTo(gotEntity) >= 0 || entity.compareAndSet(old,
                                             gotEntity)) {
                                         break;
                                     }
@@ -137,6 +137,8 @@ public final class EntityHandler extends AbstractEntityHandler {
                                 cancelFutures(futures);
                             }
                         }
+                        
+                        default -> throw new IllegalStateException("Unreachable state!");
                     }
                     
                     handleNotEnoughReplicas(session, ok, handled, ack, from);
