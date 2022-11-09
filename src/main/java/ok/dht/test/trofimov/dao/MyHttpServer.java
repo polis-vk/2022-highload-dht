@@ -66,7 +66,7 @@ public class MyHttpServer extends HttpServer {
     }
 
     private void initExecutor() {
-        int threadsCount = Runtime.getRuntime().availableProcessors() - 2;
+        int threadsCount = Math.max(Runtime.getRuntime().availableProcessors() - 2, 1);
         requestsExecutor = new ThreadPoolExecutor(threadsCount, threadsCount, 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(REQUESTS_MAX_QUEUE_SIZE), new ThreadPoolExecutor.AbortPolicy());
         requestsExecutor.prestartAllCoreThreads();
