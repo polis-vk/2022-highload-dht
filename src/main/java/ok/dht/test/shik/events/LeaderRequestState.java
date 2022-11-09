@@ -87,9 +87,11 @@ public class LeaderRequestState extends AbstractRequestState {
     }
 
     public void cancelRedundantFutures() {
-        for (CompletableFuture<HttpResponse<byte[]>> future : futures) {
-            if (!future.isDone()) {
-                future.cancel(true);
+        if (getRequest().getMethod() == Request.METHOD_GET) {
+            for (CompletableFuture<HttpResponse<byte[]>> future : futures) {
+                if (!future.isDone()) {
+                    future.cancel(true);
+                }
             }
         }
     }
