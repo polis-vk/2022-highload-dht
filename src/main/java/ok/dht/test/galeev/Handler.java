@@ -8,7 +8,6 @@ import one.nio.http.Response;
 import java.sql.Timestamp;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicReference;
 
 public interface Handler<T> {
@@ -45,8 +44,6 @@ public interface Handler<T> {
 
     class GetHandler implements Handler<Entry<Timestamp, byte[]>> {
         private final AtomicReference<Entry<Timestamp, byte[]>> newestEntry = new AtomicReference<>();
-        private final LinkedBlockingQueue<CompletableFuture<Entry<Timestamp, byte[]>>> listOfSendFutures
-                = new LinkedBlockingQueue<>();
         private volatile boolean hasFinished;
 
         public GetHandler(Request ignored) {
@@ -57,9 +54,7 @@ public interface Handler<T> {
             if (hasFinished) {
                 return CompletableFuture.completedFuture(null);
             }
-            CompletableFuture<Entry<Timestamp, byte[]>> nodeGetFuture = node.get(key);
-            listOfSendFutures.add(nodeGetFuture);
-            return nodeGetFuture.thenApply(entry -> {
+            return node.get(key).thenApply(entry -> {
                 if (entry == null) {
                     return Optional.empty();
                 } else {
@@ -98,11 +93,6 @@ public interface Handler<T> {
         @Override
         public void finishResponse() {
             hasFinished = true;
-            listOfSendFutures.forEach((cancelFuture) -> {
-                if (!cancelFuture.isDone()) {
-                    cancelFuture.complete(null);
-                }
-            });
         }
 
         private static void updateNewestEntry(
