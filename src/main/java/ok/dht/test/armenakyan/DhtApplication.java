@@ -13,7 +13,7 @@ public final class DhtApplication {
     private static final Logger LOGGER = LoggerFactory.getLogger(Service.class);
     private static final int PORT = 54321;
     private static final String URL = "http://localhost:" + PORT;
-    private static final String DB_PATH = "../rocks/";
+    private static final String DB_PATH = "../";
 
     private DhtApplication() {
     }
