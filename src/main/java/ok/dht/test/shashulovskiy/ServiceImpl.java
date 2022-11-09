@@ -50,7 +50,7 @@ public class ServiceImpl implements Service {
     private final ServiceConfig config;
     private HttpServer server;
     private ExecutorService asyncRequestsThreadPool;
-    private HttpClient client ;
+    private HttpClient client;
 
     private DB dao;
 
