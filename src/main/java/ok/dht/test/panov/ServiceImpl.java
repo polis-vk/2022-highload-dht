@@ -9,7 +9,13 @@ import ok.dht.test.panov.dao.Config;
 import ok.dht.test.panov.dao.Entry;
 import ok.dht.test.panov.dao.lsm.MemorySegmentDao;
 import ok.dht.test.panov.hash.NodeRouter;
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Param;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +29,13 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class ServiceImpl implements Service {
 
@@ -47,7 +59,6 @@ public class ServiceImpl implements Service {
     private MemorySegmentDao dao;
     private NodeRouter router;
     private ExecutorService executorService;
-
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -102,21 +113,20 @@ public class ServiceImpl implements Service {
     ) {
         try {
             if (id == null || id.isEmpty()) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, "Id is empty".getBytes(StandardCharsets.UTF_8)));
+                session.sendResponse(
+                        new Response(Response.BAD_REQUEST, "Id is empty".getBytes(StandardCharsets.UTF_8)));
                 return;
             }
 
             if (!ALLOWED_METHODS.contains(request.getMethod())) {
-                session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, "Unhandled method".getBytes(StandardCharsets.UTF_8)));
+                session.sendResponse(
+                        new Response(Response.METHOD_NOT_ALLOWED, "Unhandled method".getBytes(StandardCharsets.UTF_8)));
                 return;
             }
 
-            ReplicasAcknowledgment acknowledgmentParams;
+            ReplicasAcknowledgment acknowledgmentParams = validateAcknowledgmentParams(ack, from, session);
 
-            try {
-                acknowledgmentParams = new ReplicasAcknowledgment(ack, from, config.clusterUrls().size());
-            } catch (IllegalAcknowledgmentArgumentsException e) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, e.getMessage().getBytes(StandardCharsets.UTF_8)));
+            if (acknowledgmentParams == null) {
                 return;
             }
 
@@ -130,16 +140,37 @@ public class ServiceImpl implements Service {
                     responseResolver.add(handleRequest(request, id, targetUrl), session);
                 }
             } else {
-                try {
-                    session.sendResponse(handleRequest(request, id, config.selfUrl()).get(AWAIT_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS));
-                } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                    session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
-                }
+                handleLocalRequest(request, session, id);
             }
         } catch (IOException e) {
             LOGGER.error("Error during response sending");
         }
 
+    }
+
+    private void handleLocalRequest(Request request, HttpSession session, String id) throws IOException {
+        try {
+            session.sendResponse(
+                    handleRequest(request, id, config.selfUrl())
+                            .get(AWAIT_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS)
+            );
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
+    }
+
+    private ReplicasAcknowledgment validateAcknowledgmentParams(
+            String ack,
+            String from,
+            HttpSession session
+    ) throws IOException {
+        try {
+            return new ReplicasAcknowledgment(ack, from, config.clusterUrls().size());
+        } catch (IllegalAcknowledgmentArgumentsException e) {
+            session.sendResponse(
+                    new Response(Response.BAD_REQUEST, e.getMessage().getBytes(StandardCharsets.UTF_8)));
+            return null;
+        }
     }
 
     private CompletableFuture<Response> handleRequest(final Request request, final String id, final String targetUrl) {
@@ -157,7 +188,7 @@ public class ServiceImpl implements Service {
             } else {
                 response = CompletableFuture.supplyAsync(() -> deleteEntity(id, timestamp));
             }
-            return  response;
+            return response;
         } else {
             byte[] requestBody = request.getBody();
             if (requestBody == null) requestBody = new byte[]{};

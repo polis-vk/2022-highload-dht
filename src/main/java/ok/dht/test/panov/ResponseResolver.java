@@ -30,36 +30,39 @@ public class ResponseResolver {
 
     public void add(CompletableFuture<Response> response, HttpSession session) {
         response.whenCompleteAsync((resp, throwable) -> {
-            int tReqs = totalReqs.incrementAndGet();
+            int curTotalReqs = totalReqs.incrementAndGet();
 
-            int rReqs = readyReqs.get();
+            int curReadyReqs = readyReqs.get();
 
             try {
                 if (throwable == null && resp.getStatus() < 500) {
                     int ackReqs = acknowledgedReqs.incrementAndGet();
-                    while (true) {
-                        Response curResponse = actualResponse.get();
-                        Response relevantResponse = moreRelevant(curResponse, resp);
+                    curReadyReqs = handleValidResponse(ackReqs, resp);
 
-                        if (ackReqs <= replicasAcknowledgment.ack &&
-                                actualResponse.compareAndSet(curResponse, relevantResponse)) {
-                            rReqs = readyReqs.incrementAndGet();
-                            break;
-                        }
-                    }
-
-                    if (rReqs == replicasAcknowledgment.ack) {
+                    if (curReadyReqs == replicasAcknowledgment.ack) {
                         session.sendResponse(actualResponse.get());
                     }
                 }
 
-                if (tReqs == replicasAcknowledgment.from && rReqs < replicasAcknowledgment.ack) {
+                if (curTotalReqs == replicasAcknowledgment.from && curReadyReqs < replicasAcknowledgment.ack) {
                     session.sendResponse(new Response("504 Not Enough Replicas", Response.EMPTY));
                 }
             } catch (IOException e) {
                 LOGGER.error("Error during response sending");
             }
         }, executorService);
+    }
+
+    private int handleValidResponse(int ackReqs, Response resp) {
+        while (true) {
+            Response curResponse = actualResponse.get();
+            Response relevantResponse = moreRelevant(curResponse, resp);
+
+            if (ackReqs <= replicasAcknowledgment.ack
+                    && actualResponse.compareAndSet(curResponse, relevantResponse)) {
+                return readyReqs.incrementAndGet();
+            }
+        }
     }
 
     private static Response moreRelevant(Response first, Response second) {
