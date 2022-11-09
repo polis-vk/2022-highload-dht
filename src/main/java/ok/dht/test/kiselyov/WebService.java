@@ -1,5 +1,6 @@
 package ok.dht.test.kiselyov;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
@@ -37,8 +38,9 @@ public class WebService implements Service {
         }
         dao = new PersistentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         executorService = new ThreadPoolExecutor(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, 0L,
-                TimeUnit.MILLISECONDS, new CustomLinkedBlockingDeque<>(DEQUE_CAPACITY));
-        server = new DaoHttpServer(config, executorService, dao);
+                TimeUnit.MILLISECONDS, new CustomLinkedBlockingDeque<>(DEQUE_CAPACITY),
+                new ThreadFactoryBuilder().setNameFormat("Thread-Executor-%d").build());
+        server = new DaoHttpServer(config, executorService, dao, MAXIMUM_POOL_SIZE);
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);

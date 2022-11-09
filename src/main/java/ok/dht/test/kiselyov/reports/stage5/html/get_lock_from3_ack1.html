@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 10px; background-color: #ffffff}
+	h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {margin: 5px 0 5px 0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {overflow: hidden; white-space: nowrap}
+	#match {overflow: hidden; white-space: nowrap; display: none; float: right; text-align: right}
+	#reset {cursor: pointer}
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+<h1>Lock profile</h1>
+<header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
+<header style='text-align: right'>Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a></header>
+<canvas id='canvas' style='width: 100%; height: 560px'></canvas>
+<div id='hl'><span></span></div>
+<p id='match'>Matched: <span id='matchval'></span> <span id='reset' title='Clear'>&#x274c;</span></p>
+<p id='status'>&nbsp;</p>
+<script>
+	// Copyright 2020 Andrei Pangin
+	// Licensed under the Apache License, Version 2.0.
+	'use strict';
+	var root, rootLevel, px, pattern;
+	var reverse = false;
+	const levels = Array(35);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	const c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	const canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+	const palette = [
+		[0x50e150, 30, 30, 30],
+		[0x50bebe, 30, 30, 30],
+		[0xe17d00, 30, 30,  0],
+		[0xc8c83c, 30, 30, 10],
+		[0xe15a5a, 30, 40, 40],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(level, left, width, type, title) {
+		levels[level].push({left: left, width: width, color: getColor(palette[type]), title: title});
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+	function search(r) {
+		if (r && (r = prompt('Enter regexp to search:', '')) === null) {
+			return;
+		}
+
+		pattern = r ? RegExp(r) : undefined;
+		const matched = render(root, rootLevel);
+		document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+		document.getElementById('match').style.display = r ? 'inherit' : 'none';
+	}
+
+	function render(newRoot, newLevel) {
+		if (root) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+		const marked = [];
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+				c.fillStyle = pattern && f.title.match(pattern) && mark(f) ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+
+				if (f.width * px >= 21) {
+					const chars = Math.floor(f.width * px / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, f.width * px - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+				}
+			}
+		}
+
+		for (let h = 0; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				canvas.title = f.title + '\n(' + samples(f.width) + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f != root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.textContent = '\xa0';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = '';
+	}
+
+	document.getElementById('reverse').onclick = function() {
+		reverse = !reverse;
+		render();
+	}
+
+	document.getElementById('search').onclick = function() {
+		search(true);
+	}
+
+	document.getElementById('reset').onclick = function() {
+		search(false);
+	}
+
+	window.onkeydown = function() {
+		if (event.ctrlKey && event.keyCode === 70) {
+			event.preventDefault();
+			search(true);
+		} else if (event.keyCode === 27) {
+			search(false);
+		}
+	}
+f(0,0,9387,4,'all')
+f(1,0,7509,0,'java/lang/Thread.run')
+f(2,0,7509,0,'java/util/concurrent/ThreadPoolExecutor$Worker.run')
+f(3,0,7509,0,'java/util/concurrent/ThreadPoolExecutor.runWorker')
+f(4,0,958,0,'java/util/concurrent/CompletableFuture$AsyncSupply.run')
+f(5,0,958,0,'java/util/concurrent/CompletableFuture.postComplete')
+f(6,0,958,0,'java/util/concurrent/CompletableFuture$UniCompose.tryFire')
+f(7,0,958,0,'jdk/internal/net/http/MultiExchange$$Lambda$214.0x0000000800d5fcd8.apply')
+f(8,0,958,0,'jdk/internal/net/http/MultiExchange.lambda$responseAsync0$2')
+f(9,0,958,0,'jdk/internal/net/http/MultiExchange.responseAsyncImpl')
+f(10,0,958,0,'jdk/internal/net/http/Exchange.responseAsync')
+f(11,0,958,0,'jdk/internal/net/http/Exchange.responseAsyncImpl')
+f(12,0,958,0,'jdk/internal/net/http/Exchange.responseAsyncImpl0')
+f(13,0,899,0,'java/util/concurrent/CompletableFuture.handle')
+f(14,0,899,0,'java/util/concurrent/CompletableFuture.uniHandleStage')
+f(15,0,899,0,'java/util/concurrent/CompletableFuture.uniHandle')
+f(16,0,899,0,'jdk/internal/net/http/Exchange$$Lambda$245.0x0000000800d93660.apply')
+f(17,0,899,0,'jdk/internal/net/http/Exchange.lambda$responseAsyncImpl0$10')
+f(18,0,899,0,'jdk/internal/net/http/Exchange.checkFor407')
+f(19,0,899,0,'jdk/internal/net/http/Exchange$$Lambda$219.0x0000000800d84d40.apply')
+f(20,0,899,0,'jdk/internal/net/http/Exchange.lambda$responseAsyncImpl0$9')
+f(21,0,899,0,'jdk/internal/net/http/Http1Exchange.sendHeadersAsync')
+f(22,0,899,0,'java/util/concurrent/CompletableFuture.thenCompose')
+f(23,0,899,0,'java/util/concurrent/CompletableFuture.uniComposeStage')
+f(24,0,899,0,'jdk/internal/net/http/Http1Exchange$$Lambda$258.0x0000000800d94a48.apply')
+f(25,0,899,0,'jdk/internal/net/http/Http1Exchange.lambda$sendHeadersAsync$4')
+f(26,0,899,0,'jdk/internal/net/http/Http1Exchange.connectFlows')
+f(27,0,899,0,'jdk/internal/net/http/SocketTube.connectFlows')
+f(28,0,322,0,'jdk/internal/net/http/Http1Exchange$Http1Publisher.subscribe')
+f(29,0,322,0,'jdk/internal/net/http/SocketTube.onSubscribe')
+f(30,0,322,0,'jdk/internal/net/http/SocketTube$InternalWriteSubscriber.onSubscribe')
+f(31,0,322,0,'jdk/internal/net/http/HttpClientImpl.registerEvent')
+f(32,0,322,0,'jdk/internal/net/http/HttpClientImpl$SelectorManager.register')
+f(33,0,317,1,'jdk.internal.net.http.HttpClientImpl$SelectorManager')
+f(33,317,5,0,'sun/nio/ch/EPollSelectorImpl.wakeup')
+f(34,317,5,1,'java.lang.Object')
+f(28,322,577,0,'jdk/internal/net/http/SocketTube.subscribe')
+f(29,322,577,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher.subscribe')
+f(30,322,577,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$InternalReadSubscription.signalSubscribe')
+f(31,322,577,0,'jdk/internal/net/http/HttpClientImpl.registerEvent')
+f(32,322,577,0,'jdk/internal/net/http/HttpClientImpl$SelectorManager.register')
+f(33,322,571,1,'jdk.internal.net.http.HttpClientImpl$SelectorManager')
+f(33,893,6,0,'sun/nio/ch/EPollSelectorImpl.wakeup')
+f(34,893,6,1,'java.lang.Object')
+f(13,899,59,0,'jdk/internal/net/http/Exchange.establishExchange')
+f(14,899,59,0,'jdk/internal/net/http/ExchangeImpl.get')
+f(15,899,59,0,'java/util/concurrent/CompletableFuture.handle')
+f(16,899,59,0,'java/util/concurrent/CompletableFuture.uniHandleStage')
+f(17,899,59,0,'java/util/concurrent/CompletableFuture.uniHandle')
+f(18,899,59,0,'jdk/internal/net/http/ExchangeImpl$$Lambda$222.0x0000000800d8c000.apply')
+f(19,899,59,0,'jdk/internal/net/http/ExchangeImpl.lambda$get$0')
+f(20,899,59,0,'jdk/internal/net/http/ExchangeImpl.createExchangeImpl')
+f(21,899,59,0,'jdk/internal/net/http/ExchangeImpl.createHttp1Exchange')
+f(22,899,59,0,'jdk/internal/net/http/Http1Exchange.<init>')
+f(23,899,58,0,'jdk/internal/net/http/HttpConnection.getConnection')
+f(24,899,58,0,'jdk/internal/net/http/ConnectionPool.getConnection')
+f(25,899,58,1,'jdk.internal.net.http.ConnectionPool')
+f(23,957,1,0,'jdk/internal/net/http/HttpRequestImpl.getAddress')
+f(24,957,1,0,'java/security/AccessController.doPrivileged')
+f(25,957,1,0,'java/security/AccessController.executePrivileged')
+f(26,957,1,0,'jdk/internal/net/http/HttpRequestImpl$$Lambda$225.0x0000000800d8e548.run')
+f(27,957,1,0,'jdk/internal/net/http/HttpRequestImpl.lambda$getAddress$5')
+f(28,957,1,0,'java/net/InetSocketAddress.<init>')
+f(29,957,1,0,'java/net/InetAddress.getByName')
+f(30,957,1,0,'java/net/InetAddress.getAllByName')
+f(31,957,1,0,'java/net/InetAddress.getAllByName')
+f(32,957,1,0,'java/net/InetAddress.getAllByName0')
+f(33,957,1,0,'java/net/InetAddress$NameServiceAddresses.get')
+f(34,957,1,1,'java.net.InetAddress$NameServiceAddresses')
+f(4,958,5098,0,'java/util/concurrent/ThreadPoolExecutor.getTask')
+f(5,958,5086,0,'java/util/concurrent/LinkedBlockingQueue.take')
+f(6,958,1678,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await')
+f(7,958,1678,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(8,958,1678,0,'java/util/concurrent/locks/LockSupport.park')
+f(9,958,1678,0,'jdk/internal/misc/Unsafe.park')
+f(10,958,1678,1,'java.util.concurrent.locks.ReentrantLock$NonfairSync')
+f(6,2636,3408,0,'java/util/concurrent/locks/ReentrantLock.lockInterruptibly')
+f(7,2636,3408,0,'java/util/concurrent/locks/ReentrantLock$Sync.lockInterruptibly')
+f(8,2636,3408,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquireInterruptibly')
+f(9,2636,3408,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(10,2636,3408,0,'java/util/concurrent/locks/LockSupport.park')
+f(11,2636,3408,0,'jdk/internal/misc/Unsafe.park')
+f(12,2636,3408,1,'java.util.concurrent.locks.ReentrantLock$NonfairSync')
+f(5,6044,12,0,'ok/dht/test/kiselyov/util/CustomLinkedBlockingDeque.take')
+f(6,6044,12,0,'java/util/concurrent/LinkedBlockingDeque.takeLast')
+f(7,6044,7,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await')
+f(8,6044,7,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(9,6044,7,0,'java/util/concurrent/locks/LockSupport.park')
+f(10,6044,7,0,'jdk/internal/misc/Unsafe.park')
+f(11,6044,7,1,'java.util.concurrent.locks.ReentrantLock$NonfairSync')
+f(7,6051,5,0,'java/util/concurrent/locks/ReentrantLock.lock')
+f(8,6051,5,0,'java/util/concurrent/locks/ReentrantLock$Sync.lock')
+f(9,6051,5,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(10,6051,5,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(11,6051,5,0,'java/util/concurrent/locks/LockSupport.park')
+f(12,6051,5,0,'jdk/internal/misc/Unsafe.park')
+f(13,6051,5,1,'java.util.concurrent.locks.ReentrantLock$NonfairSync')
+f(4,6056,1448,0,'jdk/internal/net/http/common/SequentialScheduler$SchedulableTask.run')
+f(5,6056,1448,0,'jdk/internal/net/http/common/SequentialScheduler$CompleteRestartableTask.run')
+f(6,6056,541,0,'jdk/internal/net/http/common/SequentialScheduler$LockingRestartableTask.run')
+f(7,6056,541,0,'jdk/internal/net/http/Http1AsyncReceiver$$Lambda$240.0x0000000800d928a8.run')
+f(8,6056,541,0,'jdk/internal/net/http/Http1AsyncReceiver.flush')
+f(9,6056,541,0,'jdk/internal/net/http/Http1AsyncReceiver.checkRequestMore')
+f(10,6056,541,0,'jdk/internal/net/http/Http1AsyncReceiver$Http1TubeSubscriber.requestMore')
+f(11,6056,541,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$ReadSubscription.request')
+f(12,6056,541,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$InternalReadSubscription.request')
+f(13,6056,541,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$InternalReadSubscription.resumeReadEvent')
+f(14,6056,541,0,'jdk/internal/net/http/SocketTube.resumeEvent')
+f(15,6056,541,0,'jdk/internal/net/http/HttpClientImpl.eventUpdated')
+f(16,6056,541,0,'jdk/internal/net/http/HttpClientImpl$SelectorManager.eventUpdated')
+f(17,6056,541,0,'jdk/internal/net/http/HttpClientImpl$SelectorManager.register')
+f(18,6056,538,1,'jdk.internal.net.http.HttpClientImpl$SelectorManager')
+f(18,6594,3,0,'sun/nio/ch/EPollSelectorImpl.wakeup')
+f(19,6594,3,1,'java.lang.Object')
+f(6,6597,907,0,'jdk/internal/net/http/common/SequentialScheduler$TryEndDeferredCompleter.complete')
+f(7,6597,907,0,'jdk/internal/net/http/common/SequentialScheduler$CompleteRestartableTask.run')
+f(8,6597,907,0,'jdk/internal/net/http/common/SequentialScheduler$LockingRestartableTask.run')
+f(9,6597,907,0,'jdk/internal/net/http/Http1AsyncReceiver$$Lambda$240.0x0000000800d928a8.run')
+f(10,6597,907,0,'jdk/internal/net/http/Http1AsyncReceiver.flush')
+f(11,6597,907,0,'jdk/internal/net/http/Http1Response$BodyReader.tryAsyncReceive')
+f(12,6597,907,0,'jdk/internal/net/http/Http1Response$Receiver.accept')
+f(13,6597,907,0,'jdk/internal/net/http/Http1Response$BodyReader.handle')
+f(14,6597,907,0,'jdk/internal/net/http/Http1Response$BodyReader.handle')
+f(15,6597,907,0,'jdk/internal/net/http/ResponseContent$FixedLengthBodyParser.accept')
+f(16,6597,907,0,'jdk/internal/net/http/ResponseContent$FixedLengthBodyParser.accept')
+f(17,6597,907,0,'jdk/internal/net/http/Http1Response$$Lambda$302.0x0000000800da7868.run')
+f(18,6597,907,0,'jdk/internal/net/http/Http1Response.onFinished')
+f(19,6597,907,0,'jdk/internal/net/http/HttpConnection.closeOrReturnToCache')
+f(20,6597,907,0,'jdk/internal/net/http/ConnectionPool.returnToPool')
+f(21,6597,907,0,'jdk/internal/net/http/ConnectionPool.returnToPool')
+f(22,6597,237,1,'jdk.internal.net.http.ConnectionPool')
+f(22,6834,670,0,'jdk/internal/net/http/ConnectionPool.registerCleanupTrigger')
+f(23,6834,670,0,'jdk/internal/net/http/SocketTube.connectFlows')
+f(24,6834,222,0,'jdk/internal/net/http/ConnectionPool$CleanupTrigger.subscribe')
+f(25,6834,222,0,'jdk/internal/net/http/SocketTube.onSubscribe')
+f(26,6834,222,0,'jdk/internal/net/http/SocketTube$InternalWriteSubscriber.onSubscribe')
+f(27,6834,222,0,'jdk/internal/net/http/HttpClientImpl.registerEvent')
+f(28,6834,222,0,'jdk/internal/net/http/HttpClientImpl$SelectorManager.register')
+f(29,6834,221,1,'jdk.internal.net.http.HttpClientImpl$SelectorManager')
+f(29,7055,1,0,'sun/nio/ch/EPollSelectorImpl.wakeup')
+f(30,7055,1,1,'java.lang.Object')
+f(24,7056,448,0,'jdk/internal/net/http/SocketTube.subscribe')
+f(25,7056,448,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher.subscribe')
+f(26,7056,448,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$InternalReadSubscription.signalSubscribe')
+f(27,7056,448,0,'jdk/internal/net/http/HttpClientImpl.registerEvent')
+f(28,7056,448,0,'jdk/internal/net/http/HttpClientImpl$SelectorManager.register')
+f(29,7056,445,1,'jdk.internal.net.http.HttpClientImpl$SelectorManager')
+f(29,7501,3,0,'sun/nio/ch/EPollSelectorImpl.wakeup')
+f(30,7501,3,1,'java.lang.Object')
+f(4,7504,5,0,'ok/dht/test/kiselyov/DaoHttpServer$$Lambda$288.0x0000000800d437f8.run')
+f(5,7504,5,0,'ok/dht/test/kiselyov/DaoHttpServer.lambda$handleRequest$0')
+f(6,7504,3,0,'ok/dht/test/kiselyov/DaoHttpServer.coordinateRequest')
+f(7,7504,3,0,'ok/dht/test/kiselyov/DaoHttpServer.sendResponseToNode')
+f(8,7504,3,0,'ok/dht/test/kiselyov/util/InternalClient.sendRequestToNode')
+f(9,7504,3,0,'jdk/internal/net/http/HttpClientFacade.sendAsync')
+f(10,7504,3,0,'jdk/internal/net/http/HttpClientImpl.sendAsync')
+f(11,7504,3,0,'jdk/internal/net/http/HttpClientImpl.sendAsync')
+f(12,7504,3,0,'jdk/internal/net/http/HttpClientImpl.sendAsync')
+f(13,7504,3,0,'jdk/internal/net/http/MultiExchange.responseAsync')
+f(14,7504,3,0,'java/util/concurrent/CompletableFuture.completeAsync')
+f(15,7504,3,0,'java/util/concurrent/ThreadPoolExecutor.execute')
+f(16,7504,3,0,'java/util/concurrent/LinkedBlockingQueue.offer')
+f(17,7504,3,0,'java/util/concurrent/LinkedBlockingQueue.signalNotEmpty')
+f(18,7504,3,0,'java/util/concurrent/locks/ReentrantLock.lock')
+f(19,7504,3,0,'java/util/concurrent/locks/ReentrantLock$Sync.lock')
+f(20,7504,3,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(21,7504,3,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(22,7504,3,0,'java/util/concurrent/locks/LockSupport.park')
+f(23,7504,3,0,'jdk/internal/misc/Unsafe.park')
+f(24,7504,3,1,'java.util.concurrent.locks.ReentrantLock$NonfairSync')
+f(6,7507,2,0,'one/nio/http/HttpSession.sendResponse')
+f(7,7507,2,1,'one.nio.http.HttpSession')
+f(1,7509,10,0,'java/util/concurrent/ForkJoinWorkerThread.run')
+f(2,7509,10,0,'java/util/concurrent/ForkJoinPool.runWorker')
+f(3,7509,10,0,'java/util/concurrent/ForkJoinPool.scan')
+f(4,7509,10,0,'java/util/concurrent/ForkJoinPool$WorkQueue.topLevelExec')
+f(5,7509,10,0,'java/util/concurrent/ForkJoinTask.doExec')
+f(6,7509,10,0,'java/util/concurrent/CompletableFuture$Completion.exec')
+f(7,7509,10,0,'java/util/concurrent/CompletableFuture$UniWhenComplete.tryFire')
+f(8,7509,10,0,'java/util/concurrent/CompletableFuture.postFire')
+f(9,7509,10,0,'java/util/concurrent/CompletableFuture.postComplete')
+f(10,7509,10,0,'java/util/concurrent/CompletableFuture$UniAccept.tryFire')
+f(11,7509,10,0,'ok/dht/test/kiselyov/DaoHttpServer$$Lambda$290.0x0000000800da0208.accept')
+f(12,7509,10,0,'ok/dht/test/kiselyov/DaoHttpServer.lambda$sendResponseToNode$1')
+f(13,7509,10,0,'ok/dht/test/kiselyov/DaoHttpServer.tryMakeDecision')
+f(14,7509,10,0,'ok/dht/test/kiselyov/DaoHttpServer.replicationDecision')
+f(15,7509,7,0,'ch/qos/logback/classic/Logger.error')
+f(16,7509,7,0,'ch/qos/logback/classic/Logger.filterAndLog_0_Or3Plus')
+f(17,7509,7,0,'ch/qos/logback/classic/Logger.buildLoggingEventAndAppend')
+f(18,7509,7,0,'ch/qos/logback/classic/Logger.callAppenders')
+f(19,7509,7,0,'ch/qos/logback/classic/Logger.appendLoopOnAppenders')
+f(20,7509,7,0,'ch/qos/logback/core/spi/AppenderAttachableImpl.appendLoopOnAppenders')
+f(21,7509,7,0,'ch/qos/logback/core/UnsynchronizedAppenderBase.doAppend')
+f(22,7509,7,0,'ch/qos/logback/core/OutputStreamAppender.append')
+f(23,7509,7,0,'ch/qos/logback/core/OutputStreamAppender.subAppend')
+f(24,7509,2,0,'ch/qos/logback/core/FileAppender.writeOut')
+f(25,7509,2,0,'ch/qos/logback/core/OutputStreamAppender.writeOut')
+f(26,7509,2,0,'ch/qos/logback/core/OutputStreamAppender.writeBytes')
+f(27,7509,2,0,'java/util/concurrent/locks/ReentrantLock.lock')
+f(28,7509,2,0,'java/util/concurrent/locks/ReentrantLock$Sync.lock')
+f(29,7509,2,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(30,7509,2,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(31,7509,2,0,'java/util/concurrent/locks/LockSupport.park')
+f(32,7509,2,0,'jdk/internal/misc/Unsafe.park')
+f(33,7509,2,1,'java.util.concurrent.locks.ReentrantLock$NonfairSync')
+f(24,7511,5,0,'ch/qos/logback/core/OutputStreamAppender.writeOut')
+f(25,7511,5,0,'ch/qos/logback/core/OutputStreamAppender.writeBytes')
+f(26,7511,5,0,'java/util/concurrent/locks/ReentrantLock.lock')
+f(27,7511,5,0,'java/util/concurrent/locks/ReentrantLock$Sync.lock')
+f(28,7511,5,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(29,7511,5,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(30,7511,5,0,'java/util/concurrent/locks/LockSupport.park')
+f(31,7511,5,0,'jdk/internal/misc/Unsafe.park')
+f(32,7511,5,1,'java.util.concurrent.locks.ReentrantLock$NonfairSync')
+f(15,7516,3,0,'one/nio/http/HttpSession.sendResponse')
+f(16,7516,3,1,'one.nio.http.HttpSession')
+f(1,7519,1862,0,'jdk/internal/net/http/HttpClientImpl$SelectorManager.run')
+f(2,7519,48,0,'java/util/ArrayList.forEach')
+f(3,7519,48,0,'jdk/internal/net/http/HttpClientImpl$SelectorManager$$Lambda$267.0x0000000800d9cd68.accept')
+f(4,7519,48,0,'jdk/internal/net/http/HttpClientImpl$SelectorManager.lambda$run$3')
+f(5,7519,48,0,'jdk/internal/net/http/HttpClientImpl$SelectorManager.handleEvent')
+f(6,7519,48,0,'jdk/internal/net/http/SocketTube$SocketFlowEvent.handle')
+f(7,7519,48,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$ReadEvent.signalEvent')
+f(8,7519,48,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$InternalReadSubscription.signalReadable')
+f(9,7519,48,0,'jdk/internal/net/http/common/SequentialScheduler.runOrSchedule')
+f(10,7519,48,0,'jdk/internal/net/http/common/SequentialScheduler.runOrSchedule')
+f(11,7519,48,0,'jdk/internal/net/http/common/SequentialScheduler$SchedulableTask.run')
+f(12,7519,48,0,'jdk/internal/net/http/SocketTube$SocketFlowTask.run')
+f(13,7519,48,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$InternalReadSubscription$$Lambda$232.0x0000000800d90228.run')
+f(14,7519,48,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$InternalReadSubscription.read')
+f(15,7519,48,0,'jdk/internal/net/http/Http1AsyncReceiver$Http1TubeSubscriber.onNext')
+f(16,7519,48,0,'jdk/internal/net/http/Http1AsyncReceiver$Http1TubeSubscriber.onNext')
+f(17,7519,48,0,'jdk/internal/net/http/Http1AsyncReceiver.asyncReceive')
+f(18,7519,48,0,'jdk/internal/net/http/common/SequentialScheduler.runOrSchedule')
+f(19,7519,48,0,'jdk/internal/net/http/common/SequentialScheduler.runOrSchedule')
+f(20,7519,48,0,'jdk/internal/net/http/HttpClientImpl$DelegatingExecutor.execute')
+f(21,7519,48,0,'java/util/concurrent/ThreadPoolExecutor.execute')
+f(22,7519,48,0,'java/util/concurrent/LinkedBlockingQueue.offer')
+f(23,7519,48,0,'java/util/concurrent/LinkedBlockingQueue.signalNotEmpty')
+f(24,7519,48,0,'java/util/concurrent/locks/ReentrantLock.lock')
+f(25,7519,48,0,'java/util/concurrent/locks/ReentrantLock$Sync.lock')
+f(26,7519,48,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(27,7519,48,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(28,7519,48,0,'java/util/concurrent/locks/LockSupport.park')
+f(29,7519,48,0,'jdk/internal/misc/Unsafe.park')
+f(30,7519,48,1,'java.util.concurrent.locks.ReentrantLock$NonfairSync')
+f(2,7567,1201,1,'jdk.internal.net.http.HttpClientImpl$SelectorManager')
+f(2,8768,348,0,'jdk/internal/net/http/AsyncTriggerEvent.handle')
+f(3,8768,115,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$InternalReadSubscription$$Lambda$234.0x0000000800d90688.run')
+f(4,8768,115,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$InternalReadSubscription.handleSubscribeEvent')
+f(5,8768,115,0,'jdk/internal/net/http/common/SequentialScheduler.runOrSchedule')
+f(6,8768,115,0,'jdk/internal/net/http/common/SequentialScheduler.runOrSchedule')
+f(7,8768,115,0,'jdk/internal/net/http/common/SequentialScheduler$SchedulableTask.run')
+f(8,8768,115,0,'jdk/internal/net/http/SocketTube$SocketFlowTask.run')
+f(9,8768,115,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$InternalReadSubscription$$Lambda$232.0x0000000800d90228.run')
+f(10,8768,115,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$InternalReadSubscription.read')
+f(11,8768,115,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$InternalReadSubscription.handlePending')
+f(12,8768,115,0,'jdk/internal/net/http/SocketTube$InternalReadPublisher$ReadSubscription.signalOnSubscribe')
+f(13,8768,115,0,'jdk/internal/net/http/Http1AsyncReceiver$Http1TubeSubscriber.onSubscribe')
+f(14,8768,115,0,'jdk/internal/net/http/common/SequentialScheduler.runOrSchedule')
+f(15,8768,115,0,'jdk/internal/net/http/common/SequentialScheduler.runOrSchedule')
+f(16,8768,115,0,'jdk/internal/net/http/HttpClientImpl$DelegatingExecutor.execute')
+f(17,8768,115,0,'java/util/concurrent/ThreadPoolExecutor.execute')
+f(18,8768,115,0,'java/util/concurrent/LinkedBlockingQueue.offer')
+f(19,8768,115,0,'java/util/concurrent/LinkedBlockingQueue.signalNotEmpty')
+f(20,8768,115,0,'java/util/concurrent/locks/ReentrantLock.lock')
+f(21,8768,115,0,'java/util/concurrent/locks/ReentrantLock$Sync.lock')
+f(22,8768,115,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(23,8768,115,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(24,8768,115,0,'java/util/concurrent/locks/LockSupport.park')
+f(25,8768,115,0,'jdk/internal/misc/Unsafe.park')
+f(26,8768,115,1,'java.util.concurrent.locks.ReentrantLock$NonfairSync')
+f(3,8883,233,0,'jdk/internal/net/http/SocketTube$InternalWriteSubscriber$$Lambda$236.0x0000000800d90f78.run')
+f(4,8883,233,0,'jdk/internal/net/http/SocketTube$InternalWriteSubscriber.startSubscription')
+f(5,8883,233,0,'jdk/internal/net/http/HttpClientImpl$DelegatingExecutor.execute')
+f(6,8883,233,0,'java/util/concurrent/ThreadPoolExecutor.execute')
+f(7,8883,233,0,'java/util/concurrent/LinkedBlockingQueue.offer')
+f(8,8883,233,0,'java/util/concurrent/LinkedBlockingQueue.signalNotEmpty')
+f(9,8883,233,0,'java/util/concurrent/locks/ReentrantLock.lock')
+f(10,8883,233,0,'java/util/concurrent/locks/ReentrantLock$Sync.lock')
+f(11,8883,233,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(12,8883,233,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(13,8883,233,0,'java/util/concurrent/locks/LockSupport.park')
+f(14,8883,233,0,'jdk/internal/misc/Unsafe.park')
+f(15,8883,233,1,'java.util.concurrent.locks.ReentrantLock$NonfairSync')
+f(2,9116,232,0,'jdk/internal/net/http/ConnectionPool.purgeExpiredConnectionsAndReturnNextDeadline')
+f(3,9116,232,0,'jdk/internal/net/http/ConnectionPool.purgeExpiredConnectionsAndReturnNextDeadline')
+f(4,9116,232,1,'jdk.internal.net.http.ConnectionPool')
+f(2,9348,33,0,'sun/nio/ch/SelectorImpl.select')
+f(3,9348,33,0,'sun/nio/ch/SelectorImpl.lockAndDoSelect')
+f(4,9348,33,0,'sun/nio/ch/EPollSelectorImpl.doSelect')
+f(5,9348,33,0,'sun/nio/ch/EPollSelectorImpl.processEvents')
+f(6,9348,33,0,'sun/nio/ch/EPollSelectorImpl.clearInterrupt')
+f(7,9348,33,1,'java.lang.Object')
+f(1,9381,6,0,'one/nio/server/SelectorThread.run')
+f(2,9381,6,0,'one/nio/net/Session.process')
+f(3,9381,6,0,'one/nio/http/HttpSession.processRead')
+f(4,9381,6,0,'one/nio/http/HttpSession.processHttpBuffer')
+f(5,9381,6,0,'one/nio/http/HttpSession.handleParsedRequest')
+f(6,9381,6,0,'ok/dht/test/kiselyov/DaoHttpServer.handleRequest')
+f(7,9381,6,0,'java/util/concurrent/ThreadPoolExecutor.execute')
+f(8,9381,6,0,'java/util/concurrent/LinkedBlockingDeque.offer')
+f(9,9381,6,0,'java/util/concurrent/LinkedBlockingDeque.offerLast')
+f(10,9381,6,0,'java/util/concurrent/locks/ReentrantLock.lock')
+f(11,9381,6,0,'java/util/concurrent/locks/ReentrantLock$Sync.lock')
+f(12,9381,6,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(13,9381,6,0,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquire')
+f(14,9381,6,0,'java/util/concurrent/locks/LockSupport.park')
+f(15,9381,6,0,'jdk/internal/misc/Unsafe.park')
+f(16,9381,6,1,'java.util.concurrent.locks.ReentrantLock$NonfairSync')
+render();
+</script></body></html>

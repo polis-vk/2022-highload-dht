@@ -27,7 +27,9 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutorService;
 
 public class DaoHttpServer extends HttpServer {
@@ -38,18 +40,21 @@ public class DaoHttpServer extends HttpServer {
 
     private final ServiceConfig config;
     private final List<Response> responses;
+    private final Set<Long> activeResponsesNumbers;
     private String currentMethod;
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DaoHttpServer.class);
 
-    public DaoHttpServer(ServiceConfig config, ExecutorService executorService, PersistentDao dao) throws IOException {
+    public DaoHttpServer(ServiceConfig config, ExecutorService executorService, PersistentDao dao,
+                         int poolSize) throws IOException {
         super(createConfigFromPort(config.selfPort()));
         this.config = config;
         this.executorService = executorService;
         this.dao = dao;
         nodeDeterminer = new NodeDeterminer(config.clusterUrls());
-        internalClient = new InternalClient();
+        internalClient = new InternalClient(poolSize);
         responses = new CopyOnWriteArrayList<>();
+        activeResponsesNumbers = new CopyOnWriteArraySet<>();
     }
 
     @Override
@@ -162,8 +167,8 @@ public class DaoHttpServer extends HttpServer {
 
     private void coordinateRequest(Request request, HttpSession session, String id, int ack, int from, long timestamp)
             throws IOException {
-        long number = System.currentTimeMillis();
         currentMethod = request.getMethodName();
+        activeResponsesNumbers.add(timestamp);
         for (ClusterNode targetClusterNode : nodeDeterminer.getNodeUrls(id, from)) {
             if (targetClusterNode.hasUrl(config.selfUrl())) {
                 Response response;
@@ -178,42 +183,39 @@ public class DaoHttpServer extends HttpServer {
                                 + request.getMethodName());
                     }
                 }
-                response.addHeader("Number " + number);
-                replicationDecision(response, ack, request.getMethodName(), session, number);
+                response.addHeader("Number " + timestamp);
+                replicationDecision(response, ack, request.getMethodName(), session, timestamp, from);
             } else {
-                sendResponseToNode(request, id, targetClusterNode, ack, session, number);
+                sendResponseToNode(request, id, targetClusterNode, ack, session, timestamp, from);
             }
         }
     }
 
     private void sendResponseToNode(Request request, String id, ClusterNode targetClusterNode,
-                                    int ack, HttpSession session, long number) {
+                                    int ack, HttpSession session, long number, int from) {
         try {
             request.addHeader("fromCoordinator 1");
             internalClient
                     .sendRequestToNode(request, targetClusterNode, id)
-                    .thenAccept(response -> tryMakeDecision(response, request, ack, session, number))
+                    .thenAccept(response -> tryMakeDecision(response, request, ack, session, number, from))
                     .exceptionally(throwable -> {
                         Response timeout = new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
                         timeout.addHeader("Number " + number);
-                        replicationDecision(timeout, ack, request.getMethodName(), session, number);
+                        replicationDecision(timeout, ack, request.getMethodName(), session, number, from);
                         LOGGER.error("Cannot get response from another node.", throwable);
                         return null;
                     });
         } catch (URISyntaxException e) {
             LOGGER.error("URI error.", e);
-            new Response(Response.BAD_GATEWAY, Response.EMPTY);
         } catch (IOException e) {
             LOGGER.error("Error handling request.", e);
-            new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
         } catch (InterruptedException e) {
             LOGGER.error("Error while getting response.", e);
-            new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
 
     private void tryMakeDecision(HttpResponse<byte[]> response, Request request, int ack, HttpSession session,
-                                 long number) {
+                                 long number, int from) {
         Response responseFromNode;
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {
@@ -227,21 +229,24 @@ public class DaoHttpServer extends HttpServer {
                     responseFromNode = new Response(getResponseCode(response.statusCode()), Response.EMPTY);
             default -> {
                 LOGGER.error("Unsupported request method: {}", request.getMethodName());
-                throw new UnsupportedOperationException("Unsupported request method: "
-                        + request.getMethodName());
+                throw new UnsupportedOperationException("Unsupported request method: " + request.getMethodName());
             }
         }
         responseFromNode.addHeader("Number " + number);
-        replicationDecision(responseFromNode, ack, request.getMethodName(), session, number);
+        replicationDecision(responseFromNode, ack, request.getMethodName(), session, number, from);
     }
 
     private void replicationDecision(Response newResponse, int ack, String method, HttpSession session,
-                                     long number) {
+                                     long number, int from) {
         if (!Objects.equals(method, currentMethod)) {
             return;
         }
         responses.add(newResponse);
         if (responses.size() < ack) {
+            return;
+        }
+        if (!activeResponsesNumbers.contains(number)) {
+            responses.removeIf(response -> Long.parseLong(response.getHeader("Number")) == number);
             return;
         }
         int successResponses = 0;
@@ -260,7 +265,7 @@ public class DaoHttpServer extends HttpServer {
                         session.sendResponse(new Response(Response.OK, body));
                     } else if (successResponses >= ack) {
                         session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
-                    } else {
+                    } else if (responses.size() == from) {
                         session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
                     }
                 }
@@ -286,6 +291,7 @@ public class DaoHttpServer extends HttpServer {
         } catch (IOException e) {
             LOGGER.error("Error handling request.", e);
         } finally {
+            activeResponsesNumbers.clear();
             responses.clear();
         }
     }

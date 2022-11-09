@@ -1,5 +1,6 @@
 package ok.dht.test.kiselyov.util;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import one.nio.http.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,13 +13,16 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 
 public class InternalClient {
     private final HttpClient client;
     private static final Logger LOGGER = LoggerFactory.getLogger(InternalClient.class);
 
-    public InternalClient() {
-        HttpClient.Builder clientBuilder = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(100));
+    public InternalClient(int poolSize) {
+        HttpClient.Builder clientBuilder = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(100))
+                .executor(Executors.newFixedThreadPool(poolSize,
+                        new ThreadFactoryBuilder().setNameFormat("Thread-Internal-Client-%d").build()));
         client = clientBuilder.build();
     }
 
