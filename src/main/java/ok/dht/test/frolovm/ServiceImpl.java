@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -44,9 +45,11 @@ public class ServiceImpl implements Service {
     private static final Logger LOGGER = LoggerFactory.getLogger(ServiceImpl.class);
     private final ServiceConfig config;
     private final ShardingAlgorithm algorithm;
-    private final HttpClient client;
+    private HttpClient client;
     private ReplicationManager replicationManager;
     private HttpServerImpl server;
+
+    private ExecutorService clientExecutor;
 
     private DB dao;
 
@@ -57,13 +60,6 @@ public class ServiceImpl implements Service {
     public ServiceImpl(ServiceConfig config, Hasher hasher) {
         this.config = config;
         this.algorithm = new RendezvousHashing(config.clusterUrls(), hasher);
-        this.client = HttpClient.newBuilder().executor(new ThreadPoolExecutor(
-                CORE_POLL_SIZE,
-                CORE_POLL_SIZE,
-                KEEP_ALIVE_TIME,
-                TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(QUEUE_CAPACITY)
-        )).build();
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -93,6 +89,14 @@ public class ServiceImpl implements Service {
         server = new HttpServerImpl(createConfigFromPort(config.selfPort()));
         server.addRequestHandlers(this);
         server.start();
+        clientExecutor = new ThreadPoolExecutor(
+                CORE_POLL_SIZE,
+                CORE_POLL_SIZE,
+                KEEP_ALIVE_TIME,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(QUEUE_CAPACITY)
+        );
+        this.client = HttpClient.newBuilder().executor(clientExecutor).build();
         this.replicationManager = new ReplicationManager(
                 algorithm,
                 config.selfUrl(),
@@ -150,6 +154,7 @@ public class ServiceImpl implements Service {
             server = null;
         }
         replicationManager = null;
+        Utils.closeExecutorPool(clientExecutor);
         if (dao != null) {
             dao.close();
         }
