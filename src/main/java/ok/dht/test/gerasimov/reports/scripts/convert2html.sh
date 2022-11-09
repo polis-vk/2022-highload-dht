@@ -44,10 +44,10 @@ for rate in "${rates[@]}"; do
   run_jfr2flame_lock "$file_name" "async-profiler_${type_request}_lock_rate_${rate}.html"
 done
 
-for rate in "${rates[@]}"; do
-  type_request="get"
-  file_name="async-profiler_${type_request}_rate_${rate}.jfr"
-  run_jfr2flame_alloc "$file_name" "async-profiler_${type_request}_alloc_rate_${rate}.html"
-  run_jfr2flame_cpu "$file_name" "async-profiler_${type_request}_cpu_rate_${rate}.html"
-  run_jfr2flame_lock "$file_name" "async-profiler_${type_request}_lock_rate_${rate}.html"
-done
+#for rate in "${rates[@]}"; do
+#  type_request="get"
+#  file_name="async-profiler_${type_request}_rate_${rate}.jfr"
+#  run_jfr2flame_alloc "$file_name" "async-profiler_${type_request}_alloc_rate_${rate}.html"
+#  run_jfr2flame_cpu "$file_name" "async-profiler_${type_request}_cpu_rate_${rate}.html"
+#  run_jfr2flame_lock "$file_name" "async-profiler_${type_request}_lock_rate_${rate}.html"
+#done

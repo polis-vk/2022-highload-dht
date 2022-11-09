@@ -10,9 +10,9 @@ server_port=25565
 server_name="Cluster"
 
 #wrk2 configuration
-wrk2_duration=30
-wrk2_threads=8
-wrk2_connections=64
+wrk2_duration=60
+wrk2_threads=16
+wrk2_connections=16
 
 function wrk2_start() {
   local rate=$1
@@ -58,7 +58,7 @@ echo "                                                                   "
 
 #rates=(500 1000 2000)
 #rates=(5000)
-rates=(500)
+rates=(1000)
 
 for rate in "${rates[@]}"; do
   type_request="put"
@@ -68,10 +68,10 @@ for rate in "${rates[@]}"; do
   async_profiler_stop "$file_name"
 done
 
-for rate in "${rates[@]}"; do
-  type_request="get"
-  file_name="async-profiler_${type_request}_rate_${rate}.jfr"
-  async_profiler_start "$file_name"
-  wrk2_start "$rate" $lua_get_path $type_request
-  async_profiler_stop "$file_name"
-done
+#for rate in "${rates[@]}"; do
+#  type_request="get"
+#  file_name="async-profiler_${type_request}_rate_${rate}.jfr"
+#  async_profiler_start "$file_name"
+#  wrk2_start "$rate" $lua_get_path $type_request
+#  async_profiler_stop "$file_name"
+#done
