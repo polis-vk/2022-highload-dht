@@ -12,10 +12,7 @@ import java.net.URISyntaxException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -28,6 +25,7 @@ public final class ServiceUtils {
     // must be > 2
     public static final int VNODE_NUMBER_PER_SERVER = 5;
     public static final String ENDPOINT = "/v0/entity";
+    public static final int AWAIT_DURATION_MILLS = 1200;
 
     private ServiceUtils() {
 
@@ -85,28 +83,25 @@ public final class ServiceUtils {
                                 ? HttpRequest.BodyPublishers.noBody()
                                 : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
                 .header(INNER_HEADER_NAME, INNER_HEADER_VALUE)
-                .timeout(Duration.ofMillis(1200));
+                .timeout(Duration.ofMillis(AWAIT_DURATION_MILLS));
 
-        Arrays.stream(request.getHeaders())
-                .filter(Objects::nonNull)
-                .map(s -> {
-                    int index = s.indexOf(':');
-                    return List.of(
-                            s.substring(0, index),
-                            s.substring(index + 1).strip()
-                    );
-                })
-                .forEach(ls -> trySetHeader(builder, ls));
+        for (String s : request.getHeaders()) {
+            if (s != null) {
+                int index = s.indexOf(':');
+                var header = s.substring(0, index);
+                var value = s.substring(index + 1).strip();
+                if ("Host".equals(header) || "Content-Length".equals(header)) {
+                    continue;
+                }
+                try {
+                    builder.setHeader(header, value);
+                } catch (Exception e) {
+                    logger.error(e.getMessage());
+                }
+            }
+        }
 
         return builder.build();
-    }
-
-    private static void trySetHeader(HttpRequest.Builder builder, List<String> ls) {
-        try {
-            builder.setHeader(ls.get(0), ls.get(1));
-        } catch (Exception e) {
-            logger.error(e.getMessage());
-        }
     }
 
     static HttpResponse<byte[]> handleSingleAcknowledgment(

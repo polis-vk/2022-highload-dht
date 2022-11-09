@@ -33,11 +33,11 @@ public class ParallelHttpServer extends HttpServer {
     static final String INNER_HEADER_VALUE = "True";
 
     public static final String TIME_HEADER_NAME = "Timestamp";
-    private static final int WORKERS_NUMBER = 8;
-    private static final int QUEUE_CAPACITY = 100;
+    private static final int WORKERS_NUMBER = 4;
+    private static final int QUEUE_CAPACITY = 228;
 
     private static final int INTERNAL_WORKERS_NUMBER = 4;
-    private static final int INTERNAL_QUEUE_CAPACITY = 100;
+    private static final int INTERNAL_QUEUE_CAPACITY = 2048;
 
     private final ShardHelper shardHelper = new ShardHelper();
     private final ClusterManager clusterManager;
@@ -142,6 +142,7 @@ public class ParallelHttpServer extends HttpServer {
                 });
             }
         } catch (RejectedExecutionException e) {
+            logger.error(e.getMessage());
             session.sendError(
                     Response.SERVICE_UNAVAILABLE,
                     "Handling was rejected due to some internal problem");
@@ -169,7 +170,8 @@ public class ParallelHttpServer extends HttpServer {
             javaClients.get().get(destinationUrl)
                     .sendAsync(javaRequest, HttpResponse.BodyHandlers.ofByteArray())
                     .handleAsync((httpResponse, throwable) ->
-                            handleSingleAcknowledgment(responseAccumulator, httpResponse, throwable)
+                            handleSingleAcknowledgment(responseAccumulator, httpResponse, throwable),
+                            internalRequestService
                     );
 
         } catch (Exception e) {
