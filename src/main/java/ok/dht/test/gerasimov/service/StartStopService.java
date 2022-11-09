@@ -13,9 +13,6 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-/**
- * @author Michael Gerasimov
- */
 public class StartStopService implements Service {
     private final ServiceConfig serviceConfig;
 

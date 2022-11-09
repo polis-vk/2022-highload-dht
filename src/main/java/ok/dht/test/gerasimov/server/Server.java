@@ -59,21 +59,23 @@ public final class Server extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
-            executorService.execute(() -> {
-                try {
-                    HandleService service = services.get(request.getPath().toLowerCase());
-
-                    if (service == null) {
-                        session.sendResponse(ResponseEntity.badRequest("Unsupported path"));
-                    } else {
-                        service.handleRequest(request, session);
-                    }
-                } catch (IOException e) {
-                    throw new ServerException("Handler can not handle request", e);
-                }
-            });
+            executorService.execute(() -> wrappedHandleRequest(request, session));
         } catch (RejectedExecutionException e) {
             session.sendResponse(ResponseEntity.serviceUnavailable());
+        }
+    }
+
+    private void wrappedHandleRequest(Request request, HttpSession session) {
+        try {
+            HandleService service = services.get(request.getPath());
+
+            if (service == null) {
+                session.sendResponse(ResponseEntity.badRequest("Unsupported path"));
+            } else {
+                service.handleRequest(request, session);
+            }
+        } catch (IOException e) {
+            throw new ServerException("Handler can not handle request", e);
         }
     }
 }

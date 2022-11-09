@@ -1,13 +1,13 @@
 package ok.dht.test.gerasimov.service;
 
-import ok.dht.test.gerasimov.model.DaoEntry;
-import ok.dht.test.gerasimov.utils.ObjectMapper;
-import ok.dht.test.gerasimov.replication.ReplicationEntityHandler;
-import ok.dht.test.gerasimov.utils.ResponseEntity;
 import ok.dht.test.gerasimov.client.CircuitBreakerClient;
 import ok.dht.test.gerasimov.exception.EntityServiceException;
+import ok.dht.test.gerasimov.model.DaoEntry;
+import ok.dht.test.gerasimov.replication.ReplicationEntityHandler;
 import ok.dht.test.gerasimov.sharding.ConsistentHash;
 import ok.dht.test.gerasimov.sharding.Shard;
+import ok.dht.test.gerasimov.utils.ObjectMapper;
+import ok.dht.test.gerasimov.utils.ResponseEntity;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -73,10 +73,8 @@ public class EntityService implements HandleService {
             throw new EntityServiceException("Slave server can not send response", e);
         }
 
-
         Shard firstShard = consistentHash.getShardByKey(parameters.id);
         List<Shard> shards = consistentHash.getShards(firstShard, parameters.from);
-
 
         ReplicationEntityHandler handler =
                 new ReplicationEntityHandler(session, parameters.method, parameters.ack, parameters.from);
@@ -102,9 +100,6 @@ public class EntityService implements HandleService {
                 );
             }
         }
-
-
-//        return makeDecisionEntityRequest(responses, ack, request);
     }
 
     @Override
@@ -229,12 +224,20 @@ public class EntityService implements HandleService {
                     from = Integer.parseInt(fromString);
 
                     if (ack > from || from > consistentHash.getShards().size() || ack == 0) {
-                        session.sendResponse(ResponseEntity.badRequest("Invalid parameter replicas: ack and from violate conditions"));
+                        session.sendResponse(
+                                ResponseEntity.badRequest(
+                                        "Invalid parameter replicas: ack and from violate conditions"
+                                )
+                        );
                         return null;
                     }
 
                 } catch (NumberFormatException e) {
-                    session.sendResponse(ResponseEntity.badRequest("Invalid parameter replicas: ack and from must be numbers"));
+                    session.sendResponse(
+                            ResponseEntity.badRequest(
+                                    "Invalid parameter replicas: ack and from must be numbers"
+                            )
+                    );
                     return null;
                 }
             } else {
