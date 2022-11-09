@@ -1,4 +1,5 @@
 #!/bin/bash
+time=60
 
 NODE1=19234
 NODE2=19235
@@ -13,7 +14,7 @@ echo "PID2 = $PID2"
 t=1
 c=1
 R=10000
-m=get
+m=put
 
 PROFILER=~/Documents/uni-data/highload/async-profiler
 STAGE=~/Documents/uni-data/highload/2022-highload-dht/src/main/java/ok/dht/test/vihnin/resources/report/stage5
@@ -67,11 +68,12 @@ package=profile_results_$name
 
 package=$STAGE/$package
 
-wrk -L -d 60 -t "$t" -c "$c" -R "$R" http://localhost:$NODE1 -s $STAGE/"$m".lua > "$package"/wrk_res.txt
+
+wrk -L -d $time -t "$t" -c "$c" -R "$R" http://localhost:$NODE1 -s $STAGE/"$m".lua > "$package"/wrk_res.txt
 
 echo ""
 
-echo "Wrk finished after $t seconds"
+echo "Wrk finished after $time seconds"
 echo ""
 
 

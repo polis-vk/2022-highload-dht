@@ -1,6 +1,7 @@
 package ok.dht.test.vihnin;
 
 import one.nio.http.HttpSession;
+import one.nio.http.Request;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -45,7 +46,7 @@ public class ResponseAccumulator {
     }
 
     private void acknowledge(boolean success, Long time, Integer status, byte[] data) {
-        if (success) {
+        if (success && method == Request.METHOD_GET) {
             Data newData = new Data(status, time, data);
             while (bestData.get().time < time) {
                 Data curData = bestData.get();
