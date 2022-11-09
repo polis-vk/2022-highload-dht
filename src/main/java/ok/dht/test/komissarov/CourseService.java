@@ -1,17 +1,16 @@
 package ok.dht.test.komissarov;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.komissarov.database.MemorySegmentDao;
-import ok.dht.test.komissarov.database.exceptions.BadParamException;
 import ok.dht.test.komissarov.database.models.BaseEntry;
 import ok.dht.test.komissarov.database.models.Config;
 import ok.dht.test.komissarov.database.models.Entry;
 import ok.dht.test.komissarov.utils.CustomHttpServer;
 import ok.dht.test.komissarov.utils.PairParams;
-import one.nio.http.HttpServer;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.util.Hash;
@@ -27,18 +26,21 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.List;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class CourseService implements Service {
 
-    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final String REPEATED = "Repeated";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CourseService.class);
     private final ServiceConfig config;
-    private HttpServer server;
+    private CustomHttpServer server;
     private HttpClient client;
     private MemorySegmentDao dao;
 
@@ -48,12 +50,20 @@ public class CourseService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        client = HttpClient.newHttpClient();
         dao = new MemorySegmentDao(new Config(
                 config.workingDir(),
                 1 << 20
         ));
         server = new CustomHttpServer(config, this);
+        client = HttpClient.newBuilder()
+                .executor(
+                        Executors.newFixedThreadPool(
+                                Runtime.getRuntime().availableProcessors(),
+                                new ThreadFactoryBuilder()
+                                        .setNameFormat("Client workers")
+                                        .build())
+                )
+                .build();
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -65,35 +75,44 @@ public class CourseService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    public Response executeRequests(Request request, String id, PairParams params) {
-        if (checkMethod(request.getMethod())) {
-            return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        }
+    public CompletableFuture<List<Response>> executeRequests(Request request, String id, PairParams params) {
+        List<Response> responses = new CopyOnWriteArrayList<>();
+        CompletableFuture<List<Response>> result = new CompletableFuture<>();
 
         String[] urls = getNodes(id, params.from());
-        Response[] responses = new Response[urls.length];
-        int success = 0;
-        for (int i = 0; i < urls.length; i++) {
-            responses[i] = urls[i].equals(config.selfUrl())
-                    ? getResponse(request, id) : getProxyResponse(request, urls[i]);
-            int code = responses[i].getStatus();
-            if (code == 200 || code == 201 || code == 202 || code == 404) {
-                success++;
+        AtomicInteger success = new AtomicInteger();
+        for (String url : urls) {
+            if (url.equals(config.selfUrl())) {
+                Response current = getResponse(request, id);
+                responses.add(current);
+                if (checkCode(current.getStatus()) && success.incrementAndGet() == params.ack()) {
+                    result.complete(responses);
+                    break;
+                }
+                continue;
             }
+            sendAsyncProxy(result, responses, success, request, url, params.ack());
         }
-        boolean isSuccess = success >= params.ack();
-        return summaryResponse(responses, request.getMethod(), isSuccess);
-    }
-
-    public Response executeSoloRequest(Request request, String id) {
-        return getResponse(request, id);
+        return result;
     }
 
     private static MemorySegment fromString(String value) {
         return value == null ? null : MemorySegment.ofArray(Utf8.toBytes(value));
     }
 
-    private Response getProxyResponse(Request request, String url) {
+    private static boolean checkCode(int code) {
+        return switch (code) {
+            case 200, 201, 202, 404 -> true;
+            default -> false;
+        };
+    }
+
+    private void sendAsyncProxy(CompletableFuture<List<Response>> result,
+                                List<Response> responses,
+                                AtomicInteger success,
+                                Request request,
+                                String url,
+                                int ack) {
         try {
             HttpRequest proxyRequest = HttpRequest.newBuilder()
                     .uri(new URI(url + request.getURI()))
@@ -105,17 +124,28 @@ public class CourseService implements Service {
                                     : HttpRequest.BodyPublishers.ofByteArray(request.getBody())
                     )
                     .build();
-            HttpResponse<byte[]> response = client.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
-            return new Response(mapCode(response.statusCode()), response.body());
+            CompletableFuture<HttpResponse<byte[]>> future =
+                    client.sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
+
+            future.whenComplete((response, throwable) -> {
+                if (throwable != null) {
+                    result.completeExceptionally(new RuntimeException());
+                    return;
+                }
+
+                responses.add(new Response(mapCode(response.statusCode()), response.body()));
+                if (checkCode(response.statusCode()) && success.incrementAndGet() == ack) {
+                    result.complete(responses);
+                }
+            });
         } catch (Exception e) {
-            LOGGER.error("Unavailable error", e);
-            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+            LOGGER.error("URI error", e);
+            throw new RuntimeException();
         }
     }
 
-    private Response getResponse(Request request, String id) {
-        int method = request.getMethod();
-        switch (method) {
+    public Response getResponse(Request request, String id) {
+        switch (request.getMethod()) {
             case Request.METHOD_GET -> {
                 Entry<MemorySegment> entry = dao.get(fromString(id));
                 if (entry == null) {
@@ -152,63 +182,14 @@ public class CourseService implements Service {
         }
     }
 
-    private Response summaryResponse(Response[] responses, int method, boolean isSuccess) {
-        if (method == Request.METHOD_GET) {
-            if (!isSuccess) {
-                return new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
-            }
-
-            boolean isTombstone = false;
-            long maxTime = Long.MIN_VALUE;
-            Response answer = null;
-            for (Response response : responses) {
-                long time = convertToLong(Arrays.copyOfRange(response.getBody(), 0, 8));
-                if (time > maxTime) {
-                    maxTime = time;
-                    if (response.getStatus() == 404 && response.getBody().length > 0) {
-                        isTombstone = true;
-                        continue;
-                    } else {
-                        if (response.getStatus() == 200) {
-                            answer = response;
-                        }
-                    }
-                    isTombstone = false;
-                }
-            }
-            if (isTombstone || answer == null) {
-                return new Response(Response.NOT_FOUND, Response.EMPTY);
-            }
-            return new Response(mapCode(answer.getStatus()),
-                    Arrays.copyOfRange(answer.getBody(), 8, answer.getBody().length));
-        }
-
-        return switch (method) {
-            case Request.METHOD_PUT -> isSuccess
-                    ? new Response(Response.CREATED, Response.EMPTY)
-                    : new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
-            case Request.METHOD_DELETE -> isSuccess
-                    ? new Response(Response.ACCEPTED, Response.EMPTY)
-                    : new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY);
-            default -> throw new IllegalStateException();
-        };
-    }
-
-    private boolean checkMethod(int method) {
-        return switch (method) {
-            case Request.METHOD_GET, Request.METHOD_DELETE, Request.METHOD_PUT -> false;
-            default -> true;
-        };
-    }
-
-    private String mapCode(int code) {
+    public String mapCode(int code) {
         return switch (code) {
             case HttpURLConnection.HTTP_OK -> Response.OK;
             case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
             case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
             case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
             case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
-            default -> throw new IllegalStateException("Unexpected value:" + code);
+            default -> Response.SERVICE_UNAVAILABLE;
         };
     }
 
@@ -236,14 +217,7 @@ public class CourseService implements Service {
         return buffer.array();
     }
 
-    public long convertToLong(byte[] bytes) {
-        ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
-        buffer.put(bytes);
-        buffer.flip();
-        return buffer.getLong();
-    }
-
-    @ServiceFactory(stage = 4, week = 1)
+    @ServiceFactory(stage = 5, week = 1)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
