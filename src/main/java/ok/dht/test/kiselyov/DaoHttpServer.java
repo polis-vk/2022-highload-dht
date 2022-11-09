@@ -37,12 +37,10 @@ public class DaoHttpServer extends HttpServer {
     private final InternalClient internalClient;
     private final ExecutorService executorService;
     private final PersistentDao dao;
-
     private final ServiceConfig config;
     private final List<Response> responses;
     private final Set<Long> activeResponsesNumbers;
     private String currentMethod;
-
     private static final Logger LOGGER = LoggerFactory.getLogger(DaoHttpServer.class);
 
     public DaoHttpServer(ServiceConfig config, ExecutorService executorService, PersistentDao dao, int poolSize)
