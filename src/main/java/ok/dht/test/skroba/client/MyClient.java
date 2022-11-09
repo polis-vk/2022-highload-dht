@@ -7,8 +7,7 @@ import java.util.concurrent.CompletableFuture;
 public interface MyClient {
     CompletableFuture<HttpResponse<byte[]>> sendRequest(
             String uri,
-            long timeStamp,
             int method,
             byte[] body
-    ) throws URISyntaxException;
+    );
 }

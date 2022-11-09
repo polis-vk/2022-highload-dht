@@ -7,5 +7,7 @@ public interface Manager {
     
     int clusterSize();
     
+    String selfUrl();
+    
     List<String> getUrls(String id, int size);
 }

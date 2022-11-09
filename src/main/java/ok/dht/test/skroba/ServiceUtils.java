@@ -12,10 +12,10 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.file.Path;
 
-public final class MyServiceUtils {
-    private static final Logger LOGGER = LoggerFactory.getLogger(MyServiceUtils.class);
+public final class ServiceUtils {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ServiceUtils.class);
     
-    private MyServiceUtils() {
+    private ServiceUtils() {
         // only pr const
     }
     

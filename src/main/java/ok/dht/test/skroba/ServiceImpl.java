@@ -3,23 +3,29 @@ package ok.dht.test.skroba;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.skroba.db.LevelDbEntityDao;
+import ok.dht.test.skroba.server.ConcurrentHttpServer;
+import ok.dht.test.skroba.shard.ManagerImpl;
 import one.nio.http.HttpServer;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
-public class MyServiceImpl implements Service {
+import static ok.dht.test.skroba.ServiceUtils.createConfigFromPort;
+
+public class ServiceImpl implements Service {
     private final ServiceConfig config;
     
     private HttpServer server;
     
-    public MyServiceImpl(ServiceConfig config) {
+    public ServiceImpl(ServiceConfig config) {
         this.config = config;
     }
     
     @Override
     public CompletableFuture<?> start() throws IOException {
-        server = new MyConcurrentHttpServer(config, MyServiceUtils.createConfigFromPort(config.selfPort()));
+        server = new ConcurrentHttpServer(new LevelDbEntityDao(config.workingDir()), new ManagerImpl(config),
+                createConfigFromPort(config.selfPort()));
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -30,12 +36,12 @@ public class MyServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
     
-    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         
         @Override
         public Service create(ServiceConfig config) {
-            return new MyServiceImpl(config);
+            return new ServiceImpl(config);
         }
     }
 }

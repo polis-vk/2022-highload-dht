@@ -26,7 +26,7 @@ public final class ServerLocalImpl {
         
         final ServiceConfig config = getServiceConfig(args);
         
-        final Service service = new MyServiceImpl(config);
+        final Service service = new ServiceImpl(config);
         
         try {
             service.start()
@@ -41,7 +41,7 @@ public final class ServerLocalImpl {
     
     private static boolean validateArguments(final String[] args) {
         if (args == null || args.length == 0 || Arrays.stream(args)
-                .anyMatch(Objects::isNull) || checkIfNumber(args[0])) {
+                .anyMatch(Objects::isNull) || !checkIfNumber(args[0])) {
             System.out.println("Wrong arguments!");
             System.out.println("Program arguments should be: <n - count of clusters> <1. cluster port> ... <n. " +
                     "cluster's port>");
