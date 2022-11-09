@@ -21,6 +21,7 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -48,6 +49,7 @@ public class ConcurrentHttpServer extends HttpServer {
     private final EntityDao dao;
     
     private final Map<String, RequestHandler> handlers;
+    private final ExecutorService forJoin;
     private ExecutorService requestWorkers;
     
     public ConcurrentHttpServer(final EntityDao dao, final Manager manager, final HttpServerConfig config,
@@ -55,6 +57,7 @@ public class ConcurrentHttpServer extends HttpServer {
             throws IOException {
         super(config, routers);
         this.dao = dao;
+        this.forJoin = new ForkJoinPool();
         handlers = Arrays.stream(AcceptedPaths.values())
                 .collect(Collectors.toMap(AcceptedPaths::getPath,
                         it -> it.getHandler(manager, dao)));
@@ -91,7 +94,7 @@ public class ConcurrentHttpServer extends HttpServer {
         final RequestHandler handler = handlers.get(request.getPath());
         
         try {
-            handler.handle(request, session, id);
+            handler.handle(request, session, id, forJoin);
         } catch (DaoException e) {
             LOGGER.warn("Exception occurred while working with dao: " + e.getMessage());
             
@@ -134,6 +137,7 @@ public class ConcurrentHttpServer extends HttpServer {
         
         super.stop();
         
+        shutdownAndAwaitTermination(forJoin);
         shutdownAndAwaitTermination(requestWorkers);
         
         dao.close();

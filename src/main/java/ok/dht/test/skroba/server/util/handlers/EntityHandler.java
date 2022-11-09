@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -44,7 +45,8 @@ public final class EntityHandler extends AbstractEntityHandler {
     }
     
     @Override
-    public void handle(final Request request, final HttpSession session, final String id) throws IOException {
+    public void handle(final Request request, final HttpSession session, final String id, final ExecutorService forJoin)
+            throws IOException {
         final String ackValue = request.getParameter(ACK);
         final String fromValue = request.getParameter(FROM);
         
@@ -116,21 +118,18 @@ public final class EntityHandler extends AbstractEntityHandler {
                                 } else {
                                     session.sendResponse(Response.ok(current.getValue()));
                                 }
-                                cancelFutures(futures);
                             }
                         }
                         
                         case Request.METHOD_PUT -> {
                             if (response.statusCode() == CREATED && ok.incrementAndGet() == ack) {
                                 session.sendResponse(new Response(Response.CREATED, Response.EMPTY));
-                                cancelFutures(futures);
                             }
                         }
                         
                         case Request.METHOD_DELETE -> {
                             if (response.statusCode() == ACCEPTED && ok.incrementAndGet() == ack) {
                                 session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
-                                cancelFutures(futures);
                             }
                         }
                         
@@ -143,7 +142,7 @@ public final class EntityHandler extends AbstractEntityHandler {
                 }
                 
                 return null;
-            });
+            }, forJoin);
             
         }
     }
@@ -158,9 +157,5 @@ public final class EntityHandler extends AbstractEntityHandler {
         if (handled.incrementAndGet() == from && ok.get() < ack) {
             session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
         }
-    }
-    
-    private static void cancelFutures(final Map<Integer, CompletableFuture<HttpResponse<byte[]>>> futures) {
-        futures.forEach((key, future) -> future.cancel(false));
     }
 }

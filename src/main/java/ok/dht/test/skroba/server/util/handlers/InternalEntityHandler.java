@@ -6,6 +6,7 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 
 import java.io.IOException;
+import java.util.concurrent.ExecutorService;
 
 public final class InternalEntityHandler extends AbstractEntityHandler {
     public InternalEntityHandler(final Manager manager,
@@ -14,7 +15,8 @@ public final class InternalEntityHandler extends AbstractEntityHandler {
     }
     
     @Override
-    public void handle(final Request request, final HttpSession session, final String id) throws IOException {
+    public void handle(final Request request, final HttpSession session, final String id, final ExecutorService service)
+            throws IOException {
         handleDbOperation(session, request.getMethod(), id, request.getBody());
     }
 }
