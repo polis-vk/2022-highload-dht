@@ -2,6 +2,7 @@ package ok.dht.test.gerasimov;
 
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
+import ok.dht.test.gerasimov.service.StartStopService;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -13,7 +14,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 public final class Cluster {
-    private static final Set<Integer> PORTS = Set.of(14454, 25565, 36676, 47787);
+    private static final Set<Integer> PORTS = Set.of(25565, 36676);
     private static final String LOCAL_HOST = "http://localhost:";
     private static final List<String> TOPOLOGY = PORTS.stream()
             .map(port -> LOCAL_HOST + port)
@@ -40,7 +41,7 @@ public final class Cluster {
 
         serviceConfigurations.forEach(serviceConfig -> {
             try {
-                Service service = new ServiceImpl(serviceConfig);
+                Service service = new StartStopService(serviceConfig);
                 service.start().get(1, TimeUnit.SECONDS);
                 Runtime.getRuntime().addShutdownHook(
                         new Thread(() -> stop(service))
