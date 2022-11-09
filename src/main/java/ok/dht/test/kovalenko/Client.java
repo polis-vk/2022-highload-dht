@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.ConnectException;
-import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -32,7 +31,8 @@ public class Client {
 
     public MyHttpResponse put(String url, byte[] data, MyHttpSession session, boolean isRequestForReplica)
             throws IOException, InterruptedException {
-        HttpRequest httpRequest = requestForKey(url, session, isRequestForReplica).PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build();
+        HttpRequest httpRequest = requestForKey(url, session, isRequestForReplica)
+                .PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build();
         return safeClientRequest(httpRequest, url);
     }
 
