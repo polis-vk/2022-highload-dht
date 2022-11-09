@@ -18,11 +18,11 @@ public class KeyDispatcher {
                 border += interval;
             }
         }
-
     }
 
     int getNode(String key) {
-        int hash = key.hashCode();
-        return virtualNodes.higherEntry(hash).getValue();
+        int hash = Math.abs(key.hashCode());
+        int node = virtualNodes.higherEntry(hash).getValue();
+        return node;
     }
 }
