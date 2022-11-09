@@ -97,31 +97,36 @@ public class DemoService implements Service {
 
         List<Node> routerNode = consistentHashRouter.getNode(header.getKey(), header.getFrom());
         for (Node node : routerNode) {
-            handler.action(node, header.getKey()).thenAccept((optional) -> {
-                if (optional == null) {
-                    return;
-                }
-                if (optional.isEmpty()) {
-                    handler.onError();
-                    barrier.unSuccess();
-                } else {
-                    handler.onSuccess(optional);
-                    barrier.success();
-                }
-                if (barrier.isNeedToSendResponseToClient()) {
-                    try {
-                        if (barrier.isAckAchieved()) {
-                            session.sendResponse(handler.responseOk());
-                        } else {
-                            session.sendResponse(handler.responseError());
+            handler.action(node, header.getKey()).thenAcceptAsync((optional) -> {
+                        if (optional == null) {
+                            return;
                         }
-                    } catch (IOException e) {
-                        LOGGER.error("Error, while sending response to client", e);
-                    } finally {
-                        handler.finishResponse();
-                    }
-                }
-            });
+                        if (optional.isEmpty()) {
+                            handler.onError();
+                            barrier.unSuccess();
+                        } else {
+                            handler.onSuccess(optional);
+                            barrier.success();
+                        }
+                        if (barrier.isNeedToSendResponseToClient()) {
+                            defaultResponse(session, handler, barrier);
+                        }
+                    },
+                    proxyExecutor);
+        }
+    }
+
+    private void defaultResponse(HttpSession session, Handler<?> handler, AckBarrier barrier) {
+        try {
+            if (barrier.isAckAchieved()) {
+                session.sendResponse(handler.responseOk());
+            } else {
+                session.sendResponse(handler.responseError());
+            }
+        } catch (IOException e) {
+            LOGGER.error("Error, while sending response to client", e);
+        } finally {
+            handler.finishResponse();
         }
     }
 
