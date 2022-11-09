@@ -20,9 +20,8 @@ import static ok.dht.test.nadutkin.impl.utils.UtilsClass.shutdownAndAwaitTermina
 public class HighLoadHttpServer extends HttpServer {
     private final ExecutorService executors;
 
-    public HighLoadHttpServer(HttpServerConfig config, Object... routers) throws IOException {
+    public HighLoadHttpServer(int maximumPoolSize, HttpServerConfig config, Object... routers) throws IOException {
         super(config, routers);
-        final int maximumPoolSize = Runtime.getRuntime().availableProcessors();
         final int corePoolSize = Math.max(1, maximumPoolSize / 2);
         final long keepAliveTime = 0;
         this.executors = new ThreadPoolExecutor(corePoolSize,

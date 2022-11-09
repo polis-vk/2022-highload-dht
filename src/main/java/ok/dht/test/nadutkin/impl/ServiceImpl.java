@@ -26,6 +26,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 
 import static ok.dht.test.nadutkin.impl.utils.UtilsClass.getBytes;
 
@@ -41,7 +42,10 @@ public class ServiceImpl extends ReplicaService {
     @Override
     public CompletableFuture<?> start() throws IOException {
         this.sharder = new JumpHashSharder(config.clusterUrls());
-        this.client = HttpClient.newHttpClient();
+        this.client = HttpClient
+                .newBuilder()
+                .executor(Executors.newFixedThreadPool(this.maximumPoolSize))
+                .build();
         this.breaker = new CircuitBreaker(config.clusterUrls());
         return super.start();
     }

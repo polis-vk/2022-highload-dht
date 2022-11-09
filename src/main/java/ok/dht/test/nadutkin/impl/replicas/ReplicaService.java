@@ -28,17 +28,21 @@ public class ReplicaService implements Service {
     protected final ServiceConfig config;
     protected HttpServer server;
     protected MemorySegmentDao dao;
+    protected final int maximumPoolSize;
+
     protected final AtomicInteger storedData = new AtomicInteger(0);
 
     public ReplicaService(ServiceConfig config) {
         this.config = config;
+        this.maximumPoolSize = Runtime.getRuntime().availableProcessors();
     }
 
     @Override
     public CompletableFuture<?> start() throws IOException {
         long flushThresholdBytes = 1 << 18;
         this.dao = new MemorySegmentDao(new Config(config.workingDir(), flushThresholdBytes));
-        this.server = new HighLoadHttpServer(UtilsClass.createConfigFromPort(config.selfPort()));
+        this.server = new HighLoadHttpServer(this.maximumPoolSize,
+                UtilsClass.createConfigFromPort(config.selfPort()));
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
