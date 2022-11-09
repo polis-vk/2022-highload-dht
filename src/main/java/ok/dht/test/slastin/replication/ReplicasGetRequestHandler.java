@@ -5,77 +5,99 @@ import one.nio.http.Response;
 
 import java.net.HttpURLConnection;
 import java.nio.ByteBuffer;
-import java.util.Queue;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static ok.dht.test.slastin.Utils.notFound;
 
 public class ReplicasGetRequestHandler extends ReplicasRequestHandler {
-    Queue<Response> responses;
+    final AtomicReference<ReplicaResponse> atomicMergedResponse;
 
     public ReplicasGetRequestHandler(String id, int ack, int from, SladkiiServer sladkiiServer) {
         super(id, ack, from, sladkiiServer);
-        responses = new LinkedBlockingQueue<>(ack);
+        atomicMergedResponse = new AtomicReference<>();
     }
 
     @Override
-    protected void before() {
-        // don't have to upgrade initial request for get query
+    protected void tune() {
+        // do nothing
     }
 
     @Override
-    protected Runnable createNodeTask(int nodeIndex) {
-        return () -> {
-            Response response = sladkiiServer.processRequest(nodeIndex, id, request);
-            int status = response.getStatus();
-            if (status == HttpURLConnection.HTTP_OK || status == HttpURLConnection.HTTP_NOT_FOUND) {
-                int currentAck = ackCounter.incrementAndGet();
-                if (currentAck <= ack) {
-                    responses.offer(response);
-                }
-                if (currentAck == ack) {
-                    sladkiiServer.sendResponse(session, merge());
-                }
-            } else {
+    protected void whenComplete(CompletableFuture<Response> futureResponse) {
+        futureResponse.whenComplete((r, t) -> {
+            int status = r.getStatus();
+            if (t != null || !(status == HttpURLConnection.HTTP_OK || status == HttpURLConnection.HTTP_NOT_FOUND)) {
                 doFail();
+                return;
             }
-        };
+
+            if (status == HttpURLConnection.HTTP_OK) {
+                ByteBuffer buffer = ByteBuffer.wrap(r.getBody());
+                long timestamp = buffer.getLong();
+                var currentResponse = new ReplicaResponse(timestamp, buffer);
+
+                ReplicaResponse oldResponse;
+                boolean repeat = true;
+                while (repeat) {
+                    oldResponse = atomicMergedResponse.get();
+                    repeat = oldResponse == null || currentResponse.getTimestamp() > oldResponse.getTimestamp();
+                    if (repeat) {
+                        repeat = !atomicMergedResponse.compareAndSet(oldResponse, currentResponse);
+                    }
+                }
+            }
+
+            doAck();
+        });
     }
 
     @Override
     protected Response merge() {
-        int size = responses.size();
-        while (size != ack) {
-            // just wait for it (contention doesn't have to be long (see report))
-            size = responses.size();
-        }
-
-        ByteBuffer resultBuffer = getResultBuffer();
+        ReplicaResponse mergedResponse = atomicMergedResponse.get();
 
         // check whether all responses were NOT_FOUND or last response was dead (tombstone)
-        if (resultBuffer == null || resultBuffer.get() == 0) {
-            return notFound();
-        }
-
-        byte[] resultValue = new byte[resultBuffer.remaining()];
-        resultBuffer.get(resultValue);
-        return new Response(Response.OK, resultValue);
+        return mergedResponse == null || !mergedResponse.isAlive()
+                ? notFound()
+                : new Response(Response.OK, mergedResponse.getValue());
     }
 
-    private ByteBuffer getResultBuffer() {
-        long resultTimestamp = -1;
-        ByteBuffer resultBuffer = null;
-        for (Response response : responses) {
-            if (response.getStatus() != HttpURLConnection.HTTP_OK) {
-                continue;
-            }
-            ByteBuffer buffer = ByteBuffer.wrap(response.getBody());
-            long timestamp = buffer.getLong();
-            if (timestamp > resultTimestamp) {
-                resultTimestamp = timestamp;
-                resultBuffer = buffer;
-            }
+    static class ReplicaResponse {
+        private final long timestamp;
+        private final ByteBuffer buffer;
+        private Boolean isAlive;
+        private byte[] value;
+
+        ReplicaResponse(long timestamp, ByteBuffer buffer) {
+            this.timestamp = timestamp;
+            this.buffer = buffer;
+            this.isAlive = null;
+            this.value = null;
         }
-        return resultBuffer;
+
+        public long getTimestamp() {
+            return timestamp;
+        }
+
+        public ByteBuffer getBuffer() {
+            return buffer;
+        }
+
+        public boolean isAlive() {
+            if (isAlive == null) {
+                isAlive = buffer.get() == 1;
+            }
+            return isAlive;
+        }
+
+        public byte[] getValue() {
+            if (value == null) {
+                isAlive();
+
+                value = new byte[buffer.remaining()];
+                buffer.get(value);
+            }
+            return value;
+        }
     }
 }
