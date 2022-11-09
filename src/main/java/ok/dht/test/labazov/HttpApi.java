@@ -194,7 +194,7 @@ public final class HttpApi extends HttpServer {
                                      final HttpSession session,
                                      final String key,
                                      final int acks,
-                                     final int froms) throws IOException {
+                                     final int froms) {
         final List<Node> targetShards = shards.getShards(key, froms);
         final RequestGather gather = new RequestGather(acks, froms);
         for (final Node shard : targetShards) {
@@ -202,9 +202,9 @@ public final class HttpApi extends HttpServer {
                             HttpResponse.BodyHandlers.ofByteArray())
                     .whenCompleteAsync(((httpResponse, throwable) -> {
                         if (throwable == null) {
-                            final Response response = convertResponse(httpResponse);
-                            switch (response.getStatus()) {
-                                case 200, 201, 202, 404 -> gather.submitGoodResponse(session, response);
+                            switch (httpResponse.statusCode()) {
+                                case 200, 201, 202, 404 -> gather.submitGoodResponse(session,
+                                        convertResponse(httpResponse));
                                 default -> gather.submitFailure(session);
                             }
                         } else {
@@ -224,6 +224,7 @@ public final class HttpApi extends HttpServer {
                 )
                 .header("Proxy", "true").build();
     }
+
     private static Response convertResponse(HttpResponse<byte[]> response) {
         String status = switch (response.statusCode()) {
             case HttpURLConnection.HTTP_OK -> Response.OK;
@@ -248,7 +249,11 @@ public final class HttpApi extends HttpServer {
             case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> Response.GATEWAY_TIMEOUT;
             default -> throw new IllegalArgumentException("Unknown status code: " + response.statusCode());
         };
-        return new Response(status, response.body());
+        Response convertedResponse = new Response(status, response.body());
+        response.headers().firstValue("Timestamp").ifPresent((ts) -> {
+            convertedResponse.addHeader("Timestamp: " + ts);
+        });
+        return convertedResponse;
     }
 
     private void genericExceptionHandler(Request request, HttpSession session) {
