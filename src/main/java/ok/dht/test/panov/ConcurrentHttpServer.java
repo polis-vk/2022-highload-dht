@@ -21,7 +21,11 @@ public class ConcurrentHttpServer extends HttpServer {
 
     ExecutorService executorService;
 
-    public ConcurrentHttpServer(HttpServerConfig config, ExecutorService executorService, Object... routers) throws IOException {
+    public ConcurrentHttpServer(
+            HttpServerConfig config,
+            ExecutorService executorService,
+            Object... routers
+    ) throws IOException {
         super(config, routers);
         this.executorService = executorService;
     }
