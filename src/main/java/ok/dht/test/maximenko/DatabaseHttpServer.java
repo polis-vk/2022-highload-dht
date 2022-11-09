@@ -25,6 +25,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayDeque;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -34,12 +35,14 @@ import java.util.stream.IntStream;
 
 public class DatabaseHttpServer extends HttpServer {
     static final int flushDaoThresholdBytes = 10000000;
+    private static final int DELETED_RECORD_MESSAGE = 409;
     private final static String requestPath = "/v0/entity";
     static final private Response badRequest = new Response(
             Response.BAD_REQUEST,
             Response.EMPTY
     );
     private Dao dao;
+    private TimeDaoWrapper timeDaoWrapper;
 
     private final KeyDispatcher keyDispatcher;
     private final HttpClient httpClient;
@@ -90,7 +93,8 @@ public class DatabaseHttpServer extends HttpServer {
 
         String spreadHeaderValue = request.getHeader(notSpreadHeader);
         if (spreadHeaderValue != null && spreadHeaderValue.equals(": " + notSpreadHeaderValue)) {
-            session.sendResponse(localRequest(key, request));
+            long time = Long.parseLong(request.getHeader("time: "));
+            session.sendResponse(localRequest(key, request, time));
             return;
         }
 
@@ -113,17 +117,31 @@ public class DatabaseHttpServer extends HttpServer {
         ArrayDeque<Integer> replicasIds = keyDispatcher.getReplicas(key, replicasAmount);
         Integer successCount = 0;
         Response response;
-        Response successfulResponse = new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        Response successfulResponse = new Response(Response.NOT_FOUND, Response.EMPTY);
+        long mostRecentResponseTime = 0;
+        Date date = new Date();
+        long currentTime = date.getTime();
         for (Integer replica : replicasIds) {
             if (replica != selfId) {
-                response = proxyRequest(replica, key, request);
+                response = proxyRequest(replica, key, request, currentTime);
             } else {
-                response = localRequest(key, request);
+                response = localRequest(key, request, currentTime);
+                if (response.getStatus() == DELETED_RECORD_MESSAGE) {
+                    response = new Response(Response.NOT_FOUND, Response.EMPTY);
+                }
             }
 
             int responseCode = response.getStatus();
             if (responseCode < 500) {
-                successfulResponse = response;
+                if (responseCode != 404) {
+                    long time = getTimeFromResponse(response);
+                    if (mostRecentResponseTime <= time) {
+                        successfulResponse = response;
+                        if (response.getStatus() == DELETED_RECORD_MESSAGE) {
+                            successfulResponse = new Response(Response.NOT_FOUND, Response.EMPTY);
+                        }
+                    }
+                }
                 successCount += 1;
             }
         }
@@ -143,20 +161,28 @@ public class DatabaseHttpServer extends HttpServer {
         }
     }
 
-    private Response localRequest(String key, Request request) {
+    private long getTimeFromResponse(Response response) {
+        String timeHeader = response.getHeader("time: ");
+        if (timeHeader == null || timeHeader == "") {
+            return 0;
+        }
+        return Long.parseLong(timeHeader);
+    }
+    private Response localRequest(String key, Request request, long time) {
         try {
-            return handleMethod(key, request.getMethod(), request.getBody());
+            return handleMethod(key, request.getMethod(), request.getBody(), time);
         } catch (IOException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
     }
 
-    private Response proxyRequest(int targetNodeId, String key, Request request) {
+    private Response proxyRequest(int targetNodeId, String key, Request request, long time) {
         HttpRequest httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(clusterConfig[targetNodeId] + requestPath + "?id=" + key))
                 .timeout(Duration.ofSeconds(1))
                 .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
                 .header(notSpreadHeader, notSpreadHeaderValue)
+                .header("time", String.valueOf(time))
                 .build();
 
         try {
@@ -167,53 +193,53 @@ public class DatabaseHttpServer extends HttpServer {
         }
     }
 
-    Response handleMethod(String key, int method, byte[] body) throws IOException {
+    Response handleMethod(String key, int method, byte[] body, long time) throws IOException {
         switch (method) {
             case Request.METHOD_GET:
                 return handleGet(key);
             case Request.METHOD_DELETE:
-                return handleDelete(key);
+                return handleDelete(key, time);
             case Request.METHOD_PUT:
-                return handlePut(key, body);
+                return handlePut(key, body, time);
             default:
                 return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
         }
     }
 
-    private Response handlePut(String keyString, byte[] body) {
-        MemorySegment key = MemorySegment.ofArray(keyString.getBytes(StandardCharsets.UTF_8));
-        MemorySegment value = MemorySegment.ofArray(body);
-        Entry entry = new BaseEntry(key, value);
-        dao.upsert(entry);
+    private Response handlePut(String keyString, byte[] body, long time) {
+        timeDaoWrapper.put(keyString.getBytes(StandardCharsets.UTF_8), body, time);
         return new Response(
                 String.valueOf(HttpURLConnection.HTTP_CREATED),
                 Response.EMPTY
         );
     }
 
-    private Response handleDelete(String keyString) {
-        MemorySegment key = MemorySegment.ofArray(keyString.getBytes(StandardCharsets.UTF_8));
-        Entry entry = new BaseEntry(key, null);
-        dao.upsert(entry);
+    private Response handleDelete(String keyString, long time) {
+        timeDaoWrapper.delete(keyString.getBytes(StandardCharsets.UTF_8), time);
         return new Response(
                 String.valueOf(HttpURLConnection.HTTP_ACCEPTED),
                 Response.EMPTY
         );
     }
 
-    private Response handleGet(String keyString) throws IOException {
-        MemorySegment key = MemorySegment.ofArray(keyString.getBytes(StandardCharsets.UTF_8));
-        Entry<MemorySegment> value = dao.get(key);
-        if (value != null) {
-            if (value.value() == null)
-                throw new RuntimeException();
-            ByteBuffer buffer = value.value().asByteBuffer();
-            byte[] arr = new byte[buffer.remaining()];
-            buffer.get(arr);
-            return new Response(
-                    String.valueOf(HttpURLConnection.HTTP_OK),
-                    arr
+    private Response handleGet(String keyString) {
+        ValueAndTime valueAndTime = timeDaoWrapper.get(keyString.getBytes(StandardCharsets.UTF_8));
+        if (valueAndTime != null) {
+            if (valueAndTime.value == null) {
+                Response response = new Response(
+                        convertStatusCode(DELETED_RECORD_MESSAGE),
+                        Response.EMPTY
+                );
+                response.addHeader("time: " + valueAndTime.time);
+                return response;
+            }
+
+            Response response = new Response(
+                    Response.OK,
+                    valueAndTime.value
             );
+            response.addHeader("time: " + valueAndTime.time);
+            return response;
         }
 
         return new Response(
@@ -228,6 +254,7 @@ public class DatabaseHttpServer extends HttpServer {
         requestHandlers = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
         try {
             dao = new MemorySegmentDao(daoConfig);
+            timeDaoWrapper = new TimeDaoWrapper(dao);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -267,6 +294,8 @@ public class DatabaseHttpServer extends HttpServer {
                 return Response.ACCEPTED;
             case 404:
                 return Response.NOT_FOUND;
+            case 409:
+                return Response.CONFLICT;
             default:
                 return Response.BAD_GATEWAY;
         }

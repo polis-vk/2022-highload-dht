@@ -9,6 +9,7 @@ public class KeyDispatcher {
 
     private final static int virtualNodesPerMachine = 5;
     TreeMap<Integer, Integer> virtualNodes;
+    private final int maxBorder;
     KeyDispatcher(List<Integer> nodes) {
         int nodeAmount = nodes.size();
         int interval = Integer.MAX_VALUE / (nodeAmount * virtualNodesPerMachine);
@@ -20,6 +21,7 @@ public class KeyDispatcher {
                 border += interval;
             }
         }
+        maxBorder = border;
     }
 
     int getNode(String key) {
@@ -34,7 +36,7 @@ public class KeyDispatcher {
         for (int i = 0; i < replicasAmount; i++) {
             Map.Entry<Integer, Integer> virtualNode = virtualNodes.higherEntry(hash);
             result.add(virtualNode.getValue());
-            hash = virtualNode.getKey() + 1;
+            hash = (virtualNode.getKey() + 1) % maxBorder;
         }
         return result;
     }
