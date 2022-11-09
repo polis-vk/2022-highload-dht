@@ -7,11 +7,11 @@ import ok.dht.test.skroba.db.LevelDbEntityDao;
 import ok.dht.test.skroba.server.ConcurrentHttpServer;
 import ok.dht.test.skroba.shard.ManagerImpl;
 import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
-
-import static ok.dht.test.skroba.ServiceUtils.createConfigFromPort;
 
 public class ServiceImpl implements Service {
     private final ServiceConfig config;
@@ -34,6 +34,15 @@ public class ServiceImpl implements Service {
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
         return CompletableFuture.completedFuture(null);
+    }
+    
+    private static HttpServerConfig createConfigFromPort(int port) {
+        HttpServerConfig httpConfig = new HttpServerConfig();
+        AcceptorConfig acceptor = new AcceptorConfig();
+        acceptor.port = port;
+        acceptor.reusePort = true;
+        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+        return httpConfig;
     }
     
     @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")

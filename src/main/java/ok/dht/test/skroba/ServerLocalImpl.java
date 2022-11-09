@@ -95,7 +95,8 @@ public final class ServerLocalImpl {
     }
     
     private static boolean checkIfNumber(final String arg) {
-        for (char ch : arg.toCharArray()) {
+        for (int i = 0; i < arg.length(); i++) {
+            char ch = arg.charAt(i);
             if (!Character.isDigit(ch)) {
                 return false;
             }
