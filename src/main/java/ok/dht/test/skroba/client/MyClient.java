@@ -1,6 +1,5 @@
 package ok.dht.test.skroba.client;
 
-import java.net.URISyntaxException;
 import java.net.http.HttpResponse;
 import java.util.concurrent.CompletableFuture;
 

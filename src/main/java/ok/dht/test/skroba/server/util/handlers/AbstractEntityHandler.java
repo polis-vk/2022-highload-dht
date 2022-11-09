@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.time.Instant;
 
 public abstract class AbstractEntityHandler implements RequestHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractEntityHandler.class);
@@ -45,8 +46,8 @@ public abstract class AbstractEntityHandler implements RequestHandler {
                 }
                 
                 case Request.METHOD_DELETE -> {
-                    Entity entity = Entity.TOMBSTONE(Entity.deserialize(body)
-                            .getTimestamp());
+                    Entity entity = Entity.tombstone(Instant.now()
+                            .toEpochMilli());
                     dao.put(id, entity.serialize());
                     session.sendResponse(new Response(Response.ACCEPTED, Response.EMPTY));
                 }

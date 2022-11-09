@@ -43,8 +43,10 @@ public final class ServerLocalImpl {
         if (args == null || args.length == 0 || Arrays.stream(args)
                 .anyMatch(Objects::isNull) || !checkIfNumber(args[0])) {
             LOGGER.warn("Wrong arguments!");
+            
             LOGGER.warn("Program arguments should be: <n - count of clusters> <1. cluster port> ... <n. " +
                     "cluster's port>");
+            
             return false;
         }
         
@@ -88,7 +90,7 @@ public final class ServerLocalImpl {
                     Files.createTempDirectory(directory));
         } catch (IOException e) {
             LOGGER.error("Can't create DB directory: " + directory);
-            throw new RuntimeException(e.getMessage());
+            throw new RuntimeException(e.getMessage(), e);
         }
     }
     

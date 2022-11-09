@@ -14,7 +14,7 @@ import java.nio.file.Path;
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
 public class LevelDbEntityDao implements EntityDao {
-    private final static Logger LOGGER = LoggerFactory.getLogger(LevelDbEntityDao.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(LevelDbEntityDao.class);
     
     private final Path path;
     private DB db;

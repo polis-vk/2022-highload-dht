@@ -37,7 +37,6 @@ public final class EntityHandler extends AbstractEntityHandler {
     private final int defaultFrom;
     private final int defaultAck;
     
-    
     public EntityHandler(final Manager manager, final EntityDao dao) {
         super(manager, dao);
         this.defaultFrom = manager.clusterSize();
@@ -49,7 +48,8 @@ public final class EntityHandler extends AbstractEntityHandler {
         final String ackValue = request.getParameter(ACK);
         final String fromValue = request.getParameter(FROM);
         
-        int ack, from;
+        int ack;
+        int from;
         try {
             ack = ackValue == null ? defaultAck : Integer.parseInt(ackValue);
             from = fromValue == null ? defaultFrom : Integer.parseInt(fromValue);
@@ -75,10 +75,10 @@ public final class EntityHandler extends AbstractEntityHandler {
         final AtomicReference<Entity> entity = new AtomicReference<>();
         final Map<Integer, CompletableFuture<HttpResponse<byte[]>>> futures = new ConcurrentHashMap<>();
         
-        
         for (int i = 0; i < nodes.size(); i++) {
             final int index = i;
             
+            LOGGER.warn(nodes.get(index) + INTERNAL_ENTITY.getPath() + "?id=" + id);
             final CompletableFuture<HttpResponse<byte[]>> result = client.sendRequest(
                     nodes.get(index) + INTERNAL_ENTITY.getPath() + "?id=" + id, request.getMethod(),
                     localEntity.serialize()
@@ -101,6 +101,7 @@ public final class EntityHandler extends AbstractEntityHandler {
                         case Request.METHOD_GET -> {
                             if (response.statusCode() == OK) {
                                 Entity gotEntity = Entity.deserialize(response.body());
+                                
                                 
                                 while (true) {
                                     Entity old = entity.get();
@@ -145,7 +146,6 @@ public final class EntityHandler extends AbstractEntityHandler {
                 } catch (IOException e) {
                     LOGGER.error("Fail to send response: ", e);
                 }
-                
                 
                 return null;
             });

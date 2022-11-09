@@ -9,7 +9,6 @@ public class Entity implements Comparable<Entity> {
     
     private byte[] serialized;
     
-    
     public Entity(final byte[] value) {
         this(false, Instant.now()
                 .toEpochMilli(), value);
@@ -25,7 +24,7 @@ public class Entity implements Comparable<Entity> {
         this(false, timestamp, value);
     }
     
-    public static Entity TOMBSTONE(final long timestamp) {
+    public static Entity tombstone(final long timestamp) {
         return new Entity(true, timestamp, new byte[0]);
     }
     
@@ -53,18 +52,18 @@ public class Entity implements Comparable<Entity> {
     
     public byte[] serialize() {
         if (serialized != null) {
-            return serialized;
+            return serialized.clone();
         }
         
         final byte[] result = new byte[value.length + Long.BYTES + 1];
         
         result[0] = (byte) (isTombstone() ? 1 : 0);
         
-        long timestamp = this.timestamp;
+        long timestampLocal = this.timestamp;
         
         for (int i = Long.BYTES - 1; i >= 0; i--) {
-            result[i] = (byte) (timestamp & 0xFF);
-            timestamp >>= Byte.SIZE;
+            result[i] = (byte) (timestampLocal & 0xFF);
+            timestampLocal >>= Byte.SIZE;
         }
         
         System.arraycopy(value, 0, result, Long.BYTES + 1, value.length);
@@ -83,6 +82,6 @@ public class Entity implements Comparable<Entity> {
     }
     
     public byte[] getValue() {
-        return value;
+        return value.clone();
     }
 }
