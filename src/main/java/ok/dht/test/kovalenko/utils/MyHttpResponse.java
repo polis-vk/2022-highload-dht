@@ -1,64 +1,29 @@
 package ok.dht.test.kovalenko.utils;
 
-import javax.net.ssl.SSLSession;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpHeaders;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.Optional;
+import one.nio.http.Response;
 
-public class MyHttpResponse implements HttpResponse<byte[]> {
+public class MyHttpResponse extends Response {
+    private final long timestamp;
 
-    private final int statusCode;
-    private final byte[] body;
-
-    public MyHttpResponse(int statusCode, Exception e) {
-        this.statusCode = statusCode;
-        this.body = Arrays.toString(e.getStackTrace()).getBytes(StandardCharsets.UTF_8);
+    public MyHttpResponse(String resultCode, long timestamp) {
+        this(resultCode, Response.EMPTY, timestamp);
     }
 
-    @Override
-    public int statusCode() {
-        return statusCode;
+    public MyHttpResponse(String resultCode, byte[] body) {
+        this(resultCode, body, 0);
     }
 
-    @Override
-    public HttpRequest request() {
-        return null;
+    public MyHttpResponse(String resultCode, byte[] body, long timestamp) {
+        super(resultCode, body);
+        this.timestamp = timestamp;
+        addHeader(HttpUtils.TIME_HEADER + ":" + timestamp);
     }
 
-    @Override
-    public Optional<HttpResponse<byte[]>> previousResponse() {
-        return Optional.empty();
+    public long getTimestamp() {
+        return timestamp;
     }
 
-    @Override
-    public HttpHeaders headers() {
-        return null;
-    }
-
-    @Override
-    public byte[] body() {
-        byte[] thisBody = new byte[body.length];
-        System.arraycopy(body, 0, thisBody, 0, body.length);
-        return thisBody;
-    }
-
-    @Override
-    public Optional<SSLSession> sslSession() {
-        return Optional.empty();
-    }
-
-    @Override
-    public URI uri() {
-        return null;
-    }
-
-    @Override
-    public HttpClient.Version version() {
-        return null;
+    public static MyHttpResponse notEnoughReplicas() {
+        return new MyHttpResponse(HttpUtils.NOT_ENOUGH_REPLICAS, 0);
     }
 }

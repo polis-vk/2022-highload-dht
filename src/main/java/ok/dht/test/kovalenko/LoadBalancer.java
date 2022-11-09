@@ -1,8 +1,8 @@
 package ok.dht.test.kovalenko;
 
 import ok.dht.test.kovalenko.utils.HttpUtils;
+import ok.dht.test.kovalenko.utils.MyHttpResponse;
 import ok.dht.test.kovalenko.utils.MyHttpSession;
-import ok.dht.test.kovalenko.utils.MyOneNioResponse;
 import ok.dht.test.kovalenko.utils.ResponseComparator;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -30,18 +30,15 @@ public final class LoadBalancer {
             throws IOException, ExecutionException, InterruptedException {
         makeAllNodesHealthy(); // parody on CircuitBreaker
         int ack = session.getReplicas().ack();
-        MyOneNioResponse response;
         if (nodes.size() < ack) {
-            response = MyServiceBase.emptyResponseFor(HttpUtils.NOT_ENOUGH_REPLICAS);
-            session.sendResponse(response);
+            session.sendResponse(MyHttpResponse.notEnoughReplicas());
             return;
         }
 
         List<Node> replicasNodeForKey = replicasForKey(session.getRequestId(), ack);
 
         if (replicasNodeForKey.size() != session.getReplicas().ack()) {
-            response = MyServiceBase.emptyResponseFor(HttpUtils.NOT_ENOUGH_REPLICAS);
-            session.sendResponse(response);
+            session.sendResponse(MyHttpResponse.notEnoughReplicas());
             return;
         }
 
@@ -101,11 +98,11 @@ public final class LoadBalancer {
 
     private void handleWithReplicas(Request request, MyHttpSession session,
                                     MyServiceBase service, List<Node> replicasForKey) {
-        MyOneNioResponse response;
+        MyHttpResponse response;
         try {
-            request.addHeader("Replica");
+            request.addHeader(HttpUtils.REPLICA_HEADER);
             int numApproves = 0;
-            Queue<MyOneNioResponse> replicaGoodResponses = new PriorityQueue<>(ResponseComparator.INSTANSE);
+            Queue<MyHttpResponse> replicaGoodResponses = new PriorityQueue<>(ResponseComparator.INSTANSE);
             boolean wasSelfSaving = false;
             for (Node replicaForKey : replicasForKey) {
                 MyServiceBase.Handler handler;
@@ -132,20 +129,20 @@ public final class LoadBalancer {
             if (numApproves == session.getReplicas().ack()) {
                 response = replicaGoodResponses.peek();
             } else {
-                response = MyServiceBase.emptyResponseFor(HttpUtils.NOT_ENOUGH_REPLICAS);
+                response = MyHttpResponse.notEnoughReplicas();
             }
         } catch (Exception e) {
             log.error("Fatal error", e);
             response = MyServiceBase.emptyResponseFor(Response.INTERNAL_ERROR);
         }
 
-        Response finalResponse = response;
+        MyHttpResponse finalResponse = response;
         HttpUtils.safeHttpRequest(session, log, () -> session.sendResponse(finalResponse));
     }
 
     private boolean requestForReplica(Request request, MyHttpSession session, String url,
-                                      MyServiceBase.Handler handler, Queue<MyOneNioResponse> replicaGoodResponses) {
-        MyOneNioResponse replicaResponse = nodeRequest(request, handler, session);
+                                      MyServiceBase.Handler handler, Queue<MyHttpResponse> replicaGoodResponses) {
+        MyHttpResponse replicaResponse = nodeRequest(request, handler, session);
         if (isGoodResponse(replicaResponse)) {
             replicaGoodResponses.add(replicaResponse);
             return true;
@@ -156,21 +153,15 @@ public final class LoadBalancer {
         }
     }
 
-    private MyOneNioResponse nodeRequest(Request request, MyServiceBase.Handler handler, MyHttpSession session) {
+    private MyHttpResponse nodeRequest(Request request, MyServiceBase.Handler handler, MyHttpSession session) {
         try {
-            Object nodedResponse = handler.handle(request, session);
-            if (nodedResponse instanceof MyOneNioResponse) {
-                return (MyOneNioResponse) nodedResponse;
-            } else {
-                HttpResponse<byte[]> httpResponse = (HttpResponse<byte[]>) nodedResponse;
-                return HttpUtils.toOneNio(httpResponse);
-            }
+            return handler.handle(request, session);
         } catch (Exception e) {
             return MyServiceBase.emptyResponseFor(Response.INTERNAL_ERROR);
         }
     }
 
-    private boolean isGoodResponse(Response response) {
+    private boolean isGoodResponse(MyHttpResponse response) {
         return response.getStatus() == HttpURLConnection.HTTP_OK
                 || response.getStatus() == HttpURLConnection.HTTP_CREATED
                 || response.getStatus() == HttpURLConnection.HTTP_ACCEPTED

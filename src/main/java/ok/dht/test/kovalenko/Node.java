@@ -1,6 +1,7 @@
 package ok.dht.test.kovalenko;
 
 import ok.dht.test.kovalenko.utils.HttpUtils;
+import ok.dht.test.kovalenko.utils.MyHttpResponse;
 import ok.dht.test.kovalenko.utils.MyHttpSession;
 import one.nio.http.Request;
 
@@ -17,7 +18,7 @@ public class Node {
         this.selfUrl = selfUrl;
     }
 
-    public HttpResponse<byte[]> proxyRequest(Request request, MyHttpSession session)
+    public MyHttpResponse proxyRequest(Request request, MyHttpSession session)
             throws ExecutionException, InterruptedException, IllegalAccessException, IOException {
         if (isIll()) {
             throw new IllegalAccessException("Node is ill!");

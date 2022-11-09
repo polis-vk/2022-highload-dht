@@ -2,6 +2,7 @@ package ok.dht.test.kovalenko;
 
 import ok.dht.test.kovalenko.dao.utils.PoolKeeper;
 import ok.dht.test.kovalenko.utils.HttpUtils;
+import ok.dht.test.kovalenko.utils.MyHttpResponse;
 import ok.dht.test.kovalenko.utils.MyHttpSession;
 import ok.dht.test.kovalenko.utils.ReplicasUtils;
 import one.nio.http.HttpServer;
@@ -17,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -43,22 +45,19 @@ public class MyServerBase extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        Response response = MyServiceBase.emptyResponseFor(Response.BAD_REQUEST);
-        session.sendResponse(response);
+        sendEmptyResponseForCode(session, Response.BAD_REQUEST);
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         if (!MyServerBase.availableMethods.contains(request.getMethod())) {
-            Response response = MyServiceBase.emptyResponseFor(Response.METHOD_NOT_ALLOWED);
-            session.sendResponse(response);
+            sendEmptyResponseForCode(session, Response.METHOD_NOT_ALLOWED);
             return;
         }
 
         String id = request.getParameter("id=");
         if (id == null || id.isEmpty()) {
-            Response response = MyServiceBase.emptyResponseFor(Response.BAD_REQUEST);
-            session.sendResponse(response);
+            sendEmptyResponseForCode(session, Response.BAD_REQUEST);
             return;
         }
 
@@ -66,8 +65,7 @@ public class MyServerBase extends HttpServer {
         String from = request.getParameter("from=");
         ReplicasUtils.ReplicasValidation replicasValidation = ReplicasUtils.validate(ack, from);
         if (!replicasValidation.valid()) {
-            Response response = MyServiceBase.emptyResponseFor(Response.BAD_REQUEST);
-            session.sendResponse(response);
+            sendEmptyResponseForCode(session, Response.BAD_REQUEST);
             return;
         }
 
@@ -94,6 +92,11 @@ public class MyServerBase extends HttpServer {
     @Override
     public HttpSession createSession(Socket socket) throws RejectedSessionException {
         return new MyHttpSession(socket, this);
+    }
+
+    private void sendEmptyResponseForCode(HttpSession session, String statusCode) throws IOException {
+        MyHttpResponse response = MyServiceBase.emptyResponseFor(statusCode);
+        session.sendResponse(response);
     }
 
     private void handle(Request request, MyHttpSession myHttpSession) {

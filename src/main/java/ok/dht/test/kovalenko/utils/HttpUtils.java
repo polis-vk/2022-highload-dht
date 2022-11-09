@@ -12,12 +12,14 @@ import java.net.http.HttpResponse;
 public final class HttpUtils {
 
     public static final Client CLIENT = new Client();
-    public static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
+    public static final String REPLICA_HEADER = "Replica";
+    public static final String TIME_HEADER = "time";
+    public static final String NOT_ENOUGH_REPLICAS = "504 Not enough replicas";
 
     private HttpUtils() {
     }
 
-    public static String toOneNio(int statusCode) {
+    public static String toOneNioResponseCode(int statusCode) {
         return switch (statusCode) {
             case HttpURLConnection.HTTP_OK -> Response.OK;
             case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
@@ -43,12 +45,16 @@ public final class HttpUtils {
         };
     }
 
-    public static MyOneNioResponse toOneNio(HttpResponse<byte[]> r) throws IllegalAccessException {
-        String statusCode = toOneNio(r.statusCode());
+    public static MyHttpResponse toMyHttpResponse(HttpResponse<byte[]> r) {
+        String statusCode = toOneNioResponseCode(r.statusCode());
         byte[] body = r.body();
-        long time = r.headers().firstValueAsLong("time")
-                .orElseThrow(() -> new IllegalAccessException("Response " + r + " doesn't contain header 'time'"));
-        return new MyOneNioResponse(statusCode, body, time);
+        long time = getTimeHeader(r);
+        return new MyHttpResponse(statusCode, body, time);
+    }
+
+    public static long getTimeHeader(HttpResponse<byte[]> r) {
+        return r.headers().firstValueAsLong(TIME_HEADER)
+                .orElseThrow(() -> new IllegalArgumentException("Response " + r + " doesn't contain header 'time'"));
     }
 
     public static void sendError(String responseCode, Exception e, HttpSession session, Logger log) {

@@ -7,8 +7,8 @@ import ok.dht.test.kovalenko.dao.aliases.TypedBaseTimedEntry;
 import ok.dht.test.kovalenko.dao.aliases.TypedTimedEntry;
 import ok.dht.test.kovalenko.dao.base.ByteBufferDaoFactoryB;
 import ok.dht.test.kovalenko.utils.HttpUtils;
+import ok.dht.test.kovalenko.utils.MyHttpResponse;
 import ok.dht.test.kovalenko.utils.MyHttpSession;
-import ok.dht.test.kovalenko.utils.MyOneNioResponse;
 import ok.dht.test.kovalenko.utils.ReplicasUtils;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.net.HttpURLConnection;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -50,12 +51,12 @@ public class MyServiceBase implements Service {
         return httpConfig;
     }
 
-    public static MyOneNioResponse emptyResponseFor(String code, long timestamp) {
-        return new MyOneNioResponse(code, Response.EMPTY, timestamp);
+    public static MyHttpResponse emptyResponseFor(String statusCode, long timestamp) {
+        return new MyHttpResponse(statusCode, timestamp);
     }
 
-    public static MyOneNioResponse emptyResponseFor(String code) {
-        return new MyOneNioResponse(code, Response.EMPTY, 0);
+    public static MyHttpResponse emptyResponseFor(String statusCode) {
+        return new MyHttpResponse(statusCode, 0);
     }
 
     private static TypedTimedEntry entryFor(ByteBuffer key, ByteBuffer value) {
@@ -97,8 +98,8 @@ public class MyServiceBase implements Service {
         MyHttpSession myHttpSession = (MyHttpSession) session;
         ReplicasUtils.Replicas replicas = ReplicasUtils.recreate(myHttpSession.getReplicas(), clusterUrls().size());
         myHttpSession.setReplicas(replicas);
-        if (request.getHeader("Replica") != null) {
-            Response response = handle(request, myHttpSession);
+        if (request.getHeader(HttpUtils.REPLICA_HEADER) != null) {
+            MyHttpResponse response = handle(request, myHttpSession);
             session.sendResponse(response);
         } else {
             loadBalancer.balance(this, request, myHttpSession);
@@ -106,36 +107,35 @@ public class MyServiceBase implements Service {
     }
 
     // For inner calls
-    public MyOneNioResponse handle(Request request, MyHttpSession session)
+    public MyHttpResponse handle(Request request, MyHttpSession session)
             throws IOException {
         return switch (request.getMethod()) {
             case Request.METHOD_GET -> handleGet(request, session);
             case Request.METHOD_PUT -> handlePut(request, session);
             case Request.METHOD_DELETE -> handleDelete(request, session);
             default ->
-                    throw new IllegalArgumentException("Illegal request method: "
-                            + HttpUtils.toOneNio(request.getMethod()));
+                    throw new IllegalArgumentException("Illegal request method: " + request.getMethod());
         };
     }
 
-    public MyOneNioResponse handleGet(Request request, MyHttpSession session) throws IOException {
+    public MyHttpResponse handleGet(Request request, MyHttpSession session) throws IOException {
         ByteBuffer key = daoFactory.fromString(session.getRequestId());
         TypedTimedEntry found = this.dao.get(key);
         return found == null
                 ? emptyResponseFor(Response.NOT_FOUND)
                 : found.isTombstone()
                 ? emptyResponseFor(Response.NOT_FOUND, found.timestamp())
-                : new MyOneNioResponse(Response.OK, daoFactory.toBytes(found.value()), found.timestamp());
+                : new MyHttpResponse(Response.OK, daoFactory.toBytes(found.value()), found.timestamp());
     }
 
-    public MyOneNioResponse handlePut(Request request, MyHttpSession session) throws IOException {
+    public MyHttpResponse handlePut(Request request, MyHttpSession session) throws IOException {
         ByteBuffer key = daoFactory.fromString(session.getRequestId());
         ByteBuffer value = ByteBuffer.wrap(request.getBody());
         this.dao.upsert(entryFor(key, value));
         return emptyResponseFor(Response.CREATED);
     }
 
-    public MyOneNioResponse handleDelete(Request request, MyHttpSession session) throws IOException {
+    public MyHttpResponse handleDelete(Request request, MyHttpSession session) throws IOException {
         ByteBuffer key = daoFactory.fromString(session.getRequestId());
         this.dao.upsert(entryFor(key, null));
         return emptyResponseFor(Response.ACCEPTED);
@@ -158,8 +158,9 @@ public class MyServiceBase implements Service {
     }
 
     public interface Handler {
-        Object handle(Request request, MyHttpSession session)
+        MyHttpResponse handle(Request request, MyHttpSession session)
                 throws IOException, ExecutionException,
                 InterruptedException, IllegalAccessException, InvocationTargetException;
     }
 }
+

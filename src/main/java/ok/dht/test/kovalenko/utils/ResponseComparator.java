@@ -2,7 +2,7 @@ package ok.dht.test.kovalenko.utils;
 
 import java.util.Comparator;
 
-public final class ResponseComparator implements Comparator<MyOneNioResponse> {
+public final class ResponseComparator implements Comparator<MyHttpResponse> {
 
     public static final ResponseComparator INSTANSE = new ResponseComparator();
 
@@ -10,7 +10,7 @@ public final class ResponseComparator implements Comparator<MyOneNioResponse> {
     }
 
     @Override
-    public int compare(MyOneNioResponse r1, MyOneNioResponse r2) {
-        return Long.compare(r2.getEntryTimestamp(), r1.getEntryTimestamp()); // reverse comparing
+    public int compare(MyHttpResponse r1, MyHttpResponse r2) {
+        return Long.compare(r2.getTimestamp(), r1.getTimestamp()); // reverse comparing
     }
 }
