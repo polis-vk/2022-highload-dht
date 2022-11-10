@@ -61,7 +61,10 @@ public class MemorySegmentDao {
 
         Entry result = state.memory.get(key);
         if (result == null) {
-            result = state.storage.get(key);
+            result = state.flushing.get(key);
+            if (result == null) {
+                result = state.storage.get(key);
+            }
         }
 
         return (result == null || result.isTombstone()) ? null : result;
