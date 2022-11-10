@@ -1,5 +1,6 @@
 package ok.dht.test.kuleshov;
 
+import ok.dht.test.kuleshov.utils.RequestUtils;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
@@ -28,7 +29,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static ok.dht.test.kuleshov.Validator.isCorrectAckFrom;
-import static ok.dht.test.kuleshov.utils.RequestUtils.parseInt;
 import static ok.dht.test.kuleshov.utils.ResponseUtils.emptyResponse;
 
 public class CoolAsyncHttpServer extends CoolHttpServer {
@@ -156,8 +156,8 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
     }
 
     private void handleRequest(String id, Request request, HttpSession session) throws IOException {
-        Integer parseFrom = parseInt(request.getParameter("from="));
-        Integer parseAck = parseInt(request.getParameter("ack="));
+        Integer parseFrom = RequestUtils.parseInt(request.getParameter("from="));
+        Integer parseAck = RequestUtils.parseInt(request.getParameter("ack="));
 
         int from = parseFrom == null ? defaultFrom : parseFrom;
         int ack = parseAck == null ? defaultAck : parseAck;
