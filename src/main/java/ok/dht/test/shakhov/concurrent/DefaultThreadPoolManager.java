@@ -15,7 +15,10 @@ public class DefaultThreadPoolManager {
     private static final int QUEUE_MAX_SIZE = 10_000;
 
     private static final AtomicInteger nextThreadPoolId = new AtomicInteger(0);
-    
+
+    private DefaultThreadPoolManager() {
+    }
+
     public static ThreadPoolExecutor createThreadPool(String name) {
         return createThreadPool(name, DEFAULT_POOL_SIZE);
     }

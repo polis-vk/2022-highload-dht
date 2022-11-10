@@ -10,6 +10,9 @@ public class HttpClientFactory {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     private static final int POOL_SIZE = 1;
 
+    private HttpClientFactory() {
+    }
+
     public static HttpClient createHttpClient(String url) {
         String clientName = url + "-client";
         Executor executor = DefaultThreadPoolManager.createThreadPool(clientName, POOL_SIZE);

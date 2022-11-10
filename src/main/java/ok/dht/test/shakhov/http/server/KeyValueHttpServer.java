@@ -74,50 +74,58 @@ public class KeyValueHttpServer extends HttpServer {
 
         String leaderTimestamp = request.getHeader(ONE_NIO_X_LEADER_TIMESTAMP_HEADER);
         if (leaderTimestamp == null || leaderTimestamp.isEmpty()) {
-            int ack;
-            int from;
-            try {
-                ack = HttpUtils.getIntParameter(request, ACK_PARAM, clusterSize / 2 + 1);
-                from = HttpUtils.getIntParameter(request, FROM_PARAM, clusterSize);
-            } catch (NumberFormatException e) {
-                sendResponseAsync(session, HttpUtils.badRequest());
-                return;
-            }
-            if (ack <= 0 || from > clusterSize || ack > from) {
-                sendResponseAsync(session, HttpUtils.badRequest());
-                return;
-            }
-
-            clientRequestAsyncHandler.handleClientRequestAsync(request, id, ack, from)
-                    .whenCompleteAsync((Response r, Throwable t) -> {
-                                if (t != null) {
-                                    log.error("Unexpected error during processing client {}", request, t);
-                                    sendResponse(session, internalError());
-                                } else {
-                                    sendResponse(session, r);
-                                }
-                            },
-                            responseExecutor);
+            processClientRequest(request, id, session);
         } else {
-            long parsedLeaderTimestamp;
-            try {
-                parsedLeaderTimestamp = Long.parseLong(leaderTimestamp);
-            } catch (NumberFormatException e) {
-                sendResponse(session, HttpUtils.badRequest());
-                return;
-            }
-
-            internalRequestAsyncHandler.handleInternalRequestAsync(request, id, parsedLeaderTimestamp)
-                    .whenCompleteAsync((Response r, Throwable t) -> {
-                                if (t != null) {
-                                    log.error("Unexpected error during processing internal {}", request, t);
-                                    sendResponse(session, internalError());
-                                } else {
-                                    sendResponse(session, r);
-                                }
-                            },
-                            responseExecutor);
+            processInternalRequest(request, id, session, leaderTimestamp);
         }
+    }
+
+    private void processClientRequest(Request request, String id, HttpSession session) {
+        int ack;
+        int from;
+        try {
+            ack = HttpUtils.getIntParameter(request, ACK_PARAM, clusterSize / 2 + 1);
+            from = HttpUtils.getIntParameter(request, FROM_PARAM, clusterSize);
+        } catch (NumberFormatException e) {
+            sendResponseAsync(session, HttpUtils.badRequest());
+            return;
+        }
+        if (ack <= 0 || from > clusterSize || ack > from) {
+            sendResponseAsync(session, HttpUtils.badRequest());
+            return;
+        }
+
+        clientRequestAsyncHandler.handleClientRequestAsync(request, id, ack, from)
+                .whenCompleteAsync((Response r, Throwable t) -> {
+                            if (t == null) {
+                                sendResponse(session, r);
+                            } else {
+                                log.error("Unexpected error during processing client {}", request, t);
+                                sendResponse(session, internalError());
+                            }
+                        },
+                        responseExecutor);
+    }
+
+    private void processInternalRequest(Request request, String id, HttpSession session, String leaderTimestamp) {
+        long parsedLeaderTimestamp;
+        try {
+            parsedLeaderTimestamp = Long.parseLong(leaderTimestamp);
+        } catch (NumberFormatException e) {
+            sendResponse(session, HttpUtils.badRequest());
+            return;
+        }
+
+        internalRequestAsyncHandler.handleInternalRequestAsync(request, id, parsedLeaderTimestamp)
+                .whenCompleteAsync((Response r, Throwable t) -> {
+                            if (t == null) {
+                                sendResponse(session, r);
+                            } else {
+                                log.error("Unexpected error during processing internal {}", request, t);
+                                sendResponse(session, internalError());
+                            }
+                        },
+                        responseExecutor);
     }
 
     private void sendResponseAsync(HttpSession session, Response response) {
