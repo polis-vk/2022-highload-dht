@@ -173,22 +173,22 @@ public class MyServer extends HttpServer {
 
         int firstIndex = getNodeIndexForKey(id);
         long now = System.currentTimeMillis();
-        CompletableFuture[] completableFuturesResults = new CompletableFuture[from];
+        List<CompletableFuture<HandleResult>> completableFuturesResults = new ArrayList<>(from);
         for (int i = 0; i < from; i++) {
-            int iFinal = i;
             Node node = nodes.get((firstIndex + i) % nodes.size());
 
+            CompletableFuture<HandleResult> future;
             try {
                 String url = node.url;
                 LOG.debug("Url {} for id {} (my port is {})", url, id, config.selfPort());
-                completableFuturesResults[iFinal] =
-                        url.equals(config.selfUrl())
-                                ? handleRequestAsync(request, id, now)
-                                : proxyRequest(request, url, now);
+                future = url.equals(config.selfUrl())
+                        ? handleRequestAsync(request, id, now)
+                        : proxyRequest(request, url, now);
             } catch (Exception e) {
                 LOG.error("error handle request", e);
-                completableFuturesResults[iFinal] = CompletableFuture.completedFuture(new HandleResult(Response.INTERNAL_ERROR));
+                future = CompletableFuture.completedFuture(new HandleResult(Response.INTERNAL_ERROR));
             }
+            completableFuturesResults.add(future);
         }
 
         AtomicInteger successAtomic = new AtomicInteger();
@@ -201,20 +201,15 @@ public class MyServer extends HttpServer {
                     result = new HandleResult(Response.INTERNAL_ERROR);
                 }
 
-                int success = 0;
+                int success = -1;
                 if (result.status.equals(Response.OK)
                         || result.status.equals(Response.CREATED)
                         || result.status.equals(Response.ACCEPTED)
                         || result.status.equals(Response.NOT_FOUND)) {
-                    boolean compareAndSetResult = false;
-                    while (!compareAndSetResult) {
-                        HandleResult winResultGet = winResult.get();
-                        if (winResultGet.timestamp <= result.timestamp) {
-                            compareAndSetResult = winResult.compareAndSet(winResultGet, result);
-                        } else {
-                            compareAndSetResult = true;
-                        }
-                    }
+
+                    HandleResult r = result;
+                    winResult.updateAndGet(winResultGet -> r.timestamp >= winResultGet.timestamp ? r : winResultGet);
+
                     success = successAtomic.incrementAndGet();
                 }
 
@@ -226,20 +221,16 @@ public class MyServer extends HttpServer {
                     } catch (IOException e) {
                         LOG.error("executor sendResponse", e);
                         sessionClose(session);
-                        return;
                     }
-                    return;
-                }
-                int completedGet = completed.incrementAndGet();
-                if (completedGet == from && success < ack) {
-                    try {
-                        session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-                    } catch (IOException e) {
-                        LOG.error("executor sendResponse", e);
-                        sessionClose(session);
-                        return;
+                } else {
+                    if (completed.incrementAndGet() == from) {
+                        try {
+                            session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+                        } catch (IOException e) {
+                            LOG.error("executor sendResponse", e);
+                            sessionClose(session);
+                        }
                     }
-                    return;
                 }
             }, executorAggregator);
         }
@@ -285,15 +276,9 @@ public class MyServer extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         switch (request.getPath()) {
-            case "/v0/counter":
-                handleCounterRequest(request, session);
-                break;
-            case "/v0/entity":
-                handleEntityRequest(request, session);
-                break;
-            default:
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                break;
+            case "/v0/counter" -> handleCounterRequest(request, session);
+            case "/v0/entity" -> handleEntityRequest(request, session);
+            default -> session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
         }
     }
 
