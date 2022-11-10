@@ -15,7 +15,7 @@ public class Client {
 
     private static final Logger log = LoggerFactory.getLogger(Client.class);
     private static final java.net.http.HttpClient javaNetClient = java.net.http.HttpClient.newHttpClient();
-    private static final Duration TIMEOUT = Duration.ofSeconds(2);
+    private static final Duration TIMEOUT = Duration.ofSeconds(200);
 
     public CompletableFuture<HttpResponse<byte[]>> get(String url, MyHttpSession session, boolean isRequestForReplica)
             throws IOException, InterruptedException {

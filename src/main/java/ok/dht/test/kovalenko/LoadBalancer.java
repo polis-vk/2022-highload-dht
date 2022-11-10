@@ -37,14 +37,15 @@ public final class LoadBalancer {
             throws IOException, ExecutionException, InterruptedException {
         makeAllNodesHealthy(); // parody on CircuitBreaker
         int ack = session.getReplicas().ack();
+        int from = session.getReplicas().from();
         if (nodes.size() < ack) {
             session.sendResponse(MyHttpResponse.notEnoughReplicas());
             return;
         }
 
-        List<Node> replicasNodeForKey = replicasForKey(session.getRequestId(), ack);
+        List<Node> replicasNodeForKey = replicasForKey(session.getRequestId(), from);
 
-        if (replicasNodeForKey.size() != session.getReplicas().ack()) {
+        if (replicasNodeForKey.size() != from) {
             session.sendResponse(MyHttpResponse.notEnoughReplicas());
             return;
         }
@@ -111,28 +112,18 @@ public final class LoadBalancer {
             PriorityBlockingQueue<MyHttpResponse> replicasBadResponses = new PriorityBlockingQueue<>(session.getReplicas().from(), ResponseComparator.INSTANSE);
             AtomicInteger acks = new AtomicInteger();
             String masterNodeUrl = service.selfUrl();
-            boolean wasMasterNode = false;
 
             for (Node replicaForKey : replicasForKey) {
                 MyServiceBase.Handler handler;
                 String slaveNodeUrl = replicaForKey.selfUrl();
-                if (replicaForKey.selfUrl().equals(masterNodeUrl)) {
+                if (slaveNodeUrl.equals(masterNodeUrl)) {
                     handler = service::handle;
-                    wasMasterNode = true;
                 } else {
                     handler = replicaForKey::proxyRequest;
                 }
 
-                requestForReplica(request, session, masterNodeUrl, slaveNodeUrl, wasMasterNode, handler, acks, replicasGoodResponses, replicasBadResponses);
+                requestForReplica(request, session, slaveNodeUrl, handler, acks, replicasGoodResponses, replicasBadResponses);
             }
-
-//            if (wasSelfSaving && semaphore.availablePermits() > 0) {
-//                requestForReplica(request, session, service::handle, semaphore, replicaGoodResponses);
-//            }
-//
-//            if (semaphore.availablePermits() > 0) {
-//                response = MyHttpResponse.notEnoughReplicas();
-//            }
         } catch (Exception e) {
             log.error("Fatal error", e);
             MyHttpResponse finalResponse = new MyHttpResponse(Response.INTERNAL_ERROR);
@@ -140,12 +131,11 @@ public final class LoadBalancer {
         }
     }
 
-    private void requestForReplica(Request request, MyHttpSession session, String masterNodeUrl, String slaveNodeUrl,
-                                   boolean wasMasterNode, MyServiceBase.Handler handler, AtomicInteger acks,
+    private void requestForReplica(Request request, MyHttpSession session, String slaveNodeUrl, MyServiceBase.Handler handler, AtomicInteger acks,
                                    PriorityBlockingQueue<MyHttpResponse> replicasGoodResponses, PriorityBlockingQueue<MyHttpResponse> replicasBadResponses)
             throws IOException, ExecutionException, InterruptedException, InvocationTargetException, IllegalAccessException {
         CompletableFuture<?> completableFuture = handler.handle(request, session);
-        completableFutureSubscriber.subscribe(completableFuture, session, masterNodeUrl, slaveNodeUrl, wasMasterNode, acks, replicasGoodResponses, replicasBadResponses);
+        completableFutureSubscriber.subscribe(completableFuture, session, slaveNodeUrl, acks, replicasGoodResponses, replicasBadResponses);
     }
 
 }
