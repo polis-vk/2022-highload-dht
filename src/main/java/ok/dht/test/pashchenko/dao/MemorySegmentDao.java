@@ -60,6 +60,9 @@ public class MemorySegmentDao {
         State state = accessState();
 
         Entry result = state.memory.get(key);
+        if (result == null && state.flushing != null) {
+            result = state.flushing.get(key);
+        }
         if (result == null) {
             result = state.flushing.get(key);
             if (result == null) {
@@ -67,7 +70,7 @@ public class MemorySegmentDao {
             }
         }
 
-        return (result == null || result.isTombstone()) ? null : result;
+        return result;
     }
 
     public void upsert(Entry entry) {
