@@ -6,7 +6,7 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.concurrent.Executor;
 
-public class HttpClientFactory {
+public final class HttpClientFactory {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     private static final int POOL_SIZE = 1;
 

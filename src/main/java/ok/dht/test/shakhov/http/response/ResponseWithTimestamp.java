@@ -3,6 +3,7 @@ package ok.dht.test.shakhov.http.response;
 import one.nio.http.Response;
 
 import java.net.http.HttpResponse;
+import java.util.Arrays;
 import java.util.Optional;
 
 import static ok.dht.test.shakhov.http.HttpUtils.ONE_NIO_X_RECORD_TIMESTAMP_HEADER;
@@ -18,8 +19,7 @@ public class ResponseWithTimestamp {
         this.statusCode = oneNioHttpResponse.getStatus();
         this.body = oneNioHttpResponse.getBody();
         String timestampHeader = oneNioHttpResponse.getHeader(ONE_NIO_X_RECORD_TIMESTAMP_HEADER);
-        this.timestamp = timestampHeader != null ? Long.parseLong(timestampHeader) : Long.MIN_VALUE;
-
+        this.timestamp = timestampHeader == null ? Long.MIN_VALUE : Long.parseLong(timestampHeader);
     }
 
     public ResponseWithTimestamp(HttpResponse<byte[]> javaHttpResponse) {
@@ -34,7 +34,7 @@ public class ResponseWithTimestamp {
     }
 
     public byte[] body() {
-        return body;
+        return Arrays.copyOf(body, body.length);
     }
 
     public long timestamp() {

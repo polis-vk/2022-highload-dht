@@ -146,7 +146,9 @@ public class KeyValueService implements Service {
         return urls;
     }
 
-    private CompletableFuture<ResponseWithTimestamp> sendInternalRequestAsync(Request clientRequest, String url, long timestamp) {
+    private CompletableFuture<ResponseWithTimestamp> sendInternalRequestAsync(Request clientRequest,
+                                                                              String url,
+                                                                              long timestamp) {
         byte[] requestBody = clientRequest.getBody();
         HttpRequest.BodyPublisher bodyPublisher;
         if (requestBody != null) {

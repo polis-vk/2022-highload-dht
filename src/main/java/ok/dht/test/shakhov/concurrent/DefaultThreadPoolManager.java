@@ -9,7 +9,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class DefaultThreadPoolManager {
+public final class DefaultThreadPoolManager {
     private static final int DEFAULT_POOL_SIZE = Math.max(Runtime.getRuntime().availableProcessors() / 2, 1);
     private static final int AWAIT_TERMINATION_TIMEOUT_SECONDS = 20;
     private static final int QUEUE_MAX_SIZE = 10_000;

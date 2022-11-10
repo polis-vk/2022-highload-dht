@@ -20,7 +20,6 @@ import static ok.dht.test.shakhov.http.HttpUtils.ACK_PARAM;
 import static ok.dht.test.shakhov.http.HttpUtils.FROM_PARAM;
 import static ok.dht.test.shakhov.http.HttpUtils.ID_PARAMETER;
 import static ok.dht.test.shakhov.http.HttpUtils.ONE_NIO_X_LEADER_TIMESTAMP_HEADER;
-import static ok.dht.test.shakhov.http.HttpUtils.internalError;
 
 public class KeyValueHttpServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(KeyValueHttpServer.class);
@@ -40,8 +39,7 @@ public class KeyValueHttpServer extends HttpServer {
     public KeyValueHttpServer(HttpServerConfig config,
                               int clusterSize,
                               ClientRequestAsyncHandler clientRequestAsyncHandler,
-                              InternalRequestAsyncHandler internalRequestAsyncHandler) throws IOException
-    {
+                              InternalRequestAsyncHandler internalRequestAsyncHandler) throws IOException {
         super(config);
         this.clusterSize = clusterSize;
         this.clientRequestAsyncHandler = clientRequestAsyncHandler;
@@ -97,11 +95,11 @@ public class KeyValueHttpServer extends HttpServer {
 
         clientRequestAsyncHandler.handleClientRequestAsync(request, id, ack, from)
                 .whenCompleteAsync((Response r, Throwable t) -> {
-                            if (t == null) {
+                            if (t == null && r != null) {
                                 sendResponse(session, r);
                             } else {
                                 log.error("Unexpected error during processing client {}", request, t);
-                                sendResponse(session, internalError());
+                                sendResponse(session, HttpUtils.internalError());
                             }
                         },
                         responseExecutor);
@@ -118,11 +116,11 @@ public class KeyValueHttpServer extends HttpServer {
 
         internalRequestAsyncHandler.handleInternalRequestAsync(request, id, parsedLeaderTimestamp)
                 .whenCompleteAsync((Response r, Throwable t) -> {
-                            if (t == null) {
+                            if (t == null && r != null) {
                                 sendResponse(session, r);
                             } else {
                                 log.error("Unexpected error during processing internal {}", request, t);
-                                sendResponse(session, internalError());
+                                sendResponse(session, HttpUtils.internalError());
                             }
                         },
                         responseExecutor);

@@ -16,28 +16,28 @@ public final class ResponseHandler {
     private ResponseHandler() {
     }
 
-    public static CompletableFuture<AtomicReferenceArray<ResponseWithTimestamp>> getAckResponses(Iterable<CompletableFuture<ResponseWithTimestamp>> responseCfs,
-                                                                                                 Set<Integer> ackStatuses,
-                                                                                                 int ack,
-                                                                                                 int from)
-    {
+    public static CompletableFuture<AtomicReferenceArray<ResponseWithTimestamp>>
+    getAckResponses(Iterable<CompletableFuture<ResponseWithTimestamp>> responseCfs,
+                    Set<Integer> ackStatuses,
+                    int ack,
+                    int from) {
         AtomicReferenceArray<ResponseWithTimestamp> responses = new AtomicReferenceArray<>(from);
         AtomicInteger successes = new AtomicInteger(0);
         AtomicInteger errors = new AtomicInteger(0);
         CompletableFuture<AtomicReferenceArray<ResponseWithTimestamp>> ackResponses = new CompletableFuture<>();
         for (CompletableFuture<ResponseWithTimestamp> responseCf : responseCfs) {
             responseCf.whenComplete((ResponseWithTimestamp r, Throwable t) -> {
-                if (t != null || !ackStatuses.contains(r.statusCode())) {
-                    log.warn("Couldn't get ack, got {}", r, t);
-                    int errorNum = errors.incrementAndGet();
-                    if (errorNum > from - ack) {
-                        ackResponses.completeExceptionally(NOT_ENOUGH_ACKS_EXCEPTION);
-                    }
-                } else {
+                if (t == null && r != null && ackStatuses.contains(r.statusCode())) {
                     int successNum = successes.incrementAndGet();
                     responses.set(successNum - 1, r);
                     if (successNum >= ack) {
                         ackResponses.complete(responses);
+                    }
+                } else {
+                    log.warn("Couldn't get ack, got {}", r, t);
+                    int errorNum = errors.incrementAndGet();
+                    if (errorNum > from - ack) {
+                        ackResponses.completeExceptionally(NOT_ENOUGH_ACKS_EXCEPTION);
                     }
                 }
             });
