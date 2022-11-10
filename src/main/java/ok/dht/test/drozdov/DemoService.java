@@ -20,7 +20,6 @@ public class DemoService implements Service {
 
     private final ServiceConfig config;
     private HttpServer server;
-
     private MemorySegmentDao dao;
 
     public DemoService(ServiceConfig config) {
