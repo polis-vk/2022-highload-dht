@@ -1,6 +1,5 @@
 package ok.dht.test.maximenko.dao;
 
-
 import jdk.incubator.foreign.MemorySegment;
 
 import java.io.IOException;

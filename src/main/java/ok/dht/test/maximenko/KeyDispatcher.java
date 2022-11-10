@@ -7,15 +7,16 @@ import java.util.TreeMap;
 
 public class KeyDispatcher {
 
-    private final static int virtualNodesPerMachine = 5;
+    private final static int VIRTUAL_NODES_PER_MACHINE = 5;
     TreeMap<Integer, Integer> virtualNodes;
     private final int maxBorder;
+
     KeyDispatcher(List<Integer> nodes) {
         int nodeAmount = nodes.size();
-        int interval = Integer.MAX_VALUE / (nodeAmount * virtualNodesPerMachine);
+        int interval = Integer.MAX_VALUE / (nodeAmount * VIRTUAL_NODES_PER_MACHINE);
         virtualNodes = new TreeMap<>();
         int border = interval;
-        for (int i = 0; i < virtualNodesPerMachine; i++) {
+        for (int i = 0; i < VIRTUAL_NODES_PER_MACHINE; i++) {
             for (Integer node : nodes) {
                 virtualNodes.put(border, node);
                 border += interval;

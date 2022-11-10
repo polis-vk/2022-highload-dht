@@ -11,12 +11,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-
 public class DatabaseService implements Service {
     private static final Logger LOGGER = Logger.getLogger(String.valueOf(DatabaseService.class));
     private final ServiceConfig config;
     private HttpServer server;
     private final HttpServerConfig httpServerConfig;
+
     public DatabaseService(ServiceConfig config) throws IOException {
         this.config = config;
         httpServerConfig = createConfig(config.selfPort());
