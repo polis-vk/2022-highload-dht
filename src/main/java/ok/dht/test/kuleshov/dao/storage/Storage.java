@@ -114,6 +114,7 @@ class Storage implements Closeable {
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
                 offset += StorageUtils.writeRecord(nextSSTable, offset, entry.key());
+                offset += StorageUtils.writeTimestamp(nextSSTable, offset, entry.timestamp());
                 offset += StorageUtils.writeRecord(nextSSTable, offset, entry.value());
 
                 index++;
@@ -193,10 +194,13 @@ class Storage implements Closeable {
             long offset = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + keyIndex * INDEX_RECORD_SIZE);
             long keySize = MemoryAccess.getLongAtOffset(sstable, offset);
             long valueOffset = offset + Long.BYTES + keySize;
+            long timestamp = MemoryAccess.getLongAtOffset(sstable, valueOffset);
+            valueOffset += Long.BYTES;
             long valueSize = MemoryAccess.getLongAtOffset(sstable, valueOffset);
             return new BaseEntry<>(
                     sstable.asSlice(offset + Long.BYTES, keySize),
-                    valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize)
+                    valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize),
+                    timestamp
             );
         } catch (IllegalStateException e) {
             throw checkForClose(e);

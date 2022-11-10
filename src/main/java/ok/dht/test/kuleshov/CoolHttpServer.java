@@ -59,7 +59,7 @@ public class CoolHttpServer extends HttpServer {
             return;
         }
 
-        session.sendResponse(service.handle(method, id, request));
+        session.sendResponse(service.handle(method, id, request, -1));
     }
 
     @Override
