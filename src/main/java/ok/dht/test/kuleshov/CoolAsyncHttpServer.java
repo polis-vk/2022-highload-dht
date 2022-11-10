@@ -1,6 +1,6 @@
 package ok.dht.test.kuleshov;
 
-import ok.dht.test.kuleshov.utils.RequestUtils;
+import ok.dht.test.kuleshov.utils.RequestsUtils;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
@@ -156,8 +156,8 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
     }
 
     private void handleRequest(String id, Request request, HttpSession session) throws IOException {
-        Integer parseFrom = RequestUtils.parseInt(request.getParameter("from="));
-        Integer parseAck = RequestUtils.parseInt(request.getParameter("ack="));
+        Integer parseFrom = RequestsUtils.parseInt(request.getParameter("from="));
+        Integer parseAck = RequestsUtils.parseInt(request.getParameter("ack="));
 
         int from = parseFrom == null ? defaultFrom : parseFrom;
         int ack = parseAck == null ? defaultAck : parseAck;
