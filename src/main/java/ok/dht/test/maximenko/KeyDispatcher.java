@@ -24,12 +24,6 @@ public class KeyDispatcher {
         maxBorder = border;
     }
 
-    int getNode(String key) {
-        int hash = Math.abs(key.hashCode());
-        int node = virtualNodes.higherEntry(hash).getValue();
-        return node;
-    }
-
     public ArrayDeque<Integer> getReplicas(String key, int replicasAmount) {
         ArrayDeque<Integer> result = new ArrayDeque<>();
         int hash = Math.abs(key.hashCode());

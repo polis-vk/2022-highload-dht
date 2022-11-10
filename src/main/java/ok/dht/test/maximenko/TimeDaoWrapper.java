@@ -2,17 +2,17 @@ package ok.dht.test.maximenko;
 
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.maximenko.dao.BaseEntry;
-import ok.dht.test.maximenko.dao.Dao;
 import ok.dht.test.maximenko.dao.Entry;
+import ok.dht.test.maximenko.dao.MemorySegmentDao;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
 
 public class TimeDaoWrapper {
-    private final Dao dao;
+    private final MemorySegmentDao dao;
 
-    public TimeDaoWrapper(Dao dao) {
+    public TimeDaoWrapper(MemorySegmentDao dao) {
         this.dao = dao;
     }
 
@@ -23,7 +23,7 @@ public class TimeDaoWrapper {
         valueWithTime.putShort((short) 1);
         valueWithTime.put(valueBytes);
         MemorySegment value = MemorySegment.ofArray(valueWithTime.array());
-        Entry entry = new BaseEntry(key, value);
+        Entry<MemorySegment> entry = new BaseEntry<>(key, value);
         dao.upsert(entry);
     }
 
@@ -33,7 +33,7 @@ public class TimeDaoWrapper {
         valueWithTime.putLong(time);
         valueWithTime.putShort((short) 0);
         MemorySegment value = MemorySegment.ofArray(valueWithTime.array());
-        Entry entry = new BaseEntry(key, value);
+        Entry<MemorySegment> entry = new BaseEntry<>(key, value);
         dao.upsert(entry);
     }
 

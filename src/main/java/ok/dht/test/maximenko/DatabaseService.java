@@ -16,7 +16,7 @@ public class DatabaseService implements Service {
     private static final Logger LOGGER = Logger.getLogger(String.valueOf(DatabaseService.class));
     private final ServiceConfig config;
     private HttpServer server;
-    private HttpServerConfig httpServerConfig;
+    private final HttpServerConfig httpServerConfig;
     public DatabaseService(ServiceConfig config) throws IOException {
         this.config = config;
         httpServerConfig = createConfig(config.selfPort());
