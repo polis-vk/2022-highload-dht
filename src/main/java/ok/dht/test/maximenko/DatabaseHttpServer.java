@@ -113,6 +113,7 @@ public class DatabaseHttpServer extends HttpServer {
 
         if ((replicasAmount > clusterSize) || (quorum > replicasAmount) || (quorum == 0)) {
             session.sendResponse(badRequest);
+            return;
         }
 
         ArrayDeque<Integer> replicasIds = keyDispatcher.getReplicas(key, replicasAmount);
