@@ -56,6 +56,18 @@ public class ServiceImpl extends ReplicaService {
         Constants.LOG.error("Failed to request to shard {}", url);
     }
 
+    private void processResponse(Response response,
+                                 HttpSession session,
+                                 ResponseProcessor processor) {
+        if (processor.process(response)) {
+            try {
+                session.sendResponse(processor.response());
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
     @Path(Constants.PATH)
     public void handle(@Param(value = "id") String id,
                        Request request,
@@ -89,29 +101,20 @@ public class ServiceImpl extends ReplicaService {
             return;
         }
 
-        for (final String url : urls) {
-            collectResponse(id, request, session, processor, url);
-        }
-    }
+        boolean visitDB = false;
 
-    private void collectResponse(String id,
-                                 Request request,
-                                 HttpSession session,
-                                 ResponseProcessor processor,
-                                 String url) {
-        CompletableFuture<Response> futureResponse = url.equals(config.selfUrl())
-                ? CompletableFuture.supplyAsync(() -> handleV1(id, request))
-                : handleProxy(url, request);
-        futureResponse.whenCompleteAsync((response, throwable) -> {
-            if (!processor.process(response)) {
-                return;
+        for (final String url : urls) {
+            if (!url.equals(config.selfUrl())) {
+                handleProxy(url, request)
+                        .whenCompleteAsync((response, throwable) -> processResponse(response, session, processor));
+            } else {
+                visitDB = true;
             }
-            try {
-                session.sendResponse(processor.response());
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        });
+        }
+
+        if (visitDB) {
+            processResponse(handleV1(id, request), session, processor);
+        }
     }
 
     //endregion
