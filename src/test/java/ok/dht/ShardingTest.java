@@ -16,17 +16,13 @@
 
 package ok.dht;
 
-import one.nio.http.Response;
-import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
-
 import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Unit tests for a sharded two node {@link Service} cluster.
@@ -187,7 +183,7 @@ class ShardingTest extends TestBase {
             serviceInfo.start();
 
             HttpResponse<byte[]> response = serviceInfo.get(key, 1, 1);
-            if (response.statusCode() == 200 && Arrays.equals(value, response.body())) {
+            if (response.statusCode() == HttpURLConnection.HTTP_OK && Arrays.equals(value, response.body())) {
                 successCount++;
             }
 

@@ -5,10 +5,12 @@ import jdk.incubator.foreign.MemorySegment;
 public class Entry {
     private final MemorySegment key;
     private final MemorySegment value;
+    private final long timestamp;
 
-    public Entry(MemorySegment key, MemorySegment value) {
+    public Entry(MemorySegment key, MemorySegment value, long timestamp) {
         this.key = key;
         this.value = value;
+        this.timestamp = timestamp;
     }
 
     public MemorySegment key() {
@@ -21,5 +23,9 @@ public class Entry {
 
     public boolean isTombstone() {
         return value == null;
+    }
+
+    public long timestamp() {
+        return timestamp;
     }
 }
