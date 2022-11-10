@@ -13,8 +13,7 @@ import java.util.logging.Logger;
 
 
 public class DatabaseService implements Service {
-    static final Logger logger = Logger.getLogger(String.valueOf(DatabaseService.class));
-
+    private static final Logger LOGGER = Logger.getLogger(String.valueOf(DatabaseService.class));
     private final ServiceConfig config;
     private HttpServer server;
     private HttpServerConfig httpServerConfig;
@@ -53,7 +52,7 @@ public class DatabaseService implements Service {
             try {
                 return new DatabaseService(config);
             } catch (IOException e) {
-                logger.log(Level.SEVERE, "Can't create a service");
+                LOGGER.log(Level.SEVERE, "Can't create a service");
                 return null;
             }
         }
