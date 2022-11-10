@@ -6,6 +6,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -13,6 +14,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,13 +65,44 @@ public class MyServer extends HttpServer {
         return httpConfig;
     }
 
-    @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (!"/v0/entity".equals(request.getPath())) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            return;
+    public static class ChunkedResponse extends Response {
+        public ChunkedResponse(String resultCode) {
+            super(resultCode);
         }
+    }
 
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new HttpSession(socket, this) {
+            @Override
+            protected void writeResponse(Response response, boolean includeBody) throws IOException {
+                if (response instanceof ChunkedResponse) {
+                    super.write(new QueueItem() {
+                        int count = 0;
+
+                        @Override
+                        public int remaining() {
+                            return 1;
+                        }
+
+                        @Override
+                        public int write(Socket socket) throws IOException {
+                            byte[] bytes = (count++ + "\n").getBytes(StandardCharsets.UTF_8);
+                            return socket.write(bytes, 0, bytes.length);
+                        }
+                    });
+                } else {
+                    super.writeResponse(response, includeBody);
+                }
+            }
+        };
+    }
+
+    private void handleCounterRequest(Request request, HttpSession session) throws IOException {
+        session.sendResponse(new ChunkedResponse("Debug"));
+    }
+
+    private void handleEntityRequest(Request request, HttpSession session) throws IOException {
         String id = request.getParameter("id=");
         if (id == null || id.isEmpty()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
@@ -114,6 +148,21 @@ public class MyServer extends HttpServer {
             });
         }
 
+    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        switch (request.getPath()) {
+            case "/v0/counter":
+                handleCounterRequest(request, session);
+                break;
+            case "/v0/entity":
+                handleEntityRequest(request, session);
+                break;
+            default:
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                break;
+        }
     }
 
     private Node getNodeForKey(String id) {
