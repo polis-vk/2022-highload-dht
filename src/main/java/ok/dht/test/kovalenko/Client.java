@@ -1,21 +1,15 @@
 package ok.dht.test.kovalenko;
 
-import ok.dht.test.kovalenko.utils.HttpUtils;
-import ok.dht.test.kovalenko.utils.MyHttpResponse;
 import ok.dht.test.kovalenko.utils.MyHttpSession;
-import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.ConnectException;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.http.HttpTimeoutException;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Arrays;
+import java.util.concurrent.CompletableFuture;
 
 public class Client {
 
@@ -23,23 +17,22 @@ public class Client {
     private static final java.net.http.HttpClient javaNetClient = java.net.http.HttpClient.newHttpClient();
     private static final Duration TIMEOUT = Duration.ofSeconds(2);
 
-    public MyHttpResponse get(String url, MyHttpSession session, boolean isRequestForReplica)
+    public CompletableFuture<HttpResponse<byte[]>> get(String url, MyHttpSession session, boolean isRequestForReplica)
             throws IOException, InterruptedException {
         HttpRequest httpRequest = requestForKey(url, session, isRequestForReplica).GET().build();
-        return safeClientRequest(httpRequest, url);
+        return sendAsync(httpRequest);
     }
 
-    public MyHttpResponse put(String url, byte[] data, MyHttpSession session, boolean isRequestForReplica)
+    public CompletableFuture<HttpResponse<byte[]>> put(String url, byte[] data, MyHttpSession session, boolean isRequestForReplica)
             throws IOException, InterruptedException {
-        HttpRequest httpRequest = requestForKey(url, session, isRequestForReplica)
-                .PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build();
-        return safeClientRequest(httpRequest, url);
+        HttpRequest httpRequest = requestForKey(url, session, isRequestForReplica).PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build();
+        return sendAsync(httpRequest);
     }
 
-    public MyHttpResponse delete(String url, MyHttpSession session, boolean isRequestForReplica)
+    public CompletableFuture<HttpResponse<byte[]>> delete(String url, MyHttpSession session, boolean isRequestForReplica)
             throws IOException, InterruptedException {
         HttpRequest httpRequest = requestForKey(url, session, isRequestForReplica).DELETE().build();
-        return safeClientRequest(httpRequest, url);
+        return sendAsync(httpRequest);
     }
 
     private HttpRequest.Builder requestForKey(String url, MyHttpSession session, boolean isRequestForReplica) {
@@ -58,23 +51,28 @@ public class Client {
         return builder;
     }
 
-    private MyHttpResponse safeClientRequest(HttpRequest request, String url) {
-        try {
-            HttpResponse<byte[]> httpResponse = javaNetClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-            return HttpUtils.toMyHttpResponse(httpResponse);
-        } catch (ConnectException | HttpTimeoutException e) {
-            log.error("Unable to connect with node {}", url, e);
-            return new MyHttpResponse(
-                    Response.GATEWAY_TIMEOUT,
-                    Arrays.toString(e.getStackTrace()).getBytes(StandardCharsets.UTF_8)
-            );
-        } catch (Exception e) {
-            log.error("Unexpected error when connecting with node {}", url, e);
-            return new MyHttpResponse(
-                    Response.INTERNAL_ERROR,
-                    Arrays.toString(e.getStackTrace()).getBytes(StandardCharsets.UTF_8)
-            );
-        }
+    private CompletableFuture<HttpResponse<byte[]>> sendAsync(HttpRequest request) {
+        return javaNetClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+//        try {
+//            return javaNetClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+//        } catch (ConnectException | HttpTimeoutException e) {
+//            log.error("Unable to connect with node {}", url, e);
+//            new HttpResponse<byte[]>()
+//            return CompletableFuture.completedFuture(new MyHttpResponse(
+//                    Response.GATEWAY_TIMEOUT,
+//                    Arrays.toString(e.getStackTrace()).getBytes(StandardCharsets.UTF_8)
+//            ));
+////            return new MyHttpResponse(
+////                    Response.GATEWAY_TIMEOUT,
+////                    Arrays.toString(e.getStackTrace()).getBytes(StandardCharsets.UTF_8)
+////            );
+//        } catch (Exception e) {
+//            log.error("Unexpected error when connecting with node {}", url, e);
+//            return new MyHttpResponse(
+//                    Response.INTERNAL_ERROR,
+//                    Arrays.toString(e.getStackTrace()).getBytes(StandardCharsets.UTF_8)
+//            );
+//        }
     }
 
 }

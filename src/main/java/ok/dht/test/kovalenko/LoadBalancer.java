@@ -1,5 +1,6 @@
 package ok.dht.test.kovalenko;
 
+import ok.dht.test.kovalenko.utils.CompletableFutureSubscriber;
 import ok.dht.test.kovalenko.utils.HttpUtils;
 import ok.dht.test.kovalenko.utils.MyHttpResponse;
 import ok.dht.test.kovalenko.utils.MyHttpSession;
@@ -10,20 +11,27 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.HttpURLConnection;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.PriorityQueue;
-import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class LoadBalancer {
 
     private static final Logger log = LoggerFactory.getLogger(LoadBalancer.class);
     private final Map<String, Node> nodes = new HashMap<>();
+    private final CompletableFutureSubscriber completableFutureSubscriber;
+
+    public LoadBalancer() {
+        this.completableFutureSubscriber = new CompletableFutureSubscriber(this);
+    }
 
     public void balance(MyServiceBase service, Request request, MyHttpSession session)
             throws IOException, ExecutionException, InterruptedException {
@@ -97,74 +105,47 @@ public final class LoadBalancer {
 
     private void handleWithReplicas(Request request, MyHttpSession session,
                                     MyServiceBase service, List<Node> replicasForKey) {
-        MyHttpResponse response;
         try {
             request.addHeader(HttpUtils.REPLICA_HEADER);
-            int numApproves = 0;
-            Queue<MyHttpResponse> replicaGoodResponses = new PriorityQueue<>(ResponseComparator.INSTANSE);
-            boolean wasSelfSaving = false;
+            PriorityBlockingQueue<MyHttpResponse> replicasGoodResponses = new PriorityBlockingQueue<>(session.getReplicas().from(), ResponseComparator.INSTANSE);
+            PriorityBlockingQueue<MyHttpResponse> replicasBadResponses = new PriorityBlockingQueue<>(session.getReplicas().from(), ResponseComparator.INSTANSE);
+            AtomicInteger acks = new AtomicInteger();
+            String masterNodeUrl = service.selfUrl();
+            boolean wasMasterNode = false;
+
             for (Node replicaForKey : replicasForKey) {
                 MyServiceBase.Handler handler;
-                if (replicaForKey.selfUrl().equals(service.selfUrl())) {
+                String slaveNodeUrl = replicaForKey.selfUrl();
+                if (replicaForKey.selfUrl().equals(masterNodeUrl)) {
                     handler = service::handle;
-                    wasSelfSaving = true;
+                    wasMasterNode = true;
                 } else {
                     handler = replicaForKey::proxyRequest;
                 }
 
-                numApproves
-                        += requestForReplica(request, session, service.selfUrl(), handler, replicaGoodResponses)
-                        ? 1
-                        : 0;
+                requestForReplica(request, session, masterNodeUrl, slaveNodeUrl, wasMasterNode, handler, acks, replicasGoodResponses, replicasBadResponses);
             }
 
-            if (numApproves != session.getReplicas().ack() && !wasSelfSaving) {
-                numApproves
-                        += requestForReplica(request, session, service.selfUrl(), service::handle, replicaGoodResponses)
-                        ? 1
-                        : 0;
-            }
-
-            if (numApproves == session.getReplicas().ack()) {
-                response = replicaGoodResponses.peek();
-            } else {
-                response = MyHttpResponse.notEnoughReplicas();
-            }
+//            if (wasSelfSaving && semaphore.availablePermits() > 0) {
+//                requestForReplica(request, session, service::handle, semaphore, replicaGoodResponses);
+//            }
+//
+//            if (semaphore.availablePermits() > 0) {
+//                response = MyHttpResponse.notEnoughReplicas();
+//            }
         } catch (Exception e) {
             log.error("Fatal error", e);
-            response = MyServiceBase.emptyResponseFor(Response.INTERNAL_ERROR);
-        }
-
-        MyHttpResponse finalResponse = response;
-        HttpUtils.safeHttpRequest(session, log, () -> session.sendResponse(finalResponse));
-    }
-
-    private boolean requestForReplica(Request request, MyHttpSession session, String url,
-                                      MyServiceBase.Handler handler, Queue<MyHttpResponse> replicaGoodResponses) {
-        MyHttpResponse replicaResponse = nodeRequest(request, handler, session);
-        if (isGoodResponse(replicaResponse)) {
-            replicaGoodResponses.add(replicaResponse);
-            return true;
-        } else {
-            makeNodeIll(url);
-            log.error("Node {} is ill", url, new Exception(Arrays.toString(replicaResponse.getBody())));
-            return false;
+            MyHttpResponse finalResponse = new MyHttpResponse(Response.INTERNAL_ERROR);
+            HttpUtils.safeHttpRequest(session, log, () -> session.sendResponse(finalResponse));
         }
     }
 
-    private MyHttpResponse nodeRequest(Request request, MyServiceBase.Handler handler, MyHttpSession session) {
-        try {
-            return handler.handle(request, session);
-        } catch (Exception e) {
-            return MyServiceBase.emptyResponseFor(Response.INTERNAL_ERROR);
-        }
-    }
-
-    private boolean isGoodResponse(MyHttpResponse response) {
-        return response.getStatus() == HttpURLConnection.HTTP_OK
-                || response.getStatus() == HttpURLConnection.HTTP_CREATED
-                || response.getStatus() == HttpURLConnection.HTTP_ACCEPTED
-                || response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND;
+    private void requestForReplica(Request request, MyHttpSession session, String masterNodeUrl, String slaveNodeUrl,
+                                   boolean wasMasterNode, MyServiceBase.Handler handler, AtomicInteger acks,
+                                   PriorityBlockingQueue<MyHttpResponse> replicasGoodResponses, PriorityBlockingQueue<MyHttpResponse> replicasBadResponses)
+            throws IOException, ExecutionException, InterruptedException, InvocationTargetException, IllegalAccessException {
+        CompletableFuture<?> completableFuture = handler.handle(request, session);
+        completableFutureSubscriber.subscribe(completableFuture, session, masterNodeUrl, slaveNodeUrl, wasMasterNode, acks, replicasGoodResponses, replicasBadResponses);
     }
 
 }

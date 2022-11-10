@@ -22,7 +22,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
-import java.net.HttpURLConnection;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -40,27 +39,6 @@ public class MyServiceBase implements Service {
 
     public MyServiceBase(ServiceConfig config) throws IOException {
         this.config = config;
-    }
-
-    private static HttpServerConfig createConfigFromPort(int port) {
-        HttpServerConfig httpConfig = new HttpServerConfig();
-        AcceptorConfig acceptor = new AcceptorConfig();
-        acceptor.port = port;
-        acceptor.reusePort = true;
-        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
-        return httpConfig;
-    }
-
-    public static MyHttpResponse emptyResponseFor(String statusCode, long timestamp) {
-        return new MyHttpResponse(statusCode, timestamp);
-    }
-
-    public static MyHttpResponse emptyResponseFor(String statusCode) {
-        return new MyHttpResponse(statusCode, 0);
-    }
-
-    private static TypedTimedEntry entryFor(ByteBuffer key, ByteBuffer value) {
-        return new TypedBaseTimedEntry(System.currentTimeMillis(), key, value);
     }
 
     @Override
@@ -99,15 +77,15 @@ public class MyServiceBase implements Service {
         ReplicasUtils.Replicas replicas = ReplicasUtils.recreate(myHttpSession.getReplicas(), clusterUrls().size());
         myHttpSession.setReplicas(replicas);
         if (request.getHeader(HttpUtils.REPLICA_HEADER) != null) {
-            MyHttpResponse response = handle(request, myHttpSession);
-            session.sendResponse(response);
+            CompletableFuture<MyHttpResponse> responseCompletableFuture = handle(request, myHttpSession);
+            session.sendResponse(responseCompletableFuture.get());
         } else {
             loadBalancer.balance(this, request, myHttpSession);
         }
     }
 
-    // For inner calls
-    public MyHttpResponse handle(Request request, MyHttpSession session)
+    // For inner calls, returns fictive CompletableFuture for compliance with the MyServiceBase.Handler contract
+    public CompletableFuture<MyHttpResponse> handle(Request request, MyHttpSession session)
             throws IOException {
         return switch (request.getMethod()) {
             case Request.METHOD_GET -> handleGet(request, session);
@@ -118,27 +96,39 @@ public class MyServiceBase implements Service {
         };
     }
 
-    public MyHttpResponse handleGet(Request request, MyHttpSession session) throws IOException {
+    public CompletableFuture<MyHttpResponse> handleGet(Request request, MyHttpSession session) throws IOException {
         ByteBuffer key = daoFactory.fromString(session.getRequestId());
         TypedTimedEntry found = this.dao.get(key);
         return found == null
                 ? emptyResponseFor(Response.NOT_FOUND)
                 : found.isTombstone()
-                ? emptyResponseFor(Response.NOT_FOUND, found.timestamp())
-                : new MyHttpResponse(Response.OK, daoFactory.toBytes(found.value()), found.timestamp());
+                    ? emptyResponseFor(Response.NOT_FOUND, found.timestamp())
+                    : completableFutureFor(new MyHttpResponse(Response.OK, daoFactory.toBytes(found.value()), found.timestamp()));
     }
 
-    public MyHttpResponse handlePut(Request request, MyHttpSession session) throws IOException {
+    public CompletableFuture<MyHttpResponse> handlePut(Request request, MyHttpSession session) throws IOException {
         ByteBuffer key = daoFactory.fromString(session.getRequestId());
         ByteBuffer value = ByteBuffer.wrap(request.getBody());
         this.dao.upsert(entryFor(key, value));
         return emptyResponseFor(Response.CREATED);
     }
 
-    public MyHttpResponse handleDelete(Request request, MyHttpSession session) throws IOException {
+    public CompletableFuture<MyHttpResponse> handleDelete(Request request, MyHttpSession session) throws IOException {
         ByteBuffer key = daoFactory.fromString(session.getRequestId());
         this.dao.upsert(entryFor(key, null));
         return emptyResponseFor(Response.ACCEPTED);
+    }
+
+    public static CompletableFuture<MyHttpResponse> emptyResponseFor(String statusCode, long timestamp) {
+        return completableFutureFor(new MyHttpResponse(statusCode, timestamp));
+    }
+
+    public static CompletableFuture<MyHttpResponse> emptyResponseFor(String statusCode) {
+        return emptyResponseFor(statusCode, 0);
+    }
+
+    private static TypedTimedEntry entryFor(ByteBuffer key, ByteBuffer value) {
+        return new TypedBaseTimedEntry(System.currentTimeMillis(), key, value);
     }
 
     public String selfUrl() {
@@ -157,10 +147,22 @@ public class MyServiceBase implements Service {
         return this.dao;
     }
 
+    public static CompletableFuture<MyHttpResponse> completableFutureFor(MyHttpResponse r) {
+        return CompletableFuture.completedFuture(r);
+    }
+
+    private static HttpServerConfig createConfigFromPort(int port) {
+        HttpServerConfig httpConfig = new HttpServerConfig();
+        AcceptorConfig acceptor = new AcceptorConfig();
+        acceptor.port = port;
+        acceptor.reusePort = true;
+        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+        return httpConfig;
+    }
+
     public interface Handler {
-        MyHttpResponse handle(Request request, MyHttpSession session)
+        CompletableFuture<?> handle(Request request, MyHttpSession session)
                 throws IOException, ExecutionException,
                 InterruptedException, IllegalAccessException, InvocationTargetException;
     }
 }
-

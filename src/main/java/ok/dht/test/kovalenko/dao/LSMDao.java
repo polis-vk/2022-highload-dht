@@ -39,7 +39,6 @@ public class LSMDao implements Dao<ByteBuffer, TypedTimedEntry> {
             = new PoolKeeper(Executors.newCachedThreadPool(), 3 * 60);
     private final Runnable flushRunnable;
     private final Runnable compactRunnable;
-
     private final AtomicLong curBytesForEntries = new AtomicLong();
 
     public LSMDao(ServiceConfig config) throws IOException {

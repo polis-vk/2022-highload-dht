@@ -5,12 +5,12 @@ import one.nio.http.Response;
 public class MyHttpResponse extends Response {
     private final long timestamp;
 
-    public MyHttpResponse(String resultCode, long timestamp) {
-        this(resultCode, Response.EMPTY, timestamp);
+    public MyHttpResponse(String resultCode) {
+        this(resultCode, 0);
     }
 
-    public MyHttpResponse(String resultCode, byte[] body) {
-        this(resultCode, body, 0);
+    public MyHttpResponse(String resultCode, long timestamp) {
+        this(resultCode, Response.EMPTY, timestamp);
     }
 
     public MyHttpResponse(String resultCode, byte[] body, long timestamp) {

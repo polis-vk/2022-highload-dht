@@ -7,6 +7,7 @@ import one.nio.http.Request;
 
 import java.io.IOException;
 import java.net.http.HttpResponse;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 public class Node {
@@ -18,7 +19,7 @@ public class Node {
         this.selfUrl = selfUrl;
     }
 
-    public MyHttpResponse proxyRequest(Request request, MyHttpSession session)
+    public CompletableFuture<HttpResponse<byte[]>> proxyRequest(Request request, MyHttpSession session)
             throws ExecutionException, InterruptedException, IllegalAccessException, IOException {
         if (isIll()) {
             throw new IllegalAccessException("Node is ill!");

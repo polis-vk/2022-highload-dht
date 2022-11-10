@@ -8,6 +8,8 @@ import org.slf4j.Logger;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 
 public final class HttpUtils {
 

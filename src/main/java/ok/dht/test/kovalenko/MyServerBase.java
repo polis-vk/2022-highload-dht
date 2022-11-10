@@ -18,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -94,7 +95,7 @@ public class MyServerBase extends HttpServer {
     }
 
     private void sendEmptyResponseForCode(HttpSession session, String statusCode) throws IOException {
-        MyHttpResponse response = MyServiceBase.emptyResponseFor(statusCode);
+        MyHttpResponse response = new MyHttpResponse(statusCode, 0);
         session.sendResponse(response);
     }
 
