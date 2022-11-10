@@ -8,7 +8,7 @@ import java.util.concurrent.Executor;
 
 public final class HttpClientFactory {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
-    private static final int POOL_SIZE = 1;
+    private static final int POOL_SIZE = 2;
 
     private HttpClientFactory() {
     }

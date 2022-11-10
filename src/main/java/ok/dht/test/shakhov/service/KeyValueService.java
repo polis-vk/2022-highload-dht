@@ -52,7 +52,7 @@ import static ok.dht.test.shakhov.http.HttpUtils.methodNotAllowed;
 public class KeyValueService implements Service {
     private static final Logger log = LoggerFactory.getLogger(KeyValueService.class);
 
-    private static final int FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024; // 4 mb
+    private static final int FLUSH_THRESHOLD_BYTES = 1 * 1024 * 1024; // 1 mb
     private static final Duration INTERNAL_COMMUNICATION_TIMEOUT = Duration.ofSeconds(10);
     private static final Set<Integer> ACK_STATUSES = Set.of(HTTP_OK, HTTP_CREATED, HTTP_ACCEPTED, HTTP_NOT_FOUND);
 

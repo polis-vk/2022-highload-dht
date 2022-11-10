@@ -99,6 +99,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     private Future<?> flushInBg(boolean acceptFlushInProgress) {
         upsertLock.writeLock().lock();
+        int spinAttempts = 10_000;
         try {
             State curState = accessState();
             while (curState.isFlushing()) {
@@ -106,12 +107,15 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                     return CompletableFuture.completedFuture(null);
                 }
                 try {
-                    noFlushInProgress.await();
+                    if (spinAttempts > 0) {
+                        noFlushInProgress.await();
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException(e);
                 }
                 curState = accessState();
+                spinAttempts--;
             }
 
             curState = curState.prepareForFlush();
