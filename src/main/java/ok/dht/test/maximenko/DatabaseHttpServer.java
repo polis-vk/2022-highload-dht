@@ -1,11 +1,8 @@
 package ok.dht.test.maximenko;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
-import ok.dht.test.maximenko.dao.BaseEntry;
 import ok.dht.test.maximenko.dao.Config;
 import ok.dht.test.maximenko.dao.Dao;
-import ok.dht.test.maximenko.dao.Entry;
 import ok.dht.test.maximenko.dao.MemorySegmentDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -21,15 +18,18 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -95,7 +95,13 @@ public class DatabaseHttpServer extends HttpServer {
         String spreadHeaderValue = request.getHeader(notSpreadHeader);
         if (spreadHeaderValue != null && spreadHeaderValue.equals(": " + notSpreadHeaderValue)) {
             long time = Long.parseLong(request.getHeader("time: "));
-            session.sendResponse(localRequest(key, request, time));
+            try {
+                sendResponseToNode(session, localRequest(key, request, time).get());
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            } catch (ExecutionException e) {
+                throw new RuntimeException(e);
+            }
             return;
         }
 
@@ -117,10 +123,13 @@ public class DatabaseHttpServer extends HttpServer {
         }
 
         ArrayDeque<Integer> replicasIds = keyDispatcher.getReplicas(key, replicasAmount);
-        Integer successCount = 0;
-        Response response;
-        Response successfulResponse = new Response(Response.NOT_FOUND, Response.EMPTY);
-        long mostRecentResponseTime = 0;
+        CompletableFuture<Response> response;
+        final Integer[] successCount = {0};
+        final Integer[] responsesCollected = {0};
+        final long[] mostRecentResponseTime = {0};
+        AtomicBoolean createdResponse = new AtomicBoolean(false);
+        final AtomicReference<Response>[] successfulResponse
+                = new AtomicReference[]{new AtomicReference<>(new Response(Response.NOT_FOUND, Response.EMPTY))};
         Date date = new Date();
         long currentTime = date.getTime();
         for (Integer replica : replicasIds) {
@@ -128,42 +137,65 @@ public class DatabaseHttpServer extends HttpServer {
                 response = proxyRequest(replica, key, request, currentTime);
             } else {
                 response = localRequest(key, request, currentTime);
-                if (response.getStatus() == DELETED_RECORD_MESSAGE) {
-                    response = new Response(Response.NOT_FOUND, Response.EMPTY);
-                }
             }
 
-            int responseCode = response.getStatus();
-            if (responseCode < 500) {
-                if (responseCode != 404) {
-                    long time = getTimeFromResponse(response);
-                    if (mostRecentResponseTime <= time) {
-                        mostRecentResponseTime = time;
-                        successfulResponse = response;
-                        if (response.getStatus() == DELETED_RECORD_MESSAGE) {
-                            successfulResponse = new Response(Response.NOT_FOUND, Response.EMPTY);
+            final int finalReplicasAmount = replicasAmount;
+            final int finalQuorum = quorum;
+            response.thenAccept(currentResponse -> {
+                long time = getTimeFromResponse(currentResponse);
+                int responseCode = currentResponse.getStatus();
+                synchronized (this) {
+                    if (createdResponse.get()) {
+                        return;
+                    }
+                    if (responseCode < 500) {
+                        if (responseCode != 404) {
+                            if (mostRecentResponseTime[0] <= time) {
+                                mostRecentResponseTime[0] = time;
+                                successfulResponse[0].set(currentResponse);
+                            }
                         }
+                        successCount[0] += 1;
+                    }
+
+                    responsesCollected[0] += 1;
+                    if (responsesCollected[0] == finalReplicasAmount
+                            || (successCount[0] >= finalQuorum
+                                    && successfulResponse[0].get().getStatus() != 404)) {
+                        sendAnswerToClient(session, successfulResponse[0].get(), successCount[0], finalQuorum);
+                        createdResponse.set(true);
                     }
                 }
-                successCount += 1;
-            }
-        }
-
-        if (successCount >= quorum) {
-            try {
-                session.sendResponse(successfulResponse);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        } else {
-            try {
-                session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+            });
         }
     }
 
+    private void sendResponseToNode(HttpSession session, Response response) {
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    void sendAnswerToClient(HttpSession session, Response successfulResponse, int successCount, int quorum) {
+        if (successCount >= quorum) {
+            sendResponseToClient(session, successfulResponse);
+        } else {
+            sendResponseToClient(session, new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+        }
+    }
+
+    private void sendResponseToClient(HttpSession session, Response response) {
+        if (response.getStatus() == DELETED_RECORD_MESSAGE) {
+            response = new Response(Response.NOT_FOUND, Response.EMPTY);
+        }
+        try {
+            session.sendResponse(response);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
     private long getTimeFromResponse(Response response) {
         String timeHeader = response.getHeader("time: ");
         if (timeHeader == null || timeHeader == "") {
@@ -171,15 +203,19 @@ public class DatabaseHttpServer extends HttpServer {
         }
         return Long.parseLong(timeHeader);
     }
-    private Response localRequest(String key, Request request, long time) {
-        try {
-            return handleMethod(key, request.getMethod(), request.getBody(), time);
-        } catch (IOException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
+    private CompletableFuture<Response> localRequest(String key, Request request, long time) {
+        CompletableFuture<Response> result = CompletableFuture.supplyAsync(()-> {
+            try {
+                Response response = handleMethod(key, request.getMethod(), request.getBody(), time);
+                return response;
+            } catch (IOException e) {
+                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            }
+        });
+        return result;
     }
 
-    private Response proxyRequest(int targetNodeId, String key, Request request, long time) {
+    private CompletableFuture<Response> proxyRequest(int targetNodeId, String key, Request request, long time) {
         HttpRequest httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(clusterConfig[targetNodeId] + requestPath + "?id=" + key))
                 .timeout(Duration.ofSeconds(1))
@@ -189,15 +225,24 @@ public class DatabaseHttpServer extends HttpServer {
                 .build();
 
         try {
-            HttpResponse<byte[]> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-            Optional<String> timeHeader = response.headers().firstValue("time");
-            Response result = new Response(convertStatusCode(response.statusCode()), response.body());
-            if (timeHeader.isPresent()) {
-                result.addHeader("time: " + timeHeader.get());
-            }
-            return result;
+            CompletableFuture<Response> future = CompletableFuture.supplyAsync(()-> {
+                HttpResponse<byte[]> response;
+                try {
+                    response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+                } catch (Exception e) {
+                    return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+                }
+                Optional<String> timeHeader = response.headers().firstValue("time");
+                Response result = new Response(convertStatusCode(response.statusCode()), response.body());
+                if (timeHeader.isPresent()) {
+                    result.addHeader("time: " + timeHeader.get());
+                }
+                return result;
+            });
+
+            return future;
         } catch (Exception e) {
-            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+            return CompletableFuture.completedFuture(null);
         }
     }
 
