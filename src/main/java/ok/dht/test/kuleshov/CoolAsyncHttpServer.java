@@ -40,7 +40,7 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
     private final int defaultFrom;
     private final int defaultAck;
     private final String selfUrl;
-    private ExecutorService workerExecutorService;
+    private final ExecutorService workerExecutorService;
     private final TreeSet<Integer> treeSet = new TreeSet<>();
     private final List<String> clusters;
     private final Map<Integer, Integer> hashToClusterIndex = new ConcurrentHashMap<>();
@@ -48,6 +48,12 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
     public CoolAsyncHttpServer(HttpServerConfig config, Service service, Object... routers) throws IOException {
         super(config, service, routers);
+        workerExecutorService = new ThreadPoolExecutor(WORKER_CORE_POOL_SIZE,
+                WORKER_MAXIMUM_POOL_SIZE,
+                100,
+                TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(128)
+        );
 
         selfUrl = service.getConfig().selfUrl();
         clusters = service.getConfig().clusterUrls();
@@ -68,12 +74,6 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
     @Override
     public synchronized void start() {
         super.start();
-        workerExecutorService = new ThreadPoolExecutor(WORKER_CORE_POOL_SIZE,
-                WORKER_MAXIMUM_POOL_SIZE,
-                100,
-                TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>(128)
-        );
         ExecutorService senderExecutorService = new ThreadPoolExecutor(SENDER_CORE_POOL_SIZE,
                 SENDER_MAXIMUM_POOL_SIZE,
                 100,
@@ -100,8 +100,6 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
                 String path = request.getPath();
 
-                System.out.println("get");
-
                 if (!path.equals("/v0/entity") && !path.equals("/master/v0/entity")) {
                     session.sendResponse(emptyResponse(Response.BAD_REQUEST));
 
@@ -117,8 +115,6 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
                 boolean isSlave = path.startsWith("/master");
 
-                System.out.println(isSlave);
-
                 if (isSlave) {
                     String str = request.getParameter("timestamp");
                     long time = -1;
@@ -126,9 +122,8 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                         time = Long.parseLong(str);
                     }
                     Response resp = service.handle(method, id, request, time);
-                    System.out.println(resp);
                     session.sendResponse(resp);
-                    System.out.println("return");
+
                     return;
                 }
 
@@ -181,9 +176,6 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
         for (int reqIndex = 0, urlIndex = hashToClusterIndex.get(getVirtualNodeHash(id)); reqIndex < from; reqIndex++, urlIndex++) {
             urlIndex = urlIndex % clusters.size();
-            System.out.println(urlIndex);
-            System.out.println(selfUrl);
-            System.out.println(clusters.get(urlIndex));
 
             if (clusters.get(urlIndex).equals(selfUrl)) {
                 isSelf = true;
@@ -192,24 +184,18 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
             HttpRequest req = HttpRequest.newBuilder()
                     .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                    .timeout(Duration.of(30, ChronoUnit.SECONDS))
+                    .timeout(Duration.of(2, ChronoUnit.SECONDS))
                     .header("timestamp", String.valueOf(timestamp))
                     .uri(URI.create(clusters.get(urlIndex) + "/master" + request.getURI()))
                     .build();
 
-            System.out.println(req);
-
             httpClient.sendAsync(req,
                     HttpResponse.BodyHandlers.ofByteArray()
             ).whenComplete((response, exception) -> {
-//                System.out.println(response.statusCode());
-//                System.out.println(exception);
                 if (exception == null) {
-                    System.out.println(response);
                     handleResponse(request.getMethod(), MyResponse.fromHttpResponse(response), lastResponse, ack, ackCount, from, allCount, session);
                 } else {
                     allCount.incrementAndGet();
-//                    System.out.println(exception.getMessage());
                     int currentAll = allCount.incrementAndGet();
 
                     if (currentAll == from && ack < ackCount.get()) {
@@ -225,7 +211,6 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
         }
 
         if (isSelf) {
-            System.out.println("self");
             Response resp = service.handle(request.getMethod(), id, request, timestamp);
             handleResponse(request.getMethod(), MyResponse.fromOneResponse(resp), lastResponse, ack, ackCount, from, allCount, session);
         }
@@ -362,13 +347,9 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                         break;
                     }
 
-                    System.out.println(13123123);
-
                     if (currentAck == ack) {
                         try {
                             MyResponse currentLatsResponse = lastResponse.get();
-                            System.out.println(currentLatsResponse);
-                            System.out.println(Arrays.toString(currentLatsResponse.getBody()));
                             session.sendResponse(new Response(currentLatsResponse.getStringStatusCode(), currentLatsResponse.getBody()));
                             return;
                         } catch (IOException e) {
@@ -388,10 +369,6 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                 e.printStackTrace();
             }
         }
-    }
-
-    private String getClusterHost(String id) {
-        return clusters.get(hashToClusterIndex.get(getVirtualNodeHash(id)));
     }
 
     private Integer getVirtualNodeHash(String id) {
