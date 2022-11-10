@@ -1,12 +1,9 @@
-package ok.dht.test.shakhov;
+package ok.dht.test.shakhov.http;
 
 import one.nio.http.HttpServerConfig;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
-
-import java.net.http.HttpResponse;
-import java.util.Optional;
 
 public final class HttpUtils {
     public static final String X_LEADER_TIMESTAMP_HEADER = "X-Leader-Timestamp";
@@ -29,13 +26,6 @@ public final class HttpUtils {
         } else {
             return Integer.parseInt(parameter);
         }
-    }
-
-    public static Response convertToOneNioResponse(HttpResponse<byte[]> response) {
-        Response oneNioResponse = new Response(String.valueOf(response.statusCode()), response.body());
-        Optional<String> headerValue = response.headers().firstValue(X_RECORD_TIMESTAMP_HEADER);
-        headerValue.ifPresent(s -> oneNioResponse.addHeader(ONE_NIO_X_RECORD_TIMESTAMP_HEADER + s));
-        return oneNioResponse;
     }
 
     public static HttpServerConfig createHttpServerConfigFromPort(int port) {
