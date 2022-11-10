@@ -3,6 +3,7 @@ package ok.dht.test.maximenko;
 import ok.dht.ServiceConfig;
 import ok.dht.test.maximenko.dao.Config;
 import ok.dht.test.maximenko.dao.MemorySegmentDao;
+
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -10,7 +11,6 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
-
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -31,9 +31,8 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-
 public class DatabaseHttpServer extends HttpServer {
-    private static final int flushDaoThresholdBytes = 10000000;   // 100 MB
+    private static final int flushDaoThresholdBytes = 10000000; // 100 MB
     private static final int DELETED_RECORD_CODE = 409;
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String NOT_SPREAD_HEADER = "notSpread";
@@ -98,10 +97,12 @@ public class DatabaseHttpServer extends HttpServer {
 
     private void handleMultiNodeRequest(HttpSession session, Request request, String key) {
         String replicasString = request.getParameter("from=");
-        final int replicasAmount = HttpUtils.isArgumentCorrect(replicasString) ? Integer.parseInt(replicasString) : clusterSize;
+        final int replicasAmount = HttpUtils.isArgumentCorrect(replicasString)
+                ? Integer.parseInt(replicasString) : clusterSize;
 
         String quorumString = request.getParameter("ack=");
-        final int quorum = HttpUtils.isArgumentCorrect(quorumString) ? Integer.parseInt(quorumString) : clusterSize / 2 + 1;
+        final int quorum = HttpUtils.isArgumentCorrect(quorumString)
+                ? Integer.parseInt(quorumString) : clusterSize / 2 + 1;
 
         if ((replicasAmount > clusterSize) || (quorum > replicasAmount) || (quorum == 0)) {
             sendResponse(session, BAD_REQUEST);
@@ -123,11 +124,22 @@ public class DatabaseHttpServer extends HttpServer {
                 response = localRequest(key, request, currentTime);
             }
 
-            response.thenAccept(currentResponse -> handleNodeResponse(session, currentResponse, finished, mostRecentResponseTime, resultResponse, successCount, responsesCollected, replicasAmount, quorum));
+            response.thenAccept(currentResponse
+                    -> handleNodeResponse(session, currentResponse, finished,
+                    mostRecentResponseTime, resultResponse, successCount,
+                    responsesCollected, replicasAmount, quorum));
         }
     }
 
-    synchronized static private void handleNodeResponse(HttpSession session, Response response, final Boolean[] createdResponse, long[] mostRecentResponseTime, final Response[] successfulResponse, final Integer[] successCount, final Integer[] responsesCollected, int replicasAmount, int quorum) {
+    synchronized static private void handleNodeResponse(HttpSession session,
+                                                        Response response,
+                                                        final Boolean[] createdResponse,
+                                                        long[] mostRecentResponseTime,
+                                                        final Response[] successfulResponse,
+                                                        final Integer[] successCount,
+                                                        final Integer[] responsesCollected,
+                                                        int replicasAmount,
+                                                        int quorum) {
         long time = HttpUtils.getTimeFromResponse(response);
         int responseCode = response.getStatus();
         if (createdResponse[0]) {
@@ -144,13 +156,17 @@ public class DatabaseHttpServer extends HttpServer {
         }
 
         responsesCollected[0] += 1;
-        if (responsesCollected[0] == replicasAmount || (successCount[0] >= quorum && successfulResponse[0].getStatus() != 404)) {
+        if (responsesCollected[0] == replicasAmount || (successCount[0] >= quorum
+                && successfulResponse[0].getStatus() != 404)) {
             responseWithRespectToQuorum(session, successfulResponse[0], successCount[0], quorum);
             createdResponse[0] = true;
         }
     }
 
-    private static void responseWithRespectToQuorum(HttpSession session, Response successfulResponse, int successCount, int quorum) {
+    private static void responseWithRespectToQuorum(HttpSession session,
+                                                    Response successfulResponse,
+                                                    int successCount,
+                                                    int quorum) {
         if (successCount >= quorum) {
             sendResponseToClient(session, successfulResponse);
         } else {
@@ -186,7 +202,13 @@ public class DatabaseHttpServer extends HttpServer {
     }
 
     private CompletableFuture<Response> proxyRequest(int targetNodeId, String key, Request request, long time) {
-        HttpRequest httpRequest = HttpRequest.newBuilder().uri(URI.create(clusterConfig[targetNodeId] + REQUEST_PATH + "?id=" + key)).timeout(Duration.ofSeconds(1)).method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody())).header(NOT_SPREAD_HEADER, NOT_SPREAD_HEADER_VALUE).header("time", String.valueOf(time)).build();
+        HttpRequest httpRequest = HttpRequest.newBuilder()
+                .uri(URI.create(clusterConfig[targetNodeId] + REQUEST_PATH + "?id=" + key))
+                .timeout(Duration.ofSeconds(1))
+                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .header(NOT_SPREAD_HEADER, NOT_SPREAD_HEADER_VALUE)
+                .header("time", String.valueOf(time))
+                .build();
 
         try {
             return CompletableFuture.supplyAsync(() -> {

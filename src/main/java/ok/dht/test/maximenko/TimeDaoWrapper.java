@@ -8,7 +8,6 @@ import ok.dht.test.maximenko.dao.MemorySegmentDao;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-
 public class TimeDaoWrapper {
     private final MemorySegmentDao dao;
 
@@ -53,7 +52,7 @@ public class TimeDaoWrapper {
         }
         ByteBuffer valueWithTime = value.value().asByteBuffer();
         long time = valueWithTime.getLong();
-        short haveValue =  valueWithTime.getShort();
+        short haveValue = valueWithTime.getShort();
         if (haveValue == 0) {
             return new ValueAndTime(null, time);
         }

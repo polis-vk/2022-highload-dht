@@ -5,6 +5,7 @@ import one.nio.http.Response;
 
 public abstract class HttpUtils {
     private static final String TIME_HEADER = "time";
+    
     public static String convertStatusCode(int code) {
         return switch (code) {
             case 200 -> Response.OK;
