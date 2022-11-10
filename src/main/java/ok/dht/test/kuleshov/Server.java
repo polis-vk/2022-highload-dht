@@ -7,15 +7,15 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public final class Server {
     private static final String TMP_DIRECTORY_PREFIX = "server";
-    private static final int SERVER_PORT = 19234;
     private static final Logger log = LoggerFactory.getLogger(Server.class);
 
     private Server() {
@@ -23,7 +23,7 @@ public final class Server {
     }
 
     public static void main(String[] args) {
-        String url = "http://localhost:" + SERVER_PORT;
+        String url = "http://localhost:" + args[0];
 
         Path tmpDirectory;
         try {
@@ -34,9 +34,9 @@ public final class Server {
         }
 
         ServiceConfig cfg = new ServiceConfig(
-                SERVER_PORT,
+                Integer.parseInt(args[0]),
                 url,
-                Collections.singletonList(url),
+                Stream.of(args).map(port -> "http://localhost:" + port).collect(Collectors.toList()),
                 tmpDirectory
         );
         Service service = new Service(cfg);
