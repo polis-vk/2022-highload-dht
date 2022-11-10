@@ -5,6 +5,7 @@ import ok.dht.ServiceConfig;
 import ok.dht.test.pashchenko.dao.Config;
 import ok.dht.test.pashchenko.dao.Entry;
 import ok.dht.test.pashchenko.dao.MemorySegmentDao;
+import one.nio.async.CustomThreadFactory;
 import one.nio.http.*;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
@@ -32,7 +33,6 @@ public class MyServer extends HttpServer {
     private static final String DATA_HEADER_TIMESTAMP = "data-ts";
 
     private final MemorySegmentDao dao;
-    private final Executor executor;
     private final Executor daoExecutor;
     private final Executor executorAggregator;
     private final Executor executorRemoteProcess;
@@ -45,11 +45,10 @@ public class MyServer extends HttpServer {
         super(createConfigFromPort(config.selfPort()));
         this.config = config;
         dao = new MemorySegmentDao(new Config(config.workingDir(), 1048576L));
-        executor = Executors.newFixedThreadPool(16);
-        executorAggregator = Executors.newFixedThreadPool(1);
-        executorRemoteProcess = Executors.newFixedThreadPool(4);
-        daoExecutor = Executors.newFixedThreadPool(16);
-        client = HttpClient.newHttpClient();
+        executorAggregator = Executors.newFixedThreadPool(1, new CustomThreadFactory(config.selfUrl() + "-aggregator"));
+        executorRemoteProcess = Executors.newFixedThreadPool(2, new CustomThreadFactory(config.selfUrl() + "-executorRemoteProcess"));
+        daoExecutor = Executors.newFixedThreadPool(4, new CustomThreadFactory(config.selfUrl() + "-daoExecutor"));
+        client = HttpClient.newBuilder().executor(Executors.newFixedThreadPool(4, new CustomThreadFactory(config.selfUrl() + "-client-http-my"))).build();
 
         nodes = new ArrayList<>(config.clusterUrls().size());
         Node currentNode = null;
@@ -307,7 +306,7 @@ public class MyServer extends HttpServer {
                 ).build();
 
         CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture = client.sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
-        return responseCompletableFuture.thenApply(response -> {
+        return responseCompletableFuture.thenApplyAsync(response -> {
                     String status = switch (response.statusCode()) {
                         case HttpURLConnection.HTTP_OK -> Response.OK;
                         case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
@@ -338,7 +337,7 @@ public class MyServer extends HttpServer {
                     }
                     return new HandleResult(status, timestamp, response.body());
                 }
-        ).exceptionally(throwable -> {
+        , executorAggregator).exceptionally(throwable -> {
             LOG.error("error send async", throwable);
             return new HandleResult(Response.INTERNAL_ERROR);
         });
