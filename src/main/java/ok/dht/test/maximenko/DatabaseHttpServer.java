@@ -25,23 +25,27 @@ import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 
 public class DatabaseHttpServer extends HttpServer {
-    static final int flushDaoThresholdBytes = 10000000;
+    private static final int flushDaoThresholdBytes = 10000000;
     private static final int DELETED_RECORD_MESSAGE = 409;
-    private final static String requestPath = "/v0/entity";
-    static final private Response badRequest = new Response(
+    private static final String REQUEST_PATH = "/v0/entity";
+    private static final String NOT_SPREAD_HEADER = "notSpread";
+    private static final String NOT_SPREAD_HEADER_VALUE = "true";
+    private static final String TIME_HEADER = "time";
+    private static final Response BAD_REQUEST = new Response(
             Response.BAD_REQUEST,
             Response.EMPTY
     );
+    private static final Logger LOGGER = Logger.getLogger(String.valueOf(DatabaseService.class));
     private Dao dao;
     private TimeDaoWrapper timeDaoWrapper;
 
@@ -50,8 +54,6 @@ public class DatabaseHttpServer extends HttpServer {
     private ExecutorService requestHandlers;
     private final String[] clusterConfig;
     private final int clusterSize;
-    private static final String notSpreadHeader = "notSpread";
-    private static final String notSpreadHeaderValue = "true";
     private final java.nio.file.Path workDir;
     private final int selfId;
     public DatabaseHttpServer(HttpServerConfig httpConfig, ServiceConfig config) throws IOException {
@@ -70,37 +72,30 @@ public class DatabaseHttpServer extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         requestHandlers.execute(()-> {
-                    try {
-                        handleRequestTask(request, session);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-        );
-
+            handleRequestTask(request, session);
+        });
     }
 
-    public void handleRequestTask(Request request, HttpSession session) throws IOException {
-        if (!request.getPath().equals(requestPath)) {
-            session.sendResponse(badRequest);
+    public void handleRequestTask(Request request, HttpSession session) {
+        if (!request.getPath().equals(REQUEST_PATH)) {
+            sendResponse(session, BAD_REQUEST);
             return;
         }
 
         String key = request.getParameter("id=");
         if (key == null || key.equals("")) {
-            session.sendResponse(badRequest);
+            sendResponse(session, BAD_REQUEST);
             return;
         }
 
-        String spreadHeaderValue = request.getHeader(notSpreadHeader);
-        if (spreadHeaderValue != null && spreadHeaderValue.equals(": " + notSpreadHeaderValue)) {
-            long time = Long.parseLong(request.getHeader("time: "));
+        String spreadHeaderValue = request.getHeader(NOT_SPREAD_HEADER);
+        if (spreadHeaderValue != null && spreadHeaderValue.equals(": " + NOT_SPREAD_HEADER_VALUE)) {
+            long time = Long.parseLong(request.getHeader(TIME_HEADER + ": "));
             try {
-                sendResponseToNode(session, localRequest(key, request, time).get());
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            } catch (ExecutionException e) {
-                throw new RuntimeException(e);
+                sendResponse(session, localRequest(key, request, time).get());
+            } catch (Exception e) {
+                LOGGER.severe("DAO get failure");
+                sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             }
             return;
         }
@@ -118,7 +113,7 @@ public class DatabaseHttpServer extends HttpServer {
         }
 
         if ((replicasAmount > clusterSize) || (quorum > replicasAmount) || (quorum == 0)) {
-            session.sendResponse(badRequest);
+            sendResponse(session, BAD_REQUEST);
             return;
         }
 
@@ -170,11 +165,12 @@ public class DatabaseHttpServer extends HttpServer {
         }
     }
 
-    private void sendResponseToNode(HttpSession session, Response response) {
+    private void sendResponse(HttpSession session, Response response) {
         try {
             session.sendResponse(response);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            LOGGER.severe("Response sending failed");
+            session.close();
         }
     }
 
@@ -190,14 +186,10 @@ public class DatabaseHttpServer extends HttpServer {
         if (response.getStatus() == DELETED_RECORD_MESSAGE) {
             response = new Response(Response.NOT_FOUND, Response.EMPTY);
         }
-        try {
-            session.sendResponse(response);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+       sendResponse(session, response);
     }
     private long getTimeFromResponse(Response response) {
-        String timeHeader = response.getHeader("time: ");
+        String timeHeader = response.getHeader(TIME_HEADER + ": ");
         if (timeHeader == null || timeHeader == "") {
             return 0;
         }
@@ -209,6 +201,7 @@ public class DatabaseHttpServer extends HttpServer {
                 Response response = handleMethod(key, request.getMethod(), request.getBody(), time);
                 return response;
             } catch (IOException e) {
+                LOGGER.severe("Service failed to handle local request");
                 return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
             }
         });
@@ -217,10 +210,10 @@ public class DatabaseHttpServer extends HttpServer {
 
     private CompletableFuture<Response> proxyRequest(int targetNodeId, String key, Request request, long time) {
         HttpRequest httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create(clusterConfig[targetNodeId] + requestPath + "?id=" + key))
+                .uri(URI.create(clusterConfig[targetNodeId] + REQUEST_PATH + "?id=" + key))
                 .timeout(Duration.ofSeconds(1))
                 .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                .header(notSpreadHeader, notSpreadHeaderValue)
+                .header(NOT_SPREAD_HEADER, NOT_SPREAD_HEADER_VALUE)
                 .header("time", String.valueOf(time))
                 .build();
 
@@ -230,18 +223,19 @@ public class DatabaseHttpServer extends HttpServer {
                 try {
                     response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
                 } catch (Exception e) {
+                    LOGGER.severe("Failed to send request to another node");
                     return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
                 }
-                Optional<String> timeHeader = response.headers().firstValue("time");
+                Optional<String> timeHeader = response.headers().firstValue(TIME_HEADER);
                 Response result = new Response(convertStatusCode(response.statusCode()), response.body());
                 if (timeHeader.isPresent()) {
-                    result.addHeader("time: " + timeHeader.get());
+                    result.addHeader(TIME_HEADER + ": " + timeHeader.get());
                 }
                 return result;
             });
-
             return future;
         } catch (Exception e) {
+            LOGGER.severe("Inter node interaction failure");
             return CompletableFuture.completedFuture(null);
         }
     }
@@ -309,6 +303,7 @@ public class DatabaseHttpServer extends HttpServer {
             dao = new MemorySegmentDao(daoConfig);
             timeDaoWrapper = new TimeDaoWrapper(dao);
         } catch (IOException e) {
+            LOGGER.severe("Can't start database");
             throw new RuntimeException(e);
         }
         super.start();
@@ -327,6 +322,7 @@ public class DatabaseHttpServer extends HttpServer {
         try {
             dao.close();
         } catch (IOException e) {
+            LOGGER.severe("Can't gracefully stop database");
             throw new RuntimeException(e);
         }
     }

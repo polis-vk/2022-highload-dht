@@ -8,15 +8,6 @@ import ok.dht.test.maximenko.dao.Entry;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-class ValueAndTime {
-    byte[] value;
-    long time;
-
-    public ValueAndTime(byte[] value, long time) {
-        this.value = value;
-        this.time = time;
-    }
-}
 
 public class TimeDaoWrapper {
     private final Dao dao;
