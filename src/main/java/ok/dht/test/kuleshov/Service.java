@@ -20,8 +20,10 @@ import static ok.dht.test.kuleshov.utils.ConfigUtils.createConfigFromPort;
 import static ok.dht.test.kuleshov.utils.ResponseUtils.emptyResponse;
 
 public class Service implements ok.dht.Service {
-    private final ServiceConfig config;
     private static final int DEFAULT_DAO_FLUSH_THRESHOLD = 8192;
+    private static final String TIMESTAMP_HEADER = "timestamp: ";
+
+    private final ServiceConfig config;
     private Dao<MemorySegment, Entry<MemorySegment>> memorySegmentDao;
     private HttpServer server;
     private boolean isStarted;
@@ -81,14 +83,14 @@ public class Service implements ok.dht.Service {
             if (!isExistValue(entry)) {
                 Response response = emptyResponse(Response.NOT_FOUND);
                 if (entry != null) {
-                    response.addHeader("timestamp: " + entry.timestamp());
+                    response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
                 }
 
                 return response;
             }
 
             Response response = new Response(Response.OK, entry.value().toByteArray());
-            response.addHeader("timestamp: " + entry.timestamp());
+            response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
 
             return response;
         } catch (IOException ioException) {
