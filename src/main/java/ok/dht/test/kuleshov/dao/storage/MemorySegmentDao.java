@@ -67,6 +67,9 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         State state = accessState();
 
         Entry<MemorySegment> result = state.memory.get(key);
+        if (result == null && state.flushing != null) {
+            result = state.flushing.get(key);
+        }
         if (result == null) {
             result = state.storage.get(key);
         }
