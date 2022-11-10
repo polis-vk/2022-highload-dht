@@ -40,7 +40,7 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
     private final int defaultFrom;
     private final int defaultAck;
     private final String selfUrl;
-    private final ExecutorService workerExecutorService;
+    private ExecutorService workerExecutorService;
     private final TreeSet<Integer> treeSet = new TreeSet<>();
     private final List<String> clusters;
     private final Map<Integer, Integer> hashToClusterIndex = new ConcurrentHashMap<>();
@@ -48,12 +48,6 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
     public CoolAsyncHttpServer(HttpServerConfig config, Service service, Object... routers) throws IOException {
         super(config, service, routers);
-        workerExecutorService = new ThreadPoolExecutor(WORKER_CORE_POOL_SIZE,
-                WORKER_MAXIMUM_POOL_SIZE,
-                100,
-                TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>(128)
-        );
 
         selfUrl = service.getConfig().selfUrl();
         clusters = service.getConfig().clusterUrls();
@@ -73,7 +67,13 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
     @Override
     public synchronized void start() {
-        super.start();
+        workerExecutorService = new ThreadPoolExecutor(WORKER_CORE_POOL_SIZE,
+                WORKER_MAXIMUM_POOL_SIZE,
+                100,
+                TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(128)
+        );
+
         ExecutorService senderExecutorService = new ThreadPoolExecutor(SENDER_CORE_POOL_SIZE,
                 SENDER_MAXIMUM_POOL_SIZE,
                 100,
@@ -85,6 +85,8 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                 .newBuilder()
                 .executor(senderExecutorService)
                 .build();
+
+        super.start();
     }
 
     @Override
@@ -195,10 +197,9 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                 if (exception == null) {
                     handleResponse(request.getMethod(), MyResponse.fromHttpResponse(response), lastResponse, ack, ackCount, from, allCount, session);
                 } else {
-                    allCount.incrementAndGet();
                     int currentAll = allCount.incrementAndGet();
 
-                    if (currentAll == from && ack < ackCount.get()) {
+                    if (currentAll == from && ack > ackCount.get()) {
                         try {
                             session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
                         } catch (IOException e) {
@@ -242,7 +243,7 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
         }
 
         public static MyResponse fromOneResponse(Response response) {
-            String timeStr = response.getHeader("timestamp");
+            String timeStr = response.getHeader("timestamp: ");
             long time = -1;
 
             if (timeStr != null && !timeStr.isBlank()) {

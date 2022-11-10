@@ -81,14 +81,14 @@ public class Service implements ok.dht.Service {
             if (!isExistValue(entry)) {
                 Response response = emptyResponse(Response.NOT_FOUND);
                 if (entry != null) {
-                    response.addHeader("timestamp" + entry.timestamp());
+                    response.addHeader("timestamp: " + entry.timestamp());
                 }
 
                 return response;
             }
 
             Response response = new Response(Response.OK, entry.value().toByteArray());
-            response.addHeader("timestamp" + entry.timestamp());
+            response.addHeader("timestamp: " + entry.timestamp());
 
             return response;
         } catch (IOException ioException) {
