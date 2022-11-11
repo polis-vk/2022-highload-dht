@@ -130,7 +130,7 @@ public class DatabaseHttpServer extends HttpServer {
         }
     }
 
-    synchronized private static void handleNodeResponse(HttpSession session,
+    private static synchronized void handleNodeResponse(HttpSession session,
                                                         Response response,
                                                         final Boolean[] createdResponse,
                                                         long[] mostRecentResponseTime,
