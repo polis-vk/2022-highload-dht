@@ -68,6 +68,10 @@ final class Storage implements Closeable {
         this.hasTombstones = hasTombstones;
     }
 
+    public List<MemorySegment> getSstables() {	
+        return sstables;	
+    }
+
     private long greaterOrEqualEntryIndex(MemorySegment sstable, MemorySegment key) {
         long index = entryIndex(sstable, key);
         if (index < 0) {
