@@ -20,7 +20,7 @@ function request()
 
     local id
     if math.random(0, 1) == 0 then
-        id = tostring(math.random(0, 6 * (10 ^ 7)))
+        id = tostring(math.random(0, 75 * (10 ^ 6)))
     else
         id = generate_random_string(math.random(3, 10))
     end
