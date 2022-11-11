@@ -14,13 +14,21 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ForkJoinPool;
+import java.util.function.Supplier;
 
 public class DhtService implements Service {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(DhtServer.class);
+
     private final ServiceConfig config;
+    private final ExecutorService executorService = new ForkJoinPool();
     private HttpServer server;
 
     public DhtService(ServiceConfig config) {
@@ -46,7 +54,11 @@ public class DhtService implements Service {
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                if (request.getMethod() == Request.METHOD_POST) {
+                    session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+                } else {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                }
             }
 
             @Override
@@ -73,51 +85,68 @@ public class DhtService implements Service {
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_GET)
-    public Response handleGet(@Param(value = "id", required = true) String id) {
-        if (!validateId(id)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-        byte[] value;
-        try {
-            value = Db.get(id);
-        } catch (DbException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-        if (value == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-        return new Response(Response.OK, value);
+    public void handleGet(@Param(value = "id", required = true) String id, HttpSession session) {
+        submit(session, () -> {
+            if (!validateId(id)) {
+                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
+            byte[] value;
+            try {
+                value = Db.get(id);
+            } catch (DbException e) {
+                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            }
+            if (value == null) {
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
+            }
+            return new Response(Response.OK, value);
+        });
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_PUT)
-    public Response handlePut(Request request, @Param(value = "id", required = true) String id) {
-        if (!validateId(id)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-        try {
-            Db.put(id, request.getBody());
-        } catch (DbException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-        return new Response(Response.CREATED, Response.EMPTY);
+    public void handlePut(Request request, @Param(value = "id", required = true) String id, HttpSession session) {
+        submit(session, () -> {
+            if (!validateId(id)) {
+                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
+            try {
+                Db.put(id, request.getBody());
+            } catch (DbException e) {
+                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            }
+            return new Response(Response.CREATED, Response.EMPTY);
+        });
     }
 
     @Path("/v0/entity")
     @RequestMethod(Request.METHOD_DELETE)
-    public Response handleDelete(@Param(value = "id", required = true) String id) {
-        if (!validateId(id)) {
-            return new Response(Response.BAD_REQUEST, Response.EMPTY);
-        }
-        try {
-            Db.delete(id);
-        } catch (DbException e) {
-            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-        }
-        return new Response(Response.ACCEPTED, Response.EMPTY);
+    public void handleDelete(@Param(value = "id", required = true) String id, HttpSession session) {
+        submit(session, () -> {
+            if (!validateId(id)) {
+                return new Response(Response.BAD_REQUEST, Response.EMPTY);
+            }
+            try {
+                Db.delete(id);
+            } catch (DbException e) {
+                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            }
+            return new Response(Response.ACCEPTED, Response.EMPTY);
+        });
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    private void submit(HttpSession session, Supplier<Response> handel) {
+        executorService.execute(() -> {
+            try {
+                session.sendResponse(handel.get());
+            } catch (IOException e) {
+                LOGGER.error(e.getMessage(), e);
+                session.close();
+            }
+        });
+    }
+
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
