@@ -44,7 +44,7 @@ public class DatabaseService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 6, week = 5)
+    @ServiceFactory(stage = 5, week = 3)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
