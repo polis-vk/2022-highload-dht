@@ -16,7 +16,7 @@ public class PoolKeeper implements Closeable {
                 60, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(queueCapacity),
                 new ThreadPoolExecutor.AbortPolicy());
-        this.shutdownTimeInSeconds = 3*60;
+        this.shutdownTimeInSeconds = 3 * 60;
     }
 
     @Override

@@ -69,10 +69,12 @@ public final class CompletableFutureUtils {
 
     public record Subscription(CompletableFuture<?> cf, MyHttpSession session, LoadBalancer loadBalancer,
                                String slaveNodeUrl) {
+        // intentionally-blank
     }
 
     public record ExtendedSubscription(Subscription base, AtomicInteger acks, AtomicBoolean responseSent,
                                        PriorityBlockingQueue<MyHttpResponse> goodResponsesBuffer,
                                        PriorityBlockingQueue<MyHttpResponse> badResponsesBuffer) {
+        // intentionally-blank
     }
 }
