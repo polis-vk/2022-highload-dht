@@ -24,7 +24,8 @@ public class CompletableFutureSubscriber {
 
                 if (!isGoodResponse(myHttpResponse)) {
                     subscription.loadBalancer().makeNodeIll(subscription.slaveNodeUrl());
-                    log.error("Node {} is ill", subscription.slaveNodeUrl(), new Exception(Arrays.toString(myHttpResponse.getBody())));
+                    log.error("Node {} is ill", subscription.slaveNodeUrl(),
+                            new Exception(Arrays.toString(myHttpResponse.getBody())));
                 }
 
                 HttpUtils.NetRequest netRequest = () -> subscription.session().sendResponse(myHttpResponse);
@@ -37,51 +38,55 @@ public class CompletableFutureSubscriber {
         );
     }
 
-    public void subscribe(Subscription subscription, AtomicInteger acks, AtomicBoolean responseSent,
-                          PriorityBlockingQueue<MyHttpResponse> goodResponsesBuffer,
-                          PriorityBlockingQueue<MyHttpResponse> badResponsesBuffer) {
-        subscription.cf().thenAccept((response) -> {
-                if (checkForResponseSent(acks, responseSent, subscription.session(), goodResponsesBuffer, badResponsesBuffer)) {
+    public void subscribe(ExtendedSubscription extendedSubscription) {
+        Subscription base = extendedSubscription.base();
+        base.cf().thenAccept((response) -> {
+                if (checkForResponseSent(extendedSubscription)) {
                     return;
                 }
 
                 MyHttpResponse myHttpResponse = MyHttpResponse.convert(response);
 
                 if (isGoodResponse(myHttpResponse)) {
-                    acks.incrementAndGet();
-                    goodResponsesBuffer.add(myHttpResponse);
+                    extendedSubscription.acks().incrementAndGet();
+                    extendedSubscription.goodResponsesBuffer().add(myHttpResponse);
                 } else {
-                    badResponsesBuffer.add(myHttpResponse);
-                    subscription.loadBalancer().makeNodeIll(subscription.slaveNodeUrl());
-                    log.error("Node {} is ill", subscription.slaveNodeUrl(),
+                    extendedSubscription.badResponsesBuffer().add(myHttpResponse);
+                    base.loadBalancer().makeNodeIll(base.slaveNodeUrl());
+                    log.error("Node {} is ill", base.slaveNodeUrl(),
                             new Exception(Arrays.toString(myHttpResponse.getBody())));
                 }
 
-                checkForResponseSent(acks, responseSent, subscription.session(), goodResponsesBuffer, badResponsesBuffer);
+                checkForResponseSent(extendedSubscription);
             }
         ).exceptionally((throwable) -> {
-                whenCancelled(throwable, subscription, acks, responseSent, goodResponsesBuffer, badResponsesBuffer);
+                whenCancelled(throwable, extendedSubscription);
                 return null;
             }
         );
     }
 
-    private boolean checkForResponseSent(AtomicInteger acks, AtomicBoolean responseSent, MyHttpSession session,
-                                         PriorityBlockingQueue<MyHttpResponse> goodResponsesBuffer,
-                                         PriorityBlockingQueue<MyHttpResponse> badResponsesBuffer) {
+    private boolean checkForResponseSent(ExtendedSubscription extendedSubscription) {
+        AtomicBoolean responseSent = extendedSubscription.responseSent();
         if (responseSent.get()) {
             return true;
         }
 
+        Subscription base = extendedSubscription.base();
+        MyHttpSession session = base.session();
+        AtomicInteger acks = extendedSubscription.acks();
         int ack = session.getReplicas().ack();
 
         if (acks.get() >= ack && responseSent.compareAndSet(false, true)) {
-            HttpUtils.NetRequest netRequest = () -> session.sendResponse(goodResponsesBuffer.peek());
+            HttpUtils.NetRequest netRequest
+                    = () -> session.sendResponse(extendedSubscription.goodResponsesBuffer().peek());
             HttpUtils.safeHttpRequest(session, log, netRequest);
             return true;
         }
 
-        int remainedResponses = session.getReplicas().from() - goodResponsesBuffer.size() - badResponsesBuffer.size();
+        int remainedResponses = session.getReplicas().from()
+                - extendedSubscription.goodResponsesBuffer().size()
+                - extendedSubscription.badResponsesBuffer().size();
 
         if (acks.get() + remainedResponses < ack && responseSent.compareAndSet(false, true)) {
             HttpUtils.NetRequest netRequest = () -> session.sendResponse(MyHttpResponse.notEnoughReplicas());
@@ -101,24 +106,29 @@ public class CompletableFutureSubscriber {
 
     private void whenCancelled(Throwable t, Subscription subscription) {
         MyHttpResponse myHttpResponse = new MyHttpResponse(Response.GATEWAY_TIMEOUT);
-        subscription.loadBalancer().makeNodeIll(subscription.slaveNodeUrl());
-        log.error("Node {} is ill", subscription.slaveNodeUrl(), new Exception(Arrays.toString(t.getStackTrace())));
+        makeNodeIll(t, subscription.loadBalancer(), subscription.slaveNodeUrl);
         HttpUtils.NetRequest netRequest = () -> subscription.session().sendResponse(myHttpResponse);
         HttpUtils.safeHttpRequest(subscription.session(), log, netRequest);
     }
 
-    private void whenCancelled(Throwable t, Subscription subscription, AtomicInteger acks,
-                                     AtomicBoolean responseSent,
-                                     PriorityBlockingQueue<MyHttpResponse> goodResponsesBuffer,
-                                     PriorityBlockingQueue<MyHttpResponse> badResponsesBuffer) {
+    private void whenCancelled(Throwable t, ExtendedSubscription extendedSubscription) {
         MyHttpResponse myHttpResponse = new MyHttpResponse(Response.GATEWAY_TIMEOUT);
-        badResponsesBuffer.add(myHttpResponse);
-        subscription.loadBalancer().makeNodeIll(subscription.slaveNodeUrl());
-        log.error("Node {} is ill", subscription.slaveNodeUrl(), new Exception(Arrays.toString(t.getStackTrace())));
-        checkForResponseSent(acks, responseSent, subscription.session(), goodResponsesBuffer, badResponsesBuffer);
+        extendedSubscription.badResponsesBuffer().add(myHttpResponse);
+        makeNodeIll(t, extendedSubscription.base().loadBalancer(), extendedSubscription.base().slaveNodeUrl);
+        checkForResponseSent(extendedSubscription);
+    }
+
+    private void makeNodeIll(Throwable t, LoadBalancer loadBalancer, String nodeUrl) {
+        loadBalancer.makeNodeIll(nodeUrl);
+        log.error("Node {} is ill", nodeUrl, new Exception(Arrays.toString(t.getStackTrace())));
     }
 
     public record Subscription(CompletableFuture<?> cf, MyHttpSession session, LoadBalancer loadBalancer,
                                String slaveNodeUrl) {
+    }
+
+    public record ExtendedSubscription(Subscription base, AtomicInteger acks, AtomicBoolean responseSent,
+                                       PriorityBlockingQueue<MyHttpResponse> goodResponsesBuffer,
+                                       PriorityBlockingQueue<MyHttpResponse> badResponsesBuffer) {
     }
 }

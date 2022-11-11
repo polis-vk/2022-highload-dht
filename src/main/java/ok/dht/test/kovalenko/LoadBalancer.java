@@ -104,8 +104,10 @@ public final class LoadBalancer {
                                     MyServiceBase service, List<Node> replicasForKey) {
         try {
             request.addHeader(HttpUtils.REPLICA_HEADER);
-            PriorityBlockingQueue<MyHttpResponse> replicasGoodResponses = new PriorityBlockingQueue<>(session.getReplicas().from(), ResponseComparator.INSTANSE);
-            PriorityBlockingQueue<MyHttpResponse> replicasBadResponses = new PriorityBlockingQueue<>(session.getReplicas().from(), ResponseComparator.INSTANSE);
+            PriorityBlockingQueue<MyHttpResponse> replicasGoodResponses
+                    = new PriorityBlockingQueue<>(session.getReplicas().from(), ResponseComparator.INSTANSE);
+            PriorityBlockingQueue<MyHttpResponse> replicasBadResponses
+                    = new PriorityBlockingQueue<>(session.getReplicas().from(), ResponseComparator.INSTANSE);
             AtomicInteger acks = new AtomicInteger();
             AtomicBoolean responseSent = new AtomicBoolean();
             String masterNodeUrl = service.selfUrl();
@@ -119,21 +121,17 @@ public final class LoadBalancer {
                     handler = replicaForKey::proxyRequest;
                 }
 
-                requestForReplica(request, session, slaveNodeUrl, handler, acks, responseSent, replicasGoodResponses, replicasBadResponses);
+                CompletableFuture<?> cf = handler.handle(request, session);
+                CompletableFutureSubscriber.Subscription base
+                        = new CompletableFutureSubscriber.Subscription(cf, session, this, slaveNodeUrl);
+                CompletableFutureSubscriber.ExtendedSubscription extendedSubscription =
+                        new CompletableFutureSubscriber.ExtendedSubscription(base, acks, responseSent, replicasGoodResponses, replicasBadResponses);
+                completableFutureSubscriber.subscribe(extendedSubscription);
             }
         } catch (Exception e) {
             log.error("Fatal error", e);
             MyHttpResponse finalResponse = new MyHttpResponse(Response.INTERNAL_ERROR);
             HttpUtils.safeHttpRequest(session, log, () -> session.sendResponse(finalResponse));
         }
-    }
-
-    private void requestForReplica(Request request, MyHttpSession session, String slaveNodeUrl, MyServiceBase.Handler handler, AtomicInteger acks, AtomicBoolean responseSent,
-                                   PriorityBlockingQueue<MyHttpResponse> replicasGoodResponses, PriorityBlockingQueue<MyHttpResponse> replicasBadResponses)
-            throws IOException, ExecutionException, InterruptedException, InvocationTargetException, IllegalAccessException {
-        CompletableFuture<?> completableFuture = handler.handle(request, session);
-        CompletableFutureSubscriber.Subscription subscription
-                = new CompletableFutureSubscriber.Subscription(completableFuture, session, this, slaveNodeUrl);
-        completableFutureSubscriber.subscribe(subscription, acks, responseSent, replicasGoodResponses, replicasBadResponses);
     }
 }
