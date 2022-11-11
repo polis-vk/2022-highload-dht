@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class LoadBalancer {
@@ -111,6 +112,7 @@ public final class LoadBalancer {
             PriorityBlockingQueue<MyHttpResponse> replicasGoodResponses = new PriorityBlockingQueue<>(session.getReplicas().from(), ResponseComparator.INSTANSE);
             PriorityBlockingQueue<MyHttpResponse> replicasBadResponses = new PriorityBlockingQueue<>(session.getReplicas().from(), ResponseComparator.INSTANSE);
             AtomicInteger acks = new AtomicInteger();
+            AtomicBoolean responseSent = new AtomicBoolean();
             String masterNodeUrl = service.selfUrl();
 
             for (Node replicaForKey : replicasForKey) {
@@ -122,7 +124,7 @@ public final class LoadBalancer {
                     handler = replicaForKey::proxyRequest;
                 }
 
-                requestForReplica(request, session, slaveNodeUrl, handler, acks, replicasGoodResponses, replicasBadResponses);
+                requestForReplica(request, session, slaveNodeUrl, handler, acks, responseSent, replicasGoodResponses, replicasBadResponses);
             }
         } catch (Exception e) {
             log.error("Fatal error", e);
@@ -131,11 +133,11 @@ public final class LoadBalancer {
         }
     }
 
-    private void requestForReplica(Request request, MyHttpSession session, String slaveNodeUrl, MyServiceBase.Handler handler, AtomicInteger acks,
+    private void requestForReplica(Request request, MyHttpSession session, String slaveNodeUrl, MyServiceBase.Handler handler, AtomicInteger acks, AtomicBoolean responseSent,
                                    PriorityBlockingQueue<MyHttpResponse> replicasGoodResponses, PriorityBlockingQueue<MyHttpResponse> replicasBadResponses)
             throws IOException, ExecutionException, InterruptedException, InvocationTargetException, IllegalAccessException {
         CompletableFuture<?> completableFuture = handler.handle(request, session);
-        completableFutureSubscriber.subscribe(completableFuture, session, slaveNodeUrl, acks, replicasGoodResponses, replicasBadResponses);
+        completableFutureSubscriber.subscribe(completableFuture, session, slaveNodeUrl, acks, responseSent, replicasGoodResponses, replicasBadResponses);
     }
 
 }

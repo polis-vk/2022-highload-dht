@@ -23,7 +23,7 @@ public final class Main {
                 int port = ports.get(i);
                 String url = urls.get(i);
                 java.nio.file.Path cfgPath
-                        = java.nio.file.Path.of("/home/pavel/IntelliJIdeaProjects/test/shard" + (i + 1));
+                        = java.nio.file.Path.of("/home/pavel/IntelliJIdeaProjects/tables/shard" + (i + 1));
                 Files.createDirectories(cfgPath);
                 ServiceConfig cfg = new ServiceConfig(
                         port,
