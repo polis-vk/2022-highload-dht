@@ -18,12 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.HttpURLConnection;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 public class MyServerBase extends HttpServer {
 
@@ -36,12 +31,7 @@ public class MyServerBase extends HttpServer {
 
     public MyServerBase(HttpServerConfig config, Object... routers) throws IOException {
         super(config, routers);
-        this.workersHandlers = new PoolKeeper(
-                new ThreadPoolExecutor(1, N_WORKERS,
-                        60, TimeUnit.SECONDS,
-                        new LinkedBlockingQueue<>(QUEUE_CAPACITY),
-                        new ThreadPoolExecutor.AbortPolicy()),
-                3 * 60);
+        this.workersHandlers = new PoolKeeper(1, N_WORKERS, QUEUE_CAPACITY);
     }
 
     @Override

@@ -54,11 +54,6 @@ public final class HttpUtils {
         return new MyHttpResponse(statusCode, body, time);
     }
 
-    public static long getTimeHeader(HttpResponse<byte[]> r) {
-        return r.headers().firstValueAsLong(TIME_HEADER)
-                .orElseThrow(() -> new IllegalArgumentException("Response " + r + " doesn't contain header 'time'"));
-    }
-
     public static void sendError(String responseCode, Exception e, HttpSession session, Logger log) {
         try {
             log.error("Unexpected error", e);
@@ -77,6 +72,19 @@ public final class HttpUtils {
         } catch (Exception ex) {
             log.error("Fatal error", ex);
         }
+    }
+
+    public static boolean isGoodResponse(MyHttpResponse response) {
+        return response.getStatus() == HttpURLConnection.HTTP_OK
+                || response.getStatus() == HttpURLConnection.HTTP_CREATED
+                || response.getStatus() == HttpURLConnection.HTTP_ACCEPTED
+                || response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND;
+    }
+
+    private static long getTimeHeader(HttpResponse<byte[]> r) {
+        return r.headers().firstValueAsLong(TIME_HEADER)
+                .orElseThrow(() ->
+                        new IllegalArgumentException("Response " + r + " doesn't contain header " + TIME_HEADER));
     }
 
     public interface NetRequest {

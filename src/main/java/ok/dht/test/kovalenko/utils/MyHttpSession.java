@@ -4,8 +4,6 @@ import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.net.Socket;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
 public class MyHttpSession extends HttpSession {
 
     private String requestId;

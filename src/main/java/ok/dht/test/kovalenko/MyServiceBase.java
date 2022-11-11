@@ -8,6 +8,7 @@ import ok.dht.test.kovalenko.dao.aliases.TypedTimedEntry;
 import ok.dht.test.kovalenko.dao.base.ByteBufferDaoFactoryB;
 import ok.dht.test.kovalenko.dao.utils.PoolKeeper;
 import ok.dht.test.kovalenko.utils.CompletableFutureSubscriber;
+import ok.dht.test.kovalenko.utils.CompletableFutureUtils;
 import ok.dht.test.kovalenko.utils.HttpUtils;
 import ok.dht.test.kovalenko.utils.MyHttpResponse;
 import ok.dht.test.kovalenko.utils.MyHttpSession;
@@ -28,14 +29,6 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class MyServiceBase implements Service {
 
@@ -46,17 +39,11 @@ public class MyServiceBase implements Service {
     private final ServiceConfig config;
     private LSMDao dao;
     private HttpServer server;
-    private final PoolKeeper poolKeeper;
+    private final PoolKeeper poolKeeper = new PoolKeeper(1, Integer.MAX_VALUE, Integer.MAX_VALUE);
     private final CompletableFutureSubscriber completableFutureSubscriber = new CompletableFutureSubscriber();
 
     public MyServiceBase(ServiceConfig config) throws IOException {
         this.config = config;
-        this.poolKeeper = new PoolKeeper(
-                new ThreadPoolExecutor(1, Integer.MAX_VALUE,
-                        60, TimeUnit.SECONDS,
-                        new LinkedBlockingQueue<>(Integer.MAX_VALUE),
-                        new ThreadPoolExecutor.AbortPolicy()),
-                3*60);
     }
 
     @Override
@@ -98,8 +85,8 @@ public class MyServiceBase implements Service {
         myHttpSession.setReplicas(replicas);
         if (request.getHeader(HttpUtils.REPLICA_HEADER) != null) {
             CompletableFuture<MyHttpResponse> cf = handle(request, myHttpSession);
-            CompletableFutureSubscriber.Subscription subscription =
-                    new CompletableFutureSubscriber.Subscription(cf, myHttpSession, loadBalancer, selfUrl());
+            CompletableFutureUtils.Subscription subscription =
+                    new CompletableFutureUtils.Subscription(cf, myHttpSession, loadBalancer, selfUrl());
             completableFutureSubscriber.subscribe(subscription);
         } else {
             loadBalancer.balance(this, request, myHttpSession);

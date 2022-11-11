@@ -1,6 +1,7 @@
 package ok.dht.test.kovalenko;
 
 import ok.dht.test.kovalenko.utils.CompletableFutureSubscriber;
+import ok.dht.test.kovalenko.utils.CompletableFutureUtils;
 import ok.dht.test.kovalenko.utils.HttpUtils;
 import ok.dht.test.kovalenko.utils.MyHttpResponse;
 import ok.dht.test.kovalenko.utils.MyHttpSession;
@@ -10,9 +11,7 @@ import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.Closeable;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -122,10 +121,11 @@ public final class LoadBalancer {
                 }
 
                 CompletableFuture<?> cf = handler.handle(request, session);
-                CompletableFutureSubscriber.Subscription base
-                        = new CompletableFutureSubscriber.Subscription(cf, session, this, slaveNodeUrl);
-                CompletableFutureSubscriber.ExtendedSubscription extendedSubscription =
-                        new CompletableFutureSubscriber.ExtendedSubscription(base, acks, responseSent, replicasGoodResponses, replicasBadResponses);
+                CompletableFutureUtils.Subscription base
+                        = new CompletableFutureUtils.Subscription(cf, session, this, slaveNodeUrl);
+                CompletableFutureUtils.ExtendedSubscription extendedSubscription =
+                        new CompletableFutureUtils.ExtendedSubscription(base,
+                                acks, responseSent, replicasGoodResponses, replicasBadResponses);
                 completableFutureSubscriber.subscribe(extendedSubscription);
             }
         } catch (Exception e) {
