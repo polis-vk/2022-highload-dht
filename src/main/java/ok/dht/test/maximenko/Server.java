@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public final class Server {
@@ -27,7 +28,7 @@ public final class Server {
 
         final List<String> clusterUrls = List.of(firstUrl, secondUrl, thirdUrl);
         final Logger logger = Logger.getLogger(String.valueOf(DatabaseService.class));
-        String loggerMessage = "Server is listening on port: ";
+        String loggerMessage = "Server is listening on port: {0,number,#}";
 
         final ServiceConfig cfg1;
         final ServiceConfig cfg2;
@@ -60,11 +61,11 @@ public final class Server {
 
         try {
             new DatabaseService(cfg1).start().get(1, TimeUnit.SECONDS);
-            logger.info(loggerMessage + firstPort);
+            logger.log(Level.INFO, loggerMessage, firstPort);
             new DatabaseService(cfg2).start().get(1, TimeUnit.SECONDS);
-            logger.info(loggerMessage + secondPort);
+            logger.log(Level.INFO, loggerMessage, secondPort);
             new DatabaseService(cfg3).start().get(1, TimeUnit.SECONDS);
-            logger.info(loggerMessage + thirdPort);
+            logger.log(Level.INFO, loggerMessage, thirdPort);
         } catch (IOException e) {
             logger.severe("Database creation failure");
         } catch (InterruptedException | ExecutionException | TimeoutException e) {

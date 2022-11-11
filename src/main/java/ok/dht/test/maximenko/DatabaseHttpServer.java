@@ -3,7 +3,6 @@ package ok.dht.test.maximenko;
 import ok.dht.ServiceConfig;
 import ok.dht.test.maximenko.dao.Config;
 import ok.dht.test.maximenko.dao.MemorySegmentDao;
-
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -131,7 +130,7 @@ public class DatabaseHttpServer extends HttpServer {
         }
     }
 
-    synchronized static private void handleNodeResponse(HttpSession session,
+    synchronized private static void handleNodeResponse(HttpSession session,
                                                         Response response,
                                                         final Boolean[] createdResponse,
                                                         long[] mostRecentResponseTime,
