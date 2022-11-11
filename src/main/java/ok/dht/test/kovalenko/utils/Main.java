@@ -46,7 +46,6 @@ public final class Main {
             for (ServiceConfig config : configs) {
                 MyServiceBase service = new MyServiceBase(config);
                 service.start().get(1, TimeUnit.SECONDS);
-                log.debug("Socket is ready: {}", service.selfUrl());
             }
             log.debug("END");
         } catch (Exception e) {
@@ -58,7 +57,6 @@ public final class Main {
         try {
             MyServiceBase service = new MyServiceBase(configs.get(serviceOrdinal - 1));
             service.start().get(1, TimeUnit.SECONDS);
-            log.debug("Socket is ready: {}", service.selfUrl());
         } catch (Exception e) {
             log.error("Socket wasn't started: {}", urls.get(serviceOrdinal - 1), e);
         }

@@ -15,7 +15,7 @@ public class Client {
 
     private static final Logger log = LoggerFactory.getLogger(Client.class);
     private static final java.net.http.HttpClient javaNetClient = java.net.http.HttpClient.newHttpClient();
-    private static final Duration TIMEOUT = Duration.ofSeconds(200);
+    private static final Duration TIMEOUT = Duration.ofSeconds(2);
 
     public CompletableFuture<HttpResponse<byte[]>> get(String url, MyHttpSession session, boolean isRequestForReplica)
             throws IOException, InterruptedException {
@@ -53,26 +53,6 @@ public class Client {
 
     private CompletableFuture<HttpResponse<byte[]>> sendAsync(HttpRequest request) {
         return javaNetClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
-//        try {
-//            return javaNetClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
-//        } catch (ConnectException | HttpTimeoutException e) {
-//            log.error("Unable to connect with node {}", url, e);
-//            new HttpResponse<byte[]>()
-//            return CompletableFuture.completedFuture(new MyHttpResponse(
-//                    Response.GATEWAY_TIMEOUT,
-//                    Arrays.toString(e.getStackTrace()).getBytes(StandardCharsets.UTF_8)
-//            ));
-////            return new MyHttpResponse(
-////                    Response.GATEWAY_TIMEOUT,
-////                    Arrays.toString(e.getStackTrace()).getBytes(StandardCharsets.UTF_8)
-////            );
-//        } catch (Exception e) {
-//            log.error("Unexpected error when connecting with node {}", url, e);
-//            return new MyHttpResponse(
-//                    Response.INTERNAL_ERROR,
-//                    Arrays.toString(e.getStackTrace()).getBytes(StandardCharsets.UTF_8)
-//            );
-//        }
     }
 
 }

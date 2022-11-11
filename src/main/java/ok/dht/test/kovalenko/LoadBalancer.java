@@ -10,6 +10,7 @@ import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
@@ -17,10 +18,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.PriorityBlockingQueue;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -28,11 +27,7 @@ public final class LoadBalancer {
 
     private static final Logger log = LoggerFactory.getLogger(LoadBalancer.class);
     private final Map<String, Node> nodes = new HashMap<>();
-    private final CompletableFutureSubscriber completableFutureSubscriber;
-
-    public LoadBalancer() {
-        this.completableFutureSubscriber = new CompletableFutureSubscriber(this);
-    }
+    private final CompletableFutureSubscriber completableFutureSubscriber = new CompletableFutureSubscriber();
 
     public void balance(MyServiceBase service, Request request, MyHttpSession session)
             throws IOException, ExecutionException, InterruptedException {
@@ -137,7 +132,6 @@ public final class LoadBalancer {
                                    PriorityBlockingQueue<MyHttpResponse> replicasGoodResponses, PriorityBlockingQueue<MyHttpResponse> replicasBadResponses)
             throws IOException, ExecutionException, InterruptedException, InvocationTargetException, IllegalAccessException {
         CompletableFuture<?> completableFuture = handler.handle(request, session);
-        completableFutureSubscriber.subscribe(completableFuture, session, slaveNodeUrl, acks, responseSent, replicasGoodResponses, replicasBadResponses);
+        completableFutureSubscriber.subscribeAsync(completableFuture, session, this, slaveNodeUrl, acks, responseSent, replicasGoodResponses, replicasBadResponses);
     }
-
 }

@@ -1,7 +1,7 @@
 package ok.dht.test.kovalenko;
 
+import ok.dht.test.kovalenko.utils.CompletableFutureSubscriber;
 import ok.dht.test.kovalenko.utils.HttpUtils;
-import ok.dht.test.kovalenko.utils.MyHttpResponse;
 import ok.dht.test.kovalenko.utils.MyHttpSession;
 import one.nio.http.Request;
 

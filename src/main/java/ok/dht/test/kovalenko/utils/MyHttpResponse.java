@@ -2,6 +2,10 @@ package ok.dht.test.kovalenko.utils;
 
 import one.nio.http.Response;
 
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+
 public class MyHttpResponse extends Response {
     private final long timestamp;
 
@@ -11,6 +15,10 @@ public class MyHttpResponse extends Response {
 
     public MyHttpResponse(String resultCode, long timestamp) {
         this(resultCode, Response.EMPTY, timestamp);
+    }
+
+    public MyHttpResponse(String resultCode, Exception e) {
+        this(resultCode, Arrays.toString(e.getStackTrace()).getBytes(StandardCharsets.UTF_8), 0);
     }
 
     public MyHttpResponse(String resultCode, byte[] body, long timestamp) {
@@ -25,5 +33,13 @@ public class MyHttpResponse extends Response {
 
     public static MyHttpResponse notEnoughReplicas() {
         return new MyHttpResponse(HttpUtils.NOT_ENOUGH_REPLICAS, 0);
+    }
+
+    public static <R> MyHttpResponse convert(R response) {
+        if (response instanceof MyHttpResponse) {
+            return (MyHttpResponse) response;
+        } else {
+            return HttpUtils.toMyHttpResponse((HttpResponse<byte[]>) response);
+        }
     }
 }

@@ -34,4 +34,7 @@ public class PoolKeeper implements Closeable {
         this.service.submit(r);
     }
 
+    public ExecutorService getService() {
+        return service;
+    }
 }
