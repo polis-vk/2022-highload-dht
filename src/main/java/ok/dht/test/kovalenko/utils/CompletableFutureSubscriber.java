@@ -6,69 +6,42 @@ import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.Closeable;
-import java.io.IOException;
 import java.net.HttpURLConnection;
-import java.net.http.HttpResponse;
 import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.PriorityBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
-public class CompletableFutureSubscriber implements Closeable {
+public class CompletableFutureSubscriber {
 
     private static final Logger log = LoggerFactory.getLogger(CompletableFutureSubscriber.class);
-    private final PoolKeeper poolKeeper;
-    private static final int N_WORKERS = 2 * (Runtime.getRuntime().availableProcessors() + 1);
-    private static final int QUEUE_CAPACITY = 10 * N_WORKERS;
 
-    public CompletableFutureSubscriber() {
-        this.poolKeeper = new PoolKeeper(
-                new ThreadPoolExecutor(1, Integer.MAX_VALUE,
-                    60, TimeUnit.SECONDS,
-                    new LinkedBlockingQueue<>(Integer.MAX_VALUE),
-                    new ThreadPoolExecutor.AbortPolicy()),
-                3*60);
-    }
+    public void subscribe(Subscription subscription) {
+        subscription.cf().thenAccept((response) -> {
+                MyHttpResponse myHttpResponse = MyHttpResponse.convert(response);
 
-    public void subscribe(CompletableFuture<MyHttpResponse> cf, MyHttpSession session, LoadBalancer loadBalancer, String slaveNodeUrl) {
-        cf.thenAccept((response) -> {
-                if (!isGoodResponse(response)) {
-                    loadBalancer.makeNodeIll(slaveNodeUrl);
-                    log.error("Node {} is ill", slaveNodeUrl, new Exception(Arrays.toString(response.getBody())));
+                if (!isGoodResponse(myHttpResponse)) {
+                    subscription.loadBalancer().makeNodeIll(subscription.slaveNodeUrl());
+                    log.error("Node {} is ill", subscription.slaveNodeUrl(), new Exception(Arrays.toString(myHttpResponse.getBody())));
                 }
 
-                HttpUtils.NetRequest netRequest = () -> session.sendResponse(response);
-                HttpUtils.safeHttpRequest(session, log, netRequest);
+                HttpUtils.NetRequest netRequest = () -> subscription.session().sendResponse(myHttpResponse);
+                HttpUtils.safeHttpRequest(subscription.session(), log, netRequest);
             }
         ).exceptionally((throwable) -> {
-                MyHttpResponse myHttpResponse = new MyHttpResponse(Response.GATEWAY_TIMEOUT);
-
-                loadBalancer.makeNodeIll(slaveNodeUrl);
-                log.error("Node {} is ill", slaveNodeUrl, new Exception(Arrays.toString(throwable.getStackTrace())));
-                HttpUtils.NetRequest netRequest = () -> session.sendResponse(myHttpResponse);
-                HttpUtils.safeHttpRequest(session, log, netRequest);
-
+                whenCancelled(throwable, subscription);
                 return null;
             }
         );
     }
 
-    public void subscribeAsync(CompletableFuture<?> cf, MyHttpSession session, LoadBalancer loadBalancer,
-                                 String slaveNodeUrl, AtomicInteger acks, AtomicBoolean responseSent,
+    public void subscribe(Subscription subscription, AtomicInteger acks, AtomicBoolean responseSent,
                           PriorityBlockingQueue<MyHttpResponse> goodResponsesBuffer,
-                          PriorityBlockingQueue<MyHttpResponse> badResponsesBuffer)
-            throws ExecutionException, InterruptedException {
-        cf.thenAccept((response) -> {
-                if (checkForResponseSent(acks, responseSent, session, goodResponsesBuffer, badResponsesBuffer)) {
+                          PriorityBlockingQueue<MyHttpResponse> badResponsesBuffer) {
+        subscription.cf().thenAccept((response) -> {
+                if (checkForResponseSent(acks, responseSent, subscription.session(), goodResponsesBuffer, badResponsesBuffer)) {
                     return;
                 }
 
@@ -79,19 +52,15 @@ public class CompletableFutureSubscriber implements Closeable {
                     goodResponsesBuffer.add(myHttpResponse);
                 } else {
                     badResponsesBuffer.add(myHttpResponse);
-                    loadBalancer.makeNodeIll(slaveNodeUrl);
-                    log.error("Node {} is ill", slaveNodeUrl, new Exception(Arrays.toString(myHttpResponse.getBody())));
+                    subscription.loadBalancer().makeNodeIll(subscription.slaveNodeUrl());
+                    log.error("Node {} is ill", subscription.slaveNodeUrl(),
+                            new Exception(Arrays.toString(myHttpResponse.getBody())));
                 }
 
-                checkForResponseSent(acks, responseSent, session, goodResponsesBuffer, badResponsesBuffer);
+                checkForResponseSent(acks, responseSent, subscription.session(), goodResponsesBuffer, badResponsesBuffer);
             }
         ).exceptionally((throwable) -> {
-                MyHttpResponse myHttpResponse = new MyHttpResponse(Response.GATEWAY_TIMEOUT);
-                badResponsesBuffer.add(myHttpResponse);
-                loadBalancer.makeNodeIll(slaveNodeUrl);
-                log.error("Node {} is ill", slaveNodeUrl, new Exception(Arrays.toString(throwable.getStackTrace())));
-
-                checkForResponseSent(acks, responseSent, session, goodResponsesBuffer, badResponsesBuffer);
+                whenCancelled(throwable, subscription, acks, responseSent, goodResponsesBuffer, badResponsesBuffer);
                 return null;
             }
         );
@@ -130,8 +99,26 @@ public class CompletableFutureSubscriber implements Closeable {
                 || response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND;
     }
 
-    @Override
-    public void close() throws IOException {
-        poolKeeper.close();
+    private void whenCancelled(Throwable t, Subscription subscription) {
+        MyHttpResponse myHttpResponse = new MyHttpResponse(Response.GATEWAY_TIMEOUT);
+        subscription.loadBalancer().makeNodeIll(subscription.slaveNodeUrl());
+        log.error("Node {} is ill", subscription.slaveNodeUrl(), new Exception(Arrays.toString(t.getStackTrace())));
+        HttpUtils.NetRequest netRequest = () -> subscription.session().sendResponse(myHttpResponse);
+        HttpUtils.safeHttpRequest(subscription.session(), log, netRequest);
+    }
+
+    private void whenCancelled(Throwable t, Subscription subscription, AtomicInteger acks,
+                                     AtomicBoolean responseSent,
+                                     PriorityBlockingQueue<MyHttpResponse> goodResponsesBuffer,
+                                     PriorityBlockingQueue<MyHttpResponse> badResponsesBuffer) {
+        MyHttpResponse myHttpResponse = new MyHttpResponse(Response.GATEWAY_TIMEOUT);
+        badResponsesBuffer.add(myHttpResponse);
+        subscription.loadBalancer().makeNodeIll(subscription.slaveNodeUrl());
+        log.error("Node {} is ill", subscription.slaveNodeUrl(), new Exception(Arrays.toString(t.getStackTrace())));
+        checkForResponseSent(acks, responseSent, subscription.session(), goodResponsesBuffer, badResponsesBuffer);
+    }
+
+    public record Subscription(CompletableFuture<?> cf, MyHttpSession session, LoadBalancer loadBalancer,
+                               String slaveNodeUrl) {
     }
 }

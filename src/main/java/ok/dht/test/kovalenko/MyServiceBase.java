@@ -80,7 +80,6 @@ public class MyServiceBase implements Service {
         try {
             log.debug("Service {} is stopping", selfUrl());
             server.stop();
-            completableFutureSubscriber.close();
             loadBalancer.remove(this);
             dao.close();
             log.debug("Service {} has stopped", selfUrl());
@@ -99,7 +98,9 @@ public class MyServiceBase implements Service {
         myHttpSession.setReplicas(replicas);
         if (request.getHeader(HttpUtils.REPLICA_HEADER) != null) {
             CompletableFuture<MyHttpResponse> cf = handle(request, myHttpSession);
-            completableFutureSubscriber.subscribe(cf, myHttpSession, loadBalancer, selfUrl());
+            CompletableFutureSubscriber.Subscription subscription =
+                    new CompletableFutureSubscriber.Subscription(cf, myHttpSession, loadBalancer, selfUrl());
+            completableFutureSubscriber.subscribe(subscription);
         } else {
             loadBalancer.balance(this, request, myHttpSession);
         }

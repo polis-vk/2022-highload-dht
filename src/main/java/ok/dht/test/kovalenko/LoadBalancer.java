@@ -132,6 +132,8 @@ public final class LoadBalancer {
                                    PriorityBlockingQueue<MyHttpResponse> replicasGoodResponses, PriorityBlockingQueue<MyHttpResponse> replicasBadResponses)
             throws IOException, ExecutionException, InterruptedException, InvocationTargetException, IllegalAccessException {
         CompletableFuture<?> completableFuture = handler.handle(request, session);
-        completableFutureSubscriber.subscribeAsync(completableFuture, session, this, slaveNodeUrl, acks, responseSent, replicasGoodResponses, replicasBadResponses);
+        CompletableFutureSubscriber.Subscription subscription
+                = new CompletableFutureSubscriber.Subscription(completableFuture, session, this, slaveNodeUrl);
+        completableFutureSubscriber.subscribe(subscription, acks, responseSent, replicasGoodResponses, replicasBadResponses);
     }
 }
