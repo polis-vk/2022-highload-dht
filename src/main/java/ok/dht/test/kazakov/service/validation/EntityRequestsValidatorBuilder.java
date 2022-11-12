@@ -5,7 +5,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 
-public final class DaoRequestsValidatorBuilder {
+public final class EntityRequestsValidatorBuilder {
 
     private final ThreadLocal<Validator> validator = ThreadLocal.withInitial(Validator::new);
 
@@ -17,15 +17,15 @@ public final class DaoRequestsValidatorBuilder {
 
         private static final Logger LOG = LoggerFactory.getLogger(Validator.class);
 
-        private int parsedInt1;
-        private int parsedInt2;
+        private int parsedAck;
+        private int parsedFrom;
 
-        public int getParsedInt1() {
-            return parsedInt1;
+        public int getParsedAck() {
+            return parsedAck;
         }
 
-        public int getParsedInt2() {
-            return parsedInt2;
+        public int getParsedFrom() {
+            return parsedFrom;
         }
 
         @Override
@@ -77,20 +77,18 @@ public final class DaoRequestsValidatorBuilder {
             }
 
             try {
-                parsedInt1 = Integer.parseInt(ack);
+                parsedAck = Integer.parseInt(ack);
             } catch (final NumberFormatException e) {
                 LOG.debug("Could not parse ack={}", ack, e);
                 return setInvalid("Ack should be a 32-bit integer");
             }
-            final int parsedAck = parsedInt1;
 
             try {
-                parsedInt2 = Integer.parseInt(from);
+                parsedFrom = Integer.parseInt(from);
             } catch (final NumberFormatException e) {
                 LOG.debug("Could not parse from={}", from, e);
                 return setInvalid("From should be a 32-bit integer");
             }
-            final int parsedFrom = parsedInt2;
 
             if (parsedAck <= 0) {
                 return setInvalid("Ack should be positive");

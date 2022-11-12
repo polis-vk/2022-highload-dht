@@ -12,6 +12,7 @@ import javax.annotation.Nullable;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.Objects;
 import java.util.StringJoiner;
 
@@ -73,6 +74,12 @@ public final class DaoService implements Closeable {
         }
 
         return result;
+    }
+
+    @Nonnull
+    public Iterator<Entry<MemorySegment>> get(@Nonnull final String from,
+                                              @Nullable final String to) throws IOException {
+        return dao.get(toMemorySegment(from), to == null ? null : toMemorySegment(to));
     }
 
     @Nullable

@@ -1,16 +1,17 @@
 package ok.dht.test.kazakov.service.http;
 
 import ok.dht.Service;
+import ok.dht.test.kazakov.service.DaoExecutorServiceHelper;
 import ok.dht.test.kazakov.service.ExceptionUtils;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.PathMapper;
 import one.nio.http.Request;
-import one.nio.http.RequestHandler;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
@@ -44,7 +45,7 @@ public class DaoHttpServer extends HttpServer {
     // as one-nio does not define it
     public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
 
-    private final PathMapper pathMapper;
+    private final DaoHttpPathMapper pathMapper;
 
     private final ExecutorService handlerExecutorService;
     private final Service service;
@@ -64,27 +65,38 @@ public class DaoHttpServer extends HttpServer {
                          @Nonnull final Service service) throws IOException {
         super(config);
         this.service = service;
-        this.pathMapper = new PathMapper();
+        this.pathMapper = new DaoHttpPathMapper();
         this.handlerExecutorService = handlerExecutorService;
         this.unsupportedMethodRequestHandler = new UnsupportedMethodRequestHandler();
     }
 
+    @Override
+    public HttpSession createSession(final Socket socket) throws RejectedSessionException {
+        return new DaoHttpSession(socket, this);
+    }
+
     public void addRequestHandlers(@Nonnull final String path,
-                                  final int[] methods,
-                                  @Nonnull final RequestHandler requestHandler) {
+                                   final int[] methods,
+                                   @Nonnull final DaoHttpRequestHandler requestHandler) {
         pathMapper.add(path, methods, new AsynchronousRequestHandler(requestHandler));
         pathMapper.add(path, null, unsupportedMethodRequestHandler);
     }
 
     @Override
     public void handleRequest(@Nonnull final Request request, @Nonnull final HttpSession session) throws IOException {
+        if (!(session instanceof DaoHttpSession)) {
+            LOG.error("Session of unexpected class {} given", session.getClass());
+            stopService(null);
+            return;
+        }
+
         final String path = request.getPath();
         final int method = request.getMethod();
         LOG.debug("{} {}", METHODS.get(method), request.getURI());
 
-        final RequestHandler handler = pathMapper.find(path, method);
+        final DaoHttpRequestHandler handler = pathMapper.find(path, method);
         if (handler != null) {
-            handler.handleRequest(request, session);
+            handler.handleRequest(request, (DaoHttpSession) session);
             return;
         }
 
@@ -128,28 +140,33 @@ public class DaoHttpServer extends HttpServer {
 
             // stop at least http server
             stop();
-            handlerExecutorService.shutdownNow();
+            try {
+                DaoExecutorServiceHelper.shutdownGracefully(handlerExecutorService);
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+                LOG.warn("Interrupted during `DaoExecutorServiceHelper.shutdownGracefully(handlerExecutorService)`", e);
+            }
         }
     }
 
-    private static final class UnsupportedMethodRequestHandler implements RequestHandler {
+    private static final class UnsupportedMethodRequestHandler implements DaoHttpRequestHandler {
         @Override
         public void handleRequest(final Request request,
-                                  final HttpSession session) throws IOException {
+                                  final DaoHttpSession session) throws IOException {
             session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
     }
 
-    private final class AsynchronousRequestHandler implements RequestHandler {
-        private final RequestHandler wrappedHandler;
+    private final class AsynchronousRequestHandler implements DaoHttpRequestHandler {
+        private final DaoHttpRequestHandler wrappedHandler;
 
-        private AsynchronousRequestHandler(final RequestHandler wrappedHandler) {
+        private AsynchronousRequestHandler(final DaoHttpRequestHandler wrappedHandler) {
             this.wrappedHandler = wrappedHandler;
         }
 
         @Override
         public void handleRequest(@Nonnull final Request request,
-                                  @Nonnull final HttpSession session) {
+                                  @Nonnull final DaoHttpSession session) {
             final SynchronousRequestHandler requestHandler = new SynchronousRequestHandler(
                     wrappedHandler,
                     session,
@@ -170,12 +187,12 @@ public class DaoHttpServer extends HttpServer {
     public final class SynchronousRequestHandler implements Runnable {
 
         private static final byte[] REJECTED_RESPONSE_BODY = Utf8.toBytes("Server is busy. Please, retry later.");
-        private final RequestHandler wrappedHandler;
-        private final HttpSession session;
+        private final DaoHttpRequestHandler wrappedHandler;
+        private final DaoHttpSession session;
         private final Request request;
 
-        private SynchronousRequestHandler(final RequestHandler wrappedHandler,
-                                          final HttpSession session,
+        private SynchronousRequestHandler(final DaoHttpRequestHandler wrappedHandler,
+                                          final DaoHttpSession session,
                                           final Request request) {
             this.wrappedHandler = wrappedHandler;
             this.session = session;

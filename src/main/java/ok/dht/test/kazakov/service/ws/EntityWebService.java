@@ -4,12 +4,12 @@ import ok.dht.test.kazakov.dao.Entry;
 import ok.dht.test.kazakov.service.DaoService;
 import ok.dht.test.kazakov.service.LamportClock;
 import ok.dht.test.kazakov.service.http.DaoHttpServer;
+import ok.dht.test.kazakov.service.http.DaoHttpSession;
 import ok.dht.test.kazakov.service.http.InternalHttpClient;
 import ok.dht.test.kazakov.service.sharding.Shard;
 import ok.dht.test.kazakov.service.sharding.ShardDeterminer;
-import ok.dht.test.kazakov.service.validation.DaoRequestsValidatorBuilder;
+import ok.dht.test.kazakov.service.validation.EntityRequestsValidatorBuilder;
 import ok.dht.test.kazakov.service.ws.MostRelevantResponseHandler.ResponseHolder;
-import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import org.slf4j.Logger;
@@ -17,27 +17,26 @@ import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
-import java.util.concurrent.CompletableFuture;
 
-public class DaoWebService {
+public class EntityWebService {
 
-    private static final Logger LOG = LoggerFactory.getLogger(DaoWebService.class);
+    private static final Logger LOG = LoggerFactory.getLogger(EntityWebService.class);
 
-    private static final String ENTITY_API_PATH = "/v0/entity";
+    private static final String API_PATH = "/v0/entity";
 
     private final DaoService daoService;
-    private final DaoRequestsValidatorBuilder daoRequestsValidatorBuilder;
+    private final EntityRequestsValidatorBuilder entityRequestsValidatorBuilder;
     private final ShardDeterminer<String> shardDeterminer;
     private final InternalHttpClient internalHttpClient;
     private final LamportClock lamportClock;
 
-    public DaoWebService(@Nonnull final DaoService daoService,
-                         @Nonnull final DaoRequestsValidatorBuilder daoRequestsValidatorBuilder,
-                         @Nonnull final ShardDeterminer<String> shardDeterminer,
-                         @Nonnull final InternalHttpClient internalHttpClient,
-                         @Nonnull final LamportClock lamportClock) {
+    public EntityWebService(@Nonnull final DaoService daoService,
+                            @Nonnull final EntityRequestsValidatorBuilder entityRequestsValidatorBuilder,
+                            @Nonnull final ShardDeterminer<String> shardDeterminer,
+                            @Nonnull final InternalHttpClient internalHttpClient,
+                            @Nonnull final LamportClock lamportClock) {
         this.daoService = daoService;
-        this.daoRequestsValidatorBuilder = daoRequestsValidatorBuilder;
+        this.entityRequestsValidatorBuilder = entityRequestsValidatorBuilder;
         this.shardDeterminer = shardDeterminer;
         this.internalHttpClient = internalHttpClient;
         this.lamportClock = lamportClock;
@@ -45,7 +44,7 @@ public class DaoWebService {
 
     public void configure(@Nonnull final DaoHttpServer server) {
         server.addRequestHandlers(
-                ENTITY_API_PATH,
+                API_PATH,
                 new int[]{Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE},
                 this::handleRequest
         );
@@ -54,11 +53,11 @@ public class DaoWebService {
     // Sending internal request to another server in background, so future is ignored
     @SuppressWarnings("FutureReturnValueIgnored")
     private void handleRequest(@Nonnull final Request request,
-                               @Nonnull final HttpSession session) throws IOException {
+                               @Nonnull final DaoHttpSession session) throws IOException {
         final String id = request.getParameter("id=");
         final String ackString = request.getParameter("ack=");
         final String fromString = request.getParameter("from=");
-        final DaoRequestsValidatorBuilder.Validator validator = daoRequestsValidatorBuilder.validate()
+        final EntityRequestsValidatorBuilder.Validator validator = entityRequestsValidatorBuilder.validate()
                 .validateId(id)
                 .validateReplicas(ackString, fromString, shardDeterminer.getTotalShards());
         if (request.getMethod() == Request.METHOD_PUT) {
@@ -76,15 +75,15 @@ public class DaoWebService {
             from = shardDeterminer.getTotalShards();
             ack = from / 2 + 1;
         } else {
-            from = validator.getParsedInt2();
-            ack = validator.getParsedInt1();
+            from = validator.getParsedFrom();
+            ack = validator.getParsedAck();
         }
 
         handleParsedRequest(request, session, id, from, ack);
     }
 
     private void handleParsedRequest(@Nonnull final Request request,
-                                     @Nonnull final HttpSession session,
+                                     @Nonnull final DaoHttpSession session,
                                      @Nonnull final String id,
                                      final int from,
                                      final int ack) {
@@ -114,7 +113,7 @@ public class DaoWebService {
     }
 
     private void doSelfRequest(@Nonnull final Request request,
-                               @Nonnull final HttpSession session,
+                               @Nonnull final DaoHttpSession session,
                                @Nonnull final String id,
                                final long newEntryTimestamp,
                                @Nonnull final MostRelevantResponseHandler responseHandler) {
@@ -147,7 +146,7 @@ public class DaoWebService {
     }
 
     private void doInternalRequest(@Nonnull final Request request,
-                                   @Nonnull final HttpSession session,
+                                   @Nonnull final DaoHttpSession session,
                                    @Nonnull final String id,
                                    @Nonnull final Shard shard,
                                    final long newEntryTimestamp,

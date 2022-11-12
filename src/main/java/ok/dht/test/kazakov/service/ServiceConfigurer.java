@@ -10,9 +10,11 @@ import ok.dht.test.kazakov.service.http.InternalHttpClient;
 import ok.dht.test.kazakov.service.sharding.ConsistentHashingShardDeterminer;
 import ok.dht.test.kazakov.service.sharding.Shard;
 import ok.dht.test.kazakov.service.sharding.ShardDeterminer;
-import ok.dht.test.kazakov.service.validation.DaoRequestsValidatorBuilder;
-import ok.dht.test.kazakov.service.ws.DaoWebService;
+import ok.dht.test.kazakov.service.validation.EntityRequestsValidatorBuilder;
+import ok.dht.test.kazakov.service.validation.RangeRequestsValidatorBuilder;
+import ok.dht.test.kazakov.service.ws.EntityWebService;
 import ok.dht.test.kazakov.service.ws.InternalDaoWebService;
+import ok.dht.test.kazakov.service.ws.RangeWebService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,6 +29,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ServiceConfigurer implements Service {
 
@@ -44,6 +47,7 @@ public class ServiceConfigurer implements Service {
     private final Clock clock;
 
     private volatile ExecutorService asyncExecutor;
+    private volatile ExecutorService internalHttpExecutor;
     private volatile DaoHttpServer server;
     private volatile DaoService daoService;
     private volatile LamportClock lamportClock;
@@ -56,6 +60,7 @@ public class ServiceConfigurer implements Service {
 
     @Override
     public CompletableFuture<?> start() {
+        final long measureTimeFrom = clock.millis();
         if (asyncExecutor == null) {
             synchronized (this) {
                 if (asyncExecutor == null) {
@@ -69,7 +74,6 @@ public class ServiceConfigurer implements Service {
         }
 
         return CompletableFuture.runAsync(() -> {
-            final long measureTimeFrom = clock.millis();
             try {
                 createAllMissingDirectories(config.workingDir());
                 server = new DaoHttpServer(
@@ -99,8 +103,37 @@ public class ServiceConfigurer implements Service {
                 new Config(config.workingDir().resolve(DAO_DATA_RELATIVE_PATH), FLUSH_THRESHOLD_BYTES)
         );
         daoService = new DaoService(dao);
-        final DaoRequestsValidatorBuilder daoRequestsValidatorBuilder = new DaoRequestsValidatorBuilder();
 
+        final ShardDeterminer<String> shardDeterminer = createShardDeterminer();
+
+        internalHttpExecutor = DaoExecutorServiceHelper.createDiscardOldestThreadPool(
+                "InternalHttpClientExecutor",
+                INTERNAL_HTTP_CLIENT_THREADS,
+                INTERNAL_HTTP_CLIENT_QUEUE_CAPACITY
+        );
+        final InternalHttpClient internalHttpClient = new InternalHttpClient(internalHttpExecutor);
+
+        lamportClock = LamportClock.loadFrom(config.workingDir().resolve(LAMPORT_CLOCK_DATA_RELATIVE_PATH));
+
+        final EntityRequestsValidatorBuilder entityRequestsValidatorBuilder = new EntityRequestsValidatorBuilder();
+        new EntityWebService(
+                daoService,
+                entityRequestsValidatorBuilder,
+                shardDeterminer,
+                internalHttpClient,
+                lamportClock
+        )
+                .configure(server);
+
+        new InternalDaoWebService(daoService, lamportClock)
+                .configure(server);
+
+        final RangeRequestsValidatorBuilder rangeRequestsValidatorBuilder = new RangeRequestsValidatorBuilder();
+        new RangeWebService(daoService, rangeRequestsValidatorBuilder)
+                .configure(server);
+    }
+
+    private ShardDeterminer<String> createShardDeterminer() {
         final List<String> clusterUrls = new ArrayList<>(config.clusterUrls());
         Collections.sort(clusterUrls);
 
@@ -109,51 +142,45 @@ public class ServiceConfigurer implements Service {
             final String url = clusterUrls.get(i);
             shards.add(new Shard(url, url.equals(config.selfUrl()), i));
         }
-        final ShardDeterminer<String> shardDeterminer = new ConsistentHashingShardDeterminer<>(shards);
-
-        final InternalHttpClient internalHttpClient = new InternalHttpClient(
-                DaoExecutorServiceHelper.createDiscardOldestThreadPool(
-                        "InternalHttpClientExecutor",
-                        INTERNAL_HTTP_CLIENT_THREADS,
-                        INTERNAL_HTTP_CLIENT_QUEUE_CAPACITY
-                )
-        );
-
-        lamportClock = LamportClock.loadFrom(config.workingDir().resolve(LAMPORT_CLOCK_DATA_RELATIVE_PATH));
-
-        new DaoWebService(daoService, daoRequestsValidatorBuilder, shardDeterminer, internalHttpClient, lamportClock)
-                .configure(server);
-
-        new InternalDaoWebService(daoService, lamportClock)
-                .configure(server);
+        return new ConsistentHashingShardDeterminer<>(shards);
     }
 
     @Override
     public CompletableFuture<?> stop() {
+        final long measureTimeFrom = clock.millis();
         if (asyncExecutor == null) {
             LOG.warn("DaoWebService is already stopped");
             return CompletableFuture.completedFuture(null);
         }
 
-        return CompletableFuture.runAsync(() -> {
-            final long measureTimeFrom = clock.millis();
+        final ExecutorService stopExecutor = Executors.newSingleThreadExecutor();
 
-            Exception exception = ExceptionUtils.tryExecute(null, asyncExecutor::shutdownNow);
+        return CompletableFuture.runAsync(() -> {
+            Exception exception = ExceptionUtils.tryExecute(null, stopExecutor::shutdown);
+            exception = ExceptionUtils.tryExecute(
+                    exception,
+                    () -> DaoExecutorServiceHelper.shutdownGracefully(asyncExecutor)
+            );
+            exception = ExceptionUtils.tryExecute(
+                    exception,
+                    () -> DaoExecutorServiceHelper.shutdownGracefully(internalHttpExecutor)
+            );
             exception = ExceptionUtils.tryExecute(exception, server::stop);
             exception = ExceptionUtils.tryExecute(exception, daoService::close);
             exception = ExceptionUtils.tryExecute(exception, lamportClock::close);
 
             asyncExecutor = null;
+            internalHttpExecutor = null;
             final long measureTimeTo = clock.millis();
             LOG.info("DaoWebService stopped in {}ms", measureTimeTo - measureTimeFrom);
 
             if (exception != null) {
                 LOG.error("Unexpected exception during DaoWebService.stop()", exception);
             }
-        }, asyncExecutor);
+        }, stopExecutor);
     }
 
-    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

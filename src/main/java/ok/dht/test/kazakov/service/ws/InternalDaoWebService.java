@@ -5,7 +5,7 @@ import ok.dht.test.kazakov.dao.Entry;
 import ok.dht.test.kazakov.service.DaoService;
 import ok.dht.test.kazakov.service.LamportClock;
 import ok.dht.test.kazakov.service.http.DaoHttpServer;
-import one.nio.http.HttpSession;
+import ok.dht.test.kazakov.service.http.DaoHttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import org.slf4j.Logger;
@@ -38,7 +38,7 @@ public class InternalDaoWebService {
     }
 
     private void handleInternalRequest(@Nonnull final Request request,
-                                       @Nonnull final HttpSession session) throws IOException {
+                                       @Nonnull final DaoHttpSession session) throws IOException {
         // expecting only internal queries here, so skipping validation
         // authorization can be implemented to prohibit non-internal queries
 
@@ -54,7 +54,7 @@ public class InternalDaoWebService {
         }
     }
 
-    private void handleInternalGet(@Nonnull final HttpSession session,
+    private void handleInternalGet(@Nonnull final DaoHttpSession session,
                                    @Nonnull final String id) throws IOException {
         final Entry<MemorySegment> responseEntry;
         try {
@@ -78,7 +78,7 @@ public class InternalDaoWebService {
     }
 
     private void handleInternalUpsert(@Nonnull final Request request,
-                                      @Nonnull final HttpSession session,
+                                      @Nonnull final DaoHttpSession session,
                                       @Nonnull final String id,
                                       final long timestamp) throws IOException {
         final byte[] value = request.getBody();
@@ -91,7 +91,7 @@ public class InternalDaoWebService {
         LOG.debug("Successfully responded PUT for key {}", id);
     }
 
-    private void handleInternalDelete(@Nonnull final HttpSession session,
+    private void handleInternalDelete(@Nonnull final DaoHttpSession session,
                                       @Nonnull final String id,
                                       final long timestamp) throws IOException {
         daoService.delete(id, timestamp);

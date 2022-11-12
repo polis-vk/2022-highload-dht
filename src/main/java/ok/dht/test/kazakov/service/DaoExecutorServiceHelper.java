@@ -17,8 +17,30 @@ public final class DaoExecutorServiceHelper {
 
     private static final Logger LOG = LoggerFactory.getLogger(DaoExecutorServiceHelper.class);
 
+    private static final int GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS = 60;
+
     private DaoExecutorServiceHelper() {
         // no operations
+    }
+
+    public static void shutdownGracefully(final ExecutorService executorService) throws InterruptedException {
+        executorService.shutdown();
+        if (!executorService.awaitTermination(GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+            LOG.error(
+                    "Could not gracefully terminate {} in {} seconds, terminating all pending tasks",
+                    executorService,
+                    GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS
+            );
+
+            executorService.shutdownNow();
+            while (!executorService.awaitTermination(GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                LOG.error(
+                        "Could not terminate {} in {} seconds, waiting for termination...",
+                        executorService,
+                        GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS
+                );
+            }
+        }
     }
 
     public static ExecutorService createAbortThreadPool(final String threadName,
