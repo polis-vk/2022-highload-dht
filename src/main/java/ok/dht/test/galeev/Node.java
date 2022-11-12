@@ -172,7 +172,7 @@ public abstract class Node {
             returnFuture.whenComplete((entry, throwable) -> {
                 if (!sendAsyncFuture.isDone()) {
                     LOGGER.debug("Canceling useless GET requests by key: " + key);
-                    sendAsyncFuture.cancel(true);
+                    sendAsyncFuture.cancel(false);
                 }
             });
             return returnFuture;
