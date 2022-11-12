@@ -1,12 +1,15 @@
 package ok.dht.test.ushkov.dao;
 
+import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
+import org.rocksdb.RocksIterator;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 
 public class RocksDBDao {
-    private final RocksDB db;
+    public final RocksDB db;
 
     public RocksDBDao(RocksDB db) {
         this.db = db;
@@ -18,23 +21,7 @@ public class RocksDBDao {
 
     public Entry get(byte[] key) throws RocksDBException {
         byte[] entry = db.get(key);
-
-        if (entry == null) {
-            return new Entry(null, 0);
-        }
-
-        ByteBuffer buffer = ByteBuffer.wrap(entry);
-
-        long timestamp = buffer.getLong();
-        byte tombstone = buffer.get();
-
-        if (tombstone == 1) {
-            return new Entry(null, timestamp);
-        }
-
-        byte[] value = new byte[buffer.remaining()];
-        buffer.get(Long.BYTES, value);
-        return new Entry(value, timestamp);
+        return Entry.newEntry(key, entry);
     }
 
     public void put(byte[] key, byte[] value, long timestamp) throws RocksDBException {
@@ -63,5 +50,13 @@ public class RocksDBDao {
         }
 
         db.put(key, buffer.array());
+    }
+
+    public EntryIterator range(byte[] from, byte[] to) {
+        return new EntryIterator(db, from, to);
+    }
+
+    public EntryIterator range(byte[] from) {
+        return new EntryIterator(db, from);
     }
 }

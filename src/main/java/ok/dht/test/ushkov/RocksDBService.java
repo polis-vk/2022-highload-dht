@@ -4,6 +4,7 @@ import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.ushkov.dao.Entry;
+import ok.dht.test.ushkov.dao.EntryIterator;
 import ok.dht.test.ushkov.dao.RocksDBDao;
 import ok.dht.test.ushkov.exception.BadPathException;
 import ok.dht.test.ushkov.exception.InternalErrorException;
@@ -18,8 +19,11 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
+import one.nio.util.ByteArrayBuilder;
 import one.nio.util.Utf8;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
@@ -30,6 +34,7 @@ import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -50,6 +55,8 @@ public class RocksDBService implements Service {
     public static final int PROXY_EXECUTOR_AWAIT_SHUTDOWN_TIMEOUT_MINUTES = 1;
     public static final int NODE_QUEUE_TASKS_LIMIT = 128;
     public static final int NODE_QUEUE_TASKS_ON_EXECUTOR_LIMIT = 3;
+    public static final int CHUNK_SIZE = 512;
+
 
     private static final String V0_ENTITY = "/v0/entity";
     private static final Logger LOG = LoggerFactory.getLogger(RocksDBService.class);
@@ -57,7 +64,7 @@ public class RocksDBService implements Service {
     private final ServiceConfig config;
     private final KeyManager keyManager = new ConsistentHashing();
 
-    private RocksDBDao dao;
+    public RocksDBDao dao;
     private HttpServer httpServer;
 
     private ExecutorService executor;
@@ -157,6 +164,26 @@ public class RocksDBService implements Service {
 
     private HttpServer createHttpServer(HttpServerConfig httpConfig) throws IOException {
         return new HttpServer(httpConfig) {
+            @Override
+            public HttpSession createSession(Socket socket) throws RejectedSessionException {
+                return new HttpSession(socket, this) {
+                    @Override
+                    public synchronized void sendResponse(Response response) throws IOException {
+                        if (response instanceof Chunk) {
+                            super.write(new QueueItem() {
+                                @Override
+                                public int write(Socket socket) throws IOException {
+                                    byte[] body = response.getBody();
+                                    return socket.write(body, 0, body.length);
+                                }
+                            });
+                        } else {
+                            super.sendResponse(response);
+                        }
+                    }
+                };
+            }
+
             public void handleRequest(Request request, HttpSession session) {
                 try {
                     executor.execute(() -> {
@@ -322,7 +349,9 @@ public class RocksDBService implements Service {
             Function<List<Response>, Response> requestAggregator
     ) throws InvalidParamsException, InternalErrorException {
         String id = request.getParameter("id=");
-        Util.requireNotNullAndNotEmpty(id);
+        if (id != null && id.isEmpty()) {
+            throw new InvalidParamsException();
+        }
 
         String ackString = request.getParameter("ack=");
         int ack = ackString != null ? Util.parseInt(ackString) : 1;
@@ -331,6 +360,26 @@ public class RocksDBService implements Service {
         int from = fromString != null ? Util.parseInt(fromString) : 1;
 
         if (ack < 1 || from < 1 || ack > from || from > config.clusterUrls().size()) {
+            throw new InvalidParamsException();
+        }
+
+        String start = request.getParameter("start=");
+        if (start != null && start.isEmpty()) {
+            throw new InvalidParamsException();
+        }
+
+        String end = request.getParameter("end=");
+        if (end != null && end.isEmpty()) {
+            throw new InvalidParamsException();
+        }
+
+        // range request for this replica
+        if (start != null) {
+            executeRangeRequest(session, start, end);
+            return;
+        }
+
+        if (id == null) {
             throw new InvalidParamsException();
         }
 
@@ -392,7 +441,48 @@ public class RocksDBService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    private void executeRangeRequest(HttpSession session, String start, String end) throws InternalErrorException {
+        EntryIterator iterator = end != null
+                ? dao.range(Utf8.toBytes(start), Utf8.toBytes(end))
+                : dao.range(Utf8.toBytes(start));
+        try {
+            session.sendResponse(new ChunkedResponseHeaders(Response.OK));
+        } catch (IOException e) {
+            throw new InternalErrorException();
+        }
+        executor.execute(() -> {
+            ByteArrayBuilder chunk = new ByteArrayBuilder(CHUNK_SIZE);
+            while (iterator.hasNext()) {
+                Entry entry = iterator.next();
+                int size = entry.key().length + 1 + entry.value().length + 1;
+                if (CHUNK_SIZE - chunk.length() < size) {
+                    try {
+                        session.sendResponse(Chunk.newChunk(chunk.toBytes()));
+                    } catch (IOException e) {
+                        // No ops.
+                    }
+                }
+                chunk.append(entry.key());
+                chunk.append((byte) ' ');
+                chunk.append(entry.value());
+                chunk.append((byte) '\n');
+            }
+            if (chunk.length() != 0) {
+                try {
+                    session.sendResponse(Chunk.newChunk(chunk.toBytes()));
+                } catch (IOException e) {
+                    // No ops.
+                }
+            }
+            try {
+                session.sendResponse(Chunk.newLastChunk());
+            } catch (IOException e) {
+                // No ops.
+            }
+        });
+    }
+
+    @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

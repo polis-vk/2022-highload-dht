@@ -66,12 +66,6 @@ final class Util {
         return oneNioResponse;
     }
 
-    static void requireNotNullAndNotEmpty(String param) throws InvalidParamsException {
-        if (param == null || param.isEmpty()) {
-            throw new InvalidParamsException();
-        }
-    }
-
     static int parseInt(String param) throws InvalidParamsException {
         try {
             return Integer.parseInt(param);
