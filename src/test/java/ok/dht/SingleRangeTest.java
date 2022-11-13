@@ -56,6 +56,12 @@ class SingleRangeTest extends TestBase {
         );
     }
 
+    @ServiceTest(stage = 6)
+    void startGreaterThanEnd(ServiceInfo service) throws Exception {
+        HttpResponse<byte[]> response = service.range("1", "0");
+        assertEquals(400, response.statusCode());
+    }
+
     @Test
     void getAbsent(ServiceInfo service) throws Exception {
         HttpResponse<byte[]> response = service.range("absent0", "absent1");
