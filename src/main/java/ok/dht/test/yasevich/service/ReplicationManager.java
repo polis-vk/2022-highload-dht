@@ -11,6 +11,7 @@ import one.nio.http.Response;
 import java.net.http.HttpResponse;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
@@ -127,7 +128,7 @@ class ReplicationManager {
                 });
                 continue;
             }
-            node.routedRequestFuture(request, key, time)
+            Future<?> future = node.routedRequestFuture(request, key, time)
                     .orTimeout(ServiceImpl.ROUTED_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                     .whenComplete((httpResponse, throwable) -> {
                         if (throwable == null) {
@@ -139,6 +140,9 @@ class ReplicationManager {
                         }
                         handleNodeFailure(throwable, node, request, key);
                     });
+            if (future.isDone()) {
+                ServiceImpl.LOGGER.debug("Future was done immediately");
+            }
         }
     }
 
