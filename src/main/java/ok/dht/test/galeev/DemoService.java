@@ -113,6 +113,7 @@ public class DemoService implements Service {
         }
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     private void defaultResponse(HttpSession session, Handler<?> handler, AckBarrier barrier) {
         try {
             if (barrier.isAckAchieved()) {
@@ -128,7 +129,7 @@ public class DemoService implements Service {
     }
 
     public void localHandleGet(Request request, HttpSession session) throws IOException {
-        String key = request.getParameter(Header.ID_PARAMETR);
+        String key = request.getParameter(Header.ID_PARAMETER);
 
         Entry<Timestamp, byte[]> entry = localNode.getFromDao(key);
         if (entry.key() == null) {
@@ -141,7 +142,7 @@ public class DemoService implements Service {
     }
 
     public void localHandlePutDelete(Request request, HttpSession session) throws IOException {
-        String key = request.getParameter(Header.ID_PARAMETR);
+        String key = request.getParameter(Header.ID_PARAMETER);
         Entry<Timestamp, byte[]> entry = Node.ClusterNode.getEntryFromByteArray(request.getBody());
 
         localNode.putToDao(key, entry);

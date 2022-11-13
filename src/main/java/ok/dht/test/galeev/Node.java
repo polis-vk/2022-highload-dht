@@ -134,7 +134,6 @@ public abstract class Node {
 
     public static class ClusterNode extends Node {
 
-        public static final byte[] EMPTY_BODY = new byte[0];
         private final HttpClient httpClient;
 
         public ClusterNode(String nodeAddress, HttpClient httpClient) {
@@ -142,6 +141,7 @@ public abstract class Node {
             this.httpClient = httpClient;
         }
 
+        @SuppressWarnings("FutureReturnValueIgnored")
         @Override
         public CompletableFuture<Entry<Timestamp, byte[]>> get(String key) {
             if (!isAlive) {

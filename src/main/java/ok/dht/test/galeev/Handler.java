@@ -19,8 +19,10 @@ public interface Handler<T> {
 
     Response responseError();
 
+    @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
     void onSuccess(Optional<?> input);
 
+    @SuppressWarnings("EmptyMethod")
     void onError();
 
     void finishResponse();
@@ -36,9 +38,7 @@ public interface Handler<T> {
             case Request.METHOD_DELETE -> {
                 return new DeleteHandler(request);
             }
-            default -> {
-                throw new MethodNotAllowedException();
-            }
+            default -> throw new MethodNotAllowedException();
         }
     }
 
@@ -46,7 +46,7 @@ public interface Handler<T> {
         private final AtomicReference<Entry<Timestamp, byte[]>> newestEntry = new AtomicReference<>();
         private volatile boolean hasFinished;
 
-        public GetHandler(Request ignored) {
+        public GetHandler(@SuppressWarnings("unused") Request ignored) {
         }
 
         @Override
@@ -174,7 +174,7 @@ public interface Handler<T> {
 
         private final Timestamp currentTime;
 
-        public DeleteHandler(Request ignored) {
+        public DeleteHandler(@SuppressWarnings("unused") Request ignored) {
             currentTime = new Timestamp(System.currentTimeMillis());
         }
 
