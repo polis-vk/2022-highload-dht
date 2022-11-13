@@ -32,6 +32,16 @@ public class BorderedMergeIterator implements Iterator<Entry<MemorySegment>> {
             }
             this.id = id;
         }
+
+        public Source(Iterator<Entry<MemorySegment>> iterator,  int id) {
+            this.iterator = iterator;
+            if (iterator.hasNext()) {
+                element = iterator.next();
+            } else {
+                element = null;
+            }
+            this.id = id;
+        }
     }
 
     public BorderedMergeIterator(MemorySegment from, MemorySegment to, List<Table> tables) throws IOException {
@@ -40,6 +50,19 @@ public class BorderedMergeIterator implements Iterator<Entry<MemorySegment>> {
 
         for (Table table : tables) {
             Source source = new Source(table, from, to, sourceId);
+            addSource(source);
+            sourceId++;
+        }
+
+        removeNextNullValues();
+    }
+
+    public BorderedMergeIterator(List<Iterator<Entry<MemorySegment>>> iterators, int size) throws IOException {
+        sources = new TreeMap<>(COMPARATOR);
+        int sourceId = 0;
+
+        for (Iterator<Entry<MemorySegment>> iterator : iterators) {
+            Source source = new Source(iterator, sourceId);
             addSource(source);
             sourceId++;
         }

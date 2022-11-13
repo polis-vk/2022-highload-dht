@@ -1,7 +1,10 @@
 package ok.dht.test.maximenko;
 
+import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
+import ok.dht.test.maximenko.dao.BorderedMergeIterator;
 import ok.dht.test.maximenko.dao.Config;
+import ok.dht.test.maximenko.dao.Entry;
 import ok.dht.test.maximenko.dao.MemorySegmentDao;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
@@ -9,6 +12,8 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -19,7 +24,9 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -63,6 +70,38 @@ public class DatabaseHttpServer extends HttpServer {
     }
 
     @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new HttpSession(socket, this) {
+            @Override
+            protected void writeResponse(Response response, boolean includeBody) throws IOException {
+                if (response instanceof ChunkedResponse) {
+                    ChunkedResponse chunkedResponse = (ChunkedResponse) response;
+                    super.write(new QueueItem() {
+                                    @Override
+                                    public int write(Socket socket) throws IOException {
+                                        byte[] body = chunkedResponse.getNextChunk();
+                                        int written = socket.write(body, 0, body.length);
+                                        if (chunkedResponse.last()) {
+                                            body = chunkedResponse.finalChunk();
+                                            written += socket.write(body, 0, body.length);
+                                        }
+                                        return written;
+                                    }
+
+                                    @Override
+                                    public int remaining() {
+                                        return chunkedResponse.last() ? 0 : 1;
+                                    }
+                                }
+                    );
+                } else {
+                    super.writeResponse(response, includeBody);
+                }
+            }
+        };
+    }
+
+    @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         requestHandlers.execute(() -> handleRequestTask(request, session));
     }
@@ -71,6 +110,11 @@ public class DatabaseHttpServer extends HttpServer {
         if (!request.getPath().equals(REQUEST_PATH)) {
             sendResponse(session, BAD_REQUEST);
             return;
+        }
+
+        String startString = request.getParameter("start=");
+        if(HttpUtils.isArgumentCorrect(startString)) {
+            handleRangeRequest(session, request, Integer.parseInt(startString));
         }
 
         String key = request.getParameter("id=");
@@ -92,6 +136,35 @@ public class DatabaseHttpServer extends HttpServer {
         }
 
         handleMultiNodeRequest(session, request, key);
+    }
+
+    private void handleRangeRequest(HttpSession session, Request request, Integer start) {
+        String endString = request.getParameter("end=");
+        final Integer end = HttpUtils.isArgumentCorrect(endString)
+                ? Integer.parseInt(endString) : null;
+
+        List<Iterator<Entry<MemorySegment>>> allNodesIterators = getClusterRangeIterators(start, end);
+        Iterator<Entry<MemorySegment>> mergeIterator;
+        try {
+            mergeIterator = new BorderedMergeIterator(allNodesIterators, allNodesIterators.size());
+        } catch (IOException e) {
+            sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            return;
+        }
+
+        sendResponse(session, new ChunkedResponse(Response.OK, mergeIterator));
+    }
+
+    private List<Iterator<Entry<MemorySegment>>> getClusterRangeIterators(Integer start, Integer end) {
+        List<Iterator<Entry<MemorySegment>>> result = new ArrayList<>();
+        try {
+            result.add(dao.get(null, null));
+        } catch (IOException e) {
+            LOGGER.log(Level.WARNING, "Dao get range error");
+            return result;
+        }
+
+        return result;
     }
 
     private void handleMultiNodeRequest(HttpSession session, Request request, String key) {
@@ -201,10 +274,14 @@ public class DatabaseHttpServer extends HttpServer {
     }
 
     private CompletableFuture<Response> proxyRequest(int targetNodeId, String key, Request request, long time) {
+        byte[] requestBody = request.getBody();
+        if (requestBody == null) {
+            requestBody = new byte[0];
+        }
         HttpRequest httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(clusterConfig[targetNodeId] + REQUEST_PATH + "?id=" + key))
                 .timeout(Duration.ofSeconds(1))
-                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(requestBody))
                 .header(NOT_SPREAD_HEADER, NOT_SPREAD_HEADER_VALUE)
                 .header("time", String.valueOf(time))
                 .build();
