@@ -131,6 +131,7 @@ public class DemoService implements Service {
         }
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     private void defaultResponse(HttpSession session, Handler<?> handler, AckBarrier barrier) {
         try {
             if (barrier.isAckAchieved()) {

@@ -41,6 +41,7 @@ public class CustomHttpServer extends HttpServer {
         }
     }
 
+    @SuppressWarnings("RedundantThrows")
     @Override
     public HttpSession createSession(Socket socket) throws RejectedSessionException {
         return new UniversalHttpSession(socket, this);
@@ -69,6 +70,7 @@ public class CustomHttpServer extends HttpServer {
         defaultMapper.add(path, methods, handler);
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         if (isStopping) {
@@ -93,6 +95,7 @@ public class CustomHttpServer extends HttpServer {
         isStopping = true;
     }
 
+    @SuppressWarnings("ClassCanBeRecord")
     public static class RunnableForRequestHandler implements Runnable {
         private final HttpSession session;
         private final Request request;
