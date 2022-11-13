@@ -175,7 +175,7 @@ public class FileDBWriter implements Closeable {
         writeScope.close();
     }
 
-    @SuppressWarnings("unused")
+    @SuppressWarnings({"unused", "all"})
     private record IteratorData(long numberOfEntries, long dataArraySize, byte[] sha256) {
     }
 }
