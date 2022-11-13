@@ -147,10 +147,11 @@ public abstract class Node {
             if (!isAlive) {
                 return CompletableFuture.completedFuture(null);
             }
-            return httpClient.sendAsync(
+            CompletableFuture<HttpResponse<byte[]>> sendAsyncFuture = httpClient.sendAsync(
                     requestBuilderForKey(nodeAddress, key).GET().build(),
                     HttpResponse.BodyHandlers.ofByteArray()
-            ).thenApply((response) -> {
+            );
+            CompletableFuture<Entry<Timestamp, byte[]>> returnFuture = sendAsyncFuture.thenApply((response) -> {
                 if (response.statusCode() == 200) {
                     return getEntryFromByteArray(response.body());
                 } else if (response.statusCode() == 404) {
@@ -168,6 +169,13 @@ public abstract class Node {
                 ), e);
                 return null;
             });
+            returnFuture.whenComplete((entry, throwable) -> {
+                if (!sendAsyncFuture.isDone()) {
+                    LOGGER.debug("Canceling useless GET requests by key: " + key);
+                    sendAsyncFuture.cancel(false);
+                }
+            });
+            return returnFuture;
         }
 
         @Override
