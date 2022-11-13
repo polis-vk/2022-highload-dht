@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -72,6 +73,10 @@ public abstract class Node {
         public LocalNode(ServiceConfig config) throws IOException {
             super(config.selfUrl());
             dao = createDao(config);
+        }
+
+        public CompletableFuture<Iterator<Entry<String, Entry<Timestamp, byte[]>>>> get(String from, String to) {
+            return CompletableFuture.completedFuture(dao.get(from, to));
         }
 
         @Override

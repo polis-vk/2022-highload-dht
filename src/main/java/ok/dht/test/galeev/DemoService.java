@@ -29,6 +29,7 @@ public class DemoService implements Service {
     private static final Logger LOGGER = LoggerFactory.getLogger(DemoService.class);
     private static final Duration CLIENT_TIMEOUT = Duration.of(500, ChronoUnit.MILLIS);
     public static final String DEFAULT_PATH = "/v0/entity";
+    public static final String DEFAULT_RANGE_PATH = "/v0/entities";
     public static final String LOCAL_PATH = "/v0/local/entity";
     private final ServiceConfig config;
     private final SkipOldExecutorFactory skipOldThreadExecutorFactory = new SkipOldExecutorFactory();
@@ -68,6 +69,7 @@ public class DemoService implements Service {
         server = new CustomHttpServer(createConfigFromPort(config.selfPort()), workersExecutor);
         server.addRequestHandlers(DEFAULT_PATH,
                 new int[]{Request.METHOD_PUT, Request.METHOD_GET, Request.METHOD_DELETE}, this::universalHandler);
+        server.addRequestHandlers(DEFAULT_RANGE_PATH, new int[]{Request.METHOD_GET}, this::rangeHandler);
         server.addRequestHandlers(LOCAL_PATH, new int[]{Request.METHOD_GET}, this::localHandleGet);
         server.addRequestHandlers(LOCAL_PATH, new int[]{Request.METHOD_PUT}, this::localHandlePutDelete);
         server.start();
@@ -83,6 +85,22 @@ public class DemoService implements Service {
         localNode.stop();
         server.stop();
         return CompletableFuture.completedFuture(null);
+    }
+
+    public void rangeHandler(Request request, HttpSession session) throws IOException {
+        RangeHeader header = new RangeHeader(request);
+        if (!header.isOk()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+        localNode.get(header.getStartParameter(), header.getEndParameter()).thenAcceptAsync((iterator) -> {
+                    try {
+                        session.sendResponse(new ChunkedResponse(Response.OK, new ChunkedIterator(iterator)));
+                    } catch (IOException e) {
+                        LOGGER.error("Error? while sending chunked response", e);
+                    }
+                },
+                proxyExecutor);
     }
 
     public void universalHandler(Request request, HttpSession session) throws IOException {
@@ -131,7 +149,7 @@ public class DemoService implements Service {
     }
 
     public void localHandleGet(Request request, HttpSession session) throws IOException {
-        String key = request.getParameter(Header.ID_PARAMETR);
+        String key = request.getParameter(Header.ID_PARAMETER);
 
         Entry<Timestamp, byte[]> entry = localNode.getFromDao(key);
         if (entry.key() == null) {
@@ -144,7 +162,7 @@ public class DemoService implements Service {
     }
 
     public void localHandlePutDelete(Request request, HttpSession session) throws IOException {
-        String key = request.getParameter(Header.ID_PARAMETR);
+        String key = request.getParameter(Header.ID_PARAMETER);
         Entry<Timestamp, byte[]> entry = Node.ClusterNode.getEntryFromByteArray(request.getBody());
 
         localNode.putToDao(key, entry);
@@ -164,7 +182,7 @@ public class DemoService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 5, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
+    @ServiceFactory(stage = 6, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

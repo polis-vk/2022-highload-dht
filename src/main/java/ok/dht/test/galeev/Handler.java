@@ -172,7 +172,6 @@ public interface Handler<T> {
 
         @Override
         public void onError() {
-
         }
 
         @Override
