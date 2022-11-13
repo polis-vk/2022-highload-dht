@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Iterator;
 
 public class TimeStampingDao {
 
@@ -17,6 +18,24 @@ public class TimeStampingDao {
 
     public TimeStampingDao(Dao<MemorySegment, Entry<MemorySegment>> dao) {
         this.dao = dao;
+    }
+
+    public Iterator<Entry<byte[]>> get(String start, String end) throws IOException {
+        MemorySegment endSegment = end == null ? null : memSegmentOfString(end);
+        Iterator<Entry<MemorySegment>> entries = dao.get(memSegmentOfString(start), endSegment);
+        return new Iterator<>() {
+            @Override
+            public boolean hasNext() {
+                return entries.hasNext();
+            }
+
+            @Override
+            public Entry<byte[]> next() {
+                Entry<MemorySegment> next = entries.next();
+                return new BaseEntry<>(next.key().toByteArray(),
+                        TimeStampedValue.fromBytes(next.value().toByteArray()).value);
+            }
+        };
     }
 
     public TimeStampedValue get(String key) {
@@ -38,7 +57,7 @@ public class TimeStampingDao {
         dao.upsert(new BaseEntry<>(memSegmentOfString(key), memorySegmentValue));
     }
 
-    static byte[] longToBytes(long x) {
+    private static byte[] longToBytes(long x) {
         ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
         buffer.putLong(x);
         return buffer.array();
@@ -98,9 +117,7 @@ public class TimeStampingDao {
         }
 
         public byte[] valueBytes() {
-            ByteBuffer buffer = ByteBuffer.allocate(value.length);
-            buffer.put(value);
-            return buffer.array();
+            return value;
         }
 
         public byte[] timeBytes() {
