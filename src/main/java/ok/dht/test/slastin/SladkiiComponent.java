@@ -21,6 +21,8 @@ public class SladkiiComponent implements Closeable {
 
     private RocksDB db;
 
+    private boolean isClosed = false;
+
     public SladkiiComponent(Options options, String location) {
         try {
             db = RocksDB.open(options, location);
@@ -65,9 +67,11 @@ public class SladkiiComponent implements Closeable {
 
     @Override
     public void close() {
-        if (db != null) {
+        if (!isClosed) {
             db.close();
             db = null;
+
+            isClosed = true;
         }
     }
 }
