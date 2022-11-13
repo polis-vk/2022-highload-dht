@@ -109,11 +109,12 @@ public class SladkiiService implements Service {
     @Override
     public CompletableFuture<?> stop() {
         if (!isClosed) {
-            server.stop();
-            server = null;
-
+            // firstly close processors (before server) to give a chance to return response to the last queries
             shutdownAndAwaitTermination(processors, 1, TimeUnit.MINUTES);
             processors = null;
+
+            server.stop();
+            server = null;
 
             component.close();
             component = null;
