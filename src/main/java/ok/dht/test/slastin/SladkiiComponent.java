@@ -21,7 +21,7 @@ public class SladkiiComponent implements Closeable {
 
     private RocksDB db;
 
-    private boolean isClosed = false;
+    private boolean isClosed;
 
     public SladkiiComponent(Options options, String location) {
         try {
@@ -29,6 +29,7 @@ public class SladkiiComponent implements Closeable {
         } catch (RocksDBException e) {
             log.error("Can not open RocksDB by {}", location, e);
         }
+        isClosed = false;
     }
 
     public Response get(String id) {
