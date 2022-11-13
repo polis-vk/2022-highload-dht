@@ -44,5 +44,21 @@ public final class RangeRequestsValidatorBuilder {
 
             return this;
         }
+
+        public Validator validateRange(@Nullable final String start,
+                                       @Nullable final String end) {
+            validateStart(start);
+            validateEnd(end);
+
+            if (isInvalid()) {
+                return this;
+            }
+
+            if (end != null && start != null && start.compareTo(end) > 0) {
+                return setInvalid("Start should be greater or equal to end");
+            }
+
+            return this;
+        }
     }
 }

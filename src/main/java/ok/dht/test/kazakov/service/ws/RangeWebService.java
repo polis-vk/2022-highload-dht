@@ -40,8 +40,7 @@ public class RangeWebService {
         final String start = request.getParameter("start=");
         final String end = request.getParameter("end=");
         final RangeRequestsValidatorBuilder.Validator validator = rangeRequestsValidatorBuilder.validate()
-                .validateStart(start)
-                .validateEnd(end);
+                .validateRange(start, end);
 
         if (validator.isInvalid()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, validator.getErrorMessage()));
