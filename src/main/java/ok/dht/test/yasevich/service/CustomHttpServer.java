@@ -1,6 +1,9 @@
 package ok.dht.test.yasevich.service;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.yasevich.chunking.ChunkedQueueItem;
+import ok.dht.test.yasevich.chunking.ChunkedResponse;
+import ok.dht.test.yasevich.dao.Entry;
 import ok.dht.test.yasevich.utils.AlmostLifoQueue;
 import ok.dht.test.yasevich.utils.TimeStampingDao;
 import ok.dht.test.yasevich.artyomdrozdov.MemorySegmentDao;
@@ -11,10 +14,20 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
-import java.util.concurrent.*;
+import java.util.Iterator;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+
+import static ok.dht.test.yasevich.service.ServiceImpl.sendResponse;
 
 class CustomHttpServer extends HttpServer {
     private static final int CPUs = Runtime.getRuntime().availableProcessors();
@@ -42,7 +55,51 @@ class CustomHttpServer extends HttpServer {
     }
 
     @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new HttpSession(socket, this) {
+
+            @Override
+            protected void writeResponse(Response response, boolean includeBody) throws IOException {
+                if (response instanceof ChunkedResponse) {
+                    super.write(new ChunkedQueueItem((ChunkedResponse) response));
+                } else {
+                    super.writeResponse(response, includeBody);
+                }
+            }
+        };
+
+    }
+
+    @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        switch (request.getPath()) {
+            case "/v0/entities" -> handleChunked(request, session);
+            case "/v0/entity" -> handleUsual(request, session);
+            default -> submitOrSendUnavailable(workersPool, session,
+                    () -> sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY)));
+        }
+    }
+
+    private void handleChunked(Request request, HttpSession session) {
+        String start = request.getParameter("start=");
+        if (start == null) {
+            submitOrSendUnavailable(workersPool, session,
+                    () -> sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY)));
+            return;
+        }
+        String end = request.getParameter("end=");
+        Iterator<Entry<byte[]>> entries;
+        try {
+            entries = timeStampingDao.get(start, end);
+        } catch (IOException e) {
+            submitOrSendUnavailable(workersPool, session,
+                    () -> sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY)));
+            return;
+        }
+        sendResponse(session, new ChunkedResponse(Response.OK, entries));
+    }
+
+    private void handleUsual(Request request, HttpSession session) {
         String key = request.getParameter("id=");
         String coordinatorTimestamp = request.getHeader(ServiceImpl.COORDINATOR_TIMESTAMP_HEADER + ':');
         if (coordinatorTimestamp != null) {
@@ -50,11 +107,11 @@ class CustomHttpServer extends HttpServer {
                 try {
                     long time = Long.parseLong(coordinatorTimestamp);
                     Response response = handleInnerRequest(request, key, time);
-                    ServiceImpl.sendResponse(session, response);
+                    sendResponse(session, response);
                 } catch (NumberFormatException e) {
-                    ServiceImpl.sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                 } catch (IOException e) {
-                    ServiceImpl.sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+                    sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                 }
             });
             return;
@@ -68,7 +125,7 @@ class CustomHttpServer extends HttpServer {
             from = params.from;
         } catch (NumberFormatException e) {
             submitOrSendUnavailable(workersPool, session,
-                    () -> ServiceImpl.sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY)));
+                    () -> sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY)));
             return;
         }
 
@@ -76,7 +133,7 @@ class CustomHttpServer extends HttpServer {
             if (!request.getPath().equals("/v0/entity")
                     || key == null || key.isEmpty()
                     || ack > from || ack <= 0) {
-                ServiceImpl.sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
             long time = System.currentTimeMillis();
@@ -88,7 +145,7 @@ class CustomHttpServer extends HttpServer {
         try {
             pool.execute(runnable);
         } catch (RejectedExecutionException e) {
-            ServiceImpl.sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+            sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         }
     }
 
@@ -134,7 +191,6 @@ class CustomHttpServer extends HttpServer {
         }
         workersPool.shutdown();
         httpClientPool.shutdown();
-        timeStampingDao.close();
         super.stop();
     }
 
@@ -159,7 +215,5 @@ class CustomHttpServer extends HttpServer {
                             from / 2 + 1 <= clusterSize ? from / 2 + 1 : from;
             return new ReplicationParams(ack, from);
         }
-
     }
-
 }
