@@ -1,4 +1,4 @@
-package ok.dht.test.yasevich;
+package ok.dht.test.yasevich.utils;
 
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.yasevich.dao.BaseEntry;
@@ -7,6 +7,7 @@ import ok.dht.test.yasevich.dao.Entry;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
@@ -47,15 +48,19 @@ public class TimeStampingDao {
         return MemorySegment.ofArray(data.toCharArray());
     }
 
-    public void close() throws IOException {
-        dao.close();
+    public void close() throws UncheckedIOException {
+        try {
+            dao.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
-    static class TimeStampedValue {
+    public static class TimeStampedValue {
         public final byte[] value;
         public final long time;
 
-        TimeStampedValue(byte[] value, long time) {
+        public TimeStampedValue(byte[] value, long time) {
             this.value = value == null ? null : Arrays.copyOf(value, value.length); //codeclimate fix
             this.time = time;
         }

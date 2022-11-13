@@ -1,4 +1,4 @@
-package ok.dht.test.yasevich;
+package ok.dht.test.yasevich.replication;
 
 import java.util.concurrent.atomic.AtomicInteger;
 

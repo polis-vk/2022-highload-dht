@@ -1,6 +1,9 @@
-package ok.dht.test.yasevich;
+package ok.dht.test.yasevich.service;
 
-import ok.dht.test.yasevich.TimeStampingDao.TimeStampedValue;
+import ok.dht.test.yasevich.replication.ReplicatingGetAggregator;
+import ok.dht.test.yasevich.replication.ReplicatingResponseCounter;
+import ok.dht.test.yasevich.utils.TimeStampingDao;
+import ok.dht.test.yasevich.utils.TimeStampingDao.TimeStampedValue;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -11,7 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
-public class ReplicasManager {
+class ReplicasManager {
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
     private final TimeStampingDao dao;

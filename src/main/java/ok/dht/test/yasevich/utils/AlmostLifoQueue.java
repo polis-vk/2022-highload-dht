@@ -1,4 +1,4 @@
-package ok.dht.test.yasevich;
+package ok.dht.test.yasevich.utils;
 
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;

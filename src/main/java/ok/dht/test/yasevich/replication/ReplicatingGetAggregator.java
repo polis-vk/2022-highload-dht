@@ -1,4 +1,6 @@
-package ok.dht.test.yasevich;
+package ok.dht.test.yasevich.replication;
+
+import ok.dht.test.yasevich.utils.TimeStampingDao;
 
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
