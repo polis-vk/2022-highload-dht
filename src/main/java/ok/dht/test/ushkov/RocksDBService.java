@@ -34,7 +34,6 @@ import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -59,6 +58,7 @@ public class RocksDBService implements Service {
 
 
     private static final String V0_ENTITY = "/v0/entity";
+    private static final String V0_ENTITIES = "/v0/entities";
     private static final Logger LOG = LoggerFactory.getLogger(RocksDBService.class);
 
     private final ServiceConfig config;
@@ -232,6 +232,12 @@ public class RocksDBService implements Service {
                         default -> throw new MethodNotAllowedException();
                     }
                 }
+                case V0_ENTITIES -> {
+                    switch (request.getMethod()) {
+                        case Request.METHOD_GET -> v0EntitiesGet(request, session);
+                        default -> throw new MethodNotAllowedException();
+                    }
+                }
                 default -> throw new BadPathException();
             }
         } catch (MethodNotAllowedException e) {
@@ -349,7 +355,7 @@ public class RocksDBService implements Service {
             Function<List<Response>, Response> requestAggregator
     ) throws InvalidParamsException, InternalErrorException {
         String id = request.getParameter("id=");
-        if (id != null && id.isEmpty()) {
+        if (id == null || id.isEmpty()) {
             throw new InvalidParamsException();
         }
 
@@ -360,26 +366,6 @@ public class RocksDBService implements Service {
         int from = fromString != null ? Util.parseInt(fromString) : 1;
 
         if (ack < 1 || from < 1 || ack > from || from > config.clusterUrls().size()) {
-            throw new InvalidParamsException();
-        }
-
-        String start = request.getParameter("start=");
-        if (start != null && start.isEmpty()) {
-            throw new InvalidParamsException();
-        }
-
-        String end = request.getParameter("end=");
-        if (end != null && end.isEmpty()) {
-            throw new InvalidParamsException();
-        }
-
-        // range request for this replica
-        if (start != null) {
-            executeRangeRequest(session, start, end);
-            return;
-        }
-
-        if (id == null) {
             throw new InvalidParamsException();
         }
 
@@ -441,6 +427,21 @@ public class RocksDBService implements Service {
         }
     }
 
+    private void v0EntitiesGet(Request request, HttpSession session)
+            throws InvalidParamsException, InternalErrorException {
+        String start = request.getParameter("start=");
+        if (start == null || start.isEmpty()) {
+            throw new InvalidParamsException();
+        }
+
+        String end = request.getParameter("end=");
+        if (end != null && end.isEmpty()) {
+            throw new InvalidParamsException();
+        }
+
+        executeRangeRequest(session, start, end);
+    }
+
     private void executeRangeRequest(HttpSession session, String start, String end) throws InternalErrorException {
         EntryIterator iterator = end != null
                 ? dao.range(Utf8.toBytes(start), Utf8.toBytes(end))
@@ -463,9 +464,8 @@ public class RocksDBService implements Service {
                     }
                 }
                 chunk.append(entry.key());
-                chunk.append((byte) ' ');
-                chunk.append(entry.value());
                 chunk.append((byte) '\n');
+                chunk.append(entry.value());
             }
             if (chunk.length() != 0) {
                 try {
