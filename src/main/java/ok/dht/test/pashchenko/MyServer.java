@@ -117,6 +117,18 @@ public class MyServer extends HttpServer {
         session.sendResponse(new ChunkedResponse("Debug"));
     }
 
+    private static class ResultState {
+        final int success;
+        final int completed;
+        final HandleResult bestResult;
+
+        ResultState(int success, int completed, HandleResult bestResult) {
+            this.success = success;
+            this.completed = completed;
+            this.bestResult = bestResult;
+        }
+    }
+
     private void handleEntityRequest(Request request, HttpSession session) throws IOException {
         if (request.getMethod() != Request.METHOD_PUT
                 && request.getMethod() != Request.METHOD_GET
@@ -191,9 +203,8 @@ public class MyServer extends HttpServer {
             completableFuturesResults.add(future);
         }
 
-        AtomicInteger successAtomic = new AtomicInteger();
-        AtomicInteger completed = new AtomicInteger();
-        AtomicReference<HandleResult> winResult = new AtomicReference<>(new HandleResult(Response.GATEWAY_TIMEOUT));
+        AtomicReference<ResultState> resultState = new AtomicReference<>(new ResultState(0, 0, new HandleResult(Response.GATEWAY_TIMEOUT)));
+
         for (CompletableFuture<HandleResult> completableFuture : completableFuturesResults) {
             completableFuture.whenCompleteAsync((result, throwable) -> {
                 if (throwable != null) {
@@ -201,35 +212,31 @@ public class MyServer extends HttpServer {
                     result = new HandleResult(Response.INTERNAL_ERROR);
                 }
 
-                int success = -1;
-                if (result.status.equals(Response.OK)
+                boolean success = result.status.equals(Response.OK)
                         || result.status.equals(Response.CREATED)
                         || result.status.equals(Response.ACCEPTED)
-                        || result.status.equals(Response.NOT_FOUND)) {
+                        || result.status.equals(Response.NOT_FOUND);
 
-                    HandleResult r = result;
-                    winResult.updateAndGet(winResultGet -> r.timestamp >= winResultGet.timestamp ? r : winResultGet);
+                HandleResult r = result;
+                ResultState state = resultState.updateAndGet(old -> new ResultState(
+                        success ? old.success + 1 : old.success,
+                        old.completed + 1,
+                        success && r.timestamp >= old.bestResult.timestamp ? r : old.bestResult
+                ));
 
-                    success = successAtomic.incrementAndGet();
-                }
-
-
-                if (success == ack) {
-                    HandleResult winResultGet = winResult.get();
+                if (success && state.success == ack) {
                     try {
-                        session.sendResponse(new Response(winResultGet.status, winResultGet.data));
+                        session.sendResponse(new Response(state.bestResult.status, state.bestResult.data));
                     } catch (IOException e) {
                         LOG.error("executor sendResponse", e);
                         sessionClose(session);
                     }
-                } else {
-                    if (completed.incrementAndGet() == from) {
-                        try {
-                            session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-                        } catch (IOException e) {
-                            LOG.error("executor sendResponse", e);
-                            sessionClose(session);
-                        }
+                } else if (state.completed == from && state.success < ack) {
+                    try {
+                        session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+                    } catch (IOException e) {
+                        LOG.error("executor sendResponse", e);
+                        sessionClose(session);
                     }
                 }
             }, executorAggregator);
