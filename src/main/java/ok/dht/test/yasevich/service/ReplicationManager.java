@@ -14,14 +14,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
-class ReplicasManager {
+class ReplicationManager {
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
     private final TimeStampingDao dao;
     private final RandevouzHashingRouter shardingRouter;
     private final String selfUrl;
 
-    public ReplicasManager(
+    public ReplicationManager(
             TimeStampingDao dao,
             RandevouzHashingRouter shardingRouter,
             String selfUrl
@@ -168,7 +168,7 @@ class ReplicasManager {
     }
 
     private static void responseFailure(HttpSession session) {
-        ServiceImpl.sendResponse(session, new Response(ReplicasManager.NOT_ENOUGH_REPLICAS, Response.EMPTY));
+        ServiceImpl.sendResponse(session, new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
     }
 
     private static void handleFailure(Throwable t, String selfUrl, Request request, String key) {

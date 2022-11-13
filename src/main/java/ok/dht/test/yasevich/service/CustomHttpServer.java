@@ -21,7 +21,7 @@ class CustomHttpServer extends HttpServer {
 
     private final ServiceConfig serviceConfig;
     private final TimeStampingDao timeStampingDao;
-    private final ReplicasManager replicasManager;
+    private final ReplicationManager replicationManager;
 
     private final ExecutorService httpClientPool = Executors.newFixedThreadPool(16);
 
@@ -38,7 +38,7 @@ class CustomHttpServer extends HttpServer {
         this.timeStampingDao = new TimeStampingDao(
                 new MemorySegmentDao(new Config(serviceConfig.workingDir(), ServiceImpl.FLUSH_THRESHOLD)));
         RandevouzHashingRouter router = new RandevouzHashingRouter(serviceConfig.clusterUrls(), httpClientPool);
-        this.replicasManager = new ReplicasManager(timeStampingDao, router, serviceConfig.selfUrl());
+        this.replicationManager = new ReplicationManager(timeStampingDao, router, serviceConfig.selfUrl());
     }
 
     @Override
@@ -80,7 +80,7 @@ class CustomHttpServer extends HttpServer {
                 return;
             }
             long time = System.currentTimeMillis();
-            replicasManager.handleReplicatingRequest(session, request, key, time, ack, from);
+            replicationManager.handleReplicatingRequest(session, request, key, time, ack, from);
         });
     }
 
