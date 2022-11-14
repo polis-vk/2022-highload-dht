@@ -87,6 +87,7 @@ public class DemoService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     public void rangeHandler(Request request, HttpSession session) throws IOException {
         RangeHeader header = new RangeHeader(request);
         if (!header.isOk()) {
