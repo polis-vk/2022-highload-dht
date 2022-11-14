@@ -85,6 +85,7 @@ public class DemoService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     public void universalHandler(Request request, HttpSession session) throws IOException {
         Header header = new Header(request, consistentHashRouter.getAmountOfPhysicalNodes());
         if (!header.isOk()) {
