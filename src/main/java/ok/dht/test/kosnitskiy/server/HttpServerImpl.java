@@ -33,7 +33,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Future;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -192,67 +194,44 @@ public class HttpServerImpl extends HttpServer {
                 continue;
             }
 
-            target.queue.add(() -> {
-                try {
-                    Response response =
-                            target.url.equals(serverUrl) ? handleSupported(request, id) : proxyRequest(target, request);
-                    if (isAffirmative(response)) {
-                        long timestamp = 0;
-                        if (response.getHeaders()[0].equals(Response.OK)
-                                || response.getHeaders()[0].equals(Response.NOT_FOUND)) {
-                            byte[] body = Response.EMPTY;
 
-                            if (response.getBody() != Response.EMPTY) {
-                                timestamp = bytesToLong(Arrays.copyOfRange(response.getBody(), 0, 8));
-                                if (response.getBody().length > 8) {
-                                    body = Arrays.copyOfRange(response.getBody(), 8, response.getBody().length);
-                                }
-                            }
-                            response = new Response(response.getHeaders()[0], body);
-                        }
-                        variants.add(new ResponseVariant(response, timestamp));
-                        LOG.debug("Got Affirmative " + serverUrl);
-                        int succ = succeeded.incrementAndGet();
-                        int tr = tried.incrementAndGet();
-                        if (succ == nodesAnswersRequired) {
-                            LOG.debug("Got required, sending response: "
-                                    + " tried: " + tr + " succeeded: " + succ + " needed: "
-                                    + nodesAnswersRequired + " total: " + nodesAmount);
-                            session.sendResponse(variants.take().response);
-                        } else if (tr == nodesAmount && succ < nodesAnswersRequired) {
-                            LOG.debug("Failed to get quorum, sending response: "
-                                    + " tried: " + tr + " succeeded: " + succ + " needed: "
-                                    + nodesAnswersRequired + " total: " + nodesAmount);
-                            session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-                        }
-                    } else {
-                        LOG.debug("Got Bad request " + serverUrl);
-                        if (tried.incrementAndGet() == nodesAmount && succeeded.get() < nodesAnswersRequired) {
-                            LOG.debug("Failed to get quorum, sending response: "
-                                    + " tried: " + tried.get() + " succeeded: " + succeeded.get() + " needed: "
-                                    + nodesAnswersRequired + " total: " + nodesAmount);
-                            session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-                        }
-                    }
-                } catch (Exception e) {
+            if (target.url.equals(serverUrl)) {
+                target.queue.add(() -> {
                     try {
-                        int tr = tried.incrementAndGet();
-                        LOG.error("{} Internal server error has occurred: " + e.getMessage()
-                                + " tried: " + tr + " succeeded: " + succeeded.get() + " needed: "
-                                + nodesAnswersRequired + " total: " + nodesAmount, serverUrl);
-                        if (tr == nodesAmount && succeeded.get() < nodesAnswersRequired) {
-                            session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
-                        }
-                    } catch (IOException ex) {
-                        LOG.error("Unable to send answer to " + session.getRemoteHost());
-                        session.scheduleClose();
+                        Response response = handleSupported(request, id);
+                        handleResponse(response, succeeded, tried,
+                                nodesAnswersRequired, nodesAmount, session, variants);
+                    } catch (Exception e) {
+                        handleException(e, tried, succeeded, nodesAnswersRequired, nodesAmount, session);
                     }
+                });
+                LOG.debug("Added master task {}", target.url);
+                startWorker(id, target);
+            } else {
+                CompletableFuture<HttpResponse<byte[]>> future = proxyRequest(target, request)
+                        .whenCompleteAsync((result, throwable) -> {
+                            target.queue.add(() -> {
+                                if (throwable != null) {
+                                    handleException(throwable, tried, succeeded,
+                                            nodesAnswersRequired, nodesAmount, session);
+                                }
+                                try {
+                                    Response response = new Response(convertResponse(result.statusCode()),
+                                            result.body() == null ? Response.EMPTY : result.body());
+                                    handleResponse(response, succeeded, tried,
+                                            nodesAnswersRequired, nodesAmount, session, variants);
+                                } catch (Exception e) {
+                                    handleException(e, tried, succeeded, nodesAnswersRequired, nodesAmount, session);
+                                }
+                            });
+                            LOG.debug("Added master task {}", target.url);
+                            startWorker(id, target);
+                        }, executor);
+                if (future == null) {
+                    handleException(new UnexpectedException("Future was not created"),
+                            tried, succeeded, nodesAnswersRequired, nodesAmount, session);
                 }
-            });
-
-            LOG.debug("Added master task {}", target.url);
-
-            startWorker(id, target);
+            }
         }
     }
 
@@ -286,6 +265,73 @@ public class HttpServerImpl extends HttpServer {
             LOG.error("Failed to close dao");
         }
         super.stop();
+    }
+
+    private void handleException(Throwable e,
+                                 AtomicInteger tried,
+                                 AtomicInteger succeeded,
+                                 int nodesAnswersRequired,
+                                 int nodesAmount,
+                                 HttpSession session) {
+        try {
+            int tr = tried.incrementAndGet();
+            LOG.error("{} Internal server error has occurred: " + e.getMessage()
+                    + " tried: " + tr + " succeeded: " + succeeded.get() + " needed: "
+                    + nodesAnswersRequired + " total: " + nodesAmount, serverUrl);
+            if (tr == nodesAmount && succeeded.get() < nodesAnswersRequired) {
+                session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+            }
+        } catch (IOException ex) {
+            LOG.error("Unable to send answer to " + session.getRemoteHost());
+            session.scheduleClose();
+        }
+    }
+
+    private void handleResponse(Response response,
+                                AtomicInteger succeeded,
+                                AtomicInteger tried,
+                                int nodesAnswersRequired,
+                                int nodesAmount,
+                                HttpSession session,
+                                PriorityBlockingQueue<ResponseVariant> variants) throws InterruptedException, IOException {
+        if (isAffirmative(response)) {
+            long timestamp = 0;
+            if (response.getHeaders()[0].equals(Response.OK)
+                    || response.getHeaders()[0].equals(Response.NOT_FOUND)) {
+                byte[] body = Response.EMPTY;
+
+                if (response.getBody() != Response.EMPTY) {
+                    timestamp = bytesToLong(Arrays.copyOfRange(response.getBody(), 0, 8));
+                    if (response.getBody().length > 8) {
+                        body = Arrays.copyOfRange(response.getBody(), 8, response.getBody().length);
+                    }
+                }
+                response = new Response(response.getHeaders()[0], body);
+            }
+            variants.add(new ResponseVariant(response, timestamp));
+            LOG.debug("Got Affirmative " + serverUrl);
+            int succ = succeeded.incrementAndGet();
+            int tr = tried.incrementAndGet();
+            if (succ == nodesAnswersRequired) {
+                LOG.debug("Got required, sending response: "
+                        + " tried: " + tr + " succeeded: " + succ + " needed: "
+                        + nodesAnswersRequired + " total: " + nodesAmount);
+                session.sendResponse(variants.take().response);
+            } else if (tr == nodesAmount && succ < nodesAnswersRequired) {
+                LOG.debug("Failed to get quorum, sending response: "
+                        + " tried: " + tr + " succeeded: " + succ + " needed: "
+                        + nodesAnswersRequired + " total: " + nodesAmount);
+                session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+            }
+        } else {
+            LOG.debug("Got Bad request " + serverUrl);
+            if (tried.incrementAndGet() == nodesAmount && succeeded.get() < nodesAnswersRequired) {
+                LOG.debug("Failed to get quorum, sending response: "
+                        + " tried: " + tried.get() + " succeeded: " + succeeded.get() + " needed: "
+                        + nodesAnswersRequired + " total: " + nodesAmount);
+                session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
+            }
+        }
     }
 
     private void startWorker(String id, Cluster target) {
@@ -335,7 +381,7 @@ public class HttpServerImpl extends HttpServer {
         }
     }
 
-    private Response proxyRequest(Cluster target, Request request) throws IOException, InterruptedException {
+    private CompletableFuture<HttpResponse<byte[]>> proxyRequest(Cluster target, Request request) {
         LOG.debug("Sending request {} to slave " + serverUrl, target.url + request.getURI() + "&slave=true");
         HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(target.url + request.getURI() + "&slave=true"))
                 .method(
@@ -346,13 +392,10 @@ public class HttpServerImpl extends HttpServer {
                 )
                 .timeout(Duration.ofMillis(200))
                 .build();
-        HttpResponse<byte[]> response = httpClient.send(proxyRequest,
-                HttpResponse.BodyHandlers.ofByteArray());
-
-        return new Response(convertResponse(response.statusCode()), response.body());
+        return httpClient.sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
     }
 
-    private Response handleSupported(Request request, String id) throws IOException {
+    private Response handleSupported(Request request, String id) {
         LOG.debug("Handling myself " + serverUrl);
         switch (request.getMethod()) {
             case Request.METHOD_GET -> {

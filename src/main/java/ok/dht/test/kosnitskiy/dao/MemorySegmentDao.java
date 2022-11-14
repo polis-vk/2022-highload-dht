@@ -84,7 +84,10 @@ public class MemorySegmentDao {
         }
 
         if (runFlush) {
-            flushInBg(false);
+            Future<?> future = flushInBg(false);
+            if (future == null) {
+                LOG.error("Future is null");
+            }
         }
     }
 
