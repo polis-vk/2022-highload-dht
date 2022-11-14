@@ -1,6 +1,7 @@
 package ok.dht.test.kovalenko.utils;
 
 import ok.dht.test.kovalenko.Client;
+import ok.dht.test.kovalenko.dao.utils.PoolKeeper;
 import one.nio.http.HttpSession;
 import one.nio.http.Response;
 import org.slf4j.Logger;
@@ -8,17 +9,30 @@ import org.slf4j.Logger;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 
 public final class HttpUtils {
 
-    public static final Client CLIENT = new Client();
+    public static final Client CLIENT = Client.INSTANSE;
     public static final String REPLICA_HEADER = "Replica";
     public static final String TIME_HEADER = "time";
     public static final String NOT_ENOUGH_REPLICAS = "504 Not enough replicas";
+    private static final int CORE_POOL_SIZE = 1;
+    private static final int MAX_POOL_SIZE = 5 * Runtime.getRuntime().availableProcessors();
+    private static final int QUEUE_CAPACITY = 10 * MAX_POOL_SIZE;
+    public static PoolKeeper POOL_KEEPER;
 
     private HttpUtils() {
+    }
+
+    public static void initPoolKeeper() {
+        if (POOL_KEEPER == null) {
+            POOL_KEEPER = new PoolKeeper(CORE_POOL_SIZE, MAX_POOL_SIZE, QUEUE_CAPACITY, "HttpThread");
+        }
+    }
+
+    public static ExecutorService getService() {
+        return POOL_KEEPER.getService();
     }
 
     public static String toOneNioResponseCode(int statusCode) {
@@ -50,7 +64,7 @@ public final class HttpUtils {
     public static MyHttpResponse toMyHttpResponse(HttpResponse<byte[]> r) {
         String statusCode = toOneNioResponseCode(r.statusCode());
         byte[] body = r.body();
-        long time = getTimeHeader(r);
+        long time = getHeader(TIME_HEADER, r);
         return new MyHttpResponse(statusCode, body, time);
     }
 
@@ -81,10 +95,10 @@ public final class HttpUtils {
                 || response.getStatus() == HttpURLConnection.HTTP_NOT_FOUND;
     }
 
-    private static long getTimeHeader(HttpResponse<byte[]> r) {
-        return r.headers().firstValueAsLong(TIME_HEADER)
+    private static long getHeader(String header, HttpResponse<byte[]> r) {
+        return r.headers().firstValueAsLong(header)
                 .orElseThrow(() ->
-                        new IllegalArgumentException("Response " + r + " doesn't contain header " + TIME_HEADER));
+                        new IllegalArgumentException("Response " + r + " doesn't contain header " + header));
     }
 
     public interface NetRequest {

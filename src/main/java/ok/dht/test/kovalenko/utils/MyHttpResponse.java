@@ -17,8 +17,8 @@ public class MyHttpResponse extends Response {
         this(resultCode, Response.EMPTY, timestamp);
     }
 
-    public MyHttpResponse(String resultCode, Exception e) {
-        this(resultCode, Arrays.toString(e.getStackTrace()).getBytes(StandardCharsets.UTF_8), 0);
+    public MyHttpResponse(String resultCode, Throwable e) {
+        this(resultCode, e.toString().getBytes(StandardCharsets.UTF_8), 0);
     }
 
     public MyHttpResponse(String resultCode, byte[] body, long timestamp) {

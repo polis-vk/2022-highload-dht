@@ -30,22 +30,14 @@ public final class LoadBalancer {
 
     public void balance(MyServiceBase service, Request request, MyHttpSession session)
             throws IOException, ExecutionException, InterruptedException {
-        makeAllNodesHealthy(); // parody on CircuitBreaker
-        int ack = session.getReplicas().ack();
         int from = session.getReplicas().from();
-        if (nodes.size() < ack) {
+        if (nodes.size() < from) {
             session.sendResponse(MyHttpResponse.notEnoughReplicas());
             return;
         }
 
-        List<Node> replicasNodeForKey = replicasForKey(session.getRequestId(), from);
-
-        if (replicasNodeForKey.size() != from) {
-            session.sendResponse(MyHttpResponse.notEnoughReplicas());
-            return;
-        }
-
-        handleWithReplicas(request, session, service, replicasNodeForKey);
+        List<Node> replicas = replicasFor(session.getRequestId(), from);
+        handleWithReplicas(request, session, service, replicas);
     }
 
     // Rendezvous hashing
@@ -70,26 +62,12 @@ public final class LoadBalancer {
         service.clusterUrls().forEach(nodes::remove);
     }
 
-    public void makeNodeIll(String nodeUrl) {
-        nodes.get(nodeUrl).setIll(true);
-    }
-
-    public void makeAllNodesHealthy() {
-        for (Node node : nodes.values()) {
-            node.setIll(false);
-        }
-    }
-
-    private List<Node> replicasForKey(String key, int ack) {
-        List<Node> replicasForKey = new ArrayList<>(ack);
-        int gotReplicas = 0;
-        while (gotReplicas != ack && !nodes.isEmpty()) {
+    private List<Node> replicasFor(String key, int from) {
+        List<Node> replicasForKey = new ArrayList<>(from);
+        for (int i = 0; i < from; ++i) {
             Node replicaForKey = responsibleNodeForKey(key, nodes);
             nodes.remove(replicaForKey.selfUrl());
-            if (!replicaForKey.isIll()) {
-                replicasForKey.add(replicaForKey);
-                ++gotReplicas;
-            }
+            replicasForKey.add(replicaForKey);
         }
         replicasForKey.forEach(r -> nodes.put(r.selfUrl(), r));
         return replicasForKey;
@@ -100,7 +78,7 @@ public final class LoadBalancer {
     }
 
     private void handleWithReplicas(Request request, MyHttpSession session,
-                                    MyServiceBase service, List<Node> replicasForKey) {
+                                    MyServiceBase service, List<Node> replicas) {
         try {
             request.addHeader(HttpUtils.REPLICA_HEADER);
             PriorityBlockingQueue<MyHttpResponse> replicasGoodResponses
@@ -111,22 +89,27 @@ public final class LoadBalancer {
             AtomicBoolean responseSent = new AtomicBoolean();
             String masterNodeUrl = service.selfUrl();
 
-            for (Node replicaForKey : replicasForKey) {
+            for (Node replica : replicas) {
+                if (responseSent.get()) {
+                    break;
+                }
+
                 MyServiceBase.Handler handler;
-                String slaveNodeUrl = replicaForKey.selfUrl();
+                String slaveNodeUrl = replica.selfUrl();
                 if (slaveNodeUrl.equals(masterNodeUrl)) {
                     handler = service::handle;
                 } else {
-                    handler = replicaForKey::proxyRequest;
+                    handler = replica::proxyRequest;
                 }
 
                 CompletableFuture<?> cf = handler.handle(request, session);
+
                 CompletableFutureUtils.Subscription base
                         = new CompletableFutureUtils.Subscription(cf, session, this, slaveNodeUrl);
                 CompletableFutureUtils.ExtendedSubscription extendedSubscription =
                         new CompletableFutureUtils.ExtendedSubscription(base,
                                 acks, responseSent, replicasGoodResponses, replicasBadResponses);
-                completableFutureSubscriber.subscribe(extendedSubscription);
+                completableFutureSubscriber.aggregate(extendedSubscription);
             }
         } catch (Exception e) {
             log.error("Fatal error", e);

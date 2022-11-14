@@ -2,7 +2,9 @@ package ok.dht.test.kovalenko.dao.utils;
 
 import java.io.Closeable;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -11,11 +13,13 @@ public class PoolKeeper implements Closeable {
     private final ExecutorService service;
     private final int shutdownTimeInSeconds;
 
-    public PoolKeeper(int corePoolSize, int maxPoolSize, int queueCapacity) {
+    public PoolKeeper(int corePoolSize, int maxPoolSize, int queueCapacity, String threadName) {
         this.service = new ThreadPoolExecutor(corePoolSize, maxPoolSize,
                 60, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(queueCapacity),
-                new ThreadPoolExecutor.AbortPolicy());
+                r -> new Thread(r, threadName),
+                new ThreadPoolExecutor.AbortPolicy()
+        );
         this.shutdownTimeInSeconds = 3 * 60;
     }
 

@@ -19,19 +19,17 @@ public final class CompletableFutureUtils {
 
     public static boolean checkForResponseSent(ExtendedSubscription extendedSubscription) {
         AtomicBoolean responseSent = extendedSubscription.responseSent();
+
         if (responseSent.get()) {
             return true;
         }
 
-        Subscription base = extendedSubscription.base();
-        MyHttpSession session = base.session();
+        MyHttpSession session = extendedSubscription.base().session();
         AtomicInteger acks = extendedSubscription.acks();
         int ack = session.getReplicas().ack();
 
         if (acks.get() >= ack && responseSent.compareAndSet(false, true)) {
-            HttpUtils.NetRequest netRequest
-                    = () -> session.sendResponse(extendedSubscription.goodResponsesBuffer().peek());
-            HttpUtils.safeHttpRequest(session, log, netRequest);
+            finishAggregation(session, extendedSubscription.goodResponsesBuffer().peek());
             return true;
         }
 
@@ -40,31 +38,34 @@ public final class CompletableFutureUtils {
                 - extendedSubscription.badResponsesBuffer().size();
 
         if (acks.get() + remainedResponses < ack && responseSent.compareAndSet(false, true)) {
-            HttpUtils.NetRequest netRequest = () -> session.sendResponse(MyHttpResponse.notEnoughReplicas());
-            HttpUtils.safeHttpRequest(session, log, netRequest);
+            finishAggregation(session, MyHttpResponse.notEnoughReplicas());
             return true;
         }
 
         return responseSent.get();
     }
 
-    public static void whenCancelled(Throwable t, Subscription subscription) {
+    public static void whenCancelledSubscription(Throwable t, Subscription subscription) {
+        notifyAboutError(subscription, t);
         MyHttpResponse myHttpResponse = new MyHttpResponse(Response.GATEWAY_TIMEOUT);
-        makeNodeIll(subscription, t.getMessage());
         HttpUtils.NetRequest netRequest = () -> subscription.session().sendResponse(myHttpResponse);
         HttpUtils.safeHttpRequest(subscription.session(), log, netRequest);
     }
 
-    public static void whenCancelled(Throwable t, ExtendedSubscription extendedSubscription) {
+    public static void whenCancelledAggregation(Throwable t, ExtendedSubscription extendedSubscription) {
+        notifyAboutError(extendedSubscription.base(), t);
         MyHttpResponse myHttpResponse = new MyHttpResponse(Response.GATEWAY_TIMEOUT);
         extendedSubscription.badResponsesBuffer().add(myHttpResponse);
-        makeNodeIll(extendedSubscription.base(), t.getMessage());
         checkForResponseSent(extendedSubscription);
     }
 
-    public static void makeNodeIll(Subscription subscription, String cause) {
-        subscription.loadBalancer().makeNodeIll(subscription.slaveNodeUrl());
-        log.error("Node {} is ill cause {}", subscription.slaveNodeUrl(), cause);
+    public static void notifyAboutError(Subscription subscription, Throwable t) {
+        log.error("Node {} is ill", subscription.slaveNodeUrl(), t);
+    }
+
+    private static void finishAggregation(MyHttpSession session, MyHttpResponse response) {
+        HttpUtils.NetRequest netRequest = () -> session.sendResponse(response);
+        HttpUtils.safeHttpRequest(session, log, netRequest);
     }
 
     public record Subscription(CompletableFuture<?> cf, MyHttpSession session, LoadBalancer loadBalancer,

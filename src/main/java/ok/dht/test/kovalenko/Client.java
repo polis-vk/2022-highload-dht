@@ -1,9 +1,13 @@
 package ok.dht.test.kovalenko;
 
+import ok.dht.test.kovalenko.dao.utils.PoolKeeper;
+import ok.dht.test.kovalenko.utils.HttpUtils;
 import ok.dht.test.kovalenko.utils.MyHttpSession;
+import one.nio.pool.Pool;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
@@ -11,8 +15,17 @@ import java.util.concurrent.CompletableFuture;
 
 public class Client {
 
-    private static final java.net.http.HttpClient javaNetClient = java.net.http.HttpClient.newHttpClient();
+    public static final Client INSTANSE = new Client();
     private static final Duration TIMEOUT = Duration.ofSeconds(2);
+    private final java.net.http.HttpClient javaNetClient;
+    //private final PoolKeeper poolKeeper;
+
+    private Client() {
+        //poolKeeper = new PoolKeeper(1, 10, 100);
+        javaNetClient = HttpClient.newBuilder()
+                //.executor(HttpUtils.POOL_KEEPER.getService())
+                .build();
+    }
 
     public CompletableFuture<HttpResponse<byte[]>> get(String url, MyHttpSession session,
                                                        boolean isRequestForReplica)
@@ -60,7 +73,7 @@ public class Client {
                                         boolean isRequestForReplica) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url + path)).timeout(TIMEOUT);
         if (isRequestForReplica) {
-            builder.header("Replica", "");
+            builder.header(HttpUtils.REPLICA_HEADER, "");
         }
         return builder;
     }

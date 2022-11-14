@@ -34,7 +34,10 @@ public class LSMDao implements Dao<ByteBuffer, TypedTimedEntry> {
     private final MemoryStorage memoryStorage = new MemoryStorage(N_MEMORY_SSTABLES);
     private final MappedFileDiskSSTableStorage diskStorage;
     private final AtomicBoolean wasCompacted = new AtomicBoolean(true);
-    private final PoolKeeper poolKeeper = new PoolKeeper(1, Integer.MAX_VALUE, Integer.MAX_VALUE);
+    private static final int CORE_POOL_SIZE = 1;
+    private static final int MAX_POOL_SIZE = 4 * (Runtime.getRuntime().availableProcessors() + 1);
+    private static final int QUEUE_CAPACITY = 10 * MAX_POOL_SIZE;
+    private final PoolKeeper poolKeeper = new PoolKeeper(CORE_POOL_SIZE, MAX_POOL_SIZE, QUEUE_CAPACITY, "DaoThread");
     private final Runnable flushRunnable;
     private final Runnable compactRunnable;
     private final AtomicLong curBytesForEntries = new AtomicLong();

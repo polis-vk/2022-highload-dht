@@ -6,7 +6,6 @@ import ok.dht.test.kovalenko.dao.LSMDao;
 import ok.dht.test.kovalenko.dao.aliases.TypedBaseTimedEntry;
 import ok.dht.test.kovalenko.dao.aliases.TypedTimedEntry;
 import ok.dht.test.kovalenko.dao.base.ByteBufferDaoFactoryB;
-import ok.dht.test.kovalenko.dao.utils.PoolKeeper;
 import ok.dht.test.kovalenko.utils.CompletableFutureSubscriber;
 import ok.dht.test.kovalenko.utils.CompletableFutureUtils;
 import ok.dht.test.kovalenko.utils.HttpUtils;
@@ -39,7 +38,6 @@ public class MyServiceBase implements Service {
     private final ServiceConfig config;
     private LSMDao dao;
     private HttpServer server;
-    private final PoolKeeper poolKeeper = new PoolKeeper(1, Integer.MAX_VALUE, Integer.MAX_VALUE);
     private final CompletableFutureSubscriber completableFutureSubscriber = new CompletableFutureSubscriber();
 
     public MyServiceBase(ServiceConfig config) throws IOException {
@@ -50,11 +48,12 @@ public class MyServiceBase implements Service {
     public CompletableFuture<?> start() {
         try {
             log.debug("Service {} is starting", selfUrl());
-            this.dao = new LSMDao(this.config);
-            this.server = new MyServerBase(createConfigFromPort(selfPort()));
-            this.server.addRequestHandlers(this);
+            dao = new LSMDao(config);
+            server = new MyServerBase(createConfigFromPort(selfPort()));
+            server.addRequestHandlers(this);
             loadBalancer.add(this);
-            this.server.start();
+            HttpUtils.initPoolKeeper();
+            server.start();
             log.debug("Service {} has started", selfUrl());
             return CompletableFuture.completedFuture(null);
         } catch (Exception e) {
@@ -83,62 +82,99 @@ public class MyServiceBase implements Service {
         MyHttpSession myHttpSession = (MyHttpSession) session;
         ReplicasUtils.Replicas replicas = ReplicasUtils.recreate(myHttpSession.getReplicas(), clusterUrls().size());
         myHttpSession.setReplicas(replicas);
-        if (request.getHeader(HttpUtils.REPLICA_HEADER) != null) {
-            CompletableFuture<MyHttpResponse> cf = handle(request, myHttpSession);
-            CompletableFutureUtils.Subscription subscription =
-                    new CompletableFutureUtils.Subscription(cf, myHttpSession, loadBalancer, selfUrl());
-            completableFutureSubscriber.subscribe(subscription);
-        } else {
+
+        if (request.getHeader(HttpUtils.REPLICA_HEADER) == null) {
             loadBalancer.balance(this, request, myHttpSession);
+            return;
         }
+
+        CompletableFuture<MyHttpResponse> cf = handle(request, myHttpSession);
+        CompletableFutureUtils.Subscription subscription =
+                new CompletableFutureUtils.Subscription(cf, myHttpSession, loadBalancer, selfUrl());
+        completableFutureSubscriber.subscribe(subscription);
     }
 
-    // For inner calls, returns fictive CompletableFuture for compliance with the MyServiceBase.Handler contract
+    // For inner calls
     public CompletableFuture<MyHttpResponse> handle(Request request, MyHttpSession session)
             throws IOException {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                return switch (request.getMethod()) {
-                    case Request.METHOD_GET -> handleGet(request, session);
-                    case Request.METHOD_PUT -> handlePut(request, session);
-                    case Request.METHOD_DELETE -> handleDelete(request, session);
-                    default -> throw new IllegalArgumentException("Illegal request method: " + request.getMethod());
-                };
-            } catch (Exception e) {
-                return new MyHttpResponse(Response.SERVICE_UNAVAILABLE, e);
-            }
-        }, poolKeeper.getService());
+        return switch (request.getMethod()) {
+            case Request.METHOD_GET -> handleGet(request, session);
+            case Request.METHOD_PUT -> handlePut(request, session);
+            case Request.METHOD_DELETE -> handleDelete(request, session);
+            default -> throw new IllegalArgumentException("Illegal request method: " + request.getMethod());
+        };
     }
 
-    public MyHttpResponse handleGet(Request request, MyHttpSession session) throws IOException {
-        ByteBuffer key = daoFactory.fromString(session.getRequestId());
-        TypedTimedEntry found = this.dao.get(key);
-        return found == null
-                ? emptyResponseFor(Response.NOT_FOUND)
-                : found.isTombstone()
-                ? emptyResponseFor(Response.NOT_FOUND, found.timestamp())
-                : new MyHttpResponse(Response.OK, daoFactory.toBytes(found.value()), found.timestamp());
+    public CompletableFuture<MyHttpResponse> handleGet(Request request, MyHttpSession session) throws IOException {
+        CompletableFuture<Void> start = new CompletableFuture<>();
+        CompletableFuture<MyHttpResponse> end = start
+                .thenCompose(nullable -> {
+                    try {
+                        ByteBuffer key = daoFactory.fromString(session.getRequestId());
+                        TypedTimedEntry found = dao.get(key);
+                        return found == null
+                                ? emptyResponseFor(Response.NOT_FOUND)
+                                : found.isTombstone()
+                                ? emptyResponseFor(Response.NOT_FOUND, found.timestamp())
+                                : completedFutureFor(new MyHttpResponse(
+                                        Response.OK,
+                                        daoFactory.toBytes(found.value()),
+                                        found.timestamp())
+                                );
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                })
+                .exceptionally(this::whenExceptionally);
+
+        start.completeAsync(() -> null, HttpUtils.getService());
+        return end;
     }
 
-    public MyHttpResponse handlePut(Request request, MyHttpSession session) throws IOException {
-        ByteBuffer key = daoFactory.fromString(session.getRequestId());
-        ByteBuffer value = ByteBuffer.wrap(request.getBody());
-        this.dao.upsert(entryFor(key, value));
-        return emptyResponseFor(Response.CREATED);
+    public CompletableFuture<MyHttpResponse> handlePut(Request request, MyHttpSession session) throws IOException {
+        CompletableFuture<Void> start = new CompletableFuture<>();
+        CompletableFuture<MyHttpResponse> end = start
+                .thenCompose(nullable -> {
+                    TypedTimedEntry entry = entryFor(
+                            daoFactory.fromString(session.getRequestId()),
+                            ByteBuffer.wrap(request.getBody())
+                    );
+                    this.dao.upsert(entry);
+                    return emptyResponseFor(Response.CREATED);
+                })
+                .exceptionally(this::whenExceptionally);
+
+        start.completeAsync(() -> null, HttpUtils.getService());
+        return end;
     }
 
-    public MyHttpResponse handleDelete(Request request, MyHttpSession session) throws IOException {
-        ByteBuffer key = daoFactory.fromString(session.getRequestId());
-        this.dao.upsert(entryFor(key, null));
-        return emptyResponseFor(Response.ACCEPTED);
+    public CompletableFuture<MyHttpResponse> handleDelete(Request request, MyHttpSession session) throws IOException {
+        CompletableFuture<Void> start = new CompletableFuture<>();
+        CompletableFuture<MyHttpResponse> end = start
+                .thenCompose(nullable -> {
+                    TypedTimedEntry entry = entryFor(
+                            daoFactory.fromString(session.getRequestId()),
+                            null
+                    );
+                    this.dao.upsert(entry);
+                    return emptyResponseFor(Response.ACCEPTED);
+                })
+                .exceptionally(this::whenExceptionally);
+
+        start.completeAsync(() -> null, HttpUtils.getService());
+        return end;
     }
 
-    public static MyHttpResponse emptyResponseFor(String statusCode, long timestamp) {
-        return new MyHttpResponse(statusCode, timestamp);
+    public static CompletableFuture<MyHttpResponse> emptyResponseFor(String statusCode, long timestamp) {
+        return completedFutureFor(new MyHttpResponse(statusCode, timestamp));
     }
 
-    public static MyHttpResponse emptyResponseFor(String statusCode) {
+    public static CompletableFuture<MyHttpResponse> emptyResponseFor(String statusCode) {
         return emptyResponseFor(statusCode, 0);
+    }
+
+    private MyHttpResponse whenExceptionally(Throwable t) {
+        return new MyHttpResponse(Response.SERVICE_UNAVAILABLE, t);
     }
 
     private static TypedTimedEntry entryFor(ByteBuffer key, ByteBuffer value) {
@@ -170,7 +206,7 @@ public class MyServiceBase implements Service {
         return httpConfig;
     }
 
-    private static CompletableFuture<MyHttpResponse> completableFutureFor(MyHttpResponse r) {
+    private static CompletableFuture<MyHttpResponse> completedFutureFor(MyHttpResponse r) {
         return CompletableFuture.completedFuture(r);
     }
 
