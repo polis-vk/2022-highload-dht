@@ -16,8 +16,6 @@
 
 package ok.dht;
 
-import org.junit.jupiter.api.Test;
-
 import java.net.http.HttpResponse;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -36,13 +34,13 @@ class SingleRangeTest extends TestBase {
         return (key + '\n' + value).getBytes();
     }
 
-    @Test
+    @ServiceTest(stage = 6)
     void emptyKey(ServiceInfo service) throws Exception {
         assertEquals(400, service.range("", "").statusCode());
         assertEquals(400, service.upsert("", new byte[]{0}).statusCode());
     }
 
-    @Test
+    @ServiceTest(stage = 6)
     void absentParameterRequest(ServiceInfo service) throws Exception {
         assertEquals(
                 400,
@@ -62,14 +60,14 @@ class SingleRangeTest extends TestBase {
         assertEquals(400, response.statusCode());
     }
 
-    @Test
+    @ServiceTest(stage = 6)
     void getAbsent(ServiceInfo service) throws Exception {
         HttpResponse<byte[]> response = service.range("absent0", "absent1");
         assertEquals(200, response.statusCode());
         assertEquals(0, response.body().length);
     }
 
-    @Test
+    @ServiceTest(stage = 6)
     void single(ServiceInfo service) throws Exception {
         String prefix = "single";
         String key = prefix + 1;
@@ -100,7 +98,7 @@ class SingleRangeTest extends TestBase {
         }
     }
 
-    @Test
+    @ServiceTest(stage = 6)
     void triple(ServiceInfo service) throws Exception {
         String prefix = "triple";
         String value1 = "value1";
