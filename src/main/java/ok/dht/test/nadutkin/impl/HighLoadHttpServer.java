@@ -50,19 +50,24 @@ public class HighLoadHttpServer extends HttpServer {
         super.stop();
     }
 
+    private void exceptionAtHandle(HttpSession session, Exception e, String code) {
+        LOG.error("Caught an exception while trying to handle request. Exception: {}", e.getMessage());
+        try {
+            session.sendResponse(new Response(code, Response.EMPTY));
+        } catch (IOException ex) {
+            LOG.error("Unable to send bad request. Exception: {}", ex.getMessage());
+        }
+    }
+
     @Override
     public void handleRequest(Request request, HttpSession session) {
         executors.submit(() -> {
             try {
                 super.handleRequest(request, session);
-            } catch (Exception e) {
-                LOG.error("Caught an exception while trying to handle request. Exception: {}", e.getMessage());
-                try {
-                    String code = e instanceof RejectedExecutionException ? Response.SERVICE_UNAVAILABLE : Response.BAD_REQUEST;
-                    session.sendResponse(new Response(code, Response.EMPTY));
-                } catch (IOException ex) {
-                    LOG.error("Unable to send bad request. Exception: {}", ex.getMessage());
-                }
+            } catch (RejectedExecutionException e) {
+                exceptionAtHandle(session, e, Response.SERVICE_UNAVAILABLE);
+            } catch (IOException e) {
+                exceptionAtHandle(session, e, Response.BAD_REQUEST);
             }
         });
     }

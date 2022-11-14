@@ -14,8 +14,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static ok.dht.test.nadutkin.database.impl.StorageMethods.getSizeOnDisk;
 import static ok.dht.test.nadutkin.database.impl.Constants.LOG;
+import static ok.dht.test.nadutkin.database.impl.StorageMethods.getSizeOnDisk;
 
 public final class UtilsClass {
     private UtilsClass() {
