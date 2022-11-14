@@ -194,7 +194,6 @@ public class HttpServerImpl extends HttpServer {
                 continue;
             }
 
-
             if (target.url.equals(serverUrl)) {
                 target.queue.add(() -> {
                     try {
@@ -293,7 +292,8 @@ public class HttpServerImpl extends HttpServer {
                                 int nodesAnswersRequired,
                                 int nodesAmount,
                                 HttpSession session,
-                                PriorityBlockingQueue<ResponseVariant> variants) throws InterruptedException, IOException {
+                                PriorityBlockingQueue<ResponseVariant> variants)
+            throws InterruptedException, IOException {
         if (isAffirmative(response)) {
             long timestamp = 0;
             if (response.getHeaders()[0].equals(Response.OK)
