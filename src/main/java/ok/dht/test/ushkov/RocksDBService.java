@@ -438,6 +438,10 @@ public class RocksDBService implements Service {
             throw new InvalidParamsException();
         }
 
+        if (end != null && start.compareTo(end) > 0) {
+            throw new InvalidParamsException();
+        }
+
         executeRangeRequest(session, start, end);
     }
 
