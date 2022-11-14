@@ -6,6 +6,8 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -33,6 +35,7 @@ public class AsyncHttpServer extends HttpServer {
         try {
             executor.submit(() -> handle(request, session));
         } catch (RejectedExecutionException e) {
+            log.error("Task was rejected by executor", e);
             session.sendError(Response.INTERNAL_ERROR, e.getMessage());
         }
     }
@@ -40,11 +43,12 @@ public class AsyncHttpServer extends HttpServer {
     private void handle(Request request, HttpSession session) {
         try {
             super.handleRequest(request, session);
-        } catch (IOException e) {
+        } catch (Exception e) {
+            log.error("Error occurred while handling client's request", e);
             try {
                 session.sendError(Response.INTERNAL_ERROR, e.getMessage());
             } catch (IOException ex) {
-                log.error("Error while sending error response to client", ex);
+                log.error("Error occurred while sending error response to client", ex);
             }
         }
     }
@@ -53,6 +57,20 @@ public class AsyncHttpServer extends HttpServer {
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         session.sendResponse(response);
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new HttpSession(socket, this) {
+            @Override
+            protected void writeResponse(Response response, boolean includeBody) throws IOException {
+                if (response instanceof ChunkedResponse) {
+                    super.write(new ChunkedQueueItem(((ChunkedResponse) response).iterator));
+                } else {
+                    super.writeResponse(response, includeBody);
+                }
+            }
+        };
     }
 
     @Override

@@ -1,13 +1,16 @@
 package ok.dht.test.monakhov.repository;
 
+import ok.dht.test.monakhov.ChunkedResponse;
 import ok.dht.test.monakhov.model.EntryWrapper;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.util.Utf8;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
+import org.rocksdb.Slice;
 
 import java.io.IOException;
 import java.sql.Timestamp;
@@ -30,6 +33,14 @@ public class DaoRepository implements AutoCloseable {
         } catch (RocksDBException e) {
             throw new IOException(e);
         }
+    }
+
+    public ChunkedResponse rangeGet(String start, String end) {
+        final var iterator = dao.newIterator(new ReadOptions().setIterateUpperBound(new Slice(end))); // todo not to allocate each time + try????!!!))))
+
+        iterator.seek(Utf8.toBytes(start));
+
+        return new ChunkedResponse(Response.OK, iterator);
     }
 
     public Response executeDaoOperation(String id, Request request, Timestamp timestamp) {

@@ -45,6 +45,7 @@ public class ReplicationHandler {
     }
 
     public void tryFinishReplication(String nodeUrl) throws IOException {
+        // must be called only after section with atomicAcked changes is finished!!!!
         int finished = atomicFinished.incrementAndGet();
         int acked = atomicAcked.get();
 
@@ -82,8 +83,6 @@ public class ReplicationHandler {
                 );
             }
 
-            // the moment when we increment atomicFinished value to from, all threads finished section
-            // where they can change acked so two atomic reads in a row is ok
             tryFinishReplication(nodeUrl);
         } catch (IOException ex) {
             log.error("Error occurred while responding to client", ex);
@@ -147,8 +146,9 @@ public class ReplicationHandler {
     }
 
     public void logAndSendClientResponse(Response response, String nodeUrl) throws IOException {
-        log.debug(
-            String.format("Send response: %s to session: %s from node: %s ", response.getStatus(), session, nodeUrl));
+        log.debug(String.format(
+            "Send response: %s to session: %s from node: %s ", response.getStatus(), session, nodeUrl
+        ));
         session.sendResponse(response);
     }
 }

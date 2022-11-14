@@ -11,11 +11,13 @@ import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
+import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -82,61 +84,81 @@ public class DaoService implements Service {
     }
 
     @Path("/v0/entity")
-    public void manageRequest(
+    public void entity(
         @Param(value = "id") String id, @Param(value = "from") String fromParam,
         @Param(value = "ack") String ackParam, Request request, HttpSession session
-    ) {
-        try {
-            if (id == null || id.isBlank() || isInvalidReplica(ackParam, fromParam)) {
+    ) throws IOException
+    {
+        if (id == null || id.isBlank() || isInvalidReplica(ackParam, fromParam)) {
+            session.sendResponse(responseBadRequest());
+            return;
+        }
+
+        if (request.getMethod() != Request.METHOD_GET
+            && request.getMethod() != Request.METHOD_DELETE
+            && request.getMethod() != Request.METHOD_PUT
+        ) {
+            session.sendResponse(responseMethodNotAllowed());
+            return;
+        }
+
+        int clusterSize = serviceConfig.clusterUrls().size();
+        int ack = clusterSize / 2 + 1;
+        int from = clusterSize;
+
+        if (ackParam != null) {
+            ack = Integer.parseInt(ackParam);
+            from = Integer.parseInt(fromParam);
+
+            if (from > serviceConfig.clusterUrls().size() || ack > from || ack <= 0) {
                 session.sendResponse(responseBadRequest());
                 return;
             }
+        }
 
-            if (request.getMethod() != Request.METHOD_GET && request.getMethod() != Request.METHOD_DELETE
-                && request.getMethod() != Request.METHOD_PUT) {
+        String timestamp = request.getHeader(TIMESTAMP_HEADER + ":"); // wonderful one nio header parsing!!!!!!
 
-                session.sendResponse(responseMethodNotAllowed());
-                return;
-            }
-
-            int clusterSize = serviceConfig.clusterUrls().size();
-            int ack = clusterSize / 2 + 1;
-            int from = clusterSize;
-
-            if (ackParam != null) {
-                ack = Integer.parseInt(ackParam);
-                from = Integer.parseInt(fromParam);
-
-                if (from > serviceConfig.clusterUrls().size() || ack > from || ack <= 0) {
-                    session.sendResponse(responseBadRequest());
-                    return;
-                }
-            }
-
-            String timestamp = request.getHeader(TIMESTAMP_HEADER + ":"); // wonderful one nio header parsing!!!!!!
-
-            if (timestamp == null) {
-                log.debug(String.format(
-                    "Client's request received on node: %s. Method: %s. Session: %s",
-                    serviceConfig.selfUrl(), request.getMethodName(), session
-                ));
-
-                String[] nodeUrls = nodesRouter.getNodeUrls(id, from);
-                ReplicationHandler handler =
-                    new ReplicationHandler(request, session, ack, from, serviceConfig.selfUrl(), id);
-                multicast(request, id, nodeUrls, handler);
-                return;
-            }
-
+        if (timestamp == null) {
             log.debug(String.format(
-                "Redirected request received on node: %s. Method: %s. Session: %s",
+                "Client's request received on node: %s. Method: %s. Session: %s",
                 serviceConfig.selfUrl(), request.getMethodName(), session
             ));
-            session.sendResponse(dao.executeDaoOperation(id, request, Timestamp.valueOf(timestamp)));
-        } catch (Exception e) {
-            log.error("Unexpected error while request handling occurred on node: " + serviceConfig.selfUrl(), e);
+
+            String[] nodeUrls = nodesRouter.getNodeUrls(id, from);
+            ReplicationHandler handler =
+                new ReplicationHandler(request, session, ack, from, serviceConfig.selfUrl(), id);
+            multicast(request, id, nodeUrls, handler);
+            return;
         }
+
+        log.debug(String.format(
+            "Redirected request received on node: %s. Method: %s. Session: %s",
+            serviceConfig.selfUrl(), request.getMethodName(), session
+        ));
+
+        session.sendResponse(dao.executeDaoOperation(id, request, Timestamp.valueOf(timestamp)));
     }
+
+    @Path("/v0/entities")
+    @RequestMethod({Request.METHOD_GET})
+    public void entities(
+        @Param(value = "start") String start, @Param(value = "end") String end,
+        Request request, HttpSession session
+    ) throws IOException
+    {
+        if (start == null || start.isBlank()) {
+            session.sendResponse(responseBadRequest());
+            return;
+        }
+
+        if (request.getMethod() != Request.METHOD_GET) {
+            session.sendResponse(responseMethodNotAllowed());
+            return;
+        }
+
+        session.sendResponse(dao.rangeGet(start, end));
+    }
+
 
     private void multicast(Request request, String id, String[] nodeUrls, ReplicationHandler handler) {
         Timestamp timestamp = new Timestamp(System.currentTimeMillis());
