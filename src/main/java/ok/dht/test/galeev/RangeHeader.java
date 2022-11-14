@@ -11,9 +11,16 @@ public class RangeHeader {
     private final boolean isOk;
 
     public RangeHeader(Request request) {
-        startParameter = request.getParameter(START_PARAMETER);
-        endParameter = request.getParameter(END_PARAMETER);
-        isOk = true;
+        boolean tmpIsOk = true;
+        String tmpStartParameter = request.getParameter(START_PARAMETER);
+        String tmpEndParameter = request.getParameter(END_PARAMETER);
+        if (tmpStartParameter == null
+                || tmpStartParameter.isEmpty()) {
+            tmpIsOk = false;
+        }
+        startParameter = tmpStartParameter;
+        endParameter = tmpEndParameter;
+        isOk = tmpIsOk;
     }
 
     public String getStartParameter() {
