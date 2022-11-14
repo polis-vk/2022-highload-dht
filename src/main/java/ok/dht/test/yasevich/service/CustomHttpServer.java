@@ -193,6 +193,7 @@ class CustomHttpServer extends HttpServer {
         }
         workersPool.shutdown();
         httpClientPool.shutdown();
+        timeStampingDao.close();
         super.stop();
     }
 

@@ -9,6 +9,7 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Iterator;
 
@@ -64,7 +65,7 @@ public class TimeStampingDao {
     }
 
     private static MemorySegment memSegmentOfString(String data) {
-        return MemorySegment.ofArray(data.toCharArray());
+        return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 
     public void close() throws UncheckedIOException {
