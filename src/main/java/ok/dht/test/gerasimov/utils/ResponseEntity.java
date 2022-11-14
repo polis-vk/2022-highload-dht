@@ -16,6 +16,10 @@ public final class ResponseEntity {
         return new Response(Response.NOT_FOUND, data);
     }
 
+    public static Response ok() {
+        return new Response(Response.OK, Response.EMPTY);
+    }
+
     public static Response ok(String message) {
         return new Response(Response.OK, Utf8.toBytes(message));
     }
