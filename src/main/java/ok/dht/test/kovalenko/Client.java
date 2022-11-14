@@ -1,9 +1,7 @@
 package ok.dht.test.kovalenko;
 
-import ok.dht.test.kovalenko.dao.utils.PoolKeeper;
 import ok.dht.test.kovalenko.utils.HttpUtils;
 import ok.dht.test.kovalenko.utils.MyHttpSession;
-import one.nio.pool.Pool;
 
 import java.io.IOException;
 import java.net.URI;
@@ -13,17 +11,14 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
-public class Client {
+public final class Client {
 
     public static final Client INSTANSE = new Client();
     private static final Duration TIMEOUT = Duration.ofSeconds(2);
-    private final java.net.http.HttpClient javaNetClient;
-    //private final PoolKeeper poolKeeper;
+    private final HttpClient client;
 
     private Client() {
-        //poolKeeper = new PoolKeeper(1, 10, 100);
-        javaNetClient = HttpClient.newBuilder()
-                //.executor(HttpUtils.POOL_KEEPER.getService())
+        client = HttpClient.newBuilder()
                 .build();
     }
 
@@ -79,7 +74,7 @@ public class Client {
     }
 
     private CompletableFuture<HttpResponse<byte[]>> sendAsync(HttpRequest request) {
-        return javaNetClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+        return client.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
     }
 
 }

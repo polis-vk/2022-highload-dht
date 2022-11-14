@@ -4,7 +4,6 @@ import one.nio.http.Response;
 
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 
 public class MyHttpResponse extends Response {
     private final long timestamp;

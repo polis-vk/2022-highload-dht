@@ -1,6 +1,5 @@
 package ok.dht.test.kovalenko;
 
-import ok.dht.test.kovalenko.dao.utils.PoolKeeper;
 import ok.dht.test.kovalenko.utils.HttpUtils;
 import ok.dht.test.kovalenko.utils.MyHttpResponse;
 import ok.dht.test.kovalenko.utils.MyHttpSession;
