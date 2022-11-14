@@ -15,10 +15,10 @@ public final class Client {
 
     public static final Client INSTANSE = new Client();
     private static final Duration TIMEOUT = Duration.ofSeconds(2);
-    private final HttpClient client;
+    private final HttpClient javaNetClient;
 
     private Client() {
-        client = HttpClient.newBuilder()
+        javaNetClient = HttpClient.newBuilder()
                 .build();
     }
 
@@ -74,7 +74,7 @@ public final class Client {
     }
 
     private CompletableFuture<HttpResponse<byte[]>> sendAsync(HttpRequest request) {
-        return client.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+        return javaNetClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
     }
 
 }
