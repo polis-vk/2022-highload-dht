@@ -82,21 +82,23 @@ class CustomHttpServer extends HttpServer {
 
     private void handleChunked(Request request, HttpSession session) {
         String start = request.getParameter("start=");
-        if (start == null) {
-            submitOrSendUnavailable(workersPool, session,
-                    () -> sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY)));
+        String end = request.getParameter("end=");
+        if (start == null || start.equals(end)) {
+            sendResponseAsync(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
-        String end = request.getParameter("end=");
         Iterator<Entry<byte[]>> entries;
         try {
             entries = timeStampingDao.get(start, end);
         } catch (IOException e) {
-            submitOrSendUnavailable(workersPool, session,
-                    () -> sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY)));
+            sendResponseAsync(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             return;
         }
-        sendResponse(session, new ChunkedResponse(Response.OK, entries));
+        sendResponseAsync(session, new ChunkedResponse(Response.OK, entries));
+    }
+
+    private void sendResponseAsync(HttpSession session, Response response) {
+        submitOrSendUnavailable(workersPool, session, () -> sendResponse(session, response));
     }
 
     private void handleUsual(Request request, HttpSession session) {
