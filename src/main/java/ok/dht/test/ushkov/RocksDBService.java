@@ -55,8 +55,7 @@ public class RocksDBService implements Service {
     public static final int NODE_QUEUE_TASKS_LIMIT = 128;
     public static final int NODE_QUEUE_TASKS_ON_EXECUTOR_LIMIT = 3;
     public static final int CHUNK_SIZE = 512;
-
-
+    
     private static final String V0_ENTITY = "/v0/entity";
     private static final String V0_ENTITIES = "/v0/entities";
     private static final Logger LOG = LoggerFactory.getLogger(RocksDBService.class);

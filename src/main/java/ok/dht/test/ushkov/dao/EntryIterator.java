@@ -4,6 +4,7 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksIterator;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Iterator;
 
 public class EntryIterator implements Iterator<Entry> {
@@ -12,7 +13,7 @@ public class EntryIterator implements Iterator<Entry> {
 
     public EntryIterator(RocksDB db, byte[] from, byte[] to) {
         this.rocksIterator = db.newIterator();
-        this.to = to;
+        this.to = Arrays.copyOf(to, to.length);
         rocksIterator.seek(from);
     }
 

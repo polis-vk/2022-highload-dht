@@ -1,12 +1,9 @@
 package ok.dht.test.ushkov.dao;
 
-import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
-import org.rocksdb.RocksIterator;
 
 import java.nio.ByteBuffer;
-import java.util.List;
 
 public class RocksDBDao {
     public final RocksDB db;

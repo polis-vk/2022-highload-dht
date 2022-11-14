@@ -3,7 +3,7 @@ package ok.dht.test.ushkov;
 import one.nio.http.Response;
 import one.nio.util.ByteArrayBuilder;
 
-public class Chunk extends Response {
+public final class Chunk extends Response {
     private Chunk(byte[] body) {
         super(OK, body);
     }
