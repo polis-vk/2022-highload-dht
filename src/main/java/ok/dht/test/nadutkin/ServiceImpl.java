@@ -1,4 +1,4 @@
-package ok.dht.test.nadutkin.impl;
+package ok.dht.test.nadutkin;
 
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
@@ -8,6 +8,7 @@ import ok.dht.test.nadutkin.database.BaseEntry;
 import ok.dht.test.nadutkin.database.Config;
 import ok.dht.test.nadutkin.database.Entry;
 import ok.dht.test.nadutkin.database.impl.MemorySegmentDao;
+import ok.dht.test.nadutkin.impl.HighLoadHttpServer;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.Param;
@@ -20,7 +21,7 @@ import one.nio.server.AcceptorConfig;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
-import static ok.dht.test.nadutkin.impl.UtilsClass.getBytes;
+import static ok.dht.test.nadutkin.database.impl.UtilsClass.getBytes;
 
 public class ServiceImpl implements Service {
 

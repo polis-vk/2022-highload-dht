@@ -1,10 +1,8 @@
-package ok.dht.test.nadutkin.impl;
+package ok.dht.test.nadutkin.database.impl;
 
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.nadutkin.database.Config;
 import ok.dht.test.nadutkin.database.Entry;
-import ok.dht.test.nadutkin.database.impl.MemorySegmentComparator;
-import ok.dht.test.nadutkin.database.impl.Storage;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
@@ -17,7 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static ok.dht.test.nadutkin.database.impl.StorageMethods.getSizeOnDisk;
-import static ok.dht.test.nadutkin.impl.Constants.LOG;
+import static ok.dht.test.nadutkin.database.impl.Constants.LOG;
 
 public final class UtilsClass {
     private UtilsClass() {
