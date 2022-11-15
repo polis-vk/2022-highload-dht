@@ -2,6 +2,7 @@ package ok.dht.test.kosnitskiy.server;
 
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
+import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
 import ok.dht.test.kosnitskiy.dao.BaseEntry;
 import ok.dht.test.kosnitskiy.dao.Config;
@@ -18,8 +19,6 @@ import one.nio.server.AcceptorConfig;
 import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import one.nio.util.ByteArrayBuilder;
-
-import jdk.incubator.foreign.MemorySegment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
