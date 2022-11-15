@@ -30,11 +30,18 @@ import java.util.concurrent.TimeUnit;
 public class ServiceImpl implements Service {
 
     private static final String PATH_ENTITY = "/v0/entity";
+
+    private static final String PATH_RANGE = "/v0/entities";
     private static final String PARAM_ID_NAME = "id=";
 
     private static final String PARAM_ACK_NAME = "ack";
 
     private static final String PARAM_FROM_NAME = "from";
+
+    private static final String PARAM_START = "start";
+
+    private static final String PARAM_END = "end";
+
 
     private static final int MAX_REQUEST_TRIES = 100;
 
@@ -142,6 +149,23 @@ public class ServiceImpl implements Service {
         }
     }
 
+    @Path(PATH_RANGE)
+    public void rangeHandler(@Param(PARAM_START) String start, @Param(PARAM_END) String end, Request request, HttpSession session) {
+        if (!Utils.checkId(start)) {
+            Utils.sendResponse(session, new Response(Response.BAD_REQUEST, Utf8.toBytes(Utils.BAD_ID)));
+            return;
+        }
+
+        if (request.getMethod() == Request.METHOD_GET) {
+            replicationManager.handleRange(start, end, session);
+        } else {
+            LOGGER.error("Method is not allowed for range request: " + request.getMethod());
+            Utils.sendResponse(session, new Response(Response.METHOD_NOT_ALLOWED,
+                    Utf8.toBytes(Utils.NO_SUCH_METHOD)));
+        }
+    }
+
+
     private boolean validateAcks(String ackParam, String fromParam, int ackNum, int from) {
         return ackNum <= 0 || from <= 0 || from > config.clusterUrls().size() || ackNum > from
                 || (ackParam != null && fromParam == null) || (ackParam == null && fromParam != null);
@@ -162,7 +186,7 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

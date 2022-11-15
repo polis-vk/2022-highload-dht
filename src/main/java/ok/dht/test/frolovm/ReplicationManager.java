@@ -12,8 +12,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -193,4 +196,12 @@ public class ReplicationManager {
         );
     }
 
+    public void handleRange(String start, String end, HttpSession session) {
+        Iterator<Map.Entry<byte[], byte[]>> iterator = requestExecutor.entityHandlerRange(start, end);
+        while(iterator.hasNext()) {
+            Map.Entry<byte[], byte[]> current = iterator.next();
+            Utils.sendResponse(session, RangeResponse.createOneChunk(current));
+        }
+        Utils.sendResponse(session, RangeResponse.ENDING_RESPONSE);
+    }
 }

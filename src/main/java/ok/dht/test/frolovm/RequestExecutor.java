@@ -4,8 +4,11 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.util.Utf8;
 import org.iq80.leveldb.DB;
+import org.iq80.leveldb.DBIterator;
 
 import java.nio.ByteBuffer;
+import java.util.Iterator;
+import java.util.Map;
 
 public class RequestExecutor {
 
@@ -35,6 +38,30 @@ public class RequestExecutor {
             default -> new Response(Response.METHOD_NOT_ALLOWED, Utf8.toBytes(Utils.NO_SUCH_METHOD));
         };
     }
+
+    public Iterator<Map.Entry<byte[], byte[]>> entityHandlerRange(String start, String end) {
+        byte[] startBytes = Utils.stringToByte(start);
+        final byte[] endBytes = Utils.checkId(end) ? Utils.stringToByte(start) : null;
+        DBIterator it = dao.iterator();
+        it.seek(startBytes);
+        return new Iterator<>() {
+            @Override
+            public boolean hasNext() {
+                return it.hasNext() && canNext(it.next().getKey(), endBytes);
+            }
+
+            private boolean canNext(byte[] current, byte[] endBytes) {
+                return Utils.compareArrays(current, endBytes) <= 0;
+            }
+
+            @Override
+            public Map.Entry<byte[], byte[]> next() {
+                return it.next();
+            }
+        };
+    }
+
+
 
     private Response putHandler(Request request, String id, long timestamp) {
         dao.put(Utils.stringToByte(id), Utils.dataToBytes(timestamp, request.getBody()));
