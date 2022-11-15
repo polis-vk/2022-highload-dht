@@ -14,8 +14,12 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
+import one.nio.util.ByteArrayBuilder;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,10 +36,10 @@ import java.rmi.UnexpectedException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Future;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -98,13 +102,23 @@ public class HttpServerImpl extends HttpServer {
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         LOG.debug("{} got request {}", serverUrl, request.getURI());
-        String id = request.getParameter("id=");
         if (!isTypeSupported(request)) {
             session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
             return;
         }
 
-        if (!"/v0/entity".equals(request.getPath()) || id == null || id.isEmpty()) {
+        String path = request.getPath();
+
+        switch (path) {
+            case "/v0/entities" -> getMultiple(request, session);
+            case "/v0/entity" -> getSingle(request, session);
+            default -> session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        }
+    }
+
+    private void getSingle(Request request, HttpSession session) throws IOException {
+        String id = request.getParameter("id=");
+        if (id == null || id.isEmpty()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
@@ -117,6 +131,25 @@ public class HttpServerImpl extends HttpServer {
             LOG.debug("I'm slave + {}", serverUrl);
             slaveHandle(id, request, session);
         }
+    }
+
+    private void getMultiple(Request request, HttpSession session) throws IOException {
+        String start = request.getParameter("start=");
+        if (start == null || start.isEmpty()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+        String end = request.getParameter("end=");
+
+        Iterator<Entry<MemorySegment>> entries;
+        entries = memorySegmentDao.get(MemorySegment.ofArray(start.toCharArray()),
+                end == null ? null : MemorySegment.ofArray(end.toCharArray()));
+
+        if (entries.hasNext()) {
+            session.sendResponse(new BatchResponse(Response.OK, entries));
+            return;
+        }
+        session.sendResponse(new Response(Response.OK, Response.EMPTY));
     }
 
     private void slaveHandle(String id, Request request, HttpSession session) throws IOException {
@@ -489,6 +522,65 @@ public class HttpServerImpl extends HttpServer {
             case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> Response.GATEWAY_TIMEOUT;
             default -> throw new IllegalArgumentException("Unknown status code: " + statusCode);
         };
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new HttpSession(socket, this) {
+            @Override
+            protected void writeResponse(Response response, boolean includeBody) throws IOException {
+                if (response instanceof BatchResponse batchResponse) {
+                    super.writeResponse(batchResponse, false);
+                    super.write(new BatchQueueItem(batchResponse));
+                } else {
+                    super.writeResponse(response, includeBody);
+                }
+            }
+        };
+    }
+
+    private static class BatchQueueItem extends Session.QueueItem {
+
+        private final BatchResponse response;
+        private final byte[] bytes;
+        private int offset;
+
+        public BatchQueueItem(BatchResponse response) {
+            this.response = response;
+            this.offset = 0;
+            bytes = getBatchData(response.getIterator());
+        }
+
+        @Override
+        public int remaining() {
+            return bytes.length - offset;
+        }
+
+        @Override
+        public int write(Socket socket) throws IOException {
+            int result = socket.write(bytes, offset, bytes.length - offset, 0);
+            offset += result;
+            if (response.getIterator().hasNext() && offset == bytes.length) {
+                append(new BatchQueueItem(response));
+            }
+            return result;
+        }
+
+        private static byte[] getBatchData(Iterator<Entry<MemorySegment>> iterator) {
+            ByteArrayBuilder builder = new ByteArrayBuilder();
+            if (!iterator.hasNext()) {
+                return builder.append("0\r\n\r\n").buffer();
+            }
+            Entry<MemorySegment> entry = iterator.next();
+            builder.append(Integer.toHexString(entry.key().toCharArray().length + 1 + entry.value().toByteArray().length) + "\r\n");
+            byte[] value = new ByteArrayBuilder().append(String.valueOf(entry.key().toCharArray())).append('\n').append(entry.value().toByteArray()).trim();
+            builder.append(value);
+            builder.append("\r\n");
+            if (!iterator.hasNext()) {
+                builder.append("0\r\n\r\n");
+            }
+            return builder.trim();
+        }
     }
 
     private static class Cluster {
