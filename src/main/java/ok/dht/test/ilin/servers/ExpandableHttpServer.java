@@ -6,12 +6,15 @@ import ok.dht.test.ilin.domain.ReplicasInfo;
 import ok.dht.test.ilin.hashing.impl.ConsistentHashing;
 import ok.dht.test.ilin.replica.ReplicasHandler;
 import ok.dht.test.ilin.service.EntityService;
+import ok.dht.test.ilin.session.ExpandableHttpSession;
 import ok.dht.test.ilin.sharding.ShardHandler;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,10 +31,12 @@ import java.util.concurrent.TimeUnit;
 public class ExpandableHttpServer extends HttpServer {
     private final ExecutorService executorService;
     private final ReplicasHandler replicasHandler;
-    private final Logger logger = LoggerFactory.getLogger(ExpandableHttpServer.class);
+    private static final Logger logger = LoggerFactory.getLogger(ExpandableHttpServer.class);
     private final int nodesSize;
+    private final EntityService entityService;
 
     public ExpandableHttpServer(
+        EntityService entityService,
         ReplicasHandler replicasHandler,
         int nodesSize,
         ExpandableHttpServerConfig config,
@@ -46,6 +51,7 @@ public class ExpandableHttpServer extends HttpServer {
             TimeUnit.MILLISECONDS,
             queue
         );
+        this.entityService = entityService;
         this.replicasHandler = replicasHandler;
         this.nodesSize = nodesSize;
     }
@@ -53,16 +59,39 @@ public class ExpandableHttpServer extends HttpServer {
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         switch (request.getMethod()) {
-            case Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE -> session.sendResponse(new Response(
-                Response.BAD_REQUEST,
-                Response.EMPTY
-            ));
+            case Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE -> sendBadRequest(session);
             default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
         }
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        switch (request.getPath()) {
+            case "/v0/entities" -> handleEntities(request, session);
+            case "/v0/entity" -> handleEntity(request, session);
+            default -> handleDefault(request, session);
+        }
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new ExpandableHttpSession(socket, this);
+    }
+
+    private void handleEntities(Request request, HttpSession session) throws IOException {
+        if (request.getMethod() != Request.METHOD_GET) {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+        }
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+        if (start == null) {
+            sendBadRequest(session);
+            return;
+        }
+        entityService.listEntries(session, start, end);
+    }
+
+    private void handleEntity(Request request, HttpSession session) throws IOException {
         String key = request.getParameter("id=");
         if (key == null || key.isEmpty()) {
             handleDefault(request, session);
@@ -80,12 +109,12 @@ public class ExpandableHttpServer extends HttpServer {
                 replicasInfo = new ReplicasInfo(Integer.parseInt(ack), Integer.parseInt(from));
             }
         } catch (NumberFormatException e) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            sendBadRequest(session);
             return;
         }
 
         if (replicasInfo.ack() > replicasInfo.from() || replicasInfo.ack() == 0) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            sendBadRequest(session);
             return;
         }
 
@@ -120,7 +149,7 @@ public class ExpandableHttpServer extends HttpServer {
         }
     }
 
-    private void sendServiceUnavailable(HttpSession session) {
+    public static void sendServiceUnavailable(HttpSession session) {
         try {
             session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
         } catch (IOException e) {
@@ -128,7 +157,7 @@ public class ExpandableHttpServer extends HttpServer {
         }
     }
 
-    private void sendBadRequest(HttpSession session) {
+    public static void sendBadRequest(HttpSession session) {
         try {
             session.sendError(Response.BAD_REQUEST, "failed to execute request.");
         } catch (IOException e) {
@@ -136,7 +165,7 @@ public class ExpandableHttpServer extends HttpServer {
         }
     }
 
-    private void sendInternalError(HttpSession session) {
+    public static void sendInternalError(HttpSession session) {
         try {
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         } catch (IOException e) {

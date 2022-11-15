@@ -11,15 +11,20 @@ import ok.dht.test.ilin.domain.Serializer;
 import ok.dht.test.ilin.hashing.impl.ConsistentHashing;
 import ok.dht.test.ilin.replica.ReplicasHandler;
 import ok.dht.test.ilin.servers.ExpandableHttpServer;
+import ok.dht.test.ilin.session.ExpandableHttpSession;
 import ok.dht.test.ilin.sharding.ShardHandler;
 import ok.dht.test.ilin.utils.TimestampUtils;
 import one.nio.http.HttpServer;
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
+import org.rocksdb.ColumnFamilyOptions;
 import org.rocksdb.Options;
+import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
+import org.rocksdb.RocksIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +58,7 @@ public class EntityService implements Service {
         ShardHandler shardHandler = new ShardHandler(config.selfUrl(), consistentHashing);
         ReplicasHandler replicasHandler = new ReplicasHandler(config.selfUrl(), this, consistentHashing, shardHandler);
         server = new ExpandableHttpServer(
+            this,
             replicasHandler,
             config.clusterUrls().size(),
             createConfigFromPort(config.selfPort())
@@ -137,6 +143,31 @@ public class EntityService implements Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
+    public void listEntries(HttpSession session, String start, String end) {
+        if (start.isEmpty()) {
+            ExpandableHttpServer.sendBadRequest(session);
+            return;
+        }
+
+        RocksIterator iterator = rocksDB.newIterator();
+        iterator.seek(start.getBytes(StandardCharsets.UTF_8));
+        Response response = new Response(Response.OK);
+
+        if (session instanceof ExpandableHttpSession) {
+            try {
+                ((ExpandableHttpSession) session).sendChunkedResponse(
+                    response,
+                    new ChunkProcessor(iterator, end)::process
+                );
+            } catch (IOException e) {
+                logger.error("failed to send chunked response: " + e.getMessage());
+                ExpandableHttpServer.sendInternalError(session);
+            }
+        } else {
+            ExpandableHttpServer.sendInternalError(session);
+        }
+    }
+
     private static ExpandableHttpServerConfig createConfigFromPort(int port) {
         AcceptorConfig acceptor = new AcceptorConfig();
         acceptor.port = port;
@@ -147,7 +178,7 @@ public class EntityService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
