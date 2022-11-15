@@ -25,7 +25,7 @@ public class RocksDBDao {
         ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES + 1 + value.length);
         buffer.putLong(timestamp);
         buffer.put((byte) 0);
-        buffer.put(Long.BYTES, value);
+        buffer.put(Long.BYTES + 1, value);
 
         Entry entry = get(key);
         if (entry.timestamp() > timestamp) {

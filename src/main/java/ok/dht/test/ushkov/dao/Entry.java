@@ -18,7 +18,7 @@ public record Entry(byte[] key, byte[] value, long timestamp) {
         }
 
         byte[] value = new byte[buffer.remaining()];
-        buffer.get(Long.BYTES, value);
+        buffer.get(Long.BYTES + 1, value);
         return new Entry(key, value, timestamp);
     }
 }
