@@ -14,8 +14,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 public final class Cluster {
-//    private static final Set<Integer> PORTS = Set.of(14454, 25565, 36676, 47787);
-    private static final Set<Integer> PORTS = Set.of(25565);
+    private static final Set<Integer> PORTS = Set.of(14454, 25565, 36676, 47787);
     private static final String LOCAL_HOST = "http://localhost:";
     private static final List<String> TOPOLOGY = PORTS.stream()
             .map(port -> LOCAL_HOST + port)

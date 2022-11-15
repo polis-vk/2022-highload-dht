@@ -50,13 +50,12 @@ public class ChunkedHttpSession extends HttpSession {
         }
     }
 
-
     private void processChain() {
         try {
             if (supplier != null) {
                 while (queueHead == null) {
                     byte[] bytes = supplier.get();
-                    if (bytes == null) {
+                    if (bytes.length == 0) {
                         write(LAST_BLOCK, 0, LAST_BLOCK.length);
                         scheduleClose();
                         return;

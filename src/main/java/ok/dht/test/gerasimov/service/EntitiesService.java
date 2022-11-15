@@ -65,15 +65,10 @@ public class EntitiesService implements HandleService {
                 return null;
             }
 
-            try {
-                return new Parameters(
-                        start,
-                        end
-                );
-            } catch (NumberFormatException e) {
-                session.sendResponse(ResponseEntity.internalError("Invalid timestamp header"));
-                return null;
-            }
+            return new Parameters(
+                    start,
+                    end
+            );
         } catch (IOException e) {
             throw new EntityServiceException("Can not send response", e);
         }
@@ -106,16 +101,16 @@ public class EntitiesService implements HandleService {
                 if (iterator.hasNext()) {
                     Map.Entry<byte[], byte[]> entry = iterator.next();
 
-                    if (parameters.end != null &&
-                            Arrays.equals(entry.getKey(), parameters.end.getBytes(StandardCharsets.UTF_8))) {
+                    if (parameters.end != null
+                            && Arrays.equals(entry.getKey(), parameters.end.getBytes(StandardCharsets.UTF_8))) {
                         iterator.close();
-                        return null;
+                        return new byte[0];
                     }
 
                     return createData(entry);
                 }
 
-                return null;
+                return new byte[0];
             } catch (IOException e) {
                 throw new EntitiesServiceException("Can not close iterator", e);
             }
