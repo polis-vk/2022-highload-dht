@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 10px; background-color: #ffffff}
+	h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {margin: 5px 0 5px 0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {overflow: hidden; white-space: nowrap}
+	#match {overflow: hidden; white-space: nowrap; display: none; float: right; text-align: right}
+	#reset {cursor: pointer}
+	#canvas {width: 100%; height: 912px}
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+<h1>CPU profile</h1>
+<header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
+<header style='text-align: right'>Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a></header>
+<canvas id='canvas'></canvas>
+<div id='hl'><span></span></div>
+<p id='match'>Matched: <span id='matchval'></span> <span id='reset' title='Clear'>&#x274c;</span></p>
+<p id='status'>&nbsp;</p>
+<script>
+	// Copyright 2020 Andrei Pangin
+	// Licensed under the Apache License, Version 2.0.
+	'use strict';
+	var root, rootLevel, px, pattern;
+	var reverse = false;
+	const levels = Array(57);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	const c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	const canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+	const palette = [
+		[0xb2e1b2, 20, 20, 20],
+		[0x50e150, 30, 30, 30],
+		[0x50cccc, 30, 30, 30],
+		[0xe15a5a, 30, 40, 40],
+		[0xc8c83c, 30, 30, 10],
+		[0xe17d00, 30, 30,  0],
+		[0xcce880, 20, 20, 20],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(level, left, width, type, title, inln, c1, int) {
+		levels[level].push({left: left, width: width, color: getColor(palette[type]), title: title,
+			details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
+		});
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+	function search(r) {
+		if (r === true && (r = prompt('Enter regexp to search:', '')) === null) {
+			return;
+		}
+
+		pattern = r ? RegExp(r) : undefined;
+		const matched = render(root, rootLevel);
+		document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+		document.getElementById('match').style.display = r ? 'inherit' : 'none';
+	}
+
+	function render(newRoot, newLevel) {
+		if (root) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+		const marked = [];
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+				c.fillStyle = pattern && f.title.match(pattern) && mark(f) ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+
+				if (f.width * px >= 21) {
+					const chars = Math.floor(f.width * px / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, f.width * px - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, f.width * px, 15);
+				}
+			}
+		}
+
+		for (let h = 0; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				if (f != root) getSelection().removeAllRanges();
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				canvas.title = f.title + '\n(' + samples(f.width) + f.details + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f != root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.textContent = '\xa0';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = '';
+	}
+
+	canvas.ondblclick = function() {
+		getSelection().selectAllChildren(hl);
+	}
+
+	document.getElementById('reverse').onclick = function() {
+		reverse = !reverse;
+		render();
+	}
+
+	document.getElementById('search').onclick = function() {
+		search(true);
+	}
+
+	document.getElementById('reset').onclick = function() {
+		search(false);
+	}
+
+	window.onkeydown = function() {
+		if (event.ctrlKey && event.keyCode === 70) {
+			event.preventDefault();
+			search(true);
+		} else if (event.keyCode === 27) {
+			search(false);
+		}
+	}
+
+f(0,0,514,3,'all')
+f(1,0,2,3,'[unknown_Java]')
+f(2,0,1,4,'os::javaTimeNanos()')
+f(2,1,1,1,'sun/nio/ch/IOUtil.write')
+f(1,2,427,1,'one/nio/server/SelectorThread.run',0,0,6)
+f(2,8,1,1,'I2C/C2I adapters')
+f(2,9,103,1,'one/nio/net/JavaSelector.select')
+f(3,9,2,2,'one/nio/net/JavaSelector.iteratorFor',2,0,0)
+f(3,11,1,4,'os::javaTimeNanos()')
+f(4,11,1,3,'mach_absolute_time')
+f(3,12,100,1,'sun/nio/ch/SelectorImpl.select')
+f(4,12,100,1,'sun/nio/ch/SelectorImpl.lockAndDoSelect')
+f(5,12,100,1,'sun/nio/ch/KQueueSelectorImpl.doSelect',2,0,0)
+f(6,12,95,1,'sun/nio/ch/KQueue.poll',1,0,1)
+f(7,26,2,3,'Java_sun_nio_ch_KQueue_poll')
+f(7,28,79,3,'kevent')
+f(6,107,3,2,'sun/nio/ch/KQueueSelectorImpl.processEvents',1,0,1)
+f(7,109,1,1,'sun/nio/ch/SelectorImpl.processReadyEvents')
+f(8,109,1,1,'java/util/HashSet.add')
+f(9,109,1,1,'java/util/HashMap.put')
+f(6,110,1,1,'sun/nio/ch/SelectorImpl.begin')
+f(7,110,1,6,'java/nio/channels/spi/AbstractSelector.begin',0,1,0)
+f(8,110,1,2,'java/nio/channels/spi/AbstractInterruptibleChannel.blockedOn',1,0,0)
+f(6,111,1,1,'sun/nio/ch/SelectorImpl.processDeregisterQueue')
+f(7,111,1,1,'sun/nio/ch/SocketChannelImpl.kill')
+f(8,111,1,1,'sun/nio/ch/SocketChannelImpl.tryFinishClose')
+f(9,111,1,1,'sun/nio/ch/SocketChannelImpl.tryClose')
+f(10,111,1,1,'sun/nio/ch/SocketDispatcher.close')
+f(11,111,1,1,'sun/nio/ch/FileDispatcherImpl.close0')
+f(12,111,1,1,'java/lang/ClassLoader.findNative')
+f(13,111,1,1,'jdk/internal/loader/NativeLibraries.find')
+f(14,111,1,1,'jdk/internal/loader/NativeLibraries$NativeLibraryImpl.find')
+f(15,111,1,1,'jdk/internal/loader/NativeLibraries.findEntry0')
+f(16,111,1,3,'Java_jdk_internal_loader_NativeLibraries_findEntry0')
+f(17,111,1,3,'jni_GetStringUTFChars')
+f(18,111,1,4,'UNICODE::as_utf8(signed char const*, int, char*, int)')
+f(2,112,317,1,'one/nio/net/Session.process')
+f(3,112,317,1,'one/nio/http/HttpSession.processRead')
+f(4,112,177,1,'one/nio/http/HttpSession.processHttpBuffer')
+f(5,112,164,1,'one/nio/http/HttpSession.handleParsedRequest',8,0,0)
+f(6,112,164,1,'one/nio/http/HttpServer.handleRequest',8,0,1)
+f(7,113,162,1,'RequestHandler1_put.handleRequest',7,0,0)
+f(8,113,28,1,'ok/dht/test/nadutkin/ServiceImpl.put',6,0,0)
+f(9,113,28,1,'ok/dht/test/nadutkin/ServiceImpl.upsert',6,0,0)
+f(10,113,28,1,'ok/dht/test/nadutkin/database/impl/MemorySegmentDao.upsert',6,0,0)
+f(11,115,1,1,'java/util/concurrent/locks/ReentrantReadWriteLock$ReadLock.lock')
+f(12,115,1,1,'java/util/concurrent/locks/AbstractQueuedSynchronizer.acquireShared')
+f(13,115,1,1,'java/util/concurrent/locks/ReentrantReadWriteLock$Sync.tryAcquireShared')
+f(14,115,1,1,'java/util/concurrent/locks/ReentrantReadWriteLock$NonfairSync.readerShouldBlock')
+f(15,115,1,1,'java/util/concurrent/locks/AbstractQueuedSynchronizer.apparentlyFirstQueuedIsExclusive')
+f(11,116,2,2,'java/util/concurrent/locks/ReentrantReadWriteLock$ReadLock.unlock',2,0,0)
+f(12,116,2,2,'java/util/concurrent/locks/AbstractQueuedSynchronizer.releaseShared',2,0,0)
+f(13,116,2,2,'java/util/concurrent/locks/ReentrantReadWriteLock$Sync.tryReleaseShared',2,0,0)
+f(11,118,23,1,'ok/dht/test/nadutkin/database/impl/UtilsClass$Memory.put',2,0,0)
+f(12,119,21,1,'java/util/concurrent/ConcurrentSkipListMap.put')
+f(13,119,21,1,'java/util/concurrent/ConcurrentSkipListMap.doPut',0,0,1)
+f(14,129,11,1,'java/util/concurrent/ConcurrentSkipListMap.cpr',1,0,0)
+f(15,130,10,1,'ok/dht/test/nadutkin/database/impl/MemorySegmentComparator.compare')
+f(16,130,10,2,'ok/dht/test/nadutkin/database/impl/MemorySegmentComparator.compare',9,0,0)
+f(17,130,10,2,'jdk/internal/foreign/AbstractMemorySegmentImpl.mismatch',9,0,0)
+f(18,132,1,2,'java/util/Objects.requireNonNull',1,0,0)
+f(18,133,1,1,'jdk/incubator/foreign/MemoryAccess.<clinit>')
+f(19,133,1,1,'jdk/incubator/foreign/MemoryHandles.varHandle')
+f(20,133,1,1,'jdk/incubator/foreign/MemoryHandles.varHandle')
+f(21,133,1,1,'jdk/internal/foreign/Utils.fixUpVarHandle')
+f(22,133,1,1,'jdk/incubator/foreign/MemoryHandles.filterCoordinates')
+f(23,133,1,1,'java/lang/invoke/MethodHandleImpl$1.filterCoordinates')
+f(24,133,1,1,'java/lang/invoke/VarHandles.filterCoordinates')
+f(25,133,1,1,'java/lang/invoke/VarHandles.noCheckedExceptions')
+f(26,133,1,1,'java/util/stream/ReferencePipeline.anyMatch')
+f(27,133,1,1,'java/util/stream/AbstractPipeline.evaluate')
+f(28,133,1,1,'java/util/stream/MatchOps$MatchOp.evaluateSequential')
+f(29,133,1,1,'java/util/stream/MatchOps$MatchOp.evaluateSequential')
+f(30,133,1,1,'java/util/stream/MatchOps$$Lambda$71.0x0000000800caea90.get')
+f(31,133,1,0,'java/util/stream/MatchOps.lambda$makeRef$0',0,0,1)
+f(32,133,1,4,'InterpreterRuntime::_new(JavaThread*, ConstantPool*, int)')
+f(33,133,1,4,'ConstantPool::klass_at_impl(constantPoolHandle const&, int, JavaThread*)')
+f(34,133,1,4,'SystemDictionary::resolve_or_fail(Symbol*, Handle, Handle, bool, JavaThread*)')
+f(35,133,1,4,'SystemDictionary::resolve_instance_class_or_null(Symbol*, Handle, Handle, JavaThread*)')
+f(36,133,1,4,'SystemDictionary::load_instance_class(unsigned int, Symbol*, Handle, JavaThread*)')
+f(37,133,1,4,'SystemDictionary::load_instance_class_impl(Symbol*, Handle, JavaThread*)')
+f(38,133,1,4,'ClassLoader::load_class(Symbol*, bool, JavaThread*)')
+f(39,133,1,4,'KlassFactory::create_from_stream(ClassFileStream*, Symbol*, ClassLoaderData*, ClassLoadInfo const&, JavaThread*)')
+f(18,134,3,2,'jdk/incubator/foreign/MemoryAccess.getByteAtOffset',3,0,0)
+f(19,134,3,2,'java/lang/invoke/VarHandleGuards.guard_LJ_I',3,0,0)
+f(20,136,1,2,'java/lang/invoke/IndirectVarHandle.getMethodHandle',1,0,0)
+f(18,137,3,2,'jdk/internal/foreign/AbstractMemorySegmentImpl.checkAccess',3,0,0)
+f(19,138,2,2,'jdk/internal/foreign/AbstractMemorySegmentImpl.checkBounds',2,0,0)
+f(20,139,1,2,'jdk/internal/foreign/AbstractMemorySegmentImpl.checkBoundsSmall',1,0,0)
+f(12,140,1,2,'ok/dht/test/nadutkin/database/impl/StorageMethods.getSizeOnDisk',1,0,0)
+f(8,141,133,1,'one/nio/http/HttpSession.sendResponse')
+f(9,141,132,1,'one/nio/http/HttpSession.writeResponse')
+f(10,141,4,1,'one/nio/http/Response.toBytes',0,1,0)
+f(11,142,2,2,'one/nio/util/ByteArrayBuilder.<init>',2,0,0)
+f(11,144,1,2,'one/nio/util/ByteArrayBuilder.append',1,0,0)
+f(12,144,1,2,'one/nio/util/Utf8.write',1,0,0)
+f(13,144,1,2,'one/nio/util/Utf8.write',1,0,0)
+f(10,145,128,1,'one/nio/net/Session.write')
+f(11,145,128,1,'one/nio/net/Session.write')
+f(12,146,127,1,'one/nio/net/Session$ArrayQueueItem.write',1,0,0)
+f(13,146,127,1,'one/nio/net/JavaSocket.write',1,0,0)
+f(14,146,1,1,'java/nio/ByteBuffer.wrap')
+f(15,146,1,0,'java/nio/HeapByteBuffer.<init>',0,0,1)
+f(14,147,126,1,'sun/nio/ch/SocketChannelImpl.write',1,0,0)
+f(15,147,1,2,'java/util/concurrent/locks/ReentrantLock.lock',1,0,0)
+f(15,148,125,1,'sun/nio/ch/IOUtil.write')
+f(16,148,125,1,'sun/nio/ch/IOUtil.write')
+f(17,148,125,1,'sun/nio/ch/IOUtil.writeFromNativeBuffer')
+f(18,148,125,1,'sun/nio/ch/SocketDispatcher.write')
+f(19,148,125,1,'sun/nio/ch/FileDispatcherImpl.write0')
+f(20,151,1,3,'Java_sun_nio_ch_FileDispatcherImpl_write0')
+f(21,151,1,3,'fdval')
+f(20,152,121,3,'write')
+f(9,273,1,1,'one/nio/http/Response.addHeader')
+f(8,274,1,2,'one/nio/http/Request.getRequiredParameter',1,0,0)
+f(9,274,1,2,'one/nio/http/Request.getParameter',1,0,0)
+f(10,274,1,2,'java/lang/String.startsWith',1,0,0)
+f(11,274,1,2,'java/lang/String.length',1,0,0)
+f(7,275,1,2,'one/nio/http/PathMapper.find',1,0,0)
+f(8,275,1,2,'java/util/HashMap.get',1,0,0)
+f(9,275,1,2,'java/util/HashMap.getNode',1,0,0)
+f(10,275,1,2,'java/util/HashMap.hash',1,0,0)
+f(11,275,1,2,'java/lang/String.hashCode',1,0,0)
+f(12,275,1,2,'java/lang/StringLatin1.hashCode',1,0,0)
+f(5,276,9,2,'one/nio/http/HttpSession.parseRequest',8,0,0)
+f(6,276,6,2,'one/nio/http/Request.<init>',6,0,0)
+f(7,279,1,3,'jbyte_disjoint_arraycopy')
+f(7,280,2,3,'jint_disjoint_arraycopy')
+f(6,282,3,2,'one/nio/util/Utf8.read',2,0,0)
+f(7,282,3,2,'one/nio/util/Utf8.read',2,0,0)
+f(8,282,3,2,'one/nio/util/Utf8.toAsciiString',2,0,0)
+f(9,282,1,2,'java/lang/invoke/LambdaForm$MH.0x0000000800cccc00.invokeExact_MT',1,0,0)
+f(9,283,1,1,'java/lang/invoke/MethodHandleNatives.linkMethod')
+f(10,283,1,1,'java/lang/invoke/MethodHandleNatives.linkMethodImpl')
+f(11,283,1,1,'java/lang/invoke/Invokers.methodHandleInvokeLinkerMethod')
+f(12,283,1,1,'java/lang/invoke/Invokers.invokeHandleForm')
+f(13,283,1,1,'java/lang/invoke/LambdaForm$Name.<init>')
+f(14,283,1,1,'java/lang/invoke/LambdaForm$NamedFunction.<init>')
+f(15,283,1,1,'java/lang/invoke/Invokers.basicInvoker')
+f(16,283,1,1,'java/lang/invoke/DirectMethodHandle.make')
+f(17,283,1,1,'java/lang/invoke/DirectMethodHandle.make')
+f(18,283,1,1,'java/lang/invoke/DirectMethodHandle.make')
+f(19,283,1,1,'java/lang/invoke/DirectMethodHandle.preparedLambdaForm')
+f(20,283,1,1,'java/lang/invoke/DirectMethodHandle.preparedLambdaForm')
+f(21,283,1,1,'java/lang/invoke/DirectMethodHandle.preparedLambdaForm')
+f(22,283,1,1,'java/lang/invoke/DirectMethodHandle.makePreparedLambdaForm')
+f(23,283,1,1,'java/lang/invoke/LambdaForm.compileToBytecode')
+f(24,283,1,1,'java/lang/invoke/LambdaForm.methodType')
+f(25,283,1,0,'java/lang/invoke/LambdaForm.parameterType',0,0,1)
+f(26,283,1,4,'InterpreterRuntime::frequency_counter_overflow(JavaThread*, unsigned char*)')
+f(27,283,1,4,'InterpreterRuntime::frequency_counter_overflow_inner(JavaThread*, unsigned char*)')
+f(28,283,1,4,'CompilationPolicy::event(methodHandle const&, methodHandle const&, int, int, CompLevel, CompiledMethod*, JavaThread*)')
+f(29,283,1,4,'CompilationPolicy::compile(methodHandle const&, int, CompLevel, JavaThread*)')
+f(30,283,1,4,'CompileBroker::compile_method(methodHandle const&, int, int, methodHandle const&, int, CompileTask::CompileReason, JavaThread*)')
+f(31,283,1,4,'CompileBroker::compile_method(methodHandle const&, int, int, methodHandle const&, int, CompileTask::CompileReason, DirectiveSet*, JavaThread*)')
+f(32,283,1,4,'CompileBroker::compile_method_base(methodHandle const&, int, int, methodHandle const&, int, CompileTask::CompileReason, bool, Thread*)')
+f(33,283,1,4,'CompileBroker::create_compile_task(CompileQueue*, int, methodHandle const&, int, int, methodHandle const&, int, CompileTask::CompileReason, bool)')
+f(34,283,1,3,'__psynch_cvbroad')
+f(9,284,1,2,'sun/misc/Unsafe.copyMemory',1,0,0)
+f(10,284,1,2,'jdk/internal/misc/Unsafe.copyMemory',1,0,0)
+f(11,284,1,2,'jdk/internal/misc/Unsafe.copyMemoryChecks',1,0,0)
+f(12,284,1,2,'jdk/internal/misc/Unsafe.checkPrimitivePointer',1,0,0)
+f(13,284,1,2,'jdk/internal/misc/Unsafe.checkPointer',1,0,0)
+f(5,285,2,2,'one/nio/http/Request.getHeader',2,0,0)
+f(6,285,1,2,'java/lang/String.regionMatches',1,0,0)
+f(7,285,1,2,'java/lang/StringLatin1.regionMatchesCI',1,0,0)
+f(8,285,1,2,'java/lang/Character.toLowerCase',1,0,0)
+f(6,286,1,2,'one/nio/http/Request.trim',1,0,0)
+f(5,287,2,2,'one/nio/util/Utf8.read',1,0,0)
+f(6,287,2,2,'one/nio/util/Utf8.read',1,0,1)
+f(7,288,1,2,'one/nio/util/Utf8.isAsciiString',1,0,0)
+f(4,289,140,1,'one/nio/net/Session.read')
+f(5,289,140,1,'one/nio/net/JavaSocket.read')
+f(6,289,140,1,'sun/nio/ch/SocketChannelImpl.read',0,1,0)
+f(7,289,1,2,'sun/nio/ch/IOStatus.normalize',1,0,0)
+f(7,290,139,1,'sun/nio/ch/IOUtil.read')
+f(8,290,139,1,'sun/nio/ch/IOUtil.read')
+f(9,290,135,1,'sun/nio/ch/IOUtil.readIntoNativeBuffer')
+f(10,290,135,1,'sun/nio/ch/SocketDispatcher.read')
+f(11,290,135,1,'sun/nio/ch/SocketDispatcher.read0')
+f(12,290,1,3,'Java_sun_nio_ch_SocketDispatcher_read0')
+f(12,291,134,3,'read')
+f(9,425,4,2,'sun/nio/ch/Util.getTemporaryDirectBuffer',3,0,0)
+f(10,426,1,1,'java/lang/ThreadLocal.get')
+f(11,426,1,1,'java/lang/Thread.currentThread')
+f(12,426,1,3,'JVM_CurrentThread')
+f(10,427,2,2,'sun/nio/ch/Util$BufferCache.get',2,0,0)
+f(11,427,1,3,'jshort_disjoint_arraycopy')
+f(11,428,1,3,'unsafe_arraycopy')
+f(1,429,85,3,'thread_start')
+f(2,429,85,3,'_pthread_start')
+f(3,429,85,3,'thread_native_entry(Thread*)')
+f(4,429,85,4,'Thread::call_run()')
+f(5,429,24,4,'GangWorker::run()')
+f(6,429,24,4,'GangWorker::loop()')
+f(7,429,24,4,'G1EvacuateRegionsBaseTask::work(unsigned int)')
+f(8,429,8,4,'G1EvacuateRegionsBaseTask::evacuate_live_objects(G1ParScanThreadState*, unsigned int, G1GCPhaseTimes::GCParPhases, G1GCPhaseTimes::GCParPhases)')
+f(9,429,8,4,'G1ParEvacuateFollowersClosure::do_void()')
+f(10,429,8,4,'G1ParScanThreadState::steal_and_trim_queue(GenericTaskQueueSet<OverflowTaskQueue<ScannerTask, (MEMFLAGS)5, 131072u>, (MEMFLAGS)5>*)')
+f(11,429,8,4,'G1ParScanThreadState::trim_queue_to_threshold(unsigned int)')
+f(12,430,7,4,'void G1ParScanThreadState::do_oop_evac<narrowOop>(narrowOop*)')
+f(13,432,5,4,'G1ParScanThreadState::do_copy_to_survivor_space(G1HeapRegionAttr, oopDesc*, markWord)')
+f(14,436,1,4,'void OopOopIterateBackwardsDispatch<G1ScanEvacuatedObjClosure>::Table::oop_oop_iterate_backwards<InstanceKlass, narrowOop>(G1ScanEvacuatedObjClosure*, oopDesc*, Klass*)')
+f(15,436,1,4,'void G1ScanEvacuatedObjClosure::do_oop_work<narrowOop>(narrowOop*)')
+f(8,437,16,4,'G1EvacuateRegionsTask::scan_roots(G1ParScanThreadState*, unsigned int)')
+f(9,437,16,4,'G1RemSet::scan_heap_roots(G1ParScanThreadState*, unsigned int, G1GCPhaseTimes::GCParPhases, G1GCPhaseTimes::GCParPhases, bool)')
+f(10,437,16,4,'G1ScanHRForRegionClosure::do_heap_region(HeapRegion*)')
+f(11,437,16,4,'G1ScanHRForRegionClosure::scan_heap_roots(HeapRegion*)')
+f(12,437,16,4,'G1ScanHRForRegionClosure::scan_memregion(unsigned int, MemRegion)')
+f(13,437,16,4,'G1ParScanThreadState::trim_queue_to_threshold(unsigned int)')
+f(14,439,14,4,'void G1ParScanThreadState::do_oop_evac<narrowOop>(narrowOop*)')
+f(15,442,11,4,'G1ParScanThreadState::do_copy_to_survivor_space(G1HeapRegionAttr, oopDesc*, markWord)')
+f(16,452,1,4,'void OopOopIterateBackwardsDispatch<G1ScanEvacuatedObjClosure>::Table::oop_oop_iterate_backwards<InstanceKlass, narrowOop>(G1ScanEvacuatedObjClosure*, oopDesc*, Klass*)')
+f(17,452,1,4,'void G1ScanEvacuatedObjClosure::do_oop_work<narrowOop>(narrowOop*)')
+f(5,453,57,4,'JavaThread::thread_main_inner()')
+f(6,453,57,4,'CompileBroker::compiler_thread_loop()')
+f(7,453,56,4,'CompileBroker::invoke_compiler_on_method(CompileTask*)')
+f(8,453,52,4,'C2Compiler::compile_method(ciEnv*, ciMethod*, int, bool, DirectiveSet*)')
+f(9,453,52,4,'Compile::Compile(ciEnv*, ciMethod*, int, bool, bool, bool, bool, bool, DirectiveSet*)')
+f(10,453,31,4,'Compile::Code_Gen()')
+f(11,453,2,4,'Matcher::match()')
+f(12,453,2,4,'Matcher::xform(Node*, int)')
+f(13,453,2,4,'Matcher::match_tree(Node const*)')
+f(14,454,1,4,'Matcher::ReduceInst(State*, int, Node*&)')
+f(15,454,1,4,'State::MachNodeGenerator(int)')
+f(16,454,1,4,'Arena::grow(unsigned long, AllocFailStrategy::AllocFailEnum)')
+f(11,455,1,4,'PhaseBlockLayout::PhaseBlockLayout(PhaseCFG&)')
+f(12,455,1,4,'PhaseBlockLayout::merge_traces(bool)')
+f(11,456,5,4,'PhaseCFG::do_global_code_motion()')
+f(12,456,5,4,'PhaseCFG::global_code_motion()')
+f(13,456,1,4,'PhaseCFG::schedule_early(VectorSet&, Node_Stack&)')
+f(13,457,1,4,'PhaseCFG::schedule_late(VectorSet&, Node_Stack&)')
+f(14,457,1,4,'PhaseCFG::hoist_to_cheaper_block(Block*, Block*, Node*)')
+f(15,457,1,4,'Type::hashcons()')
+f(16,457,1,4,'Dict::Insert(void*, void*, bool)')
+f(17,457,1,4,'Type::cmp(Type const*, Type const*)')
+f(18,457,1,4,'TypeInt::eq(Type const*) const')
+f(13,458,2,4,'PhaseCFG::schedule_local(Block*, GrowableArray<int>&, VectorSet&, long*)')
+f(13,460,1,4,'PhaseLive::compute(unsigned int)')
+f(14,460,1,4,'IndexSet::initialize(unsigned int)')
+f(11,461,23,4,'PhaseChaitin::Register_Allocate()')
+f(12,461,1,4,'PhaseChaitin::Simplify()')
+f(13,461,1,4,'PhaseIFG::remove_node(unsigned int)')
+f(14,461,1,4,'IndexSetIterator::advance_and_next()')
+f(12,462,3,4,'PhaseChaitin::Split(unsigned int, ResourceArea*)')
+f(13,464,1,4,'Node::replace_by(Node*)')
+f(12,465,5,4,'PhaseChaitin::build_ifg_physical(ResourceArea*)')
+f(13,467,1,4,'PhaseChaitin::add_input_to_liveout(Block*, Node*, IndexSet*, double, PhaseChaitin::Pressure&, PhaseChaitin::Pressure&)')
+f(13,468,2,4,'PhaseChaitin::interfere_with_live(unsigned int, IndexSet*)')
+f(14,468,2,4,'IndexSetIterator::advance_and_next()')
+f(12,470,1,4,'PhaseChaitin::build_ifg_virtual()')
+f(13,470,1,4,'PhaseChaitin::interfere_with_live(unsigned int, IndexSet*)')
+f(12,471,2,4,'PhaseChaitin::gather_lrg_masks(bool)')
+f(13,472,1,4,'MachSpillCopyNode::in_RegMask(unsigned int) const')
+f(12,473,2,4,'PhaseChaitin::post_allocate_copy_removal()')
+f(12,475,1,4,'PhaseChaitin::remove_node_if_not_used(Block*, unsigned int, Node*, unsigned int, IndexSet*)')
+f(12,476,2,4,'PhaseCoalesce::coalesce_driver()')
+f(13,476,1,4,'PhaseAggressiveCoalesce::coalesce(Block*)')
+f(13,477,1,4,'PhaseConservativeCoalesce::coalesce(Block*)')
+f(14,477,1,4,'PhaseConservativeCoalesce::copy_copy(Node*, Node*, Block*, unsigned int)')
+f(15,477,1,4,'PhaseConservativeCoalesce::update_ifg(unsigned int, unsigned int, IndexSet*, IndexSet*)')
+f(12,478,2,4,'PhaseIFG::SquareUp()')
+f(13,479,1,4,'IndexSetIterator::advance_and_next()')
+f(12,480,1,4,'PhaseIFG::init(unsigned int)')
+f(12,481,2,4,'PhaseLive::compute(unsigned int)')
+f(13,482,1,4,'PhaseLive::add_liveout(Block*, IndexSet*, VectorSet&)')
+f(12,483,1,4,'loadNNode::oper_input_base() const')
+f(10,484,14,4,'Compile::Optimize()')
+f(11,484,5,4,'Compile::optimize_loops(PhaseIterGVN&, LoopOptsMode)')
+f(12,484,5,4,'PhaseIdealLoop::optimize(PhaseIterGVN&, LoopOptsMode)')
+f(13,484,4,4,'PhaseIdealLoop::build_and_optimize(LoopOptsMode)')
+f(14,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(15,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(16,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(17,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(18,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(19,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(20,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(21,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(22,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(23,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(24,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(25,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(26,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(27,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(28,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(29,484,1,4,'IdealLoopTree::iteration_split(PhaseIdealLoop*, Node_List&)')
+f(30,484,1,4,'IdealLoopTree::iteration_split_impl(PhaseIdealLoop*, Node_List&)')
+f(31,484,1,4,'PhaseIdealLoop::do_unroll(IdealLoopTree*, Node_List&, bool)')
+f(32,484,1,4,'PhaseIdealLoop::clone_loop(IdealLoopTree*, Node_List&, int, PhaseIdealLoop::CloneLoopMode, Node*)')
+f(33,484,1,4,'NodeHash::hash_find_insert(Node*)')
+f(34,484,1,4,'Node::hash() const')
+f(14,485,1,4,'MultiNode::is_CFG() const')
+f(14,486,1,4,'Node::is_CFG() const')
+f(14,487,1,4,'PhaseIdealLoop::build_loop_late(VectorSet&, Node_List&, Node_Stack&)')
+f(13,488,1,4,'PhaseIterGVN::optimize()')
+f(14,488,1,4,'PhaseIterGVN::transform_old(Node*)')
+f(15,488,1,4,'AddNode::Value(PhaseGVN*) const')
+f(16,488,1,4,'AddNode::add_of_identity(Type const*, Type const*) const')
+f(17,488,1,4,'TypeLong::xmeet(Type const*) const')
+f(11,489,5,4,'PhaseIdealLoop::optimize(PhaseIterGVN&, LoopOptsMode)')
+f(12,489,3,4,'PhaseIdealLoop::build_and_optimize(LoopOptsMode)')
+f(13,489,2,4,'PhaseIdealLoop::build_loop_late(VectorSet&, Node_List&, Node_Stack&)')
+f(14,490,1,4,'PhaseIdealLoop::build_loop_late_post_work(Node*, bool)')
+f(13,491,1,4,'PhaseIdealLoop::build_loop_tree()')
+f(14,491,1,4,'PhaseIdealLoop::build_loop_tree_impl(Node*, int)')
+f(12,492,2,4,'PhaseIterGVN::optimize()')
+f(13,492,2,4,'PhaseIterGVN::transform_old(Node*)')
+f(14,492,1,4,'AddNode::Value(PhaseGVN*) const')
+f(15,492,1,4,'AddNode::add_of_identity(Type const*, Type const*) const')
+f(16,492,1,4,'Type::hashcons()')
+f(14,493,1,4,'CastIINode::Identity(PhaseGVN*)')
+f(15,493,1,4,'ConstraintCastNode::dominating_cast(PhaseGVN*, PhaseTransform*) const')
+f(16,493,1,4,'PhaseIterGVN::is_dominator(Node*, Node*)')
+f(11,494,3,4,'PhaseIterGVN::optimize()')
+f(12,494,3,4,'PhaseIterGVN::transform_old(Node*)')
+f(13,494,1,4,'IfNode::Ideal(PhaseGVN*, bool)')
+f(14,494,1,4,'IfNode::Ideal_common(PhaseGVN*, bool)')
+f(15,494,1,4,'Node::Node(Node*, Node*)')
+f(16,494,1,3,'tlv_get_addr')
+f(13,495,1,4,'LoadUBNode::Value(PhaseGVN*) const')
+f(14,495,1,4,'MemNode::can_see_stored_value(Node*, PhaseTransform*) const')
+f(15,495,1,4,'AllocateNode::Ideal_allocation(Node*, PhaseTransform*)')
+f(13,496,1,4,'RegionNode::Ideal(PhaseGVN*, bool)')
+f(14,496,1,4,'NodeHash::hash_delete(Node const*)')
+f(15,496,1,4,'TypePtr::hash() const')
+f(11,497,1,4,'PhaseRenumberLive::PhaseRenumberLive(PhaseGVN*, Unique_Node_List*, Unique_Node_List*, Phase::PhaseNumber)')
+f(12,497,1,4,'Compile::remove_useless_nodes(Unique_Node_List&)')
+f(10,498,7,4,'ParseGenerator::generate(JVMState*)')
+f(11,498,7,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(12,498,7,4,'Parse::do_all_blocks()')
+f(13,498,7,4,'Parse::do_one_block()')
+f(14,498,6,4,'Parse::do_call()')
+f(15,498,2,4,'ParseGenerator::generate(JVMState*)')
+f(16,498,2,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(17,498,2,4,'Parse::do_all_blocks()')
+f(18,498,2,4,'Parse::do_one_block()')
+f(19,498,2,4,'Parse::do_call()')
+f(20,498,2,4,'ParseGenerator::generate(JVMState*)')
+f(21,498,2,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(22,498,2,4,'Parse::do_all_blocks()')
+f(23,498,2,4,'Parse::do_one_block()')
+f(24,498,2,4,'Parse::do_call()')
+f(25,498,2,4,'ParseGenerator::generate(JVMState*)')
+f(26,498,2,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(27,498,2,4,'Parse::do_all_blocks()')
+f(28,498,2,4,'Parse::do_one_block()')
+f(29,498,2,4,'Parse::do_call()')
+f(30,498,2,4,'ParseGenerator::generate(JVMState*)')
+f(31,498,2,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(32,498,2,4,'Parse::do_all_blocks()')
+f(33,498,2,4,'Parse::do_one_block()')
+f(34,498,2,4,'Parse::do_call()')
+f(35,498,1,4,'Compile::call_generator(ciMethod*, int, bool, JVMState*, bool, float, ciKlass*, bool)')
+f(36,498,1,4,'CallGenerator::for_method_handle_call(JVMState*, ciMethod*, ciMethod*, bool)')
+f(37,498,1,4,'CallGenerator::for_method_handle_inline(JVMState*, ciMethod*, ciMethod*, bool, bool&)')
+f(38,498,1,4,'Compile::call_generator(ciMethod*, int, bool, JVMState*, bool, float, ciKlass*, bool)')
+f(39,498,1,4,'InlineTree::ok_to_inline(ciMethod*, JVMState*, ciCallProfile&, bool&)')
+f(40,498,1,4,'ciMethod::get_flow_analysis()')
+f(41,498,1,4,'ciTypeFlow::do_flow()')
+f(42,498,1,4,'ciTypeFlow::flow_types()')
+f(43,498,1,4,'ciTypeFlow::df_flow_types(ciTypeFlow::Block*, bool, ciTypeFlow::StateVector*, ciTypeFlow::JsrSet*)')
+f(44,498,1,4,'ciTypeFlow::flow_block(ciTypeFlow::Block*, ciTypeFlow::StateVector*, ciTypeFlow::JsrSet*)')
+f(45,498,1,4,'ciTypeFlow::StateVector::apply_one_bytecode(ciBytecodeStream*)')
+f(46,498,1,4,'ciTypeFlow::StateVector::do_invoke(ciBytecodeStream*, bool)')
+f(47,498,1,4,'ciBytecodeStream::get_method(bool&, ciSignature**)')
+f(48,498,1,4,'ciEnv::get_method_by_index_impl(constantPoolHandle const&, int, Bytecodes::Code, ciInstanceKlass*)')
+f(49,498,1,4,'ciEnv::lookup_method(ciInstanceKlass*, ciKlass*, Symbol*, Symbol*, Bytecodes::Code, constantTag)')
+f(50,498,1,4,'LinkResolver::resolve_static_call_or_null(LinkInfo const&)')
+f(51,498,1,4,'LinkResolver::resolve_static_call(CallInfo&, LinkInfo const&, bool, JavaThread*)')
+f(52,498,1,4,'LinkResolver::linktime_resolve_static_method(LinkInfo const&, JavaThread*)')
+f(53,498,1,4,'LinkResolver::resolve_method(LinkInfo const&, Bytecodes::Code, JavaThread*)')
+f(54,498,1,4,'InstanceKlass::uncached_lookup_method(Symbol const*, Symbol const*, Klass::OverpassLookupMode, Klass::PrivateLookupMode) const')
+f(55,498,1,4,'InstanceKlass::find_method_index(Array<Method*> const*, Symbol const*, Symbol const*, Klass::OverpassLookupMode, Klass::StaticLookupMode, Klass::PrivateLookupMode)')
+f(35,499,1,4,'ParseGenerator::generate(JVMState*)')
+f(36,499,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(37,499,1,4,'Parse::do_all_blocks()')
+f(38,499,1,4,'Parse::do_one_block()')
+f(39,499,1,4,'Parse::do_call()')
+f(40,499,1,4,'ParseGenerator::generate(JVMState*)')
+f(41,499,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(42,499,1,4,'Parse::do_all_blocks()')
+f(43,499,1,4,'Parse::do_one_block()')
+f(44,499,1,4,'Parse::do_call()')
+f(45,499,1,4,'ParseGenerator::generate(JVMState*)')
+f(46,499,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(47,499,1,4,'Parse::do_all_blocks()')
+f(48,499,1,4,'Parse::do_one_block()')
+f(49,499,1,4,'Parse::return_current(Node*)')
+f(50,499,1,4,'Parse::call_register_finalizer()')
+f(51,499,1,4,'LoadKlassNode::make(PhaseGVN&, Node*, Node*, Node*, TypePtr const*, TypeKlassPtr const*)')
+f(52,499,1,4,'PhaseGVN::transform_no_reclaim(Node*)')
+f(53,499,1,4,'LoadNode::Ideal(PhaseGVN*, bool)')
+f(54,499,1,4,'MemNode::find_previous_store(PhaseTransform*)')
+f(55,499,1,4,'LoadNode::find_previous_arraycopy(PhaseTransform*, Node*, Node*&, bool) const')
+f(56,499,1,4,'MemNode::find_array_copy_clone(PhaseTransform*, Node*, Node*) const')
+f(15,500,4,4,'PredictedCallGenerator::generate(JVMState*)')
+f(16,500,3,4,'ParseGenerator::generate(JVMState*)')
+f(17,500,3,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(18,500,3,4,'Parse::do_all_blocks()')
+f(19,500,3,4,'Parse::do_one_block()')
+f(20,500,3,4,'Parse::do_call()')
+f(21,500,1,4,'ParseGenerator::generate(JVMState*)')
+f(22,500,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(23,500,1,4,'Parse::do_all_blocks()')
+f(24,500,1,4,'Parse::do_one_block()')
+f(25,500,1,4,'Parse::do_call()')
+f(26,500,1,4,'ParseGenerator::generate(JVMState*)')
+f(27,500,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(28,500,1,4,'Parse::do_all_blocks()')
+f(29,500,1,4,'Parse::do_one_block()')
+f(30,500,1,4,'Parse::do_call()')
+f(31,500,1,4,'ParseGenerator::generate(JVMState*)')
+f(32,500,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(33,500,1,4,'Parse::do_all_blocks()')
+f(34,500,1,4,'Parse::do_one_block()')
+f(35,500,1,4,'Parse::do_call()')
+f(36,500,1,4,'PredictedCallGenerator::generate(JVMState*)')
+f(37,500,1,4,'ParseGenerator::generate(JVMState*)')
+f(38,500,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(39,500,1,4,'Parse::do_all_blocks()')
+f(40,500,1,4,'Parse::do_one_block()')
+f(41,500,1,4,'Parse::do_call()')
+f(42,500,1,4,'PredictedCallGenerator::generate(JVMState*)')
+f(43,500,1,4,'ParseGenerator::generate(JVMState*)')
+f(44,500,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(45,500,1,4,'Parse::do_all_blocks()')
+f(46,500,1,4,'Parse::do_one_block()')
+f(47,500,1,4,'Parse::do_call()')
+f(48,500,1,4,'Compile::call_generator(ciMethod*, int, bool, JVMState*, bool, float, ciKlass*, bool)')
+f(49,500,1,4,'InlineTree::ok_to_inline(ciMethod*, JVMState*, ciCallProfile&, bool&)')
+f(50,500,1,4,'InlineTree::try_to_inline(ciMethod*, ciMethod*, int, JVMState*, ciCallProfile&, bool&)')
+f(51,500,1,4,'InlineTree::should_not_inline(ciMethod*, ciMethod*, JVMState*)')
+f(52,500,1,4,'ciMethod::has_unloaded_classes_in_signature()')
+f(53,500,1,4,'Method::has_unloaded_classes_in_signature(methodHandle const&, JavaThread*)')
+f(54,500,1,4,'ResolvingSignatureStream::as_klass_if_loaded(JavaThread*)')
+f(55,500,1,4,'SystemDictionary::find_instance_klass(Symbol*, Handle, Handle)')
+f(21,501,2,4,'PredictedCallGenerator::generate(JVMState*)')
+f(22,501,1,4,'ParseGenerator::generate(JVMState*)')
+f(23,501,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(24,501,1,4,'Parse::do_all_blocks()')
+f(25,501,1,4,'Parse::do_one_block()')
+f(26,501,1,4,'Parse::do_call()')
+f(27,501,1,4,'PredictedCallGenerator::generate(JVMState*)')
+f(28,501,1,4,'PredictedCallGenerator::generate(JVMState*)')
+f(29,501,1,4,'ParseGenerator::generate(JVMState*)')
+f(30,501,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(31,501,1,4,'Parse::do_all_blocks()')
+f(32,501,1,4,'Parse::do_one_block()')
+f(33,501,1,4,'Parse::do_call()')
+f(34,501,1,4,'PredictedCallGenerator::generate(JVMState*)')
+f(35,501,1,4,'ParseGenerator::generate(JVMState*)')
+f(36,501,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(37,501,1,4,'Parse::do_all_blocks()')
+f(38,501,1,4,'Parse::do_one_block()')
+f(39,501,1,4,'Parse::do_call()')
+f(40,501,1,4,'PredictedCallGenerator::generate(JVMState*)')
+f(41,501,1,4,'ParseGenerator::generate(JVMState*)')
+f(42,501,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(43,501,1,4,'ciMethod::method_data()')
+f(44,501,1,4,'ciMethodData::load_data()')
+f(45,501,1,4,'ciMethodData::data_from(DataLayout*)')
+f(46,501,1,4,'resource_allocate_bytes(unsigned long, AllocFailStrategy::AllocFailEnum)')
+f(22,502,1,4,'PredictedCallGenerator::generate(JVMState*)')
+f(23,502,1,4,'ParseGenerator::generate(JVMState*)')
+f(24,502,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(25,502,1,4,'Parse::do_all_blocks()')
+f(26,502,1,4,'Parse::do_one_block()')
+f(27,502,1,4,'Parse::do_call()')
+f(28,502,1,4,'PredictedCallGenerator::generate(JVMState*)')
+f(29,502,1,4,'ParseGenerator::generate(JVMState*)')
+f(30,502,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(31,502,1,4,'Parse::do_all_blocks()')
+f(32,502,1,4,'Parse::do_one_block()')
+f(33,502,1,4,'Parse::do_field_access(bool, bool)')
+f(34,502,1,4,'Parse::do_get_xxx(Node*, ciField*, bool)')
+f(35,502,1,4,'GraphKit::access_load_at(Node*, Node*, TypePtr const*, Type const*, BasicType, unsigned long long)')
+f(36,502,1,4,'BarrierSetC2::load_at(C2Access&, Type const*) const')
+f(37,502,1,4,'G1BarrierSetC2::load_at_resolved(C2Access&, Type const*) const')
+f(38,502,1,4,'BarrierSetC2::load_at_resolved(C2Access&, Type const*) const')
+f(39,502,1,4,'GraphKit::make_load(Node*, Node*, Type const*, BasicType, int, MemNode::MemOrd, LoadNode::ControlDependency, bool, bool, bool, bool, unsigned char)')
+f(40,502,1,4,'LoadNode::make(PhaseGVN&, Node*, Node*, Node*, TypePtr const*, Type const*, BasicType, MemNode::MemOrd, LoadNode::ControlDependency, bool, bool, bool, unsigned char)')
+f(41,502,1,4,'PhaseGVN::transform_no_reclaim(Node*)')
+f(42,502,1,4,'MemNode::Ideal_common(PhaseGVN*, bool)')
+f(16,503,1,4,'PredictedCallGenerator::generate(JVMState*)')
+f(17,503,1,4,'ParseGenerator::generate(JVMState*)')
+f(18,503,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(19,503,1,4,'Parse::do_all_blocks()')
+f(20,503,1,4,'Parse::do_one_block()')
+f(21,503,1,4,'Parse::do_call()')
+f(22,503,1,4,'PredictedCallGenerator::generate(JVMState*)')
+f(23,503,1,4,'ParseGenerator::generate(JVMState*)')
+f(24,503,1,4,'Parse::Parse(JVMState*, ciMethod*, float)')
+f(25,503,1,4,'Parse::do_all_blocks()')
+f(26,503,1,4,'Parse::do_one_block()')
+f(27,503,1,4,'Parse::do_field_access(bool, bool)')
+f(28,503,1,4,'Parse::do_get_xxx(Node*, ciField*, bool)')
+f(29,503,1,4,'Compile::alias_type(ciField*)')
+f(30,503,1,4,'TypeInstPtr::add_offset(long) const')
+f(31,503,1,4,'TypeInstPtr::make(TypePtr::PTR, ciKlass*, bool, ciObject*, int, int, TypePtr const*, int)')
+f(32,503,1,4,'TypeOopPtr::TypeOopPtr(Type::TYPES, TypePtr::PTR, ciKlass*, bool, ciObject*, int, int, TypePtr const*, int)')
+f(33,503,1,4,'ciInstanceKlass::get_field_by_offset(int, bool)')
+f(34,503,1,4,'ciInstanceKlass::compute_nonstatic_fields()')
+f(35,503,1,4,'ciInstanceKlass::compute_nonstatic_fields_impl(GrowableArray<ciField*>*)')
+f(36,503,1,4,'ciField::initialize_from(fieldDescriptor*)')
+f(37,503,1,4,'ciInstanceKlass::is_in_package(char const*, int)')
+f(38,503,1,4,'ciSymbol::starts_with(char const*, int) const')
+f(39,503,1,3,'_platform_memcmp$VARIANT$Base')
+f(14,504,1,4,'Parse::do_exceptions()')
+f(15,504,1,4,'Parse::catch_inline_exceptions(SafePointNode*)')
+f(16,504,1,4,'LoadKlassNode::make(PhaseGVN&, Node*, Node*, Node*, TypePtr const*, TypeKlassPtr const*)')
+f(17,504,1,4,'PhaseGVN::transform_no_reclaim(Node*)')
+f(18,504,1,4,'LoadNode::Ideal(PhaseGVN*, bool)')
+f(19,504,1,4,'MemNode::Ideal_common(PhaseGVN*, bool)')
+f(20,504,1,4,'Compile::find_alias_type(TypePtr const*, bool, ciField*)')
+f(21,504,1,4,'Compile::flatten_alias_type(TypePtr const*) const')
+f(22,504,1,4,'Type::hashcons()')
+f(23,504,1,4,'Dict::Insert(void*, void*, bool)')
+f(8,505,4,4,'Compiler::compile_method(ciEnv*, ciMethod*, int, bool, DirectiveSet*)')
+f(9,505,4,4,'Compilation::Compilation(AbstractCompiler*, ciEnv*, ciMethod*, int, BufferBlob*, bool, DirectiveSet*)')
+f(10,505,4,4,'Compilation::compile_method()')
+f(11,505,4,4,'Compilation::compile_java_method()')
+f(12,505,1,4,'Compilation::build_hir()')
+f(13,505,1,4,'IR::IR(Compilation*, ciMethod*, int)')
+f(14,505,1,4,'IRScope::IRScope(Compilation*, IRScope*, int, ciMethod*, int, bool)')
+f(15,505,1,4,'GraphBuilder::GraphBuilder(Compilation*, IRScope*)')
+f(16,505,1,4,'GraphBuilder::iterate_all_blocks(bool)')
+f(17,505,1,4,'GraphBuilder::iterate_bytecodes_for_block(int)')
+f(18,505,1,4,'GraphBuilder::invoke(Bytecodes::Code)')
+f(19,505,1,4,'GraphBuilder::try_inline(ciMethod*, bool, bool, Bytecodes::Code, Instruction*)')
+f(20,505,1,4,'GraphBuilder::try_inline_full(ciMethod*, bool, bool, Bytecodes::Code, Instruction*)')
+f(21,505,1,4,'BlockBegin::BlockBegin(int)')
+f(22,505,1,4,'GrowableArrayResourceAllocator::allocate(int, int)')
+f(12,506,3,4,'Compilation::emit_lir()')
+f(13,506,2,4,'BlockList::iterate_forward(BlockClosure*)')
+f(14,506,2,4,'LIRGenerator::block_do(BlockBegin*)')
+f(15,506,1,4,'LIRGenerator::do_Base(Base*)')
+f(16,506,1,4,'LIRGenerator::increment_event_counter(CodeEmitInfo*, LIR_OprDesc*, int, bool)')
+f(17,506,1,4,'LIRGenerator::increment_event_counter_impl(CodeEmitInfo*, ciMethod*, LIR_OprDesc*, int, int, bool, bool)')
+f(18,506,1,4,'LIR_List::branch_destination(Label*)')
+f(15,507,1,4,'LIRGenerator::do_StoreField(StoreField*)')
+f(16,507,1,4,'ModRefBarrierSetC1::store_at_resolved(LIRAccess&, LIR_OprDesc*)')
+f(17,507,1,4,'G1BarrierSetC1::pre_barrier(LIRAccess&, LIR_OprDesc*, LIR_OprDesc*, CodeEmitInfo*)')
+f(18,507,1,4,'GrowableArrayWithAllocator<LIR_Op*, GrowableArray<LIR_Op*> >::append(LIR_Op* const&)')
+f(13,508,1,4,'LinearScan::do_linear_scan()')
+f(14,508,1,4,'LinearScan::allocate_registers()')
+f(15,508,1,4,'IntervalWalker::walk_to(int)')
+f(16,508,1,4,'LinearScanWalker::activate_current()')
+f(17,508,1,4,'LinearScanWalker::alloc_free_reg(Interval*)')
+f(18,508,1,4,'LinearScanWalker::split_before_usage(Interval*, int, int)')
+f(7,509,1,4,'CompileQueue::get()')
+f(8,509,1,4,'Monitor::wait(long long)')
+f(9,509,1,4,'os::PlatformMonitor::wait(long)')
+f(10,509,1,3,'__psynch_cvwait')
+f(5,510,4,4,'WatcherThread::run()')
+f(6,510,4,4,'WatcherThread::sleep() const')
+f(7,510,4,4,'Monitor::wait_without_safepoint_check(long long)')
+f(8,510,4,4,'os::PlatformMonitor::wait(long)')
+f(9,510,3,3,'__psynch_cvwait')
+f(9,513,1,3,'pthread_mutex_lock')
+
+search();
+</script></body></html>
