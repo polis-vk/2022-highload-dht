@@ -54,6 +54,7 @@ public class DatabaseHttpServer extends HttpServer {
     private static final Response BAD_REQUEST = new Response(Response.BAD_REQUEST, Response.EMPTY);
     private static final Response NOT_FOUND = new Response(Response.NOT_FOUND, Response.EMPTY);
     private static final Logger LOGGER = Logger.getLogger(String.valueOf(DatabaseService.class));
+    private static final int REPLICA_FACTOR = 1;
     private MemorySegmentDao dao;
     private TimeDaoWrapper timeDaoWrapper;
 
@@ -81,8 +82,7 @@ public class DatabaseHttpServer extends HttpServer {
         return new HttpSession(socket, this) {
             @Override
             protected void writeResponse(Response response, boolean includeBody) throws IOException {
-                if (response instanceof ChunkedResponse) {
-                    ChunkedResponse chunkedResponse = (ChunkedResponse) response;
+                if (response instanceof ChunkedResponse chunkedResponse) {
                     super.write(new QueueItem() {
                                     private boolean init = false;
 
@@ -162,24 +162,25 @@ public class DatabaseHttpServer extends HttpServer {
 
     private void handleRangeRequest(HttpSession session, Request request) {
         String start = request.getParameter("start=");
-        String end   = request.getParameter("end=");
+        String end = request.getParameter("end=");
 
         if (!HttpUtils.isArgumentCorrect(start)) {
             sendResponse(session, BAD_REQUEST);
             return;
         }
 
-        List<Iterator<Entry<MemorySegment>>> allNodesIterators;
+        List<Iterator<Entry<MemorySegment>>> nodesIterators;
         String spreadHeaderValue = request.getHeader(NOT_SPREAD_HEADER);
         if (spreadHeaderValue != null && spreadHeaderValue.equals(": " + NOT_SPREAD_HEADER_VALUE)) {
-            allNodesIterators = thisNodeIterator(start, end);
+            nodesIterators = thisNodeIterator(start, end);
         } else {
-            allNodesIterators = getClusterRangeIterators(start, end);
+            List<Integer> coveringNodes = keyDispatcher.getNodesCoverage(REPLICA_FACTOR);
+            nodesIterators = getClusterRangeIterators(coveringNodes, start, end);
         }
 
         Iterator<Entry<MemorySegment>> mergeIterator;
         try {
-            mergeIterator = new BorderedMergeIterator(allNodesIterators, allNodesIterators.size());
+            mergeIterator = new BorderedMergeIterator(nodesIterators, nodesIterators.size());
         } catch (IOException e) {
             sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
             return;
@@ -188,18 +189,20 @@ public class DatabaseHttpServer extends HttpServer {
         sendResponse(session, new ChunkedResponse(Response.OK, mergeIterator));
     }
 
-    private List<Iterator<Entry<MemorySegment>>> getClusterRangeIterators(String startString, String endString) {
+    private List<Iterator<Entry<MemorySegment>>> getClusterRangeIterators(List<Integer> coveringNodes, String startString, String endString) {
         List<Iterator<Entry<MemorySegment>>> result = thisNodeIterator(startString, endString);
-        for (String url : clusterConfig) {
-            result.add(getProxyRange(url, startString, endString));
+        for (Integer node : coveringNodes) {
+            if (node != selfId) {
+                result.add(getProxyRange(clusterConfig[node], startString, endString));
+            }
         }
 
         return result;
     }
 
     private Iterator<Entry<MemorySegment>> getProxyRange(String url, String start, String end) {
-        String path = end == null ? url + REQUEST_PATH + "?start=" + start :
-                url + REQUEST_PATH + "?start=" + start + "&end=" + end;
+        String path = end == null ? url + RANGE_REQUEST_PATH + "?start=" + start :
+                url + RANGE_REQUEST_PATH + "?start=" + start + "&end=" + end;
 
         HttpRequest httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(path))
@@ -224,7 +227,7 @@ public class DatabaseHttpServer extends HttpServer {
 
         InputStream value = response.body();
         BufferedReader reader = new BufferedReader(new InputStreamReader(value));
-        return new Iterator<Entry<MemorySegment>>() {
+        return new Iterator<>() {
             Entry<MemorySegment> nextValue = null;
             boolean hasNext = true;
 
@@ -233,24 +236,32 @@ public class DatabaseHttpServer extends HttpServer {
             }
             @Override
             public boolean hasNext() {
-                return false;
+                return hasNext;
             }
 
             @Override
             public Entry<MemorySegment> next() {
                 Entry<MemorySegment> tmp = nextValue;
-                byte[] key, value;
+                String key, value;
                 try {
-                    reader.readLine(); //length
-                    key = reader.readLine().getBytes();
-                    value = reader.readLine().getBytes();
+                    key = reader.readLine();
+                    value = reader.readLine();
                 } catch (IOException e) {
-                    hasNext = false;
-                    nextValue = null;
+                    close();
                     return tmp;
                 }
-                nextValue = new BaseEntry<>(MemorySegment.ofArray(key), MemorySegment.ofArray(value));
+                if (key == null || value == null) {
+                    close();
+                } else {
+                    nextValue = new BaseEntry<>(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
+                            MemorySegment.ofArray(value.getBytes(StandardCharsets.UTF_8)));
+                }
                 return tmp;
+            }
+
+            private void close() {
+                hasNext = false;
+                nextValue = null;
             }
 
 
@@ -265,8 +276,8 @@ public class DatabaseHttpServer extends HttpServer {
                 MemorySegment.ofArray(endString.getBytes(StandardCharsets.UTF_8));
         List<Iterator<Entry<MemorySegment>>> result = new ArrayList<>();
         try {
-            result.add(dao.get(start, end));
-        } catch (IOException e) {
+            result.add(timeDaoWrapper.get(start, end));
+        } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Dao get range error");
             return result;
         }

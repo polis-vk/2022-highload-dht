@@ -4,10 +4,6 @@ import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.maximenko.dao.Entry;
 import one.nio.http.Response;
 import one.nio.util.ByteArrayBuilder;
-
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Iterator;
 
 public class ChunkedResponse extends Response {
@@ -17,12 +13,6 @@ public class ChunkedResponse extends Response {
 
     public boolean hasNext() {
         return iterator.hasNext();
-    }
-
-    public ChunkedResponse(String resultCode) {
-        super(resultCode);
-        this.resultCode = resultCode;
-        this.iterator = null;
     }
 
     public ChunkedResponse(String resultCode, Iterator<Entry<MemorySegment>> iterator) {
@@ -40,22 +30,11 @@ public class ChunkedResponse extends Response {
         return response.toBytes(true);
     }
 
-    private byte[] getValueWithoutTime(Entry<MemorySegment> entry) {
-        ByteBuffer valueWithTime = entry.value().asByteBuffer();
-        long time = valueWithTime.getLong();
-        short haveValue = valueWithTime.getShort();
-        if (haveValue == 0) {
-            return new byte[0];
-        }
-        byte[] valueWithoutTime = new byte[valueWithTime.remaining()];
-        valueWithTime.get(valueWithoutTime);
-        return valueWithoutTime;
-    }
     public byte[] getNextChunk() {
         Entry<MemorySegment> entry = iterator.next();
 
         byte[] key  = entry.key().toByteArray();
-        byte[] value = getValueWithoutTime(entry);
+        byte[] value = entry.value().toByteArray();
         int chunkSize = key.length + 1 + value.length;
         String chunkSizeString = Integer.toHexString(chunkSize);
         int estimatedSize = chunkSizeString.length()  + 2 + chunkSize + 2;

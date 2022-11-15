@@ -7,6 +7,7 @@ import ok.dht.test.maximenko.dao.MemorySegmentDao;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Iterator;
 
 public class TimeDaoWrapper {
     private final MemorySegmentDao dao;
@@ -59,5 +60,33 @@ public class TimeDaoWrapper {
         byte[] valueWithoutTime = new byte[valueWithTime.remaining()];
         valueWithTime.get(valueWithoutTime);
         return new ValueAndTime(valueWithoutTime, time);
+    }
+
+    public Iterator<Entry<MemorySegment>> get(MemorySegment start, MemorySegment end) throws IOException {
+        return new Iterator<>() {
+            final Iterator<Entry<MemorySegment>> daoIterator = dao.get(start, end);
+            @Override
+            public boolean hasNext() {
+                return daoIterator.hasNext();
+            }
+
+            @Override
+            public Entry<MemorySegment> next() {
+                Entry<MemorySegment> entry = daoIterator.next();
+                if (entry == null) {
+                    return null;
+                }
+                ByteBuffer valueWithTime = entry.value().asByteBuffer();
+                valueWithTime.getLong(); //time
+                short haveValue = valueWithTime.getShort();
+                if (haveValue == 0) {
+                    return new BaseEntry<>(entry.key(), null);
+                }
+
+                byte[] valueWithoutTime = new byte[valueWithTime.remaining()];
+                valueWithTime.get(valueWithoutTime);
+                return new BaseEntry<>(entry.key(), MemorySegment.ofArray(valueWithoutTime));
+            }
+        };
     }
 }

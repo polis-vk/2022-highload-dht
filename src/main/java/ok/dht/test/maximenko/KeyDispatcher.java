@@ -1,6 +1,7 @@
 package ok.dht.test.maximenko;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -10,6 +11,7 @@ public class KeyDispatcher {
     private static final int VIRTUAL_NODES_PER_MACHINE = 5;
     Map<Integer, Integer> virtualNodes;
     private final int maxBorder;
+    final List<Integer> nodes;
 
     KeyDispatcher(List<Integer> nodes) {
         int nodeAmount = nodes.size();
@@ -23,6 +25,7 @@ public class KeyDispatcher {
             }
         }
         maxBorder = border;
+        this.nodes = nodes;
     }
 
     public ArrayDeque<Integer> getReplicas(String key, int replicasAmount) {
@@ -33,6 +36,17 @@ public class KeyDispatcher {
             result.add(virtualNode.getValue());
             hash = (virtualNode.getKey() + 1) % maxBorder;
         }
+        return result;
+    }
+
+    public List<Integer> getNodesCoverage(int replicaFactor) {
+        int nodeIndex = 0;
+        List<Integer> result = new ArrayList<>();
+        while (nodeIndex < nodes.size()) {
+            result.add(nodes.get(nodeIndex));
+            nodeIndex += replicaFactor;
+        }
+
         return result;
     }
 }
