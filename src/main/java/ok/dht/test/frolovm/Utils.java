@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -167,5 +168,13 @@ public final class Utils {
         } catch (IOException exception) {
             LOGGER.error("Can't send error response ", exception);
         }
+    }
+
+    public static int compareArrays(byte[] arrayFirst, byte[] arraySecond) {
+        int i = Arrays.mismatch(arrayFirst, arraySecond);
+        if (i >= 0 && i < Math.min(arrayFirst.length, arraySecond.length)) {
+            return Byte.compare(arrayFirst[i], arraySecond[i]);
+        }
+        return arrayFirst.length - arraySecond.length;
     }
 }
