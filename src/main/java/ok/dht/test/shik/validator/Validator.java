@@ -13,6 +13,8 @@ public class Validator {
     private static final String REQUIRED_REPLICAS = "ack=";
     private static final String TIMESTAMP = "timestamp=";
     private static final String ID_PARAM = "id=";
+    private static final String START_PARAM = "start=";
+    private static final String END_PARAM = "end=";
     private static final Set<Integer> SUPPORTED_METHODS = Set.of(
         Request.METHOD_GET,
         Request.METHOD_PUT,
@@ -45,6 +47,21 @@ public class Validator {
         if (request.getMethod() == Request.METHOD_PUT && request.getBody() == null) {
             result.setCode(HttpURLConnection.HTTP_BAD_REQUEST);
             return result;
+        }
+
+        String start = request.getParameter(START_PARAM);
+        if (start != null) {
+            result.setStart(start);
+        }
+
+        String end = request.getParameter(END_PARAM);
+        if (end != null) {
+            if (start == null) {
+                result.setCode(HttpURLConnection.HTTP_BAD_REQUEST);
+                return result;
+            }
+
+            result.setEnd(end);
         }
 
         result.setId(id);

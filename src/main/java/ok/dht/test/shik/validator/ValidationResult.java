@@ -7,6 +7,8 @@ public class ValidationResult {
     private int requestedReplicas;
     private int requiredReplicas;
     private long timestamp;
+    private String start;
+    private String end;
 
     public int getCode() {
         return code;
@@ -28,6 +30,14 @@ public class ValidationResult {
         return timestamp;
     }
 
+    public String getStart() {
+        return start;
+    }
+
+    public String getEnd() {
+        return end;
+    }
+
     public void setCode(int code) {
         this.code = code;
     }
@@ -46,5 +56,13 @@ public class ValidationResult {
 
     public void setTimestamp(long timestamp) {
         this.timestamp = timestamp;
+    }
+
+    public void setStart(String start) {
+        this.start = start;
+    }
+
+    public void setEnd(String end) {
+        this.end = end;
     }
 }
