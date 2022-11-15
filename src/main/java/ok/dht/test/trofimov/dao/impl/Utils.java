@@ -58,6 +58,7 @@ public final class Utils {
                 long entryPos = index.readLong();
                 raf.seek(entryPos);
                 raf.readByte(); //read tombstone
+                raf.readLong(); //read timestamp
                 String currentKey = raf.readUTF();
                 int keyComparing = currentKey.compareTo(key);
                 if (keyComparing == 0) {
@@ -80,12 +81,13 @@ public final class Utils {
     }
 
     public static String readKeyFrom(RandomAccessFile raf, long pos) throws IOException {
-        raf.seek(pos + Byte.BYTES);
+        raf.seek(pos + Byte.BYTES + Long.BYTES);
         return raf.readUTF();
     }
 
     public static Entry<String> readEntry(RandomAccessFile raf) throws IOException {
         byte tombstone = raf.readByte();
+        long timestamp = raf.readLong();
         String key = raf.readUTF();
         String value = null;
         if (tombstone == 1) {
@@ -96,7 +98,7 @@ public final class Utils {
             raf.read(valueBytes);
             value = new String(valueBytes, StandardCharsets.UTF_8);
         }
-        return new BaseEntry<>(key, value);
+        return new BaseEntry<>(key, value, timestamp);
     }
 
     public static FileInfo getFileInfo(Path basePath, String file) throws IOException {
@@ -119,14 +121,17 @@ public final class Utils {
         String val = entry.value();
         if (val == null) {
             output.writeByte(-1);
+            output.writeLong(entry.getTimestamp());
             output.writeUTF(entry.key());
         } else {
             if (val.length() < 65536) {
                 output.writeByte(1);
+                output.writeLong(entry.getTimestamp());
                 output.writeUTF(entry.key());
                 output.writeUTF(val);
             } else {
                 output.writeByte(2);
+                output.writeLong(entry.getTimestamp());
                 output.writeUTF(entry.key());
                 byte[] b = val.getBytes(StandardCharsets.UTF_8);
                 output.writeInt(b.length);
