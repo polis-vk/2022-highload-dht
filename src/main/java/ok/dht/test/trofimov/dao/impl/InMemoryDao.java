@@ -118,12 +118,12 @@ public class InMemoryDao implements Dao<String, Entry<String>> {
     public Entry<String> get(String key) throws IOException {
         Entry<String> entry = data.get(key);
         if (entry != null) {
-            return getRealEntry(entry);
+            return entry;
         }
         for (ConcurrentNavigableMap<String, Entry<String>> storage : queueToFlush) {
             entry = storage.get(key);
             if (entry != null) {
-                return getRealEntry(entry);
+                return entry;
             }
         }
         Deque<FileInfo> filesListCopy = filesList.get();
@@ -136,7 +136,7 @@ public class InMemoryDao implements Dao<String, Entry<String>> {
                 entry = null;
             }
         }
-        return getRealEntry(entry);
+        return entry;
     }
 
     private Entry<String> findInFile(String key, Path basePath, FileInfo file) throws IOException {
@@ -156,13 +156,6 @@ public class InMemoryDao implements Dao<String, Entry<String>> {
         }
         int highestKeyComparing = key.compareTo(file.keyLast());
         return highestKeyComparing <= 0;
-    }
-
-    private Entry<String> getRealEntry(Entry<String> entry) {
-        if (entry != null && entry.value() == null) {
-            return null;
-        }
-        return entry;
     }
 
     @Override
@@ -187,7 +180,7 @@ public class InMemoryDao implements Dao<String, Entry<String>> {
 
     private void updateSize(Entry<String> entry, Entry<String> prevVal) {
         if (prevVal == null) {
-            dataSizeBytes.addAndGet(2L * entry.key().getBytes(StandardCharsets.UTF_8).length
+            dataSizeBytes.addAndGet(Long.BYTES + 2L * entry.key().getBytes(StandardCharsets.UTF_8).length
                     + (entry.isTombstone() ? 0 : entry.value().getBytes(StandardCharsets.UTF_8).length));
         } else {
             dataSizeBytes.addAndGet((entry.isTombstone() ? 0 :
