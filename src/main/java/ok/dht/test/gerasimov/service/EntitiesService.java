@@ -106,7 +106,8 @@ public class EntitiesService implements HandleService {
                 if (iterator.hasNext()) {
                     Map.Entry<byte[], byte[]> entry = iterator.next();
 
-                    if (Arrays.equals(entry.getKey(), parameters.end.getBytes(StandardCharsets.UTF_8))) {
+                    if (parameters.end != null &&
+                            Arrays.equals(entry.getKey(), parameters.end.getBytes(StandardCharsets.UTF_8))) {
                         iterator.close();
                         return null;
                     }

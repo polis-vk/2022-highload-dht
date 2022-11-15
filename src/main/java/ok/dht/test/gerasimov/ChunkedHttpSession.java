@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.function.Supplier;
 
 public class ChunkedHttpSession extends HttpSession {
+    private static final String TRANSFER_ENCODING_CHUNKED_HEADER = "Transfer-Encoding: chunked";
     private static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] LAST_BLOCK = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
 
@@ -24,7 +25,7 @@ public class ChunkedHttpSession extends HttpSession {
     public void sendChunkedResponse(Response response, Supplier<byte[]> supplier) {
         try {
             this.supplier = supplier;
-            response.addHeader("Transfer-Encoding: chunked");
+            response.addHeader(TRANSFER_ENCODING_CHUNKED_HEADER);
             this.sendResponse(response);
             processChain();
         } catch (IOException e) {
