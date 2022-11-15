@@ -10,7 +10,13 @@ import ok.dht.test.shashulovskiy.sharding.CircuitBreaker;
 import ok.dht.test.shashulovskiy.sharding.ConsistentHashingShardingManager;
 import ok.dht.test.shashulovskiy.sharding.ResponseAccumulator;
 import ok.dht.test.shashulovskiy.sharding.ShardingManager;
-import one.nio.http.*;
+import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
+import one.nio.http.HttpSession;
+import one.nio.http.Path;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
 import org.iq80.leveldb.DB;
@@ -162,6 +168,7 @@ public class ServiceImpl implements Service {
 
             if (start == null || start.isEmpty() || (end != null && end.isEmpty())) {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
             }
 
             ChunkedResponse chunkedResponse = new ChunkedResponse(Response.OK, session);

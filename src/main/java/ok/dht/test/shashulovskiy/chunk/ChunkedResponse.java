@@ -5,7 +5,6 @@ import one.nio.http.Response;
 import one.nio.util.ByteArrayBuilder;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 
 public class ChunkedResponse extends Response {
 
