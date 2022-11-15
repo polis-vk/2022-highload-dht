@@ -10,13 +10,7 @@ import ok.dht.test.shashulovskiy.sharding.CircuitBreaker;
 import ok.dht.test.shashulovskiy.sharding.ConsistentHashingShardingManager;
 import ok.dht.test.shashulovskiy.sharding.ResponseAccumulator;
 import ok.dht.test.shashulovskiy.sharding.ShardingManager;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.RequestMethod;
-import one.nio.http.Response;
+import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
 import org.iq80.leveldb.DB;
@@ -33,7 +27,6 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
@@ -131,7 +124,7 @@ public class ServiceImpl implements Service {
                         Utf8.toBytes("No id provided")
                 ));
                 return;
-            } else if (id.isEmpty()) {
+            } else if (id.isBlank()) {
                 session.sendResponse(new Response(
                         Response.BAD_REQUEST,
                         Utf8.toBytes("Empty id")

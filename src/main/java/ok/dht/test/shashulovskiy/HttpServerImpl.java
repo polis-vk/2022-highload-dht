@@ -87,7 +87,7 @@ public class HttpServerImpl extends HttpServer {
                 if (response instanceof ChunkedResponse) {
                     super.write(new QueueItem() {
 
-                        private int offset = 0;
+                        private int offset;
                         private final int length = response.getBody().length;
 
                         @Override
