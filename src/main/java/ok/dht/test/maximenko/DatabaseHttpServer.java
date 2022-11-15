@@ -2,6 +2,7 @@ package ok.dht.test.maximenko;
 
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
+import ok.dht.test.maximenko.dao.BaseEntry;
 import ok.dht.test.maximenko.dao.BorderedMergeIterator;
 import ok.dht.test.maximenko.dao.Config;
 import ok.dht.test.maximenko.dao.Entry;
@@ -15,7 +16,11 @@ import one.nio.net.Session;
 import one.nio.net.Socket;
 import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
+
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -25,6 +30,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
@@ -162,7 +168,15 @@ public class DatabaseHttpServer extends HttpServer {
             sendResponse(session, BAD_REQUEST);
             return;
         }
-        List<Iterator<Entry<MemorySegment>>> allNodesIterators = getClusterRangeIterators(start, end);
+
+        List<Iterator<Entry<MemorySegment>>> allNodesIterators;
+        String spreadHeaderValue = request.getHeader(NOT_SPREAD_HEADER);
+        if (spreadHeaderValue != null && spreadHeaderValue.equals(": " + NOT_SPREAD_HEADER_VALUE)) {
+            allNodesIterators = thisNodeIterator(start, end);
+        } else {
+            allNodesIterators = getClusterRangeIterators(start, end);
+        }
+
         Iterator<Entry<MemorySegment>> mergeIterator;
         try {
             mergeIterator = new BorderedMergeIterator(allNodesIterators, allNodesIterators.size());
@@ -175,6 +189,75 @@ public class DatabaseHttpServer extends HttpServer {
     }
 
     private List<Iterator<Entry<MemorySegment>>> getClusterRangeIterators(String startString, String endString) {
+        List<Iterator<Entry<MemorySegment>>> result = thisNodeIterator(startString, endString);
+        for (String url : clusterConfig) {
+            result.add(getProxyRange(url, startString, endString));
+        }
+
+        return result;
+    }
+
+    private Iterator<Entry<MemorySegment>> getProxyRange(String url, String start, String end) {
+        String path = end == null ? url + REQUEST_PATH + "?start=" + start :
+                url + REQUEST_PATH + "?start=" + start + "&end=" + end;
+
+        HttpRequest httpRequest = HttpRequest.newBuilder()
+                .uri(URI.create(path))
+                .timeout(Duration.ofSeconds(1))
+                .GET()
+                .header(NOT_SPREAD_HEADER, NOT_SPREAD_HEADER_VALUE)
+                .build();
+
+
+        HttpResponse<InputStream> response;
+
+        try {
+            response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofInputStream());
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Couldn't arrange range request to other node");
+            return Collections.emptyIterator();
+        }
+
+        if (response.statusCode() != 200) {
+            return Collections.emptyIterator();
+        }
+
+        InputStream value = response.body();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(value));
+        return new Iterator<Entry<MemorySegment>>() {
+            Entry<MemorySegment> nextValue = null;
+            boolean hasNext = true;
+
+            {
+                next();
+            }
+            @Override
+            public boolean hasNext() {
+                return false;
+            }
+
+            @Override
+            public Entry<MemorySegment> next() {
+                Entry<MemorySegment> tmp = nextValue;
+                byte[] key, value;
+                try {
+                    reader.readLine(); //length
+                    key = reader.readLine().getBytes();
+                    value = reader.readLine().getBytes();
+                } catch (IOException e) {
+                    hasNext = false;
+                    nextValue = null;
+                    return tmp;
+                }
+                nextValue = new BaseEntry<>(MemorySegment.ofArray(key), MemorySegment.ofArray(value));
+                return tmp;
+            }
+
+
+        };
+    }
+
+    private List<Iterator<Entry<MemorySegment>>> thisNodeIterator(String startString, String endString) {
 
         MemorySegment start = startString == null ? null :
                 MemorySegment.ofArray(startString.getBytes(StandardCharsets.UTF_8));
