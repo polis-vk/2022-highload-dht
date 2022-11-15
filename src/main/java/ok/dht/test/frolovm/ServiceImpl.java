@@ -84,6 +84,13 @@ public class ServiceImpl implements Service {
     public CompletableFuture<?> start() throws IOException {
         if (dao == null) {
             createDao();
+            requestService = new ThreadPoolExecutor(
+                    CORE_POLL_SIZE,
+                    CORE_POLL_SIZE,
+                    KEEP_ALIVE_TIME,
+                    TimeUnit.SECONDS,
+                    new ArrayBlockingQueue<>(QUEUE_CAPACITY)
+            );
         }
 
         server = new HttpServerImpl(createConfigFromPort(config.selfPort()));
