@@ -3,6 +3,7 @@ package ok.dht.test.shashulovskiy;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.shashulovskiy.chunk.ChunkedResponse;
 import ok.dht.test.shashulovskiy.hashing.MD5Hasher;
 import ok.dht.test.shashulovskiy.metainfo.MetadataUtils;
 import ok.dht.test.shashulovskiy.sharding.CircuitBreaker;
@@ -20,19 +21,24 @@ import one.nio.server.AcceptorConfig;
 import one.nio.util.Utf8;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.DBException;
+import org.iq80.leveldb.DBIterator;
 import org.iq80.leveldb.Options;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
 
@@ -133,72 +139,112 @@ public class ServiceImpl implements Service {
                 return;
             }
 
-            String ackString = request.getParameter("ack=");
-            String fromString = request.getParameter("from=");
-
-            int ack;
-            int from;
-
-            if (ackString == null) {
-                ack = defaultAck;
-            } else {
-                try {
-                    ack = Integer.parseInt(ackString);
-                } catch (NumberFormatException e) {
-                    LOG.error("Unable to parse ack", e);
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                    return;
-                }
-            }
-
-            if (fromString == null) {
-                from = defaultFrom;
-            } else {
-                try {
-                    from = Integer.parseInt(fromString);
-                } catch (NumberFormatException e) {
-                    LOG.error("Unable to parse from", e);
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                    return;
-                }
-            }
-
-            if (ack <= 0 || from < ack || from > config.clusterUrls().size()) {
-                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
-
-            byte[] idBytes = Utf8.toBytes(id);
-            byte[] body = request.getMethod() == Request.METHOD_PUT
-                    ? MetadataUtils.wrapWithMetadata(request.getBody(), false) : new byte[0];
-
-            int firstShard = shardingManager.getShard(idBytes).getNodeId();
-
-            ResponseAccumulator responseAccumulator = new ResponseAccumulator(
-                    ack,
-                    from,
-                    request.getMethod(),
-                    session,
-                    false
-            );
-
-            boolean processLocally = false;
-
-            for (int shard = firstShard; shard < firstShard + from; ++shard) {
-                if (config.selfUrl().equals(config.clusterUrls().get(shard % totalShards))) {
-                    processLocally = true;
-                } else {
-                    handleProxyOperation(request, shard % totalShards, body, responseAccumulator);
-                }
-            }
-
-            if (processLocally) {
-                handleDbOperation(request, idBytes, body, responseAccumulator);
-            }
+            processSingleValueRequest(request, session, id);
         } catch (IOException e) {
             LOG.error("IOException occurred when sending response", e);
         } catch (RuntimeException e) {
             LOG.error("Runtime exception occurred while handling request", e);
+            handleError(session, e);
+        }
+    }
+
+    private void handleError(HttpSession session, RuntimeException e) {
+        try {
+            session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+        } catch (IOException io) {
+            LOG.error("IOException occurred when sending internal error response", e);
+        }
+    }
+
+    @Path("/v0/entities")
+    public void processRangeRequest(Request request, HttpSession session) {
+        try {
+            if (request.getMethod() != Request.METHOD_GET) {
+                session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+                return;
+            }
+
+            @Nonnull String start = request.getParameter("start=");
+            @Nullable String end = request.getParameter("end=");
+
+            if (start == null || start.isEmpty() || (end != null && end.isEmpty())) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            }
+
+            ChunkedResponse chunkedResponse = new ChunkedResponse(Response.OK, session);
+            chunkedResponse.startSending();
+
+            handleRangeRequest(start, end, chunkedResponse);
+        } catch (IOException e) {
+            LOG.error("IOException occurred when sending response", e);
+        } catch (RuntimeException e) {
+            LOG.error("Runtime exception occurred while handling request", e);
+            handleError(session, e);
+        }
+    }
+
+    private void processSingleValueRequest(Request request, HttpSession session, String id) throws IOException {
+        String ackString = request.getParameter("ack=");
+        String fromString = request.getParameter("from=");
+
+        int ack;
+        int from;
+
+        if (ackString == null) {
+            ack = defaultAck;
+        } else {
+            try {
+                ack = Integer.parseInt(ackString);
+            } catch (NumberFormatException e) {
+                LOG.error("Unable to parse ack", e);
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
+        }
+
+        if (fromString == null) {
+            from = defaultFrom;
+        } else {
+            try {
+                from = Integer.parseInt(fromString);
+            } catch (NumberFormatException e) {
+                LOG.error("Unable to parse from", e);
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                return;
+            }
+        }
+
+        if (ack <= 0 || from < ack || from > config.clusterUrls().size()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        byte[] idBytes = Utf8.toBytes(id);
+        byte[] body = request.getMethod() == Request.METHOD_PUT
+                ? MetadataUtils.wrapWithMetadata(request.getBody(), false) : new byte[0];
+
+        int firstShard = shardingManager.getShard(idBytes).getNodeId();
+
+        ResponseAccumulator responseAccumulator = new ResponseAccumulator(
+                ack,
+                from,
+                request.getMethod(),
+                session,
+                false
+        );
+
+        boolean processLocally = false;
+
+        for (int shard = firstShard; shard < firstShard + from; ++shard) {
+            if (config.selfUrl().equals(config.clusterUrls().get(shard % totalShards))) {
+                processLocally = true;
+            } else {
+                handleProxyOperation(request, shard % totalShards, body, responseAccumulator);
+            }
+        }
+
+        if (processLocally) {
+            handleDbOperation(request, idBytes, body, responseAccumulator);
         }
     }
 
@@ -268,6 +314,25 @@ public class ServiceImpl implements Service {
         }
     }
 
+    private void handleRangeRequest(String start, String end, ChunkedResponse chunkedResponse) throws IOException {
+        byte[] endBytes = end == null ? null : Utf8.toBytes(end);
+
+        DBIterator iterator = dao.iterator();
+        iterator.seek(Utf8.toBytes(start));
+
+        while (iterator.hasNext()) {
+            Map.Entry<byte[], byte[]> next = iterator.next();
+            if (endBytes != null && Arrays.compare(next.getKey(), endBytes) >= 0) {
+                break;
+            }
+            chunkedResponse.send(next.getKey());
+            chunkedResponse.send(new byte[] {'\n'});
+            chunkedResponse.send(MetadataUtils.extractData(next.getValue()));
+        }
+
+        chunkedResponse.finishSending();
+    }
+
     @Path(INTERNAL_PREFIX + "/v0/entity")
     public void handleInternal(Request request, HttpSession session) {
         try {
@@ -296,7 +361,7 @@ public class ServiceImpl implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 5, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
+    @ServiceFactory(stage = 6, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

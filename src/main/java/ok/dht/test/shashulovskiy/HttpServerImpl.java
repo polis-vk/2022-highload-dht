@@ -1,11 +1,14 @@
 package ok.dht.test.shashulovskiy;
 
+import ok.dht.test.shashulovskiy.chunk.ChunkedResponse;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,6 +77,36 @@ public class HttpServerImpl extends HttpServer {
     public void handleDefault(Request request, HttpSession session) throws IOException {
         Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
         session.sendResponse(response);
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new HttpSession(socket, this) {
+            @Override
+            public synchronized void sendResponse(Response response) throws IOException {
+                if (response instanceof ChunkedResponse) {
+                    super.write(new QueueItem() {
+
+                        private int offset = 0;
+                        private final int length = response.getBody().length;
+
+                        @Override
+                        public int remaining() {
+                            return length - offset;
+                        }
+
+                        @Override
+                        public int write(Socket socket) throws IOException {
+                            int write = socket.write(response.getBody(), offset, length - offset);
+                            offset += write;
+                            return write;
+                        }
+                    });
+                } else {
+                    super.sendResponse(response);
+                }
+            }
+        };
     }
 
     @Override
