@@ -104,11 +104,11 @@ public class ServiceImpl extends ReplicaService {
         boolean visitDB = false;
 
         for (final String url : urls) {
-            if (!url.equals(config.selfUrl())) {
+            if (url.equals(config.selfUrl())) {
+                visitDB = true;
+            } else {
                 handleProxy(url, request)
                         .whenCompleteAsync((response, throwable) -> processResponse(response, session, processor));
-            } else {
-                visitDB = true;
             }
         }
 
