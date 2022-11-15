@@ -1,10 +1,10 @@
 package ok.dht.test.kosnitskiy.server;
 
-import java.util.Iterator;
-
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.kosnitskiy.dao.Entry;
 import one.nio.http.Response;
+
+import java.util.Iterator;
 
 public class BatchResponse extends Response {
     private final Iterator<Entry<MemorySegment>> iterator;

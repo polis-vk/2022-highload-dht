@@ -2,7 +2,6 @@ package ok.dht.test.kosnitskiy.server;
 
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
 import ok.dht.test.kosnitskiy.dao.BaseEntry;
 import ok.dht.test.kosnitskiy.dao.Config;
@@ -20,6 +19,7 @@ import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import one.nio.util.ByteArrayBuilder;
 
+import jdk.incubator.foreign.MemorySegment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -572,8 +572,10 @@ public class HttpServerImpl extends HttpServer {
                 return builder.append("0\r\n\r\n").buffer();
             }
             Entry<MemorySegment> entry = iterator.next();
-            builder.append(Integer.toHexString(entry.key().toCharArray().length + 1 + entry.value().toByteArray().length) + "\r\n");
-            byte[] value = new ByteArrayBuilder().append(String.valueOf(entry.key().toCharArray())).append('\n').append(entry.value().toByteArray()).trim();
+            builder.append(Integer.toHexString(entry.key().toCharArray().length + 1
+                    + entry.value().toByteArray().length) + "\r\n");
+            byte[] value = new ByteArrayBuilder().append(String.valueOf(entry.key().toCharArray()))
+                    .append('\n').append(entry.value().toByteArray()).trim();
             builder.append(value);
             builder.append("\r\n");
             if (!iterator.hasNext()) {
