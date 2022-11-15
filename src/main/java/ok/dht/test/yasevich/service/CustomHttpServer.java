@@ -1,13 +1,13 @@
 package ok.dht.test.yasevich.service;
 
 import ok.dht.ServiceConfig;
-import ok.dht.test.yasevich.chunking.ChunkedQueueItem;
+import ok.dht.test.yasevich.artyomdrozdov.MemorySegmentDao;
 import ok.dht.test.yasevich.chunking.ChunkedResponse;
+import ok.dht.test.yasevich.chunking.ChunkedQueueItem;
+import ok.dht.test.yasevich.dao.Config;
 import ok.dht.test.yasevich.dao.Entry;
 import ok.dht.test.yasevich.utils.AlmostLifoQueue;
 import ok.dht.test.yasevich.utils.TimeStampingDao;
-import ok.dht.test.yasevich.artyomdrozdov.MemorySegmentDao;
-import ok.dht.test.yasevich.dao.Config;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -40,7 +40,6 @@ class CustomHttpServer extends HttpServer {
 
     private final ExecutorService workersPool = new ThreadPoolExecutor(CPUs, CPUs, 0L,
             TimeUnit.MILLISECONDS, new AlmostLifoQueue(ServiceImpl.POOL_QUEUE_SIZE, 3));
-
 
     public CustomHttpServer(
             HttpServerConfig config,
