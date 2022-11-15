@@ -159,18 +159,18 @@ public class RequestParser {
     }
 
     public static class Param {
-        final Object param;
+        final Object value;
 
-        private Param(Object param) {
-            this.param = param;
+        private Param(Object value) {
+            this.value = value;
         }
 
         public String asString() {
-            return (String) param;
+            return (String) value;
         }
 
         public int asInt() {
-            return (int) param;
+            return (int) value;
         }
     }
 

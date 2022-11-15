@@ -28,7 +28,7 @@ public class MergeIterator implements Iterator<BaseEntry<String>> {
     private BaseEntry<String> polledEntry;
     private boolean hasNextCalled;
     private boolean hasNextResult;
-    private volatile int lastPosition = 0;
+    private volatile int lastPosition;
 
     public MergeIterator(PersistenceRangeDao dao, String from, String to, boolean includingMemory) {
         this.to = to;

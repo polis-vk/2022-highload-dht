@@ -15,7 +15,7 @@ import java.util.Iterator;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-public class RangeRequestHandler {
+public final class RangeRequestHandler {
 
     private static final String CRLF = "\r\n";
     private static final String LAST_CHUNK = "0\r\n\r\n";
@@ -24,6 +24,9 @@ public class RangeRequestHandler {
     private static final byte[] ERROR_CHUNK = buildErrorChunk();
 
     private static final Logger LOG = LoggerFactory.getLogger(RangeRequestHandler.class);
+
+    private RangeRequestHandler() {
+    }
 
     public static void handle(ExtendedSession session, Iterator<BaseEntry<String>> entriesIterator) {
         Response response = new Response(Response.OK);
@@ -99,7 +102,7 @@ public class RangeRequestHandler {
                 EntryChunk entryChunk = new EntryChunk(entry);
                 if (byteBuffer.remaining() < entryChunk.sizeForBuffer) {
                     byteBuffer.flip();
-                    int written = socket.write(byteBuffer);
+                    final int written = socket.write(byteBuffer);
                     byteBuffer.rewind();
                     if (entryChunk.sizeForBuffer > byteBuffer.limit()) {
                         byteBuffer = ByteBuffer.allocate(entryChunk.sizeForBuffer + LAST_CHUNK_BYTES.length);
@@ -113,9 +116,9 @@ public class RangeRequestHandler {
             byteBuffer.limit(byteBuffer.capacity());
             byteBuffer.put(LAST_CHUNK_BYTES);
             byteBuffer.flip();
-            int write = socket.write(byteBuffer);
+            int written = socket.write(byteBuffer);
             byteBuffer.rewind();
-            return write;
+            return written;
         }
     }
 

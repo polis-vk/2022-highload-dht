@@ -24,7 +24,8 @@ public class ExtendedSession extends HttpSession {
         }
         server.incRequestsProcessed();
         write(queueItem);
-        if ((this.handling = handling = pipeline.pollFirst()) != null) {
+        this.handling = handling = pipeline.pollFirst();
+        if (handling != null) {
             if (handling == FIN) {
                 scheduleClose();
             } else {
