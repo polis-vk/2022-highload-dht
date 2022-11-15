@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
-@ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+@ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
 public class Factory implements ServiceFactory.Factory {
     private static final int NUMBER_VIRTUAL_NODES_PER_SHARD = 3;
     private static final int SELECTOR_POOL_SIZE = Runtime.getRuntime().availableProcessors() / 2;

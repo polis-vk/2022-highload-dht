@@ -6,6 +6,7 @@ import ok.dht.test.gerasimov.Factory;
 import ok.dht.test.gerasimov.client.CircuitBreakerClient;
 import ok.dht.test.gerasimov.exception.EntityServiceException;
 import ok.dht.test.gerasimov.exception.ServerException;
+import ok.dht.test.gerasimov.sharding.ConsistentHash;
 import one.nio.http.HttpServer;
 import org.iq80.leveldb.DB;
 
@@ -29,16 +30,25 @@ public class StartStopService implements Service {
         try {
             this.dao = Factory.createDao(serviceConfig.workingDir());
 
+            ConsistentHash<String> consistentHash = Factory.createConsistentHash(serviceConfig);
+
             HandleService entityService = new EntityService(
                     dao,
-                    Factory.createConsistentHash(serviceConfig),
+                    consistentHash,
                     serviceConfig.selfPort(),
                     new CircuitBreakerClient()
             );
 
+            HandleService entitiesService = new EntitiesService(
+                    dao
+            );
+
             this.httpServer = Factory.createHttpServer(
                     serviceConfig,
-                    Map.of(entityService.getEndpoint(), entityService)
+                    Map.of(
+                            entityService.getEndpoint(), entityService,
+                            entitiesService.getEndpoint(), entitiesService
+                    )
             );
 
             httpServer.start();

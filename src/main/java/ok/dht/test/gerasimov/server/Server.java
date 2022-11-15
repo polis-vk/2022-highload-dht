@@ -1,5 +1,6 @@
 package ok.dht.test.gerasimov.server;
 
+import ok.dht.test.gerasimov.ChunkedHttpSession;
 import ok.dht.test.gerasimov.exception.ServerException;
 import ok.dht.test.gerasimov.service.HandleService;
 import ok.dht.test.gerasimov.utils.ResponseEntity;
@@ -8,6 +9,7 @@ import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.net.Session;
+import one.nio.net.Socket;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
@@ -63,6 +65,11 @@ public final class Server extends HttpServer {
         } catch (RejectedExecutionException e) {
             session.sendResponse(ResponseEntity.serviceUnavailable());
         }
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) {
+        return new ChunkedHttpSession(socket, this);
     }
 
     private void wrappedHandleRequest(Request request, HttpSession session) {
