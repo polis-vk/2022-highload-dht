@@ -2,8 +2,8 @@ package ok.dht.test.yasevich.service;
 
 import ok.dht.ServiceConfig;
 import ok.dht.test.yasevich.artyomdrozdov.MemorySegmentDao;
-import ok.dht.test.yasevich.chunking.ChunkedResponse;
 import ok.dht.test.yasevich.chunking.ChunkedQueueItem;
+import ok.dht.test.yasevich.chunking.ChunkedResponse;
 import ok.dht.test.yasevich.dao.Config;
 import ok.dht.test.yasevich.dao.Entry;
 import ok.dht.test.yasevich.utils.AlmostLifoQueue;
