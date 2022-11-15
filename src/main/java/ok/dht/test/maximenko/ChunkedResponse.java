@@ -3,6 +3,7 @@ package ok.dht.test.maximenko;
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.maximenko.dao.Entry;
 import one.nio.http.Response;
+import one.nio.util.ByteArrayBuilder;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -14,8 +15,8 @@ public class ChunkedResponse extends Response {
     private final Iterator<Entry<MemorySegment>> iterator;
     private final String resultCode;
 
-    public boolean last() {
-        return !iterator.hasNext();
+    public boolean hasNext() {
+        return iterator.hasNext();
     }
 
     public ChunkedResponse(String resultCode) {
@@ -30,27 +31,55 @@ public class ChunkedResponse extends Response {
         this.resultCode = resultCode;
     }
 
-    public byte[] getNextChunk() {
-        Entry<MemorySegment> entry = iterator.next();
-
+    public byte[] initialChunk() {
         Response response = new Response(resultCode);
-        int chunkSize = (int) (entry.key().byteSize() + Character.SIZE / 8 + entry.value().byteSize());
-        response.addHeader("chunk-size: " + chunkSize);
+        response.addHeader("Transfer-Encoding: chunked");
+        response.addHeader("Content-Type: text/plain");
+        response.addHeader("Connection: keep-alive");
 
-        ByteBuffer body = ByteBuffer.allocate(chunkSize);
-        body.put(entry.key().toByteArray());
-        body.put("\n".getBytes(StandardCharsets.UTF_8));
-        body.put(entry.value().toByteArray());
-
-        response.setBody(body.array());
         return response.toBytes(true);
     }
 
-    public byte[] finalChunk() {
-        Response response = new Response(resultCode);
-        response.addHeader("chunk-size: 0");
-        response.setBody(Response.EMPTY);
+    private byte[] getValueWithoutTime(Entry<MemorySegment> entry) {
+        ByteBuffer valueWithTime = entry.value().asByteBuffer();
+        long time = valueWithTime.getLong();
+        short haveValue = valueWithTime.getShort();
+        if (haveValue == 0) {
+            return new byte[0];
+        }
+        byte[] valueWithoutTime = new byte[valueWithTime.remaining()];
+        valueWithTime.get(valueWithoutTime);
+        return valueWithoutTime;
+    }
+    public byte[] getNextChunk() {
+        Entry<MemorySegment> entry = iterator.next();
 
-        return response.toBytes(true);
+        byte[] key  = entry.key().toByteArray();
+        byte[] value = getValueWithoutTime(entry);
+        int chunkSize = key.length + 1 + value.length;
+        String chunkSizeString = Integer.toHexString(chunkSize);
+        int estimatedSize = chunkSizeString.length()  + 2 + chunkSize + 2;
+
+        ByteArrayBuilder builder = new ByteArrayBuilder(estimatedSize);
+        builder.append(chunkSizeString);
+        builder.append('\r').append('\n');
+
+        builder.append(key);
+        builder.append('\n');
+        builder.append(value);
+        builder.append('\r').append('\n');
+
+        return builder.buffer();
+    }
+
+    public byte[] finalChunk() {
+        int estimatedSize = 5;
+        ByteArrayBuilder builder = new ByteArrayBuilder(estimatedSize);
+        String chunkSizeString = Integer.toHexString(0);
+        builder.append(chunkSizeString);
+        builder.append('\r').append('\n');
+        builder.append('\r').append('\n');
+
+        return builder.buffer();
     }
 }

@@ -41,6 +41,7 @@ public class DatabaseHttpServer extends HttpServer {
     private static final int flushDaoThresholdBytes = 10000000; // 100 MB
     private static final int DELETED_RECORD_CODE = 409;
     private static final String REQUEST_PATH = "/v0/entity";
+    private static final String RANGE_REQUEST_PATH = "/v0/entities";
     private static final String NOT_SPREAD_HEADER = "notSpread";
     private static final String NOT_SPREAD_HEADER_VALUE = "true";
     private static final String TIME_HEADER = "time";
@@ -77,20 +78,35 @@ public class DatabaseHttpServer extends HttpServer {
                 if (response instanceof ChunkedResponse) {
                     ChunkedResponse chunkedResponse = (ChunkedResponse) response;
                     super.write(new QueueItem() {
+                                    private boolean init = false;
+
                                     @Override
                                     public int write(Socket socket) throws IOException {
-                                        byte[] body = chunkedResponse.getNextChunk();
-                                        int written = socket.write(body, 0, body.length);
-                                        if (chunkedResponse.last()) {
-                                            body = chunkedResponse.finalChunk();
-                                            written += socket.write(body, 0, body.length);
+                                        if (!init) {
+                                            byte[] body = chunkedResponse.initialChunk();
+                                            socket.write(body, 0, body.length);
+                                            init = true;
                                         }
-                                        return written;
+                                        if (chunkedResponse.hasNext()) {
+                                            byte[] body = chunkedResponse.getNextChunk();
+                                            return socket.write(body, 0, body.length);
+                                        }
+                                        return 0;
                                     }
 
                                     @Override
                                     public int remaining() {
-                                        return chunkedResponse.last() ? 0 : 1;
+                                        return chunkedResponse.hasNext() ? 1 : 0;
+                                    }
+
+                                    @Override
+                                    public void release() {
+                                        byte[] body = chunkedResponse.finalChunk();
+                                        try {
+                                            socket.write(body, 0, body.length);
+                                        } catch (IOException e) {
+                                            throw new RuntimeException(e);
+                                        }
                                     }
                                 }
                     );
@@ -107,14 +123,14 @@ public class DatabaseHttpServer extends HttpServer {
     }
 
     public void handleRequestTask(Request request, HttpSession session) {
-        if (!request.getPath().equals(REQUEST_PATH)) {
-            sendResponse(session, BAD_REQUEST);
+        if (request.getPath().equals(RANGE_REQUEST_PATH)) {
+            handleRangeRequest(session, request);
             return;
         }
 
-        String startString = request.getParameter("start=");
-        if(HttpUtils.isArgumentCorrect(startString)) {
-            handleRangeRequest(session, request, Integer.parseInt(startString));
+        if (!request.getPath().equals(REQUEST_PATH)) {
+            sendResponse(session, BAD_REQUEST);
+            return;
         }
 
         String key = request.getParameter("id=");
@@ -138,11 +154,14 @@ public class DatabaseHttpServer extends HttpServer {
         handleMultiNodeRequest(session, request, key);
     }
 
-    private void handleRangeRequest(HttpSession session, Request request, Integer start) {
-        String endString = request.getParameter("end=");
-        final Integer end = HttpUtils.isArgumentCorrect(endString)
-                ? Integer.parseInt(endString) : null;
+    private void handleRangeRequest(HttpSession session, Request request) {
+        String start = request.getParameter("start=");
+        String end   = request.getParameter("end=");
 
+        if (!HttpUtils.isArgumentCorrect(start)) {
+            sendResponse(session, BAD_REQUEST);
+            return;
+        }
         List<Iterator<Entry<MemorySegment>>> allNodesIterators = getClusterRangeIterators(start, end);
         Iterator<Entry<MemorySegment>> mergeIterator;
         try {
@@ -155,10 +174,15 @@ public class DatabaseHttpServer extends HttpServer {
         sendResponse(session, new ChunkedResponse(Response.OK, mergeIterator));
     }
 
-    private List<Iterator<Entry<MemorySegment>>> getClusterRangeIterators(Integer start, Integer end) {
+    private List<Iterator<Entry<MemorySegment>>> getClusterRangeIterators(String startString, String endString) {
+
+        MemorySegment start = startString == null ? null :
+                MemorySegment.ofArray(startString.getBytes(StandardCharsets.UTF_8));
+        MemorySegment end = endString == null ? null :
+                MemorySegment.ofArray(endString.getBytes(StandardCharsets.UTF_8));
         List<Iterator<Entry<MemorySegment>>> result = new ArrayList<>();
         try {
-            result.add(dao.get(null, null));
+            result.add(dao.get(start, end));
         } catch (IOException e) {
             LOGGER.log(Level.WARNING, "Dao get range error");
             return result;
