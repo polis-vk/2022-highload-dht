@@ -32,8 +32,8 @@ public final class ReplicaResponsesHandler {
         // Если мапа пустая и CustomHeaders.REQUEST_TIME отсутствует, то requestTime принимаем за 0 и делаем одну
         // запись в мапу. Также счетчики позволяют немедленно выполнить запросы как Continue к другим репликам если
         // кворум уже набран или количество отказов гарантированно не позволит его собрать и эти задачи еще не начались.
-        int ack = requestParser.ack();
-        int failLimit = requestParser.from() - ack + 1;
+        int ack = requestParser.getParam(RequestParser.ACK_PARAM_NAME).asInt();
+        int failLimit = requestParser.getParam(RequestParser.FROM_PARAM_NAME).asInt() - ack + 1;
         AtomicInteger failsCounter = new AtomicInteger(0);
         AtomicInteger successCounter = new AtomicInteger(0);
         NavigableMap<Long, Response> responses = new ConcurrentSkipListMap<>();

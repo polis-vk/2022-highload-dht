@@ -3,12 +3,14 @@ package ok.dht.test.lutsenko.service;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.lutsenko.dao.common.BaseEntry;
 import ok.dht.test.lutsenko.dao.common.DaoConfig;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
 import one.nio.server.SelectorThread;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
@@ -20,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -72,24 +75,41 @@ public class DemoService implements Service {
         server = new HttpServer(ServiceUtils.createConfigFromPort(config.selfPort())) {
 
             @Override
+            public HttpSession createSession(Socket socket) {
+                return new ExtendedSession(socket, this);
+            }
+
+            @Override
             public void handleRequest(Request request, HttpSession session) {
                 long requestTime = System.currentTimeMillis();
                 requestExecutor.execute(new SessionRunnable(session, () -> {
                     if (isProxyRequestAndHandle(request, session)) {
                         return;
                     }
-                    RequestParser requestParser = new RequestParser(request)
-                            .checkPath()
-                            .checkSuccessStatusCodes()
-                            .checkId()
-                            .checkAckFrom(config.clusterUrls().size());
-                    if (requestParser.isFailed()) {
-                        ServiceUtils.sendResponse(session, requestParser.failStatus());
-                        return;
+                    switch (request.getPath()) {
+                        case "/v0/entity" -> RequestParser.parse(request)
+                                .checkSuccessStatusCodes()
+                                .checkId()
+                                .checkAckFrom(config.clusterUrls().size())
+                                .onSuccess(requestParser -> {
+                                    List<CompletableFuture<Response>> replicaResponsesFutures
+                                            = createReplicaResponsesFutures(requestParser, requestTime);
+                                    ReplicaResponsesHandler.handle(session, requestParser, replicaResponsesFutures);
+                                })
+                                .onFail(rp -> ServiceUtils.sendResponse(session, rp.failStatus()));
+                        case "/v0/entities" -> RequestParser.parse(request)
+                                .checkSuccessStatusCodes()
+                                .checkStart()
+                                .checkEnd()
+                                .onSuccess(requestParser -> {
+                                    String start = requestParser.getParam(RequestParser.START_PARAM_NAME).asString();
+                                    String end = requestParser.getParam(RequestParser.END_PARAM_NAME).asString();
+                                    Iterator<BaseEntry<String>> entriesIterator = daoHandler.getDao().get(start, end);
+                                    RangeRequestHandler.handle(ExtendedSession.of(session), entriesIterator);
+                                })
+                                .onFail(rp -> ServiceUtils.sendResponse(session, rp.failStatus()));
+                        default -> ServiceUtils.sendResponse(session, Response.BAD_REQUEST);
                     }
-                    List<CompletableFuture<Response>> replicaResponsesFutures
-                            = createReplicaResponsesFutures(requestParser, requestTime);
-                    ReplicaResponsesHandler.handle(session, requestParser, replicaResponsesFutures);
                 }));
             }
 
@@ -147,10 +167,11 @@ public class DemoService implements Service {
 
     private List<CompletableFuture<Response>> createReplicaResponsesFutures(RequestParser requestParser,
                                                                             long requestTime) {
-        String id = requestParser.id();
         Request request = requestParser.getRequest();
-        List<CompletableFuture<Response>> replicaResponsesFutures = new ArrayList<>(requestParser.from());
-        for (int nodeNumber : getReplicaNodeNumbers(id, requestParser.from())) {
+        String id = requestParser.getParam(RequestParser.ID_PARAM_NAME).asString();
+        int from = requestParser.getParam(RequestParser.FROM_PARAM_NAME).asInt();
+        List<CompletableFuture<Response>> replicaResponsesFutures = new ArrayList<>(from);
+        for (int nodeNumber : getReplicaNodeNumbers(id, from)) {
             replicaResponsesFutures.add(nodeNumber == selfNodeNumber
                     ? CompletableFuture.completedFuture(daoHandler.proceed(id, request, requestTime))
                     : proxyHandler.proceed(request, nodesNumberToUrlMap.get(nodeNumber), requestTime)
@@ -191,7 +212,7 @@ public class DemoService implements Service {
         return Math.abs(Hash.murmur3(url)) % HASH_SPACE;
     }
 
-    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

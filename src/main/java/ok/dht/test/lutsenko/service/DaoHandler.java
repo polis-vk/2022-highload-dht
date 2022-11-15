@@ -63,6 +63,10 @@ public class DaoHandler implements Closeable {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
+    public PersistenceRangeDao getDao() {
+        return dao;
+    }
+
     @Override
     public void close() throws IOException {
         dao.close();
