@@ -1,4 +1,4 @@
-package ok.dht.test.armenakyan.distribution.model;
+package ok.dht.test.armenakyan.dao.model;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;

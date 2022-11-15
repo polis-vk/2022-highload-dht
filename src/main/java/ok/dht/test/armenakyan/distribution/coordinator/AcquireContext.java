@@ -1,6 +1,6 @@
 package ok.dht.test.armenakyan.distribution.coordinator;
 
-import ok.dht.test.armenakyan.distribution.model.Value;
+import ok.dht.test.armenakyan.dao.model.Value;
 import ok.dht.test.armenakyan.util.ServiceUtils;
 import one.nio.http.HttpSession;
 import one.nio.http.Response;

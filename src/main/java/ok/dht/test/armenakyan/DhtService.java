@@ -3,6 +3,7 @@ package ok.dht.test.armenakyan;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.armenakyan.distribution.SelfNodeHandler;
 import ok.dht.test.armenakyan.distribution.coordinator.ClusterCoordinator;
 import ok.dht.test.armenakyan.distribution.hashing.MD5KeyHasher;
 import ok.dht.test.armenakyan.util.ServiceUtils;
@@ -51,7 +52,11 @@ public class DhtService implements Service {
                 this
         );
 
-        coordinator = new ClusterCoordinator(serviceConfig, new MD5KeyHasher(), internalPool);
+        coordinator = new ClusterCoordinator(
+                serviceConfig,
+                new MD5KeyHasher(),
+                new SelfNodeHandler(serviceConfig.workingDir(), internalPool)
+        );
 
         httpServer.start();
 
@@ -115,7 +120,7 @@ public class DhtService implements Service {
         coordinator.replicate(id, request, session, ack, from);
     }
 
-    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig serviceConfig) {

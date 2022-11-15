@@ -27,9 +27,9 @@ public class ClusterCoordinator implements Closeable {
 
     public ClusterCoordinator(ServiceConfig config,
                               KeyHasher keyHasher,
-                              ExecutorService internalPool) throws IOException {
+                              SelfNodeHandler daoHandler) throws IOException {
         this.clientPool = Executors.newFixedThreadPool(CLIENT_WORKERS);
-        this.daoHandler = new SelfNodeHandler(config.workingDir(), internalPool);
+        this.daoHandler = daoHandler;
         this.nodes = initializeNodes(config.selfUrl(), config.clusterUrls());
         this.consistentHashing = new ConsistentHashing(nodes, keyHasher);
     }
