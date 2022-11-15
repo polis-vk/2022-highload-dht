@@ -1,6 +1,7 @@
 package ok.dht.test.gerasimov.service;
 
 import ok.dht.test.gerasimov.ChunkedHttpSession;
+import ok.dht.test.gerasimov.exception.EntitiesServiceException;
 import ok.dht.test.gerasimov.exception.EntityServiceException;
 import ok.dht.test.gerasimov.model.DaoEntry;
 import ok.dht.test.gerasimov.utils.ObjectMapper;
@@ -36,14 +37,10 @@ public class EntitiesService implements HandleService {
             return;
         }
 
-        Range range = new Range(dao.iterator(), parameters);
-        ChunkedHttpSession chunkedHttpSession = (ChunkedHttpSession) session;
-
-        try {
-            chunkedHttpSession.sendResponseWithSupplier(new Response(Response.OK), range::get);
-        } catch (IOException e) {
-            System.err.println("error");
-        }
+        ((ChunkedHttpSession) session).sendChunkedResponse(
+                new Response(Response.OK),
+                new Range(dao.iterator(), parameters)::get
+        );
     }
 
     @Override
@@ -93,14 +90,10 @@ public class EntitiesService implements HandleService {
     }
 
     private static class Range {
-        public static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
         public static final byte[] NEW_LINE = "\n".getBytes(StandardCharsets.UTF_8);
-        public static final byte[] LAST_BLOCK = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
 
         private final DBIterator iterator;
         private final Parameters parameters;
-
-        private boolean endMessage;
 
         public Range(DBIterator iterator, Parameters parameters) {
             this.iterator = iterator;
@@ -109,54 +102,37 @@ public class EntitiesService implements HandleService {
         }
 
         public byte[] get() {
-            if (endMessage) return null;
+            try {
+                if (iterator.hasNext()) {
+                    Map.Entry<byte[], byte[]> entry = iterator.next();
 
-            if (iterator.hasNext()) {
-                Map.Entry<byte[], byte[]> entry = iterator.next();
+                    if (Arrays.equals(entry.getKey(), parameters.end.getBytes(StandardCharsets.UTF_8))) {
+                        iterator.close();
+                        return null;
+                    }
 
-                if (Arrays.equals(entry.getKey(), parameters.end.getBytes(StandardCharsets.UTF_8))) {
-                    endMessage = true;
-                    return LAST_BLOCK;
+                    return createData(entry);
                 }
 
-                return getChunk(entry);
+                return null;
+            } catch (IOException e) {
+                throw new EntitiesServiceException("Can not close iterator", e);
             }
-
-            endMessage = true;
-            return LAST_BLOCK;
         }
 
-        private byte[] getChunk(Map.Entry<byte[], byte[]> entry) {
-            final byte[] key = entry.getKey();
-            final DaoEntry daoEntry;
+        private static byte[] createData(Map.Entry<byte[], byte[]> entry) {
             try {
-                daoEntry = ObjectMapper.deserialize(entry.getValue());
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            } catch (ClassNotFoundException e) {
-                throw new RuntimeException(e);
+                final byte[] key = entry.getKey();
+                final byte[] value = ((DaoEntry) ObjectMapper.deserialize(entry.getValue())).getValue();
+
+                return ByteBuffer.allocate(key.length + NEW_LINE.length + value.length)
+                        .put(key)
+                        .put(NEW_LINE)
+                        .put(value)
+                        .array();
+            } catch (IOException | ClassNotFoundException e) {
+                throw new EntitiesServiceException("Can not deserialize DaoEntry", e);
             }
-
-            final int dataLength = key.length + NEW_LINE.length + daoEntry.getValue().length;
-
-            final byte[] hexLength = Integer.toHexString(dataLength).getBytes(StandardCharsets.UTF_8);
-
-            final int chunkLength = hexLength.length + CRLF.length + dataLength + CRLF.length;
-
-            final ByteBuffer chunk = ByteBuffer.allocate(chunkLength);
-
-            chunk.put(hexLength);
-            chunk.put(CRLF);
-            chunk.put(key);
-            chunk.put(NEW_LINE);
-            chunk.put(daoEntry.getValue());
-            chunk.put(CRLF);
-            chunk.position(0);
-
-            byte[] bytes = new byte[chunk.remaining()];
-            chunk.get(bytes);
-
-            return bytes;
         }
     }
 }
