@@ -2,6 +2,7 @@ package ok.dht.test.kurdyukov;
 
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
+import ok.dht.test.kurdyukov.service.ServiceImpl;
 
 import java.io.IOException;
 import java.nio.file.Path;
