@@ -61,7 +61,7 @@ public class TycoonHttpServer extends HttpServer {
         }
     }
 
-    private void handleEntityServiceRequest(Request request, HttpSession session) throws IOException {
+    private void handleEntityServiceRequest(Request request, HttpSession session) {
         String idParameter = request.getParameter("id=");
         if (idParameter == null || idParameter.isEmpty()) {
             sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
@@ -76,16 +76,20 @@ public class TycoonHttpServer extends HttpServer {
 
     private void handleRangeServiceRequest(Request request, HttpSession session) {
         String startParameter = request.getParameter("start=");
-        String endParameter = request.getParameter("start=");
+        String endParameter = request.getParameter("end=");
         if (
             startParameter == null || startParameter.isEmpty()
-                || endParameter == null || endParameter.isEmpty()
         ) {
             sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
+        } else if (request.getMethod() != Request.METHOD_GET) {
+            sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY), session);
         } else {
-            EntityStreamQueueItem entityStreamQueueItem = rangeService.handleRange(request);
+            EntityChunkStreamQueueItem entityChunkStreamQueueItem = rangeService.handleRange(
+                startParameter,
+                endParameter
+            );
             try {
-                session.write(entityStreamQueueItem);
+                session.write(entityChunkStreamQueueItem);
             } catch (IOException e) {
                 onSessionException(session, e);
             }

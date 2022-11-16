@@ -1,5 +1,6 @@
 package ok.dht.test.siniachenko.service;
 
+import ok.dht.test.siniachenko.Utils;
 import one.nio.util.Utf8;
 
 import java.util.Iterator;
@@ -22,7 +23,7 @@ public class InRangeEntityIterator implements Iterator<Map.Entry<byte[], byte[]>
     private void filterTillNextInRange() {
         while (tempElement == null && srcIterator.hasNext()) {
             Map.Entry<byte[], byte[]> element = srcIterator.next();
-            if (inRange(element)) {
+            if (inRange(element) && !Utils.readFlagDeletedFromBytes(element.getValue())) {
                 tempElement = element;
             }
         }
@@ -30,7 +31,7 @@ public class InRangeEntityIterator implements Iterator<Map.Entry<byte[], byte[]>
 
     private boolean inRange(Map.Entry<byte[], byte[]> element) {
         String key = Utf8.toString(element.getKey());
-        return firstKey.compareTo(key) <= 0 && key.compareTo(lastKey) <= 0;
+        return firstKey.compareTo(key) <= 0 && (lastKey == null || key.compareTo(lastKey) < 0);
     }
 
     @Override
@@ -45,6 +46,8 @@ public class InRangeEntityIterator implements Iterator<Map.Entry<byte[], byte[]>
         if (tempElement == null) {
             throw new NoSuchElementException();
         }
-        return tempElement;
+        Map.Entry<byte[], byte[]> result = tempElement;
+        tempElement = null;
+        return result;
     }
 }

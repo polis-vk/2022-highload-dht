@@ -1,6 +1,5 @@
 package ok.dht.test.siniachenko.service;
 
-import one.nio.http.Request;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.DBIterator;
 import org.slf4j.Logger;
@@ -13,20 +12,23 @@ public class RangeService {
     private static final Logger LOG = LoggerFactory.getLogger(RangeService.class);
 
     private final DB levelDb;
+    private final ChunkedTransferEncoder chunkedTransferEncoder;
 
     public RangeService(DB levelDb) {
         this.levelDb = levelDb;
+        chunkedTransferEncoder = new ChunkedTransferEncoder();
     }
 
-    public EntityStreamQueueItem handleRange(Request request) {
-        String start = request.getParameter("start");
-        String end = request.getParameter("end");
+    public EntityChunkStreamQueueItem handleRange(String start, String end) {
         DBIterator iterator = levelDb.iterator();
+        iterator.seekToFirst();
         Iterator<Map.Entry<byte[], byte[]>> inRangeIterator = new InRangeEntityIterator(
             iterator,
             start,
             end
         );
-        return new EntityStreamQueueItem(inRangeIterator);
+        return chunkedTransferEncoder.encodeEntityChunkStream(
+            inRangeIterator
+        );
     }
 }
