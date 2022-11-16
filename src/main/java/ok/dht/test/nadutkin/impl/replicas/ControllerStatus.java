@@ -11,6 +11,6 @@ public class ControllerStatus {
 
     public ControllerStatus(Long timestamp, byte[] answer) {
         this.timestamp = timestamp;
-        this.answer = answer.clone();
+        this.answer = answer;
     }
 }

@@ -146,7 +146,7 @@ public class ServiceImpl extends ReplicaService {
         return new Response(Response.OK, getBytes(storedData.toString()));
     }
 
-    @ServiceFactory(stage = 4, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
+    @ServiceFactory(stage = 5, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
