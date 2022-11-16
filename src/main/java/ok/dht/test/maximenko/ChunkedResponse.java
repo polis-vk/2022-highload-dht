@@ -10,15 +10,16 @@ public class ChunkedResponse extends Response {
 
     private final Iterator<Entry<MemorySegment>> iterator;
     private final String resultCode;
-
+    final boolean toClient;
     public boolean hasNext() {
         return iterator.hasNext();
     }
 
-    public ChunkedResponse(String resultCode, Iterator<Entry<MemorySegment>> iterator) {
+    public ChunkedResponse(String resultCode, Iterator<Entry<MemorySegment>> iterator, boolean toClient) {
         super(resultCode);
         this.iterator = iterator;
         this.resultCode = resultCode;
+        this.toClient = toClient;
     }
 
     public byte[] initialChunk() {
@@ -30,12 +31,15 @@ public class ChunkedResponse extends Response {
         return response.toBytes(true);
     }
 
-    public byte[] getNextChunk() {
+    public byte[] getNextChunk(boolean toClient) {
         Entry<MemorySegment> entry = iterator.next();
 
         byte[] key  = entry.key().toByteArray();
         byte[] value = entry.value().toByteArray();
         int chunkSize = key.length + 1 + value.length;
+        if (!toClient) {
+            chunkSize += 1;
+        }
         String chunkSizeString = Integer.toHexString(chunkSize);
         int estimatedSize = chunkSizeString.length()  + 2 + chunkSize + 2;
 
@@ -46,6 +50,9 @@ public class ChunkedResponse extends Response {
         builder.append(key);
         builder.append('\n');
         builder.append(value);
+        if (!toClient) {
+            builder.append('\n');
+        }
         builder.append('\r').append('\n');
 
         return builder.buffer();
@@ -60,5 +67,9 @@ public class ChunkedResponse extends Response {
         builder.append('\r').append('\n');
 
         return builder.buffer();
+    }
+
+    public boolean toClient() {
+        return toClient;
     }
 }

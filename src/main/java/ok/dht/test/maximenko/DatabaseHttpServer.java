@@ -2,7 +2,6 @@ package ok.dht.test.maximenko;
 
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
-import ok.dht.test.maximenko.dao.BaseEntry;
 import ok.dht.test.maximenko.dao.BorderedMergeIterator;
 import ok.dht.test.maximenko.dao.Config;
 import ok.dht.test.maximenko.dao.Entry;
@@ -17,24 +16,15 @@ import one.nio.net.Socket;
 import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -48,16 +38,12 @@ public class DatabaseHttpServer extends HttpServer {
     private static final int DELETED_RECORD_CODE = 409;
     private static final String REQUEST_PATH = "/v0/entity";
     private static final String RANGE_REQUEST_PATH = "/v0/entities";
-    private static final String NOT_SPREAD_HEADER = "notSpread";
-    private static final String NOT_SPREAD_HEADER_VALUE = "true";
-    private static final String TIME_HEADER = "time";
     private static final Response BAD_REQUEST = new Response(Response.BAD_REQUEST, Response.EMPTY);
     private static final Response NOT_FOUND = new Response(Response.NOT_FOUND, Response.EMPTY);
-    private static final Logger LOGGER = Logger.getLogger(String.valueOf(DatabaseService.class));
+    private static final Logger LOGGER = Logger.getLogger(String.valueOf(DatabaseHttpServer.class));
     private static final int REPLICA_FACTOR = 1;
     private MemorySegmentDao dao;
     private TimeDaoWrapper timeDaoWrapper;
-
     private final KeyDispatcher keyDispatcher;
     private final HttpClient httpClient;
     private ExecutorService requestHandlers;
@@ -94,7 +80,7 @@ public class DatabaseHttpServer extends HttpServer {
                                             init = true;
                                         }
                                         if (chunkedResponse.hasNext()) {
-                                            byte[] body = chunkedResponse.getNextChunk();
+                                            byte[] body = chunkedResponse.getNextChunk(chunkedResponse.toClient());
                                             return socket.write(body, 0, body.length);
                                         }
                                         return 0;
@@ -145,8 +131,7 @@ public class DatabaseHttpServer extends HttpServer {
             return;
         }
 
-        String spreadHeaderValue = request.getHeader(NOT_SPREAD_HEADER);
-        if (spreadHeaderValue != null && spreadHeaderValue.equals(": " + NOT_SPREAD_HEADER_VALUE)) {
+        if (ClusterInteractions.isItRequestFRomOtherNode(request)) {
             long time = HttpUtils.getTimeFromRequest(request);
             try {
                 sendResponse(session, localRequest(key, request, time).get());
@@ -170,8 +155,8 @@ public class DatabaseHttpServer extends HttpServer {
         }
 
         List<Iterator<Entry<MemorySegment>>> nodesIterators;
-        String spreadHeaderValue = request.getHeader(NOT_SPREAD_HEADER);
-        if (spreadHeaderValue != null && spreadHeaderValue.equals(": " + NOT_SPREAD_HEADER_VALUE)) {
+        boolean toNode = ClusterInteractions.isItRequestFRomOtherNode(request);
+        if (toNode) {
             nodesIterators = thisNodeIterator(start, end);
         } else {
             List<Integer> coveringNodes = keyDispatcher.getNodesCoverage(REPLICA_FACTOR);
@@ -186,87 +171,26 @@ public class DatabaseHttpServer extends HttpServer {
             return;
         }
 
-        sendResponse(session, new ChunkedResponse(Response.OK, mergeIterator));
+        sendResponse(session, new ChunkedResponse(Response.OK, mergeIterator, !toNode));
     }
 
-    private List<Iterator<Entry<MemorySegment>>> getClusterRangeIterators(List<Integer> coveringNodes, String startString, String endString) {
+    private List<Iterator<Entry<MemorySegment>>> getClusterRangeIterators(List<Integer> coveringNodes,
+                                                                          String startString,
+                                                                          String endString) {
         List<Iterator<Entry<MemorySegment>>> result = thisNodeIterator(startString, endString);
         for (Integer node : coveringNodes) {
             if (node != selfId) {
-                result.add(getProxyRange(clusterConfig[node], startString, endString));
+                result.add(ClusterInteractions.getProxyRange(RANGE_REQUEST_PATH + clusterConfig[node],
+                        startString,
+                        endString,
+                        httpClient));
             }
         }
 
         return result;
     }
 
-    private Iterator<Entry<MemorySegment>> getProxyRange(String url, String start, String end) {
-        String path = end == null ? url + RANGE_REQUEST_PATH + "?start=" + start :
-                url + RANGE_REQUEST_PATH + "?start=" + start + "&end=" + end;
 
-        HttpRequest httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create(path))
-                .timeout(Duration.ofSeconds(1))
-                .GET()
-                .header(NOT_SPREAD_HEADER, NOT_SPREAD_HEADER_VALUE)
-                .build();
-
-
-        HttpResponse<InputStream> response;
-
-        try {
-            response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofInputStream());
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Couldn't arrange range request to other node");
-            return Collections.emptyIterator();
-        }
-
-        if (response.statusCode() != 200) {
-            return Collections.emptyIterator();
-        }
-
-        InputStream value = response.body();
-        BufferedReader reader = new BufferedReader(new InputStreamReader(value));
-        return new Iterator<>() {
-            Entry<MemorySegment> nextValue = null;
-            boolean hasNext = true;
-
-            {
-                next();
-            }
-            @Override
-            public boolean hasNext() {
-                return hasNext;
-            }
-
-            @Override
-            public Entry<MemorySegment> next() {
-                Entry<MemorySegment> tmp = nextValue;
-                String key, value;
-                try {
-                    key = reader.readLine();
-                    value = reader.readLine();
-                } catch (IOException e) {
-                    close();
-                    return tmp;
-                }
-                if (key == null || value == null) {
-                    close();
-                } else {
-                    nextValue = new BaseEntry<>(MemorySegment.ofArray(key.getBytes(StandardCharsets.UTF_8)),
-                            MemorySegment.ofArray(value.getBytes(StandardCharsets.UTF_8)));
-                }
-                return tmp;
-            }
-
-            private void close() {
-                hasNext = false;
-                nextValue = null;
-            }
-
-
-        };
-    }
 
     private List<Iterator<Entry<MemorySegment>>> thisNodeIterator(String startString, String endString) {
 
@@ -309,7 +233,8 @@ public class DatabaseHttpServer extends HttpServer {
         long currentTime = (new Date()).getTime();
         for (Integer replica : replicasIds) {
             if (replica != selfId) {
-                response = proxyRequest(replica, key, request, currentTime);
+                response = ClusterInteractions.proxyRequest(clusterConfig[replica] + REQUEST_PATH,
+                        key, request, currentTime, httpClient);
             } else {
                 response = localRequest(key, request, currentTime);
             }
@@ -391,38 +316,6 @@ public class DatabaseHttpServer extends HttpServer {
         });
     }
 
-    private CompletableFuture<Response> proxyRequest(int targetNodeId, String key, Request request, long time) {
-        byte[] requestBody = request.getBody();
-        if (requestBody == null) {
-            requestBody = new byte[0];
-        }
-        HttpRequest httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create(clusterConfig[targetNodeId] + REQUEST_PATH + "?id=" + key))
-                .timeout(Duration.ofSeconds(1))
-                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(requestBody))
-                .header(NOT_SPREAD_HEADER, NOT_SPREAD_HEADER_VALUE)
-                .header("time", String.valueOf(time))
-                .build();
-
-        try {
-            return CompletableFuture.supplyAsync(() -> {
-                HttpResponse<byte[]> response;
-                try {
-                    response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-                } catch (Exception e) {
-                    LOGGER.log(Level.INFO, "Failed to send request to another node");
-                    return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-                }
-                Optional<String> timeHeader = response.headers().firstValue(TIME_HEADER);
-                Response result = new Response(HttpUtils.convertStatusCode(response.statusCode()), response.body());
-                timeHeader.ifPresent(s -> result.addHeader(TIME_HEADER + ": " + s));
-                return result;
-            });
-        } catch (Exception e) {
-            LOGGER.log(Level.INFO, "Inter node interaction failure");
-            return CompletableFuture.completedFuture(null);
-        }
-    }
 
     Response handleMethod(String key, int method, byte[] body, long time) throws IOException {
         return switch (method) {
