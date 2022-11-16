@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.time.Instant;
 
 public abstract class AbstractEntityHandler implements RequestHandler {
+    protected static final String ID_PARAMETER = "id=";
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractEntityHandler.class);
     protected final Manager manager;
     
@@ -25,8 +26,7 @@ public abstract class AbstractEntityHandler implements RequestHandler {
     }
     
     protected void handleDbOperation(final HttpSession session, final int method, final String id, final byte[] body)
-            throws
-            IOException {
+            throws IOException {
         try {
             switch (method) {
                 case Request.METHOD_GET -> {

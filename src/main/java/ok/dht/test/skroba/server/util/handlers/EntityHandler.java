@@ -15,9 +15,7 @@ import java.io.IOException;
 import java.net.http.HttpResponse;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -45,8 +43,15 @@ public final class EntityHandler extends AbstractEntityHandler {
     }
     
     @Override
-    public void handle(final Request request, final HttpSession session, final String id, final ExecutorService forJoin)
+    public void handle(final Request request, final HttpSession session, final ExecutorService forJoin)
             throws IOException {
+        final String id = request.getParameter(ID_PARAMETER);
+        
+        if (id == null || id.isBlank()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+        
         final String ackValue = request.getParameter(ACK);
         final String fromValue = request.getParameter(FROM);
         
@@ -73,16 +78,10 @@ public final class EntityHandler extends AbstractEntityHandler {
         final AtomicInteger ok = new AtomicInteger(0);
         final AtomicInteger handled = new AtomicInteger(0);
         final AtomicReference<Entity> entity = new AtomicReference<>();
-        final Map<Integer, CompletableFuture<HttpResponse<byte[]>>> futures = new ConcurrentHashMap<>();
-        for (int i = 0; i < nodes.size(); i++) {
-            final int index = i;
+        for (String node : nodes) {
             
             final CompletableFuture<HttpResponse<byte[]>> result = client.sendRequest(
-                    nodes.get(index) + INTERNAL_ENTITY.getPath() + "?id=" + id, request.getMethod(),
-                    localEntity.serialize()
-            );
-            
-            futures.put(index, result);
+                    node + INTERNAL_ENTITY.getPath() + "?id=" + id, request.getMethod(), localEntity.serialize());
             
             result.handleAsync((response, throwable) -> {
                 try {
@@ -92,8 +91,6 @@ public final class EntityHandler extends AbstractEntityHandler {
                         handleNotEnoughReplicas(session, ok, handled, ack, from);
                         return null;
                     }
-                    
-                    futures.remove(index);
                     
                     switch (request.getMethod()) {
                         case Request.METHOD_GET -> {
@@ -143,17 +140,11 @@ public final class EntityHandler extends AbstractEntityHandler {
                 
                 return null;
             }, forJoin);
-            
         }
     }
     
-    private static void handleNotEnoughReplicas(
-            HttpSession session,
-            AtomicInteger ok,
-            AtomicInteger handled,
-            int ack,
-            int from
-    ) throws IOException {
+    private static void handleNotEnoughReplicas(HttpSession session, AtomicInteger ok, AtomicInteger handled, int ack,
+                                                int from) throws IOException {
         if (handled.incrementAndGet() == from && ok.get() < ack) {
             session.sendResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
         }

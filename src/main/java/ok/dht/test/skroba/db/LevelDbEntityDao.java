@@ -3,6 +3,7 @@ package ok.dht.test.skroba.db;
 import ok.dht.test.skroba.db.exception.DaoException;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.DBException;
+import org.iq80.leveldb.DBIterator;
 import org.iq80.leveldb.Options;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +44,11 @@ public class LevelDbEntityDao implements EntityDao {
             
             throw new DaoException("Can't put entity in level db with key: " + key, e);
         }
+    }
+    
+    @Override
+    public DBIterator iterator() throws DaoException {
+        return db.iterator();
     }
     
     @Override

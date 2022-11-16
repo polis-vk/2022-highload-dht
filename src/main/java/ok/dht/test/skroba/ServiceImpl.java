@@ -41,11 +41,11 @@ public class ServiceImpl implements Service {
         AcceptorConfig acceptor = new AcceptorConfig();
         acceptor.port = port;
         acceptor.reusePort = true;
-        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+        httpConfig.acceptors = new AcceptorConfig[]{ acceptor };
         return httpConfig;
     }
     
-    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         
         @Override

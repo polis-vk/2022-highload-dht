@@ -14,10 +14,11 @@ public class Entity implements Comparable<Entity> {
                 .toEpochMilli(), value);
     }
     
+    @SuppressWarnings("PMD.ArrayIsStoredDirectly")
     public Entity(final boolean tombstone, final long timestamp, final byte[] value) {
         this.tombstone = tombstone;
         this.timestamp = timestamp;
-        this.value = value.clone();
+        this.value = value;
     }
     
     public Entity(final long timestamp, final byte[] value) {
@@ -50,6 +51,7 @@ public class Entity implements Comparable<Entity> {
         return Long.compare(timestamp, o.timestamp);
     }
     
+    @SuppressWarnings("PMD.ArrayIsStoredDirectly")
     public byte[] serialize() {
         if (serialized != null) {
             return serialized.clone();

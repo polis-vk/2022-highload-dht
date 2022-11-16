@@ -8,6 +8,5 @@ import java.util.concurrent.ExecutorService;
 
 @FunctionalInterface
 public interface RequestHandler {
-    void handle(Request request, HttpSession session, String id, ExecutorService service) throws IOException;
-    
+    void handle(Request request, HttpSession session, ExecutorService service) throws IOException;
 }
