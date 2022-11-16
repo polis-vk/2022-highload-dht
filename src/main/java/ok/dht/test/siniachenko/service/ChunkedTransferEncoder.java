@@ -11,7 +11,7 @@ public class ChunkedTransferEncoder {
     ) {
         Response response = new Response(Response.OK);
         response.addHeader("Transfer-Encoding: chunked");
-        response.addHeader("Connection: close");
+        response.addHeader("Connection: close");  // TODO: try to find out how to avoid this
         byte[] metaData = response.toBytes(false);
         return new EntityChunkStreamQueueItem(entryIterator, metaData);
     }
