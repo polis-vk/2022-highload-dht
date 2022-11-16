@@ -31,7 +31,7 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 5, week = 1)
+    @ServiceFactory(stage = 6, week = 1)
     public static class MegaHighLoadServiceFactory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
