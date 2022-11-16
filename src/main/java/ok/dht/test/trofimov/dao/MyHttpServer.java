@@ -10,7 +10,9 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import one.nio.util.Base64;
 import one.nio.util.Hash;
@@ -23,6 +25,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -95,12 +98,50 @@ public class MyHttpServer extends HttpServer {
     }
 
     @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new HttpSession(socket, this) {
+            @Override
+            protected void writeResponse(Response response, boolean includeBody) throws IOException {
+                if (response instanceof ChunkedResponse) {
+                    MyQueueItem item = new MyQueueItem((ChunkedResponse) response);
+                    super.write(item);
+                } else {
+                    super.writeResponse(response, includeBody);
+                }
+            }
+        };
+    }
+
+    @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (!"/v0/entity".equals(request.getPath())) {
+        switch (request.getPath()) {
+            case "/v0/entity" -> handleSingleKeyRequest(request, session);
+            case "/v0/entities" -> handleRangeRequest(request, session);
+            default -> sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+        }
+    }
+
+    private void handleRangeRequest(Request request, HttpSession session) {
+        String start = request.getParameter("start=");
+        if (start == null || start.isEmpty()) {
             sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
+        String end = request.getParameter("end=");
+        requestsExecutor.execute(() -> {
+            try {
+                Iterator<Entry<String>> iterator = dao.get(start, end);
+                ChunkedResponse response = new ChunkedResponse(Response.OK, iterator);
+                sendResponse(session, response);
+            } catch (IOException e) {
+                logger.error("Error while handling range request for keys start={}, end={}", start, end, e);
+                sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            }
 
+        });
+    }
+
+    private void handleSingleKeyRequest(Request request, HttpSession session) {
         String id = request.getParameter("id=");
         if (id == null || id.isEmpty()) {
             sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
