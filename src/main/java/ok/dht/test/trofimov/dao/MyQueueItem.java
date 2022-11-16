@@ -14,8 +14,8 @@ public class MyQueueItem extends Session.ArrayQueueItem {
     private static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] EOF = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
     private final ChunkedResponse chunkedResponse;
-    private boolean sentLastChunk = false;
-    private boolean headersSent = false;
+    private boolean lastChunkSent;
+    private boolean headersSent;
 
     public MyQueueItem(ChunkedResponse response) {
         super(new byte[0], 0, 0, 0);
@@ -24,15 +24,7 @@ public class MyQueueItem extends Session.ArrayQueueItem {
 
     @Override
     public int write(Socket socket) throws IOException {
-        if (!headersSent) {
-            data = chunkedResponse.toBytes(false);
-            offset = 0;
-            count = data.length;
-            written = 0;
-            writeToSocket(socket);
-            next = this;
-            headersSent = true;
-        } else {
+        if (headersSent) {
             if (written == count) {
                 if (chunkedResponse.getData().hasNext()) {
                     data = getBytesOfData();
@@ -40,19 +32,27 @@ public class MyQueueItem extends Session.ArrayQueueItem {
                     count = data.length;
                     written = 0;
                     writeToSocket(socket);
-                } else if (!sentLastChunk) {
+                } else if (lastChunkSent) {
+                    next = null;
+                } else {
                     data = EOF;
                     offset = 0;
                     count = EOF.length;
                     written = 0;
                     writeToSocket(socket);
-                    sentLastChunk = true;
-                } else {
-                    next = null;
+                    lastChunkSent = true;
                 }
             } else {
                 writeToSocket(socket);
             }
+        } else {
+            data = chunkedResponse.toBytes(false);
+            offset = 0;
+            count = data.length;
+            written = 0;
+            writeToSocket(socket);
+            next = this;
+            headersSent = true;
         }
         return written;
     }

@@ -6,7 +6,7 @@ import java.util.Iterator;
 
 public class ChunkedResponse extends Response {
 
-    private Iterator<Entry<String>> data;
+    private final Iterator<Entry<String>> data;
 
     public ChunkedResponse(String resultCode, Iterator<Entry<String>> data) {
         super(resultCode);
