@@ -29,7 +29,8 @@ public class ClusterInteractions {
     private static final String TIME_HEADER = "time";
     private static final Logger LOGGER = Logger.getLogger(String.valueOf(ClusterInteractions.class));
 
-    private ClusterInteractions(){}
+    private ClusterInteractions(){
+    }
 
     static class ProxyRangeIterator implements Iterator<Entry<MemorySegment>> {
         private final BufferedReader reader;
