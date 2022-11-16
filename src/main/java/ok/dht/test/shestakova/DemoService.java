@@ -1,6 +1,7 @@
 package ok.dht.test.shestakova;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
@@ -84,7 +85,7 @@ public class DemoService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 5, week = 1)
+    @ServiceFactory(stage = 6, week = 1)
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

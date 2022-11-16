@@ -10,7 +10,9 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
 import one.nio.server.SelectorThread;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,6 +53,23 @@ public class DemoHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) {
+        String requestPath = request.getPath();
+        if ("/v0/entities".equals(requestPath)) {
+            String start = request.getParameter("start=");
+            String end = request.getParameter("end=");
+            if (start == null || start.isEmpty()) {
+                tryToSendResponseWithEmptyBody(session, Response.BAD_REQUEST);
+                return;
+            }
+            try {
+                session.sendResponse(requestsHandler.handleGetRange(start, end));
+            } catch (IOException e) {
+                LOGGER.error("Internal error in server {}", serviceConfig.selfUrl());
+                tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
+            }
+            return;
+        }
+
         String key = request.getParameter("id=");
         if (key == null || key.isEmpty()) {
             tryToSendResponseWithEmptyBody(session, Response.BAD_REQUEST);
@@ -81,6 +100,45 @@ public class DemoHttpServer extends HttpServer {
                 tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
             }
         });
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) {
+        return new HttpSession(socket, this) {
+            @Override
+            public synchronized void sendResponse(Response response) throws IOException {
+                if (response instanceof ChunkedResponse) {
+                    Request handling = this.handling;
+                    if (handling == null) {
+                        throw new IOException("Out of order response");
+                    }
+
+                    server.incRequestsProcessed();
+
+                    String connection = handling.getHeader("Connection:");
+                    boolean keepAlive = handling.isHttp11()
+                            ? !"close".equalsIgnoreCase(connection)
+                            : "Keep-Alive".equalsIgnoreCase(connection);
+                    response.addHeader(keepAlive ? "Connection: Keep-Alive" : "Connection: close");
+                    response.addHeader("Transfer-Encoding: chunked");
+
+                    super.writeResponse(response, false);
+                    super.write(new MyQueueItem((ChunkedResponse) response));
+
+                    if (!keepAlive) scheduleClose();
+
+                    if ((this.handling = handling = pipeline.pollFirst()) != null) {
+                        if (handling == FIN) {
+                            super.scheduleClose();
+                        } else {
+                            server.handleRequest(handling, this);
+                        }
+                    }
+                    return;
+                }
+                super.sendResponse(response);
+            }
+        };
     }
 
     private void executeHandlingRequest(Request request, HttpSession session, String key, int ack,
@@ -197,7 +255,7 @@ public class DemoHttpServer extends HttpServer {
     private Response handleInternalRequest(Request request, HttpSession session) {
         int methodNum = request.getMethod();
         Response response;
-        String id = request.getParameter("id");
+        String id = request.getParameter("id=");
         if (methodNum == Request.METHOD_GET) {
             response = requestsHandler.handleGet(id);
         } else if (methodNum == Request.METHOD_PUT) {

@@ -13,6 +13,7 @@ import java.net.URI;
 import java.net.http.HttpRequest;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 public class RequestsHandler {
@@ -83,6 +84,25 @@ public class RequestsHandler {
                         .put(value.array())
                         .array()
         );
+    }
+
+    public Response handleGetRange(@Param(value = "start") String start, @Param(value = "end") String end) {
+        Iterator<BaseEntry<MemorySegment>> entryIterator = dao.get(HttpServerUtils.INSTANCE.fromString(start),
+                end == null || end.isEmpty() ? null : HttpServerUtils.INSTANCE.fromString(end));
+        if (entryIterator == null) {
+            return new Response(
+                    Response.NOT_FOUND,
+                    Response.EMPTY
+            );
+        }
+
+        if (!entryIterator.hasNext()) {
+            return new Response(
+                    Response.OK,
+                    Response.EMPTY
+            );
+        }
+        return new ChunkedResponse(Response.OK, entryIterator);
     }
 
     public Response handlePut(Request request, @Param(value = "id") String id) {
