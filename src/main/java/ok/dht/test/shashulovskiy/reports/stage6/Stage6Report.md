@@ -71,6 +71,49 @@ Transfer/sec:    169.57MB
 При k = 100 видим схожее распределение latency при RPS порядка 1500, что логично при размере 
 интервала в 10 раз больше. Из этого мы можем сделать вывод, что зависимость примерно линейная.
 
+## Анализ размера буфера
+
+Изначальный размер буфера был равен 1024 байтам. 
+
+Уменьшив его до 128 я получил небольшой захлеб даже на 1000 RPS, что говорит о том, что его нужно делать довольно большим,
+иначе придется посылать очень много запросов.
+
+```
+wrk2 -t 16 -c 64 -d 2m -R 1000 -L http://localhost:19234 -s load_testing_range.lua
+Running 2m test @ http://localhost:19234
+  16 threads and 64 connections
+  Thread calibration: mean lat.: 9.451ms, rate sampling interval: 14ms
+..
+  Thread calibration: mean lat.: 9.070ms, rate sampling interval: 13ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     8.15ms   45.37ms   1.18s    97.13%
+    Req/Sec    64.79     64.19     1.92k    82.63%
+  Latency Distribution (HdrHistogram - Recorded Latency)
+ 50.000%    1.92ms
+ 75.000%    2.82ms
+ 90.000%    6.04ms
+ 99.000%  116.61ms
+ 99.900%  759.29ms
+ 99.990%    1.05s 
+ 99.999%    1.16s 
+100.000%    1.18s 
+
+  Detailed Percentile spectrum:
+       Value   Percentile   TotalCount 1/(1-Percentile)
+
+       0.150     0.000000            1         1.00
+..
+    1177.599     1.000000       109809          inf
+#[Mean    =        8.149, StdDeviation   =       45.373]
+#[Max     =     1176.576, Total count    =       109809]
+#[Buckets =           27, SubBuckets     =         2048]
+----------------------------------------------------------
+  119835 requests in 2.00m, 9.82GB read
+  Socket errors: connect 0, read 57, write 0, timeout 0
+Requests/sec:    998.18
+Transfer/sec:     83.75MB
+```
+
 ## Анализ профилей с помощью async-profiler
 
 В задании нас не просили этого делать, но мне все равно было интересно.
