@@ -61,7 +61,6 @@ public class RequestExecutor {
         };
     }
 
-
     private Response putHandler(Request request, String id, long timestamp) {
         dao.put(Utils.stringToByte(id), Utils.dataToBytes(timestamp, request.getBody()));
         return Utils.emptyResponse(Response.CREATED);

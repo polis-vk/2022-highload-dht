@@ -4,12 +4,7 @@ import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.frolovm.hasher.Hasher;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Param;
-import one.nio.http.Path;
-import one.nio.http.Request;
-import one.nio.http.Response;
+import one.nio.http.*;
 import one.nio.server.AcceptorConfig;
 import one.nio.util.Hash;
 import one.nio.util.Utf8;
@@ -21,11 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.http.HttpClient;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class ServiceImpl implements Service {
 
@@ -41,7 +32,6 @@ public class ServiceImpl implements Service {
     private static final String PARAM_START = "start";
 
     private static final String PARAM_END = "end";
-
 
     private static final int MAX_REQUEST_TRIES = 100;
 
@@ -150,7 +140,8 @@ public class ServiceImpl implements Service {
     }
 
     @Path(PATH_RANGE)
-    public void rangeHandler(@Param(PARAM_START) String start, @Param(PARAM_END) String end, Request request, HttpSession session) {
+    public void rangeHandler(@Param(PARAM_START) String start, @Param(PARAM_END) String end,
+                                                                Request request, HttpSession session) {
         if (!Utils.checkId(start)) {
             Utils.sendResponse(session, new Response(Response.BAD_REQUEST, Utf8.toBytes(Utils.BAD_ID)));
             return;
@@ -164,7 +155,6 @@ public class ServiceImpl implements Service {
                     Utf8.toBytes(Utils.NO_SUCH_METHOD)));
         }
     }
-
 
     private boolean validateAcks(String ackParam, String fromParam, int ackNum, int from) {
         return ackNum <= 0 || from <= 0 || from > config.clusterUrls().size() || ackNum > from
