@@ -1,6 +1,8 @@
 package ok.dht.test.vihnin;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.vihnin.database.Row;
+import ok.dht.test.vihnin.utils.ServerUtils;
 import ok.dht.test.vihnin.utils.ServiceUtils;
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
@@ -8,7 +10,10 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
+import one.nio.util.ByteArrayBuilder;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +22,7 @@ import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -284,5 +290,38 @@ public class ParallelHttpServer extends HttpServer {
 
         super.stop();
 
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new HttpSession(socket, this) {
+            @Override
+            protected void writeResponse(Response response, boolean includeBody) throws IOException {
+                if (response instanceof ServerUtils.ChunkedResponse chunkedResponse) {
+                    super.writeResponse(response, false);
+                    var rows = chunkedResponse.iterator;
+                    boolean last = false;
+
+                    while (true) {
+                        if (!rows.hasNext()) {
+                            if (last) {
+                                break;
+                            } else {
+                                last = true;
+                            }
+                        }
+
+                        Row<String, byte[]> row = last
+                                ? null
+                                : rows.next();
+
+                        super.write(new ServerUtils.ChunkItem(row));
+                    }
+
+                } else {
+                    super.writeResponse(response, includeBody);
+                }
+            }
+        };
     }
 }

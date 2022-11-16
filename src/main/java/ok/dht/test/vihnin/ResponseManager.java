@@ -2,6 +2,7 @@ package ok.dht.test.vihnin;
 
 import ok.dht.test.vihnin.database.DataBase;
 import ok.dht.test.vihnin.database.Row;
+import ok.dht.test.vihnin.utils.ServerUtils;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
@@ -80,37 +81,7 @@ public class ResponseManager {
 
         var rows = storage.getRange(start, end);
 
-        var newResponse = new Response(Response.OK);
-        newResponse.addHeader("Transfer-Encoding: chunked");
-
-        ByteArrayBuilder body = new ByteArrayBuilder();
-
-        byte[] delimiter = Utf8.toBytes("\n");
-        byte[] chunkDelimiter = Utf8.toBytes("\r\n");
-
-        while (rows.hasNext()) {
-            Row<String, byte[]> row = rows.next();
-
-            byte[] key = Utf8.toBytes(row.getKey());
-            byte[] value = parseActualDataFromData(row.getValue());
-
-            int chunkSize = key.length + delimiter.length + value.length;
-
-            body.append(Utf8.toBytes(Integer.toHexString(chunkSize)));
-            body.append(chunkDelimiter);
-            body.append(key);
-            body.append(delimiter);
-            body.append(value);
-            body.append(chunkDelimiter);
-        }
-
-        body.append(Utf8.toBytes("0"));
-        body.append(chunkDelimiter);
-        body.append(chunkDelimiter);
-
-        newResponse.setBody(body.toBytes());
-
-        return newResponse;
+        return new ServerUtils.ChunkedResponse(Response.OK, rows);
     }
 
     public Response handleRequest(Request request) {
@@ -159,7 +130,7 @@ public class ResponseManager {
         return data[0];
     }
 
-    private static byte[] parseActualDataFromData(byte[] data) {
+    public static byte[] parseActualDataFromData(byte[] data) {
         byte[] actualData = new byte[data.length - 9];
         System.arraycopy(data, 9, actualData, 0, data.length - 9);
         return actualData;
