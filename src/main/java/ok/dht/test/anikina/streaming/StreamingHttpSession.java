@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.util.Iterator;
 
 public class StreamingHttpSession extends HttpSession {
+
     public StreamingHttpSession(Socket socket, HttpServer server) {
         super(socket, server);
     }
