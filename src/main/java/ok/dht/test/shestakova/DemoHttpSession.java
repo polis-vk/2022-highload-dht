@@ -1,12 +1,12 @@
 package ok.dht.test.shestakova;
 
-import java.io.IOException;
-
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Socket;
+
+import java.io.IOException;
 
 public class DemoHttpSession extends HttpSession {
     public DemoHttpSession(Socket socket, HttpServer server) {

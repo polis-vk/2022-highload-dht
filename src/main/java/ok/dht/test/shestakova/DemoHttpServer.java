@@ -55,18 +55,7 @@ public class DemoHttpServer extends HttpServer {
     public void handleRequest(Request request, HttpSession session) {
         String requestPath = request.getPath();
         if ("/v0/entities".equals(requestPath)) {
-            String start = request.getParameter("start=");
-            String end = request.getParameter("end=");
-            if (start == null || start.isEmpty()) {
-                tryToSendResponseWithEmptyBody(session, Response.BAD_REQUEST);
-                return;
-            }
-            try {
-                session.sendResponse(requestsHandler.handleGetRange(start, end));
-            } catch (IOException e) {
-                LOGGER.error(INTERNAL_ERROR_IN_SERVER_MSG, serviceConfig.selfUrl());
-                tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
-            }
+            handleRangeRequest(request, session);
             return;
         }
 
@@ -100,6 +89,21 @@ public class DemoHttpServer extends HttpServer {
                 tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
             }
         });
+    }
+
+    private void handleRangeRequest(Request request, HttpSession session) {
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+        if (start == null || start.isEmpty()) {
+            tryToSendResponseWithEmptyBody(session, Response.BAD_REQUEST);
+            return;
+        }
+        try {
+            session.sendResponse(requestsHandler.handleGetRange(start, end));
+        } catch (IOException e) {
+            LOGGER.error(INTERNAL_ERROR_IN_SERVER_MSG, serviceConfig.selfUrl());
+            tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
+        }
     }
 
     @Override
