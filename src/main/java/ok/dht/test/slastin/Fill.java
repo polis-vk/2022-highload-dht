@@ -1,5 +1,6 @@
 package ok.dht.test.slastin;
 
+import one.nio.util.Utf8;
 import org.rocksdb.RocksDB;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,7 +50,7 @@ public final class Fill {
                             byteBuffer.put(isAlive);
                             byteBuffer.put(value);
 
-                            db.put(SladkiiComponent.toBytes(Integer.toString(key)), byteBuffer.array());
+                            db.put(Utf8.toBytes(Integer.toString(key)), byteBuffer.array());
                         }
                     }
                 }

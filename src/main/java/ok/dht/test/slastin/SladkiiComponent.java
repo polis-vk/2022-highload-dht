@@ -1,16 +1,20 @@
 package ok.dht.test.slastin;
 
+import ok.dht.test.slastin.range.RangeResponse;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.util.Utf8;
 import org.rocksdb.Options;
+import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
+import org.rocksdb.RocksIterator;
+import org.rocksdb.Slice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 
 import static ok.dht.test.slastin.Utils.accepted;
 import static ok.dht.test.slastin.Utils.created;
@@ -35,7 +39,7 @@ public class SladkiiComponent implements Closeable {
 
     public Response get(String id) {
         try {
-            byte[] entry = db.get(toBytes(id));
+            byte[] entry = db.get(Utf8.toBytes(id));
             return entry == null ? notFound() : new Response(Response.OK, entry);
         } catch (RocksDBException e) {
             log.error("get(id=\"{}\")", id, e);
@@ -52,7 +56,7 @@ public class SladkiiComponent implements Closeable {
         entry.put(value);
 
         try {
-            db.put(toBytes(id), entry.array());
+            db.put(Utf8.toBytes(id), entry.array());
             return created();
         } catch (RocksDBException e) {
             log.error("put(id=\"{}\")", id, e);
@@ -66,7 +70,7 @@ public class SladkiiComponent implements Closeable {
         entry.put((byte) 0);
 
         try {
-            db.put(toBytes(id), entry.array());
+            db.put(Utf8.toBytes(id), entry.array());
             return accepted();
         } catch (RocksDBException e) {
             log.error("delete(id=\"{}\")", id, e);
@@ -74,8 +78,18 @@ public class SladkiiComponent implements Closeable {
         }
     }
 
-    static byte[] toBytes(String value) {
-        return value.getBytes(StandardCharsets.UTF_8);
+    public RangeResponse range(String start, String end) {
+        var readOptions = new ReadOptions();
+        if (end != null) {
+            readOptions.setIterateUpperBound(new Slice(end));
+        }
+
+        RocksIterator rangeIterator = db.newIterator(readOptions);
+        if (start != null) {
+            rangeIterator.seek(Utf8.toBytes(start));
+        }
+
+        return new RangeResponse(rangeIterator);
     }
 
     @Override
