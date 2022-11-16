@@ -1,14 +1,7 @@
 package ok.dht.test.siniachenko;
 
-import ok.dht.test.siniachenko.service.AsyncEntityService;
-import ok.dht.test.siniachenko.service.EntityService;
-import ok.dht.test.siniachenko.service.EntityServiceCoordinator;
-import ok.dht.test.siniachenko.service.EntityServiceReplica;
-import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
-import one.nio.http.Request;
-import one.nio.http.Response;
+import ok.dht.test.siniachenko.service.*;
+import one.nio.http.*;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
@@ -23,24 +16,27 @@ import java.util.concurrent.RejectedExecutionException;
 public class TycoonHttpServer extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(TycoonHttpServer.class);
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
-    public static final String PATH = "/v0/entity";
+    public static final String ENTITY_SERVICE_PATH = "/v0/entity";
+    public static final String RANGE_SERVICE_PATH = "/v0/entities";
     public static final String REQUEST_TO_REPLICA_HEADER = "Request-to-replica";
 
     private final ExecutorService executorService;
     private final EntityServiceCoordinator entityServiceCoordinator;
     private final EntityServiceReplica entityServiceReplica;
+    private final RangeService rangeService;
     private boolean closed = true;
 
     public TycoonHttpServer(
         int port,
         ExecutorService executorService,
         EntityServiceCoordinator entityServiceCoordinator,
-        EntityServiceReplica entityServiceReplica
-    ) throws IOException {
+        EntityServiceReplica entityServiceReplica,
+        RangeService rangeService) throws IOException {
         super(createHttpConfigFromPort(port));
         this.executorService = executorService;
         this.entityServiceCoordinator = entityServiceCoordinator;
         this.entityServiceReplica = entityServiceReplica;
+        this.rangeService = rangeService;
     }
 
     private static HttpServerConfig createHttpConfigFromPort(int port) {
@@ -56,21 +52,43 @@ public class TycoonHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (!PATH.equals(request.getPath())) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            return;
+        if (ENTITY_SERVICE_PATH.equals(request.getPath())) {
+            handleEntityServiceRequest(request, session);
+        } else if (RANGE_SERVICE_PATH.equals(request.getPath())) {
+            handleRangeServiceRequest(request, session);
+        } else {
+            sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
         }
+    }
 
+    private void handleEntityServiceRequest(Request request, HttpSession session) throws IOException {
         String idParameter = request.getParameter("id=");
         if (idParameter == null || idParameter.isEmpty()) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            return;
-        }
-
-        if (request.getHeader(REQUEST_TO_REPLICA_HEADER) == null) {
-            processRequestAsync(request, session, idParameter, entityServiceCoordinator);
+            sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
         } else {
-            processRequest(request, session, idParameter, entityServiceReplica);
+            if (request.getHeader(REQUEST_TO_REPLICA_HEADER) == null) {
+                processRequestAsync(request, session, idParameter, entityServiceCoordinator);
+            } else {
+                processRequest(request, session, idParameter, entityServiceReplica);
+            }
+        }
+    }
+
+    private void handleRangeServiceRequest(Request request, HttpSession session) {
+        String startParameter = request.getParameter("start=");
+        String endParameter = request.getParameter("start=");
+        if (
+            startParameter == null || startParameter.isEmpty()
+                || endParameter == null || endParameter.isEmpty()
+        ) {
+            sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
+        } else {
+            EntityStreamQueueItem entityStreamQueueItem = rangeService.handleRange(request);
+            try {
+                session.write(entityStreamQueueItem);
+            } catch (IOException e) {
+                onSessionException(session, e);
+            }
         }
     }
 
@@ -85,48 +103,57 @@ public class TycoonHttpServer extends HttpServer {
         };
         responseFuture.exceptionally(e -> {
             LOG.error("Error processing async request", e);
-            sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY), session);
             return null;
-        }).thenAccept(response -> sendResponse(session, response));
+        }).thenAccept(response -> sendResponse(response, session));
     }
 
-    private static void processRequest(
+    private void processRequest(
         Request request, HttpSession session, String idParameter, EntityService entityService
     ) {
-        Response response = switch (request.getMethod()) {
-            case Request.METHOD_GET -> entityService.handleGet(request, idParameter);
-            case Request.METHOD_PUT -> entityService.handlePut(request, idParameter);
-            case Request.METHOD_DELETE -> entityService.handleDelete(request, idParameter);
-            default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-        };
-        sendResponse(session, response);
+        execute(
+            () -> {
+                Response response = switch (request.getMethod()) {
+                    case Request.METHOD_GET -> entityService.handleGet(request, idParameter);
+                    case Request.METHOD_PUT -> entityService.handlePut(request, idParameter);
+                    case Request.METHOD_DELETE -> entityService.handleDelete(request, idParameter);
+                    default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                };
+                sendResponse(response, session);
+            },
+            session
+        );
     }
 
-    private void execute(HttpSession session, Runnable runnable) {
+    private void execute(Runnable runnable, HttpSession session) {
         try {
             executorService.execute(runnable);
         } catch (RejectedExecutionException e) {
             LOG.error("Cannot execute task", e);
-            sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
+            sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY), session);
         }
     }
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+        sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
     }
 
-    public static void sendResponse(HttpSession session, Response response) {
+    public static void sendResponse(Response response, HttpSession session) {
         try {
             session.sendResponse(response);
         } catch (IOException e1) {
-            LOG.error("I/O error while sending response", e1);
-            try {
-                session.close();
-            } catch (Exception e2) {
-                e2.addSuppressed(e1);
-                LOG.error("Exception while closing session", e2);
-            }
+            onSessionException(session, e1);
+        }
+    }
+
+    private static void onSessionException(HttpSession session, IOException e1) {
+        LOG.error("I/O error while sending response", e1);
+        try {
+            session.close();
+        } catch (Exception e2) {
+            e2.addSuppressed(e1);
+            LOG.error("Exception while closing session", e2);
         }
     }
 

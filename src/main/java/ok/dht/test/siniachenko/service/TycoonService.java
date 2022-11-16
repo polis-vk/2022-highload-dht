@@ -57,7 +57,8 @@ public class TycoonService implements ok.dht.Service {
             config.selfPort(),
             executorService,
             new EntityServiceCoordinator(config, levelDb, executorService, HttpClient.newHttpClient(), nodeTaskManager),
-            new EntityServiceReplica(levelDb)
+            new EntityServiceReplica(levelDb),
+            new RangeService(levelDb)
         );
         server.start();
         LOG.info("Service started on {}, executor threads: {}", config.selfUrl(), threadPoolSize);
@@ -80,7 +81,7 @@ public class TycoonService implements ok.dht.Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public ok.dht.Service create(ServiceConfig config) {

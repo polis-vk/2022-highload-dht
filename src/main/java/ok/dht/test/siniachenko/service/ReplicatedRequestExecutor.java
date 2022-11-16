@@ -142,7 +142,7 @@ public class ReplicatedRequestExecutor {
     ) {
         return httpClient.sendAsync(
             HttpRequest.newBuilder()
-                .uri(URI.create(nodeUrl + TycoonHttpServer.PATH + "?id=" + idParameter))
+                .uri(URI.create(nodeUrl + TycoonHttpServer.ENTITY_SERVICE_PATH + "?id=" + idParameter))
                 .method(
                     request.getMethodName(),
                     request.getBody() == null
