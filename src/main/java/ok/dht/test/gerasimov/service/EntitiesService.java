@@ -65,7 +65,7 @@ public class EntitiesService implements HandleService {
                 return null;
             }
 
-            if (start.compareTo(end) > 0) {
+            if (end != null && start.compareTo(end) > 0) {
                 session.sendResponse(ResponseEntity.badRequest(
                                 "<start> key is bigger then <end> key"
                         )
