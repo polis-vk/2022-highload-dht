@@ -18,7 +18,9 @@ import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
@@ -32,6 +34,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -353,5 +356,42 @@ public final class HttpApi extends HttpServer {
         }
         forwardRequestByKey(req, session, key, acks, froms);
         return true;
+    }
+
+    public static class ChunkedResponse extends Response {
+        private final Iterator<Entry<MemorySegment>> iterator;
+
+        public ChunkedResponse(final String resultCode, final Iterator<Entry<MemorySegment>> iterator) {
+            super(resultCode);
+            super.addHeader("Transfer-Encoding: chunked");
+            this.iterator = iterator;
+        }
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new HttpSession(socket, this) {
+            @Override
+            protected void writeResponse(final Response response, final boolean includeBody) throws IOException {
+                super.writeResponse(response, includeBody);
+                if (response instanceof ChunkedResponse chunkedResponse) {
+                    super.write(new LinkedQueueItem(chunkedResponse.iterator));
+                }
+            }
+        };
+    }
+
+    @Path("/v0/entities")
+    @RequestMethod(Request.METHOD_GET)
+    public void handleGet(@Param(value = "start", required = true) final String keyStart,
+                          @Param(value = "end") final String keyEnd,
+                          final Request req,
+                          final HttpSession session) throws IOException {
+        if (keyStart.isEmpty()) {
+            session.sendResponse(getEmptyResponse(Response.BAD_REQUEST));
+            return;
+        }
+        final MemorySegment endMemorySegment = (keyEnd == null || keyEnd.isEmpty()) ? null : fromString(keyEnd);
+        session.sendResponse(new ChunkedResponse(Response.OK, dao.get(fromString(keyStart), endMemorySegment)));
     }
 }
