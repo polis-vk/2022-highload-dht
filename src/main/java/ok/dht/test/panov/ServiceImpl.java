@@ -59,6 +59,7 @@ public class ServiceImpl implements Service {
     private MemorySegmentDao dao;
     private NodeRouter router;
     private ExecutorService executorService;
+    private RangeRequestHandler rangeRequestHandler;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -82,6 +83,7 @@ public class ServiceImpl implements Service {
         dao = new MemorySegmentDao(new Config(config.workingDir(), FLUSH_THRESHOLD_BYTES));
         router = new NodeRouter(config.clusterUrls());
         client = HttpClient.newHttpClient();
+        rangeRequestHandler = new RangeRequestHandler(dao, executorService);
         server.start();
         return CompletableFuture.completedFuture(null);
     }
@@ -107,7 +109,7 @@ public class ServiceImpl implements Service {
     public void handleEntity(
             final Request request,
             final HttpSession session,
-            @Param(value = "id", required = true) final String id,
+            @Param(value = "id") final String id,
             @Param(value = "from") final String from,
             @Param(value = "ack") final String ack
     ) {
@@ -146,6 +148,24 @@ public class ServiceImpl implements Service {
             LOGGER.error("Error during response sending");
         }
 
+    }
+
+    @Path("/v0/entities")
+    public void handleEntities(
+        final HttpSession session,
+        @Param(value = "start") final String start,
+        @Param(value = "end") final String end) {
+        try {
+            if (start == null || start.isEmpty()) {
+                session.sendResponse(
+                        new Response(Response.BAD_REQUEST, "Start is empty".getBytes(StandardCharsets.UTF_8)));
+                return;
+            }
+
+            rangeRequestHandler.handleLocalRangeRequest(session, start, end);
+        } catch (IOException e) {
+            LOGGER.error("Error during response sending");
+        }
     }
 
     private void handleLocalRequest(Request request, HttpSession session, String id) throws IOException {
@@ -252,7 +272,7 @@ public class ServiceImpl implements Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
