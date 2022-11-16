@@ -13,6 +13,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 
 public class MyHttpSession extends HttpSession {
@@ -20,30 +21,28 @@ public class MyHttpSession extends HttpSession {
     private String requestId;
     private HttpUtils.Replicas replicas;
     private HttpUtils.Range range;
-    private static final List<TypedTimedEntry> l = new ArrayList<>();
+    private Iterator<TypedTimedEntry> mergeIterator;
 
     public MyHttpSession(Socket socket, HttpServer server) {
         super(socket, server);
     }
 
-    static {
-        byte[] intKey = String.valueOf(1).getBytes(StandardCharsets.UTF_8);
-        byte[] intValue = String.valueOf(2).getBytes(StandardCharsets.UTF_8);
-        ByteBuffer key = ByteBuffer.wrap(intKey);
-        ByteBuffer value = ByteBuffer.wrap(intValue);
-        TypedBaseTimedEntry e = new TypedBaseTimedEntry(0, key, value);
-        for (int i = 0; i < 3; ++i) {
-            l.add(e);
-        }
-    }
+//    static {
+//        byte[] intKey = String.valueOf(1).getBytes(StandardCharsets.UTF_8);
+//        byte[] intValue = String.valueOf(2).getBytes(StandardCharsets.UTF_8);
+//        ByteBuffer key = ByteBuffer.wrap(intKey);
+//        ByteBuffer value = ByteBuffer.wrap(intValue);
+//        TypedBaseTimedEntry e = new TypedBaseTimedEntry(0, key, value);
+//        for (int i = 0; i < 3; ++i) {
+//            l.add(e);
+//        }
+//    }
 
     @Override
     protected void writeResponse(Response response, boolean includeBody) throws IOException {
+        super.writeResponse(response, includeBody);
         if (response instanceof MyHttpResponse.ChunkedResponse) {
-            //MyHttpResponse r = new MyHttpResponse()
-            super.write(new MyQueueItem(l.iterator()));
-        } else {
-            super.writeResponse(response, includeBody);
+            super.write(new MyQueueItem(mergeIterator));
         }
     }
 
@@ -69,5 +68,13 @@ public class MyHttpSession extends HttpSession {
 
     public void setRange(HttpUtils.Range range) {
         this.range = range;
+    }
+
+    public Iterator<TypedTimedEntry> getMergeIterator() {
+        return mergeIterator;
+    }
+
+    public void setMergeIterator(Iterator<TypedTimedEntry> mergeIterator) {
+        this.mergeIterator = mergeIterator;
     }
 }

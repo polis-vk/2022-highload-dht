@@ -30,28 +30,18 @@ public class MyServerBase extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        sendEmptyResponseForCode(Response.BAD_REQUEST, session);
+        sendEmptyResponseForCode(Response.BAD_REQUEST, session, log);
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         if (!MyServerBase.availableMethods.contains(request.getMethod())) {
-            sendEmptyResponseForCode(Response.METHOD_NOT_ALLOWED, session);
+            sendEmptyResponseForCode(Response.METHOD_NOT_ALLOWED, session, log);
             return;
         }
 
-        MyHttpSession myHttpSession = (MyHttpSession) session;
-//        boolean hasId = checkForId(request, myHttpSession);
-//        boolean hasReplicas = checkForReplicas(request, myHttpSession);
-//        boolean hasRange = checkForRange(request, myHttpSession);
-//        if (!hasReplicas || (hasId && hasRange) || (!hasId && !hasRange)) {
-//            sendEmptyResponseForCode(session, Response.BAD_REQUEST);
-//            return;
-//        }
-
-        //request.addHeader("Transfer-Encoding: chunked");
-        HttpUtils.NetRequest netRequest = () -> super.handleRequest(request, myHttpSession);
-        HttpUtils.safeHttpRequest(myHttpSession, log, netRequest);
+        HttpUtils.NetRequest netRequest = () -> super.handleRequest(request, session);
+        HttpUtils.safeHttpRequest(session, log, netRequest);
     }
 
     @Override
@@ -71,45 +61,7 @@ public class MyServerBase extends HttpServer {
         return new MyHttpSession(socket, this);
     }
 
-    private boolean checkForId(Request request, MyHttpSession session) {
-        String id = request.getParameter("id=");
-        HttpUtils.IdValidation idValidation = HttpUtils.validateId(id);
-        if (!idValidation.valid()) {
-            log.error("Error when validating 'id' parameter: {}", id);
-            return false;
-        } else {
-            session.setRequestId(id);
-            return true;
-        }
-    }
-
-    private boolean checkForReplicas(Request request, MyHttpSession session) {
-        String ack = request.getParameter("ack=");
-        String from = request.getParameter("from=");
-        HttpUtils.ReplicasValidation replicasValidation = HttpUtils.validateReplicas(ack, from);
-        if (!replicasValidation.valid()) {
-            log.error("Error when validating 'replicas' parameter: {}", replicasValidation.replicas());
-            return false;
-        } else {
-            session.setReplicas(replicasValidation.replicas());
-            return true;
-        }
-    }
-
-    private boolean checkForRange(Request request, MyHttpSession session) {
-        String start = request.getParameter("start=");
-        String end = request.getParameter("end=");
-        HttpUtils.RangeValidation rangeValidation = HttpUtils.validateRange(start, end);
-        if (!rangeValidation.valid()) {
-            log.error("Error when validating 'range' parameter: {}", rangeValidation.range());
-            return false;
-        } else {
-            session.setRange(rangeValidation.range());
-            return true;
-        }
-    }
-
-    private void sendEmptyResponseForCode(String statusCode, HttpSession session) {
+    public static void sendEmptyResponseForCode(String statusCode, HttpSession session, Logger log) {
         MyHttpResponse response = new MyHttpResponse(statusCode);
         HttpUtils.NetRequest netRequest = () -> session.sendResponse(response);
         HttpUtils.safeHttpRequest(session, log, netRequest);

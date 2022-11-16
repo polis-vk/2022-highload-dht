@@ -82,7 +82,17 @@ public class MyServiceBase implements Service {
     public void handleEntity(Request request, HttpSession session)
             throws IOException, ExecutionException, InterruptedException {
         MyHttpSession myHttpSession = (MyHttpSession) session;
-        HttpUtils.Replicas replicas = HttpUtils.recreateReplicas(myHttpSession.getReplicas(), clusterUrls().size());
+        HttpUtils.IdValidation idValidation = checkForId(request, myHttpSession);
+        HttpUtils.ReplicasValidation replicasValidation = checkForReplicas(request, myHttpSession);
+
+        if (!idValidation.valid() || !replicasValidation.valid()) {
+            log.error("Invalid parameters: id = {}, replicas = {}", idValidation.id(), replicasValidation.replicas());
+            MyServerBase.sendEmptyResponseForCode(Response.BAD_REQUEST, myHttpSession, log);
+            return;
+        }
+
+        myHttpSession.setRequestId(idValidation.id());
+        HttpUtils.Replicas replicas = HttpUtils.recreateReplicas(replicasValidation.replicas(), clusterUrls().size());
         myHttpSession.setReplicas(replicas);
 
         if (request.getHeader(HttpUtils.REPLICA_HEADER) == null) {
@@ -97,8 +107,20 @@ public class MyServiceBase implements Service {
     }
 
     @Path("/v0/entities")
-    public void handleEntities(Request request, HttpSession session) {
+    public void handleEntities(Request request, HttpSession session) throws IOException {
         MyHttpSession myHttpSession = (MyHttpSession) session;
+        HttpUtils.RangeValidation rangeValidation = checkForRange(request, myHttpSession);
+
+        if (!rangeValidation.valid()) {
+            log.error("Invalid parameter: range = {}", rangeValidation.range());
+            MyServerBase.sendEmptyResponseForCode(Response.BAD_REQUEST, myHttpSession, log);
+            return;
+        }
+
+        myHttpSession.setRange(rangeValidation.range());
+        Iterator<TypedTimedEntry> mergeIterator = handleRangeGet(request, myHttpSession);
+        myHttpSession.setMergeIterator(mergeIterator);
+
         Response response = new MyHttpResponse.ChunkedResponse(Response.OK);
         response.addHeader("Transfer-Encoding: chunked");
         HttpUtils.NetRequest netRequest = () -> myHttpSession.sendResponse(response);
@@ -222,6 +244,23 @@ public class MyServiceBase implements Service {
         acceptor.reusePort = true;
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
         return httpConfig;
+    }
+
+    private HttpUtils.IdValidation checkForId(Request request, MyHttpSession session) {
+        String id = request.getParameter("id=");
+        return HttpUtils.validateId(id);
+    }
+
+    private HttpUtils.ReplicasValidation checkForReplicas(Request request, MyHttpSession session) {
+        String ack = request.getParameter("ack=");
+        String from = request.getParameter("from=");
+        return HttpUtils.validateReplicas(ack, from);
+    }
+
+    private HttpUtils.RangeValidation checkForRange(Request request, MyHttpSession session) {
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+        return HttpUtils.validateRange(start, end);
     }
 
     private static CompletableFuture<MyHttpResponse> completedFutureFor(MyHttpResponse r) {

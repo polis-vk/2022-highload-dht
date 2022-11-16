@@ -24,11 +24,12 @@ public class TombstoneFilteringIterator
     }
 
     @Override
+    @SuppressWarnings("ConstantConditions")
     public TypedTimedEntry next() {
         if (!hasNext()) {
             throw new NoSuchElementException("There is no next iterable element");
         }
-        return iterators.peek().next(); // non null! (check is below)
+        return iterators.peek().next();
     }
 
     private boolean hasNotNext(PeekIterator iterator) {
