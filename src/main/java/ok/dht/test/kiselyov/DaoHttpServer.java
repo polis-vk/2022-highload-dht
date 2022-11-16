@@ -4,7 +4,9 @@ import com.google.common.primitives.Bytes;
 import ok.dht.ServiceConfig;
 import ok.dht.test.kiselyov.dao.BaseEntry;
 import ok.dht.test.kiselyov.dao.impl.PersistentDao;
+import ok.dht.test.kiselyov.util.ChunkedResponse;
 import ok.dht.test.kiselyov.util.ClusterNode;
+import ok.dht.test.kiselyov.util.CustomHttpSession;
 import ok.dht.test.kiselyov.util.InternalClient;
 import ok.dht.test.kiselyov.util.NodeDeterminer;
 import one.nio.http.HttpServer;
@@ -14,7 +16,9 @@ import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +29,7 @@ import java.net.URISyntaxException;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -57,6 +62,40 @@ public class DaoHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
+        switch (request.getPath()) {
+            case "/v0/entity" -> handleEntityRequest(request, session);
+            case "/v0/entities" -> handleEntitiesRequest(request, session);
+            default -> session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        }
+    }
+
+    @Override
+    public void handleDefault(Request request, HttpSession session) throws IOException {
+        String resultCode = request.getMethod() == Request.METHOD_GET
+                || request.getMethod() == Request.METHOD_PUT
+                ? Response.BAD_REQUEST : Response.METHOD_NOT_ALLOWED;
+        Response defaultResponse = new Response(resultCode, Response.EMPTY);
+        session.sendResponse(defaultResponse);
+    }
+
+    @Override
+    public synchronized void stop() {
+        for (SelectorThread selectorThread : selectors) {
+            if (selectorThread.isAlive()) {
+                for (Session session : selectorThread.selector) {
+                    session.socket().close();
+                }
+            }
+        }
+        super.stop();
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new CustomHttpSession(socket, this);
+    }
+
+    private void handleEntityRequest(Request request, HttpSession session) throws IOException {
         String id = request.getParameter("id=");
         if (id == null || id.isBlank()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
@@ -101,25 +140,20 @@ public class DaoHttpServer extends HttpServer {
         });
     }
 
-    @Override
-    public void handleDefault(Request request, HttpSession session) throws IOException {
-        String resultCode = request.getMethod() == Request.METHOD_GET
-                || request.getMethod() == Request.METHOD_PUT
-                ? Response.BAD_REQUEST : Response.METHOD_NOT_ALLOWED;
-        Response defaultResponse = new Response(resultCode, Response.EMPTY);
-        session.sendResponse(defaultResponse);
-    }
-
-    @Override
-    public synchronized void stop() {
-        for (SelectorThread selectorThread : selectors) {
-            if (selectorThread.isAlive()) {
-                for (Session session : selectorThread.selector) {
-                    session.socket().close();
-                }
-            }
+    private void handleEntitiesRequest(Request request, HttpSession session) throws IOException {
+        String start = request.getParameter("start=");
+        if (start == null || start.isBlank()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
         }
-        super.stop();
+        String end = request.getParameter("end=");
+        Iterator<BaseEntry<byte[], Long>> entriesIterator = dao.get(start.getBytes(StandardCharsets.UTF_8),
+                end == null ? null : end.getBytes(StandardCharsets.UTF_8));
+        if (entriesIterator.hasNext()) {
+            session.sendResponse(new ChunkedResponse(Response.OK, entriesIterator));
+        } else {
+            session.sendResponse(new Response(Response.OK, Response.EMPTY));
+        }
     }
 
     public Response handleGet(@Param(value = "id") String id) {
