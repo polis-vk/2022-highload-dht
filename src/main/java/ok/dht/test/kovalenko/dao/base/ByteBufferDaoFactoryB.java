@@ -8,10 +8,9 @@ import ok.dht.test.kovalenko.dao.utils.DaoUtils;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 
 @DaoFactoryB(stage = 5000, week = 1)
-public class ByteBufferDaoFactoryB implements DaoFactoryB.Factory<ByteBuffer, TypedTimedEntry> {
+public final class ByteBufferDaoFactoryB implements DaoFactoryB.Factory<ByteBuffer, TypedTimedEntry> {
 
     public static final ByteBufferDaoFactoryB INSTANSE = new ByteBufferDaoFactoryB();
 

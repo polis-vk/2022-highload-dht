@@ -17,8 +17,8 @@ public class MyQueueItem extends Session.QueueItem {
     private static final byte[] EOF = "0\r\n\r\n".getBytes(DaoUtils.BASE_CHARSET);
     private static final String KEY_VALUE_SEPARATOR = "\n";
     private final Iterator<TypedTimedEntry> mergeIterator;
-    private boolean isDrained = false;
-    private final List<byte[]> plannedToWrite = new ArrayList<byte[]>();
+    private final List<byte[]> plannedToWrite = new ArrayList<>();
+    private boolean isDrained;
 
     public MyQueueItem(Iterator<TypedTimedEntry> mergeIterator) {
         this.mergeIterator = mergeIterator;
