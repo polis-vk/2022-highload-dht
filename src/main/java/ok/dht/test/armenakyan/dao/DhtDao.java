@@ -3,7 +3,6 @@ package ok.dht.test.armenakyan.dao;
 import ok.dht.test.armenakyan.dao.model.Entity;
 import ok.dht.test.armenakyan.dao.model.Value;
 
-import java.io.Closeable;
 import java.util.Iterator;
 
 public interface DhtDao {

@@ -79,9 +79,9 @@ public class BufferedChunkQueueItem extends Session.QueueItem {
         byte[] chunkSizeByte = Utf8.toBytes(Integer.toHexString(chunkSize));
 
         ByteBuffer chunkBuffer = ByteBuffer.allocate(
-                chunkSizeByte.length +
-                        chunkSize +
-                        SEPARATOR.length + 2
+                chunkSizeByte.length
+                        + chunkSize
+                        + SEPARATOR.length * 2
         );
 
         return chunkBuffer

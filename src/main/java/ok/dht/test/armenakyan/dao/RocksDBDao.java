@@ -1,19 +1,14 @@
 package ok.dht.test.armenakyan.dao;
 
 import ok.dht.test.armenakyan.dao.iterator.EntityRocksIterator;
-import ok.dht.test.armenakyan.dao.model.Entity;
 import ok.dht.test.armenakyan.dao.model.Value;
-import ok.dht.test.kondraev.dao.Dao;
-import one.nio.http.Response;
 import one.nio.util.Utf8;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
 
 import javax.annotation.Nullable;
-import java.io.IOException;
 import java.nio.file.Path;
-import java.util.Iterator;
 
 public class RocksDBDao implements DhtDao {
     private final RocksDB rocksDB;
