@@ -1,5 +1,6 @@
 package ok.dht.test.nadutkin.impl.range;
 
+import ok.dht.test.nadutkin.impl.utils.UtilsClass;
 import one.nio.net.Session.QueueItem;
 import one.nio.net.Socket;
 
@@ -11,7 +12,7 @@ public class RangeQueueItem extends QueueItem {
     private int count;
 
     public RangeQueueItem(byte[] body) {
-        this.body = body;
+        this.body = UtilsClass.processBytes(body);
         this.offset = 0;
         this.count = body.length;
     }

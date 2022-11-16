@@ -119,4 +119,11 @@ public final class UtilsClass {
             return (StoredValue) in.readObject();
         }
     }
+
+    public static byte[] processBytes(byte[] bytes) {
+        if (bytes == null) {
+            return null;
+        }
+        return bytes.clone();
+    }
 }
