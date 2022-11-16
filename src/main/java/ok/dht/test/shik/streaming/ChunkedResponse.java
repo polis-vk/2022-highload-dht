@@ -1,13 +1,13 @@
 package ok.dht.test.shik.streaming;
 
-import javax.annotation.Nullable;
-
-import org.iq80.leveldb.DBIterator;
-
 import one.nio.http.Response;
 import one.nio.util.ByteArrayBuilder;
 import one.nio.util.Utf8;
+import org.iq80.leveldb.DBIterator;
 
+import javax.annotation.Nullable;
+
+@SuppressWarnings("PMD.ArrayIsStoredDirectly")
 public class ChunkedResponse extends Response {
 
     private static final byte[] HTTP11_HEADER = Utf8.toBytes("HTTP/1.1 ");
@@ -67,6 +67,7 @@ public class ChunkedResponse extends Response {
         this.iterator = iterator;
     }
 
+    @SuppressWarnings("PMD.MethodReturnsInternalArray")
     @Nullable
     public byte[] getUpperBound() {
         return upperBound;

@@ -1,11 +1,11 @@
 package ok.dht.test.shik.streaming;
 
-import java.io.IOException;
-
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Response;
 import one.nio.net.Socket;
+
+import java.io.IOException;
 
 public class StreamingSession extends HttpSession {
 

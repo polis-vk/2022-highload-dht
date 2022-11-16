@@ -17,11 +17,6 @@ public class Chunk {
         size = 0;
     }
 
-    public Chunk(byte[] key, byte[] value) {
-        this();
-        add(key, value);
-    }
-
     public boolean add(byte[] key, byte[] value) {
         if (key.length + value.length + 2 * DELIMITER.length + size > CHUNK_SIZE) {
             return false;

@@ -148,7 +148,8 @@ public class CustomHttpServer extends HttpServer {
             workersService.submitTask(() -> {
                 HandlerResponse handlerResponse = new HandlerResponse();
                 requestHandler.handleGetRange(
-                    new HandlerRangeRequest(new FollowerRequestState(request, session), params.getStart(), params.getEnd()),
+                    new HandlerRangeRequest(
+                        new FollowerRequestState(request, session), params.getStart(), params.getEnd()),
                     handlerResponse);
                 HttpServerUtils.sendResponse(session, handlerResponse.getResponse());
             });

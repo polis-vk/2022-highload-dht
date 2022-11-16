@@ -1,18 +1,17 @@
 package ok.dht.test.shik.streaming;
 
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.Map;
-
-import javax.annotation.Nullable;
-
-import org.iq80.leveldb.DBIterator;
-
 import ok.dht.test.shik.serialization.ByteArraySerializer;
 import ok.dht.test.shik.serialization.ByteArraySerializerFactory;
 import one.nio.net.Session;
 import one.nio.net.Socket;
 import one.nio.util.ByteArrayBuilder;
+import org.iq80.leveldb.DBIterator;
+
+import javax.annotation.Nullable;
+
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Map;
 
 public class StreamingQueueItem extends Session.QueueItem {
 
@@ -92,7 +91,7 @@ public class StreamingQueueItem extends Session.QueueItem {
         if (offset == nextBody.length) {
             readNext();
         }
-        return nextBody != null ? 1 : 0;
+        return nextBody == null ? 0 : 1;
     }
 
     private static byte[] buildBody(byte[] nextChunk) {
