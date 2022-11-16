@@ -102,7 +102,7 @@ final class AcquireContext {
         public Response response() {
             return new Response(
                     String.valueOf(response.getStatus()),
-                    value == null || value.isTombstone() ? Response.EMPTY : value.value()
+                    value == null || value.isTombstone() ? Response.EMPTY : value.rawData()
             );
         }
     }

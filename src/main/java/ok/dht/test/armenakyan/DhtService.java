@@ -3,6 +3,9 @@ package ok.dht.test.armenakyan;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.armenakyan.chunk.ChunkedResponse;
+import ok.dht.test.armenakyan.dao.RocksDBDao;
+import ok.dht.test.armenakyan.dao.iterator.EntityRocksIterator;
 import ok.dht.test.armenakyan.distribution.SelfNodeHandler;
 import ok.dht.test.armenakyan.distribution.coordinator.ClusterCoordinator;
 import ok.dht.test.armenakyan.distribution.hashing.MD5KeyHasher;
@@ -24,6 +27,9 @@ public class DhtService implements Service {
     private static final String ACK_PARAM = "ack=";
     private static final String FROM_PARAM = "from=";
 
+    private static final String START_PARAM = "start=";
+    private static final String END_PARAM = "end=";
+
     private static final Set<Integer> ALLOWED_METHODS = Set.of(
             Request.METHOD_GET, Request.METHOD_PUT, Request.METHOD_DELETE
     );
@@ -31,6 +37,7 @@ public class DhtService implements Service {
     private final ServiceConfig serviceConfig;
     private HttpServer httpServer;
     private ClusterCoordinator coordinator;
+    private RocksDBDao dao;
     private ForkJoinPool internalPool;
 
     public DhtService(ServiceConfig serviceConfig) {
@@ -52,10 +59,12 @@ public class DhtService implements Service {
                 this
         );
 
+        this.dao = new RocksDBDao(serviceConfig.workingDir());
+
         coordinator = new ClusterCoordinator(
                 serviceConfig,
                 new MD5KeyHasher(),
-                new SelfNodeHandler(serviceConfig.workingDir(), internalPool)
+                new SelfNodeHandler(dao, internalPool)
         );
 
         httpServer.start();
@@ -67,6 +76,7 @@ public class DhtService implements Service {
     public CompletableFuture<?> stop() throws IOException {
         httpServer.stop();
         coordinator.close();
+        dao.close();
         internalPool.shutdownNow();
 
         return CompletableFuture.completedFuture(null);
@@ -118,6 +128,20 @@ public class DhtService implements Service {
         }
 
         coordinator.replicate(id, request, session, ack, from);
+    }
+
+    @Path("/v0/entities")
+    public void handleRange(Request request, HttpSession session) throws IOException {
+        String startId = request.getParameter(START_PARAM);
+        if (startId == null || startId.isBlank()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+        String endId = request.getParameter(END_PARAM);
+
+        EntityRocksIterator iterator = dao.range(startId, endId);
+
+        session.sendResponse(new ChunkedResponse(Response.OK, iterator));
     }
 
     @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")

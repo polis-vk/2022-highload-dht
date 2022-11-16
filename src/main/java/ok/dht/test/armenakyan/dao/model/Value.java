@@ -37,10 +37,9 @@ public class Value {
     }
 
     public byte[] toBytes() {
-        ByteBuffer buffer =
-                ByteBuffer.allocate(Long.BYTES + Byte.BYTES + (data == null ? 0 : data.length))
-                        .putLong(timestamp)
-                        .put((byte) (isTombstone ? 1 : 0));
+        ByteBuffer buffer = ByteBuffer.allocate(size())
+                .putLong(timestamp)
+                .put((byte) (isTombstone ? 1 : 0));
 
         if (data != null) {
             buffer.put(data);
@@ -49,8 +48,16 @@ public class Value {
         return buffer.array();
     }
 
-    public byte[] value() {
-        return data == null ? null : Arrays.copyOf(data, data.length);
+    public int size() {
+        return Long.BYTES + Byte.BYTES + (data == null ? 0 : data.length);
+    }
+
+    public int rawSize() {
+        return data == null ? 0 : data.length;
+    }
+
+    public byte[] rawData() {
+        return data == null ? new byte[0] : Arrays.copyOf(data, data.length);
     }
 
     public long timestamp() {

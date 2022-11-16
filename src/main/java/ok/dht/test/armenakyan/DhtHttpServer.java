@@ -1,11 +1,14 @@
 package ok.dht.test.armenakyan;
 
+import ok.dht.test.armenakyan.chunk.ChunkedHttpSession;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
@@ -33,6 +36,11 @@ public class DhtHttpServer extends HttpServer {
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
         session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new ChunkedHttpSession(socket, this);
     }
 
     @Override

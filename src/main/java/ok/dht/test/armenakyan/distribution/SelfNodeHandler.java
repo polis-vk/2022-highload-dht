@@ -10,8 +10,6 @@ import one.nio.http.Response;
 import org.rocksdb.RocksDB;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 
@@ -24,14 +22,9 @@ public class SelfNodeHandler implements NodeRequestHandler {
         RocksDB.loadLibrary();
     }
 
-    public SelfNodeHandler(Path dbWorkingDir, ExecutorService workerPool) throws IOException {
-        Files.createDirectories(dbWorkingDir);
-        try {
-            this.rocksDao = new RocksDBDao(dbWorkingDir);
-            this.workerPool = workerPool;
-        } catch (DaoException e) {
-            throw new IOException(e);
-        }
+    public SelfNodeHandler(RocksDBDao dao, ExecutorService workerPool) throws IOException {
+        this.rocksDao = dao;
+        this.workerPool = workerPool;
     }
 
     @Override

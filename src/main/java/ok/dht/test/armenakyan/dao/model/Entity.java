@@ -24,4 +24,16 @@ public class Entity {
     public Value value() {
         return value;
     }
+
+    public byte[] key() {
+        return Arrays.copyOf(key, key.length);
+    }
+
+    public int size() {
+        return key.length + value.size();
+    }
+
+    public int rawSize() {
+        return key.length + value.rawSize();
+    }
 }

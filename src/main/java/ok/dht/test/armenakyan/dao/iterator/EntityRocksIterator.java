@@ -23,13 +23,12 @@ public class EntityRocksIterator implements Iterator<Entity> {
     @Override
     public boolean hasNext() {
         if (!iterator.isValid()) {
-            iterator.close();
             return false;
         }
 
         String currentKey = new String(iterator.key(), StandardCharsets.UTF_8);
 
-        return currentKey.compareTo(toKey) < 0;
+        return toKey == null || currentKey.compareTo(toKey) < 0;
     }
 
     @Override
