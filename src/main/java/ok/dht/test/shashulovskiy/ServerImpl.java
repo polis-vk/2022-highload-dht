@@ -27,7 +27,7 @@ public final class ServerImpl {
             ServiceConfig cfg = new ServiceConfig(
                     port,
                     url,
-                    List.of("http://localhost:19234", "http://localhost:19235", "http://localhost:19236"),
+                    List.of("http://localhost:19234"),
                     Files.createTempDirectory("server" + port)
             );
             new ServiceImpl(cfg).start().get(1, TimeUnit.SECONDS);

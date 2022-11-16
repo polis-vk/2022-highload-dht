@@ -55,7 +55,7 @@ public class ChunkedResponse extends Response {
     }
 
     public void startSending() throws IOException {
-        httpSession.sendResponse(START_CHUNK);
+        httpSession.sendResponse(getStartChunk());
     }
 
     public void finishSending() throws IOException {
@@ -63,5 +63,11 @@ public class ChunkedResponse extends Response {
             flush();
         }
         flush();
+    }
+
+    private Response getStartChunk() {
+        var startChunk = new Response(Response.OK, Response.EMPTY);
+        startChunk.getHeaders()[1] = "Transfer-Encoding: chunked";
+        return startChunk;
     }
 }
