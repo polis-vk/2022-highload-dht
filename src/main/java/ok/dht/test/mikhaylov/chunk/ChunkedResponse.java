@@ -65,16 +65,17 @@ public class ChunkedResponse extends Response {
         public byte[] next() {
             while (true) {
                 byte[] next;
-                if (!wrappedIterator.hasNext()) {
+                if (wrappedIterator.hasNext()) {
+                    next = wrappedIterator.next();
+                } else {
                     hasNext = false;
                     next = new byte[]{};
-                } else {
-                    next = wrappedIterator.next();
                 }
                 byte[] length = Integer.toHexString(next.length).getBytes(StandardCharsets.UTF_8);
-                boolean flush = (buffer.position() != 0 && buffer.remaining() < length.length + 2 + next.length + 2);
                 byte[] result = null;
+                boolean flush = (buffer.position() != 0 && buffer.remaining() < length.length + 2 + next.length + 2);
                 if (flush) {
+                    // store result to return it later since we should still save `next`
                     result = new byte[buffer.position()];
                     buffer.flip();
                     buffer.get(result);
