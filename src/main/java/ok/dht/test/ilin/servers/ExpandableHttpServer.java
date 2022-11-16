@@ -88,7 +88,9 @@ public class ExpandableHttpServer extends HttpServer {
             sendBadRequest(session);
             return;
         }
-        entityService.listEntries(session, start, end);
+        executorService.execute(() -> {
+            entityService.listEntries(session, start, end);
+        });
     }
 
     private void handleEntity(Request request, HttpSession session) throws IOException {
