@@ -4,6 +4,7 @@ import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.mikhaylov.chunk.ChunkTransfer;
+import ok.dht.test.mikhaylov.chunk.ChunkedResponse;
 import ok.dht.test.mikhaylov.internal.InternalHttpClient;
 import ok.dht.test.mikhaylov.internal.JavaHttpClient;
 import ok.dht.test.mikhaylov.internal.ReplicaRequirements;
@@ -16,6 +17,7 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
 import org.rocksdb.RocksDB;
@@ -27,6 +29,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -198,20 +201,7 @@ public class MyService implements Service {
             return;
         }
 
-        try (var iterator = db.newIterator();
-             var chunkTransfer = new ChunkTransfer(session)) {
-            iterator.seek(strToBytes(start));
-            byte[] endBytes = end == null ? null : strToBytes(end);
-            while (iterator.isValid()) {
-                byte[] key = iterator.key();
-                if (endBytes != null && Arrays.compare(key, endBytes) >= 0) { // inclusive
-                    break;
-                }
-                byte[] value = DatabaseUtilities.getValue(iterator.value());
-                chunkTransfer.send(key, value);
-                iterator.next();
-            }
-        }
+        session.sendResponse(new ChunkedResponse(new EntitiesIterator(db.newIterator(), start, end)));
     }
 
     // Assumes everything is valid
@@ -299,6 +289,21 @@ public class MyService implements Service {
             super(config);
             requestHandlers = new ThreadPoolExecutor(REQUEST_HANDLERS, REQUEST_HANDLERS, 0L, TimeUnit.MILLISECONDS,
                     new LinkedBlockingDeque<>(MAX_REQUESTS));
+        }
+
+        @Override
+        public HttpSession createSession(Socket socket) {
+            return new HttpSession(socket, this) {
+                @Override
+                protected void writeResponse(Response response, boolean writeBody) throws IOException {
+                    if (response instanceof ChunkedResponse chunkedResponse) {
+                        super.writeResponse(response, false);
+                        chunkedResponse.writeBody(this);
+                    } else {
+                        super.writeResponse(response, writeBody);
+                    }
+                }
+            };
         }
 
         @Override

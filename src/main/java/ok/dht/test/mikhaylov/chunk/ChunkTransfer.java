@@ -8,17 +8,15 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
 public class ChunkTransfer implements AutoCloseable {
-    private static final int CHUNK_SIZE = 1024; // todo: tune
+    private static final int BUFFER_SIZE = 1024; // todo: tune
 
     private final HttpSession session;
 
     private final ByteBuffer buffer;
 
-    private boolean firstChunk = true;
-
     public ChunkTransfer(HttpSession session) {
         this.session = session;
-        buffer = ByteBuffer.allocate(CHUNK_SIZE);
+        buffer = ByteBuffer.allocate(BUFFER_SIZE);
     }
 
     private void addCRLF() {
@@ -45,17 +43,17 @@ public class ChunkTransfer implements AutoCloseable {
     }
 
     private void flush() throws IOException {
+        if (buffer.position() == 0) {
+            return;
+        }
         byte[] body = new byte[buffer.position()];
         buffer.flip();
         buffer.get(body);
-        Response response = new Response(Response.OK, body);
-        if (firstChunk) {
-            response.getHeaders()[1] = "Transfer-Encoding: chunked";
-            firstChunk = false;
-        }
+        Response response = new Response(Response.OK);
+        response.addHeader("Transfer-Encoding: chunked");
+        response.setBody(body);
         session.sendResponse(response);
         buffer.clear();
-        firstChunk = false;
     }
 
     public void send(byte[] key, byte[] value) throws IOException {
@@ -63,7 +61,7 @@ public class ChunkTransfer implements AutoCloseable {
     }
 
     public void close() throws IOException {
-        checkFlush(1 + 2 + 2);
+        flush();
         buffer.put((byte) '0');
         addCRLF();
         addCRLF();
