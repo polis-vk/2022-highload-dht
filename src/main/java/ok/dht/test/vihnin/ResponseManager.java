@@ -1,14 +1,23 @@
 package ok.dht.test.vihnin;
 
 import ok.dht.test.vihnin.database.DataBase;
+import ok.dht.test.vihnin.database.Row;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import one.nio.util.ByteArrayBuilder;
+import one.nio.util.Utf8;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import static ok.dht.test.vihnin.ParallelHttpServer.TIME_HEADER_NAME;
 import static ok.dht.test.vihnin.ServiceUtils.ENDPOINT;
+import static ok.dht.test.vihnin.ServiceUtils.RANGE_ENDPOINT;
 import static ok.dht.test.vihnin.ServiceUtils.emptyResponse;
 
 public class ResponseManager {
@@ -69,6 +78,45 @@ public class ResponseManager {
         storage.put(id, tombstone(getTimestamp(request)));
 
         return emptyResponse(Response.ACCEPTED);
+    }
+
+    public Response handleGetRange(@Param(value = "start", required = true) String start, String end) {
+        if (storage == null) return emptyResponse(Response.NOT_FOUND);
+        if (start == null || start.isEmpty()) return emptyResponse(Response.BAD_REQUEST);
+
+        var rows = storage.getRange(start, end);
+
+        var newResponse = new Response(Response.OK);
+        newResponse.addHeader("Transfer-Encoding: chunked");
+
+        ByteArrayBuilder body = new ByteArrayBuilder();
+
+        byte[] delimiter = Utf8.toBytes("\n");
+        byte[] chunkDelimiter = Utf8.toBytes("\r\n");
+
+        while (rows.hasNext()) {
+            Row<String, byte[]> row = rows.next();
+
+            byte[] key = Utf8.toBytes(row.getKey());
+            byte[] value = parseActualDataFromData(row.getValue());
+
+            int chunkSize = key.length + delimiter.length + value.length;
+
+            body.append(Utf8.toBytes(Integer.toHexString(chunkSize)));
+            body.append(chunkDelimiter);
+            body.append(key);
+            body.append(delimiter);
+            body.append(value);
+            body.append(chunkDelimiter);
+        }
+
+        body.append(Utf8.toBytes("0"));
+        body.append(chunkDelimiter);
+        body.append(chunkDelimiter);
+
+        newResponse.setBody(body.toBytes());
+
+        return newResponse;
     }
 
     public Response handleRequest(Request request) {

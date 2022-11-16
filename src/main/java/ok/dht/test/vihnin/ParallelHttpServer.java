@@ -24,6 +24,8 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import static ok.dht.test.vihnin.ServiceUtils.ENDPOINT;
+import static ok.dht.test.vihnin.ServiceUtils.RANGE_ENDPOINT;
 import static ok.dht.test.vihnin.ServiceUtils.emptyResponse;
 import static ok.dht.test.vihnin.ServiceUtils.handleSingleAcknowledgment;
 
@@ -93,6 +95,16 @@ public class ParallelHttpServer extends HttpServer {
             return;
         }
 
+        if (ENDPOINT.equals(request.getPath())) {
+            handleSingleValueRequest(request, session);
+        } else if (RANGE_ENDPOINT.equals(request.getPath())) {
+            handleRangeRequest(request, session);
+        } else {
+            session.sendResponse(emptyResponse(Response.BAD_REQUEST));
+        }
+    }
+
+    private void handleSingleValueRequest(Request request, HttpSession session) throws IOException {
         String id = request.getParameter("id=");
         String ackRaw = request.getParameter("ack=");
         String fromRaw = request.getParameter("from=");
@@ -146,6 +158,35 @@ public class ParallelHttpServer extends HttpServer {
             session.sendError(
                     Response.SERVICE_UNAVAILABLE,
                     "Handling was rejected due to some internal problem");
+        }
+    }
+
+    private void handleRangeRequest(Request request, HttpSession session) throws IOException {
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+
+        if (start == null) {
+            session.sendResponse(emptyResponse(Response.BAD_REQUEST));
+            return;
+        }
+
+        try {
+            executorService.submit(() -> {
+                responseByManager(session, start, end);
+            });
+        } catch (RejectedExecutionException e) {
+            logger.error(e.getMessage());
+            session.sendError(
+                    Response.SERVICE_UNAVAILABLE,
+                    "Handling was rejected due to some internal problem");
+        }
+    }
+
+    private void responseByManager(HttpSession session, String start, String end) {
+        try {
+            session.sendResponse(responseManager.handleGetRange(start, end));
+        } catch (IOException e) {
+            handleException(session, e);
         }
     }
 

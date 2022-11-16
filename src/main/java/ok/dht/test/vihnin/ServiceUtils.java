@@ -25,6 +25,8 @@ public final class ServiceUtils {
     // must be > 2
     public static final int VNODE_NUMBER_PER_SERVER = 5;
     public static final String ENDPOINT = "/v0/entity";
+    public static final String RANGE_ENDPOINT = "/v0/entities";
+
     public static final int AWAIT_DURATION_MILLS = 1200;
 
     private ServiceUtils() {
