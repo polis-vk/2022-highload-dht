@@ -26,6 +26,7 @@ public class ReplicationManager {
     public static final int CHUNK_REQUEST_CAPACITY = 512;
     private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(4);
     private static final Logger LOGGER = LoggerFactory.getLogger(ReplicationManager.class);
+    public static final char DELIMETER = '\n';
     private final ShardingAlgorithm algorithm;
     private final String selfUrl;
     private final RequestExecutor requestExecutor;
@@ -198,11 +199,11 @@ public class ReplicationManager {
 
     public void handleRange(String start, String end, HttpSession session) {
         Iterator<Pair<byte[], byte[]>> iterator = requestExecutor.entityHandlerRange(start, end);
-        Utils.sendResponse(session, RangeResponse.OPEN_CHUNKED);
+        Utils.sendResponse(session, RangeResponse.openChunks());
         ByteArrayBuilder byteArrayBuilder = new ByteArrayBuilder();
         while (iterator.hasNext()) {
             Pair<byte[], byte[]> current = iterator.next();
-            byteArrayBuilder.append(current.getKey()).append('\n').append(current.getValue());
+            byteArrayBuilder.append(current.getKey()).append(DELIMETER).append(current.getValue());
             if (CHUNK_REQUEST_CAPACITY < byteArrayBuilder.length()) {
                 Utils.sendResponse(session, RangeResponse.createOneChunk(byteArrayBuilder.toBytes()));
             }
