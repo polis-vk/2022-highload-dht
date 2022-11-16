@@ -7,6 +7,7 @@ import java.util.Iterator;
 
 public class ChunkedResponse extends Response {
     private final Iterator<BaseEntry<byte[], Long>> entriesIterator;
+
     public ChunkedResponse(String resultCode, Iterator<BaseEntry<byte[], Long>> entriesIterator) {
         super(resultCode);
         super.addHeader("Content-Type: text/plain");

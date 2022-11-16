@@ -17,6 +17,7 @@ public class IterableQueueItem extends Session.QueueItem {
     private final Iterator<BaseEntry<byte[], Long>> entriesIterator;
     private final ByteBuffer buffer = ByteBuffer.allocate(BUFFER_CAPACITY);
     private boolean isFinalBytesShouldBeWritten;
+
     public IterableQueueItem(Iterator<BaseEntry<byte[], Long>> entriesIterator, ChunkedResponse response) {
         this.entriesIterator = entriesIterator;
         byte[] headers = response.toBytes(false);
@@ -44,7 +45,7 @@ public class IterableQueueItem extends Session.QueueItem {
         if (!entriesIterator.hasNext()) {
             byte[] finalBytes = FINAL_BYTES.getBytes(StandardCharsets.UTF_8);
             if (finalBytes.length <= buffer.remaining()) {
-                buffer.put(finalBytes, 0,  finalBytes.length);
+                buffer.put(finalBytes, 0, finalBytes.length);
             } else {
                 int written = writeInSocket(socket);
                 isFinalBytesShouldBeWritten = true;

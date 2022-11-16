@@ -28,7 +28,8 @@ public class CustomHttpSession extends HttpSession {
             Iterator<BaseEntry<byte[], Long>> entriesIterator = ((ChunkedResponse) response).getIterator();
             write(new IterableQueueItem(entriesIterator, (ChunkedResponse) response));
 
-            if ((this.handling = handling = pipeline.pollFirst()) != null) {
+            this.handling = handling = pipeline.pollFirst();
+            if ((this.handling) != null) {
                 if (handling == FIN) {
                     scheduleClose();
                 } else {
