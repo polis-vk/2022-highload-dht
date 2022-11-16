@@ -3,12 +3,14 @@ package ok.dht.test.mikhaylov;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.mikhaylov.chunk.ChunkTransfer;
 import ok.dht.test.mikhaylov.internal.InternalHttpClient;
 import ok.dht.test.mikhaylov.internal.JavaHttpClient;
 import ok.dht.test.mikhaylov.internal.ReplicaRequirements;
 import ok.dht.test.mikhaylov.internal.ShardResponseProcessor;
 import ok.dht.test.mikhaylov.resolver.ConsistentHashingResolver;
 import ok.dht.test.mikhaylov.resolver.ShardResolver;
+import ok.dht.test.panov.dao.lsm.StorageCompanionObject;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -24,6 +26,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -61,10 +64,12 @@ public class MyService implements Service {
 
     private static final byte[] EMPTY_ID_RESPONSE_BODY = strToBytes("Empty id");
 
-    private static final Set<Integer> ALLOWED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT,
+    private static final Set<Integer> ENTITY_ALLOWED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT,
             Request.METHOD_DELETE);
 
     private static final String ENTITY_PATH = "/v0/entity";
+
+    private static final String ENTITIES_PATH = "/v0/entities";
 
     private static final String ENTITY_INTERNAL_PATH = "/v0/internal/entity";
 
@@ -134,19 +139,20 @@ public class MyService implements Service {
     public void route(Request request, HttpSession session) throws IOException {
         String path = request.getPath();
         switch (path) {
-            case ENTITY_PATH -> handle(request, session);
+            case ENTITY_PATH -> handleEntity(request, session);
+            case ENTITIES_PATH -> handleEntities(request, session);
             case ENTITY_INTERNAL_PATH -> session.sendResponse(handleInternal(request));
             default -> session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
         }
     }
 
-    public void handle(Request request, HttpSession session) throws IOException {
+    private void handleEntity(Request request, HttpSession session) throws IOException {
         String id = request.getParameter("id=");
         if (id == null || id.isEmpty()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, EMPTY_ID_RESPONSE_BODY));
             return;
         }
-        if (!ALLOWED_METHODS.contains(request.getMethod())) {
+        if (!ENTITY_ALLOWED_METHODS.contains(request.getMethod())) {
             session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
             return;
         }
@@ -176,6 +182,35 @@ public class MyService implements Service {
                 });
             } else {
                 proxyRequest(request, shardIndex, responseProcessor);
+            }
+        }
+    }
+
+    private void handleEntities(Request request, HttpSession session) throws IOException {
+        if (request.getMethod() != Request.METHOD_GET) {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            return;
+        }
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+        if (start == null || start.isEmpty() || (end != null && end.isEmpty())
+                || (end != null && start.compareTo(end) > 0)) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        try (var iterator = db.newIterator();
+             var chunkTransfer = new ChunkTransfer(session)) {
+            iterator.seek(strToBytes(start));
+            byte[] endBytes = end == null ? null : strToBytes(end);
+            while (iterator.isValid()) {
+                byte[] key = iterator.key();
+                if (endBytes != null && Arrays.compare(key, endBytes) >= 0) { // inclusive
+                    break;
+                }
+                byte[] value = DatabaseUtilities.getValue(iterator.value());
+                chunkTransfer.send(key, value);
+                iterator.next();
             }
         }
     }
@@ -246,7 +281,7 @@ public class MyService implements Service {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
@@ -285,13 +320,13 @@ public class MyService implements Service {
         @Override
         public synchronized void stop() {
             requestHandlers.shutdown();
-            try {
-                if (!requestHandlers.awaitTermination(1, TimeUnit.SECONDS)) {
-                    requestHandlers.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+//            try {
+//                if (!requestHandlers.awaitTermination(1, TimeUnit.SECONDS)) {
+//                    requestHandlers.shutdownNow();
+//                }
+//            } catch (InterruptedException e) {
+//                Thread.currentThread().interrupt();
+//            }
             for (SelectorThread selectorThread : selectors) {
                 for (Session session : selectorThread.selector) {
                     session.close();
