@@ -34,7 +34,9 @@ public class StreamingHttpSession extends HttpSession {
 
         if (!keepAlive) scheduleClose();
 
-        if ((this.handling = handling = pipeline.pollFirst()) != null) {
+        handling = pipeline.pollFirst();
+        this.handling = handling;
+        if (handling != null) {
             if (handling == FIN) {
                 scheduleClose();
             } else {

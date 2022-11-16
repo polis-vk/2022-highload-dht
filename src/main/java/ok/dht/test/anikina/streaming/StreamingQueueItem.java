@@ -8,6 +8,7 @@ import one.nio.net.Socket;
 import one.nio.util.ByteArrayBuilder;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Iterator;
 
 public class StreamingQueueItem extends QueueItem {
@@ -18,13 +19,13 @@ public class StreamingQueueItem extends QueueItem {
     private final byte[] headers;
     private byte[] bytes;
     private boolean sendHeaders = true;
-    private int count = 0;
-    private int written = 0;
+    private int count;
+    private int written;
 
     public StreamingQueueItem(Iterator<Entry<MemorySegment>> iterator, byte[] headers) {
         super();
         this.iterator = iterator;
-        this.headers = headers;
+        this.headers = Arrays.copyOf(headers, headers.length);
     }
 
     @Override
@@ -40,11 +41,11 @@ public class StreamingQueueItem extends QueueItem {
         boolean finalChunk = false;
         if (written == count) {
             byte[] data;
-            if (!iterator.hasNext()) {
+            if (iterator.hasNext()) {
+                data = makeResponse(iterator.next());
+            } else {
                 data = makeFinalResponse();
                 finalChunk = true;
-            } else {
-                data = makeResponse(iterator.next());
             }
 
             if (sendHeaders) {
