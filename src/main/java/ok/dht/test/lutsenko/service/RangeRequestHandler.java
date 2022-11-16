@@ -103,10 +103,12 @@ public final class RangeRequestHandler {
                 if (byteBuffer.remaining() < entryChunk.sizeForBuffer) {
                     byteBuffer.flip();
                     final int written = socket.write(byteBuffer);
-                    byteBuffer.rewind();
                     if (entryChunk.sizeForBuffer > byteBuffer.limit()) {
                         byteBuffer = ByteBuffer.allocate(entryChunk.sizeForBuffer + LAST_CHUNK_BYTES.length);
                         byteBuffer.limit(entryChunk.sizeForBuffer);
+                    } else {
+                        byteBuffer.rewind();
+                        byteBuffer.limit(WRITE_BUFFER_LIMIT);
                     }
                     entryChunk.putInBuffer(byteBuffer);
                     return written;
@@ -117,7 +119,7 @@ public final class RangeRequestHandler {
             byteBuffer.put(LAST_CHUNK_BYTES);
             byteBuffer.flip();
             int written = socket.write(byteBuffer);
-            byteBuffer.rewind();
+            byteBuffer.clear();
             return written;
         }
     }
