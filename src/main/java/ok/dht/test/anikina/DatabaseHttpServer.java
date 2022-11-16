@@ -190,7 +190,7 @@ public class DatabaseHttpServer extends HttpServer {
 
         for (String node : nodes) {
             HttpRequest httpRequest = RequestUtils.makeHttpRequest(node, key, request, timestamp);
-            client.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
+            CompletableFuture<?> ignored = client.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
                     .thenApply(httpResponse ->
                             new Response(
                                     RequestUtils.matchStatusCode(httpResponse.statusCode()),
@@ -205,7 +205,7 @@ public class DatabaseHttpServer extends HttpServer {
                     });
         }
         if (saveToDao) {
-            CompletableFuture.supplyAsync(() ->
+            CompletableFuture<?> ignored = CompletableFuture.supplyAsync(() ->
                     requestHandler.handle(
                             request.getMethod(),
                             key,
