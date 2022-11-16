@@ -1,7 +1,6 @@
 package ok.dht.test.shik.model;
 
-import
-    javax.annotation.Nullable;
+import javax.annotation.Nullable;
 
 import java.util.Comparator;
 

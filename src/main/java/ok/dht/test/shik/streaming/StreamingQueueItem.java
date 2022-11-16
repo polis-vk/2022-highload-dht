@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Map;
 
+@SuppressWarnings("PMD.ArrayIsStoredDirectly")
 public class StreamingQueueItem extends Session.QueueItem {
 
     private static final String CRLF = "\r\n";
