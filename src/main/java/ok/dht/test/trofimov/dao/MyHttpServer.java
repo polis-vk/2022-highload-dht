@@ -30,6 +30,7 @@ import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -158,7 +159,7 @@ public class MyHttpServer extends HttpServer {
                         }
                         anySuccessIndex.set(finalI);
                         success.incrementAndGet();
-                    } catch (IOException e) {
+                    } catch (IOException | ExecutionException e) {
                         logger.error("Exception while proxy request to {}", node.url, e);
                     } catch (InterruptedException e) {
                         logger.error("Interrupted while proxy request to {}", node.url, e);
@@ -345,7 +346,7 @@ public class MyHttpServer extends HttpServer {
         }
     }
 
-    private Response proxyRequest(String url, Request request) throws IOException, InterruptedException {
+    private Response proxyRequest(String url, Request request) throws InterruptedException, ExecutionException {
         HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(url + request.getURI()))
                 .method(
                         request.getMethodName(),
@@ -357,14 +358,17 @@ public class MyHttpServer extends HttpServer {
                 .headers("X-timestamp", request.getHeader(TIMESTAMP_HEADER))
                 .build();
 
-        HttpResponse<byte[]> response = client.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
-        String status = getResponseStatusCode(response.statusCode());
-        Response result = new Response(status, response.body());
-        Optional<String> headerTimestamp = response.headers().firstValue("x-timestamp");
-        Optional<String> headerTomb = response.headers().firstValue("x-tomb");
-        headerTimestamp.ifPresent(s -> result.addHeader(TIMESTAMP_HEADER + s));
-        headerTomb.ifPresent(s -> result.addHeader(X_TOMB_HEADER + s));
-        return result;
+        return client.sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .thenApply(r -> {
+                    String status = getResponseStatusCode(r.statusCode());
+                    Response result = new Response(status, r.body());
+                    Optional<String> headerTimestamp = r.headers().firstValue("x-timestamp");
+                    Optional<String> headerTomb = r.headers().firstValue("x-tomb");
+                    headerTimestamp.ifPresent(s -> result.addHeader(TIMESTAMP_HEADER + s));
+                    headerTomb.ifPresent(s -> result.addHeader(X_TOMB_HEADER + s));
+                    return result;
+                }).get();
+
     }
 
     @Override
