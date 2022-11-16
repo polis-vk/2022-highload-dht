@@ -285,7 +285,8 @@ public class DaoHttpServer extends HttpServer {
         for (Response response : responses) {
             int responseStatus = response.getStatus();
             if (Long.parseLong(response.getHeader("Number")) == number
-                    && ((responseStatus >= 200 && responseStatus <= 202) || responseStatus == 404)) {
+                    && ((responseStatus >= 200 && responseStatus <= 202)
+                    || responseStatus == 404)) {
                 successResponses++;
             }
         }
