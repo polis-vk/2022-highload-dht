@@ -191,7 +191,7 @@ public class EntityService implements HandleService {
                 .header(TIMESTAMP_HEADER, String.valueOf(parameters.timestamp))
                 .method(
                         ONE_NIO_METHOD_CODE_TO_HTTP_METHOD.get(parameters.method),
-                        HttpRequest.BodyPublishers.ofByteArray(parameters.body)
+                        HttpRequest.BodyPublishers.ofByteArray(parameters.body == null ? new byte[0] : parameters.body)
                 )
                 .build();
     }

@@ -65,6 +65,14 @@ public class EntitiesService implements HandleService {
                 return null;
             }
 
+            if (start.compareTo(end) > 0) {
+                session.sendResponse(ResponseEntity.badRequest(
+                                "<start> key is bigger then <end> key"
+                        )
+                );
+                return null;
+            }
+
             return new Parameters(
                     start,
                     end
@@ -98,37 +106,37 @@ public class EntitiesService implements HandleService {
 
         public byte[] get() {
             try {
-                if (iterator.hasNext()) {
+                while (iterator.hasNext()) {
                     Map.Entry<byte[], byte[]> entry = iterator.next();
 
                     if (parameters.end != null
-                            && Arrays.equals(entry.getKey(), parameters.end.getBytes(StandardCharsets.UTF_8))) {
+                            && Arrays.compare(entry.getKey(), parameters.end.getBytes(StandardCharsets.UTF_8)) >= 0) {
                         iterator.close();
                         return new byte[0];
                     }
 
-                    return createData(entry);
+                    DaoEntry daoEntry = ObjectMapper.deserialize(entry.getValue());
+
+                    if (!daoEntry.isTombstone()) {
+                        return createData(entry.getKey(), daoEntry.getValue());
+                    }
                 }
 
                 return new byte[0];
             } catch (IOException e) {
                 throw new EntitiesServiceException("Can not close iterator", e);
+            } catch (ClassNotFoundException e) {
+                throw new EntitiesServiceException("Can not deserialize DaoEntry", e);
             }
         }
 
-        private static byte[] createData(Map.Entry<byte[], byte[]> entry) {
-            try {
-                final byte[] key = entry.getKey();
-                final byte[] value = ((DaoEntry) ObjectMapper.deserialize(entry.getValue())).getValue();
+        private static byte[] createData(byte[] key, byte[] value) {
+            return ByteBuffer.allocate(key.length + NEW_LINE.length + value.length)
+                    .put(key)
+                    .put(NEW_LINE)
+                    .put(value)
+                    .array();
 
-                return ByteBuffer.allocate(key.length + NEW_LINE.length + value.length)
-                        .put(key)
-                        .put(NEW_LINE)
-                        .put(value)
-                        .array();
-            } catch (IOException | ClassNotFoundException e) {
-                throw new EntitiesServiceException("Can not deserialize DaoEntry", e);
-            }
         }
     }
 }
