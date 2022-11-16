@@ -163,8 +163,8 @@ public class DaoHttpServer extends HttpServer {
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    private void coordinateRequest(Request request, HttpSession session, String id, int ack, int from,
-                                   long timestamp) throws IOException {
+    private void coordinateRequest(Request request, HttpSession session, String id, int ack, int from, long timestamp)
+            throws IOException {
         currentMethod = request.getMethodName();
         activeResponsesNumbers.add(timestamp);
         for (ClusterNode targetClusterNode : nodeDeterminer.getNodeUrls(id, from)) {
