@@ -86,8 +86,8 @@ public class DaoService implements Service {
     public void entity(
         @Param(value = "id") String id, @Param(value = "from") String fromParam,
         @Param(value = "ack") String ackParam, Request request, HttpSession session
-    ) throws IOException
-    {
+    ) throws IOException {
+
         if (request.getMethod() != Request.METHOD_GET
             && request.getMethod() != Request.METHOD_DELETE
             && request.getMethod() != Request.METHOD_PUT
@@ -139,12 +139,11 @@ public class DaoService implements Service {
     }
 
     @Path("/v0/entities")
-    @RequestMethod({Request.METHOD_GET})
     public void entities(
         @Param(value = "start") String start, @Param(value = "end") String end,
         Request request, HttpSession session
-    ) throws IOException
-    {
+    ) throws IOException {
+
         if (start == null || start.isBlank()) {
             session.sendResponse(responseBadRequest());
             return;
@@ -157,7 +156,6 @@ public class DaoService implements Service {
 
         session.sendResponse(dao.rangeGet(start, end));
     }
-
 
     private void multicast(Request request, String id, String[] nodeUrls, ReplicationHandler handler) {
         Timestamp timestamp = new Timestamp(System.currentTimeMillis());
@@ -172,7 +170,7 @@ public class DaoService implements Service {
                 CompletableFuture.runAsync(() -> {
                     Response response = dao.executeDaoOperation(id, request, timestamp);
                     handler.handleLocalResponse(response, nodeUrl);
-                },  replicationExecutor);
+                }, replicationExecutor);
                 continue;
             }
 

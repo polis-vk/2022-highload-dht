@@ -18,9 +18,7 @@ public class ChunkedQueueItem extends Session.QueueItem {
     private static final byte[] DELIMITER_BYTES = "\n".getBytes(StandardCharsets.UTF_8);
     private final RocksIterator iterator;
     private Session.ArrayQueueItem arrayChunk;
-
-    private boolean ended = false;
-
+    private boolean ended;
 
     public ChunkedQueueItem(ChunkedResponse response) {
         this.iterator = response.iterator;
@@ -36,7 +34,7 @@ public class ChunkedQueueItem extends Session.QueueItem {
 
     @Override
     public int remaining() {
-        return !ended ? 1 : 0;
+        return ended ? 0 : 1;
     }
 
     @Override
