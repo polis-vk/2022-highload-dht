@@ -83,10 +83,8 @@ public final class HttpUtils {
     public static void safeHttpRequest(HttpSession session, Logger log, NetRequest netRequest) {
         try {
             netRequest.execute();
-        } catch (IOException ex) {
-            sendError(Response.SERVICE_UNAVAILABLE, ex, session, log);
         } catch (Exception ex) {
-            log.error("Fatal error", ex);
+            sendError(Response.SERVICE_UNAVAILABLE, ex, session, log);
         }
     }
 

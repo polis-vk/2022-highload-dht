@@ -30,25 +30,26 @@ public class MyServerBase extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        sendEmptyResponseForCode(session, Response.BAD_REQUEST);
+        sendEmptyResponseForCode(Response.BAD_REQUEST, session);
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         if (!MyServerBase.availableMethods.contains(request.getMethod())) {
-            sendEmptyResponseForCode(session, Response.METHOD_NOT_ALLOWED);
+            sendEmptyResponseForCode(Response.METHOD_NOT_ALLOWED, session);
             return;
         }
 
         MyHttpSession myHttpSession = (MyHttpSession) session;
-        boolean hasId = checkForId(request, myHttpSession);
-        boolean hasReplicas = checkForReplicas(request, myHttpSession);
-        boolean hasRange = checkForRange(request, myHttpSession);
-        if (!hasReplicas || (hasId && hasRange) || (!hasId && !hasRange)) {
-            sendEmptyResponseForCode(session, Response.BAD_REQUEST);
-            return;
-        }
+//        boolean hasId = checkForId(request, myHttpSession);
+//        boolean hasReplicas = checkForReplicas(request, myHttpSession);
+//        boolean hasRange = checkForRange(request, myHttpSession);
+//        if (!hasReplicas || (hasId && hasRange) || (!hasId && !hasRange)) {
+//            sendEmptyResponseForCode(session, Response.BAD_REQUEST);
+//            return;
+//        }
 
+        //request.addHeader("Transfer-Encoding: chunked");
         HttpUtils.NetRequest netRequest = () -> super.handleRequest(request, myHttpSession);
         HttpUtils.safeHttpRequest(myHttpSession, log, netRequest);
     }
@@ -108,7 +109,7 @@ public class MyServerBase extends HttpServer {
         }
     }
 
-    private void sendEmptyResponseForCode(HttpSession session, String statusCode) {
+    private void sendEmptyResponseForCode(String statusCode, HttpSession session) {
         MyHttpResponse response = new MyHttpResponse(statusCode);
         HttpUtils.NetRequest netRequest = () -> session.sendResponse(response);
         HttpUtils.safeHttpRequest(session, log, netRequest);

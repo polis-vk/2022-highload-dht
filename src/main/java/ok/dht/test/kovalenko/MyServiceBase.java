@@ -7,6 +7,7 @@ import ok.dht.test.kovalenko.dao.aliases.TypedBaseTimedEntry;
 import ok.dht.test.kovalenko.dao.aliases.TypedIterator;
 import ok.dht.test.kovalenko.dao.aliases.TypedTimedEntry;
 import ok.dht.test.kovalenko.dao.base.ByteBufferDaoFactoryB;
+import ok.dht.test.kovalenko.dao.utils.DaoUtils;
 import ok.dht.test.kovalenko.utils.CompletableFutureSubscriber;
 import ok.dht.test.kovalenko.utils.CompletableFutureUtils;
 import ok.dht.test.kovalenko.utils.HttpUtils;
@@ -34,7 +35,6 @@ import java.util.concurrent.ExecutionException;
 public class MyServiceBase implements Service {
 
     private static final Logger log = LoggerFactory.getLogger(MyServiceBase.class);
-    private static final ByteBufferDaoFactoryB daoFactory = new ByteBufferDaoFactoryB();
     // One LoadBalancer per Service, one Service per Server
     private final LoadBalancer loadBalancer = new LoadBalancer();
     private final ServiceConfig config;
@@ -98,7 +98,10 @@ public class MyServiceBase implements Service {
 
     @Path("/v0/entities")
     public void handleEntities(Request request, HttpSession session) {
-        HttpUtils.NetRequest netRequest = () -> session.sendResponse(new MyServer.ChunkedResponse("Debug"));
+        MyHttpSession myHttpSession = (MyHttpSession) session;
+        Response response = new MyHttpResponse.ChunkedResponse(Response.OK);
+        response.addHeader("Transfer-Encoding: chunked");
+        HttpUtils.NetRequest netRequest = () -> myHttpSession.sendResponse(response);
         HttpUtils.safeHttpRequest(session, log, netRequest);
     }
 
@@ -118,7 +121,7 @@ public class MyServiceBase implements Service {
         CompletableFuture<MyHttpResponse> end = start
                 .thenCompose(nullable -> {
                     try {
-                        ByteBuffer key = daoFactory.fromString(session.getRequestId());
+                        ByteBuffer key = DaoUtils.DAO_FACTORY.fromString(session.getRequestId());
                         TypedTimedEntry found = dao.get(key);
                         return found == null
                                 ? emptyResponseFor(Response.NOT_FOUND)
@@ -126,7 +129,7 @@ public class MyServiceBase implements Service {
                                 ? emptyResponseFor(Response.NOT_FOUND, found.timestamp())
                                 : completedFutureFor(new MyHttpResponse(
                                         Response.OK,
-                                        daoFactory.toBytes(found.value()),
+                                        DaoUtils.DAO_FACTORY.toBytes(found.value()),
                                         found.timestamp())
                                 );
                     } catch (IOException e) {
@@ -141,8 +144,8 @@ public class MyServiceBase implements Service {
 
     public Iterator<TypedTimedEntry> handleRangeGet(Request request, MyHttpSession session) throws IOException {
         HttpUtils.Range range = session.getRange();
-        ByteBuffer from = daoFactory.fromString(range.start());
-        ByteBuffer to = daoFactory.fromString(range.end());
+        ByteBuffer from = DaoUtils.DAO_FACTORY.fromString(range.start());
+        ByteBuffer to = DaoUtils.DAO_FACTORY.fromString(range.end());
         return dao.get(from, to);
     }
 
@@ -151,7 +154,7 @@ public class MyServiceBase implements Service {
         CompletableFuture<MyHttpResponse> end = start
                 .thenCompose(nullable -> {
                     TypedTimedEntry entry = entryFor(
-                            daoFactory.fromString(session.getRequestId()),
+                            DaoUtils.DAO_FACTORY.fromString(session.getRequestId()),
                             ByteBuffer.wrap(request.getBody())
                     );
                     this.dao.upsert(entry);
@@ -168,7 +171,7 @@ public class MyServiceBase implements Service {
         CompletableFuture<MyHttpResponse> end = start
                 .thenCompose(nullable -> {
                     TypedTimedEntry entry = entryFor(
-                            daoFactory.fromString(session.getRequestId()),
+                            DaoUtils.DAO_FACTORY.fromString(session.getRequestId()),
                             null
                     );
                     this.dao.upsert(entry);
