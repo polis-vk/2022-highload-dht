@@ -161,4 +161,25 @@ class SingleRangeTest extends TestBase {
             assertEquals(0, response.body().length);
         }
     }
+
+    @ServiceTest(stage = 6)
+    public void tombstoneTest(ServiceInfo service) throws Exception {
+        String keyA = "a";
+        String keyB = "b";
+        String keyC = "c";
+
+        String value1 = "value1";
+        String value2 = "value2";
+        String value3 = "value3";
+
+        assertEquals(201, service.upsert(keyA, value1.getBytes()).statusCode());
+        assertEquals(201, service.upsert(keyB, value2.getBytes()).statusCode());
+        assertEquals(201, service.upsert(keyC, value3.getBytes()).statusCode());
+
+        assertEquals(202, service.delete(keyB).statusCode());
+
+        HttpResponse<byte[]> response = service.range(keyA, keyC + keyC);
+        assertEquals(200, response.statusCode());
+        assertEquals(value1.getBytes().length + value3.getBytes().length, response.body().length);
+    }
 }
