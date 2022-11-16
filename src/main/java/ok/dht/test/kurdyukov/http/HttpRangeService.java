@@ -7,7 +7,6 @@ import one.nio.http.Response;
 import org.iq80.leveldb.DBIterator;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.bytes;
@@ -30,24 +29,20 @@ public class HttpRangeService extends HttpAsyncService {
         String start = request.getParameter("start=");
         String end = request.getParameter("end=");
 
-        if (start == null
-                || end == null
-                || start.isBlank()
-                || end.isBlank()
-                || start.compareTo(end) > 0
-        ) {
+        if (start == null || start.isBlank()) {
             session.sendResponse(responseEmpty(Response.BAD_REQUEST));
             return;
         }
 
         DBIterator iterator = daoRepository.iterator();
 
-        iterator.seek(end.getBytes(StandardCharsets.UTF_8));
+        iterator.seek(bytes(start));
+
         session.sendResponse(
                 new HttpChunkedResponse(
                         Response.OK,
                         iterator,
-                        bytes(start)
+                        bytes(end)
                 )
         );
     }

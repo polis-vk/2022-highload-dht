@@ -83,8 +83,8 @@ public class HttpShardServer extends HttpServer {
             @Override
             protected void writeResponse(Response response, boolean includeBody) throws IOException {
                 if (response instanceof HttpChunkedResponse castResponse) {
-                    super.writeResponse(response, includeBody);
-                    write(
+                    super.writeResponse(castResponse, includeBody);
+                    super.write(
                             new ChunkedQueueItem(
                                     castResponse.iterator,
                                     castResponse.upperBound

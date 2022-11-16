@@ -37,7 +37,7 @@ public class ChunkedQueueItem extends Session.QueueItem {
         if (dbIterator.hasNext()) {
             var entry = dbIterator.next();
 
-            if (Arrays.compare(entry.getKey(), upperBound) < 0) {
+            if (upperBound == null || Arrays.compare(entry.getKey(), upperBound) < 0) {
                 DaoEntry daoEntry;
                 try {
                     daoEntry = ObjectMapper.deserialize(entry.getValue());
@@ -66,6 +66,7 @@ public class ChunkedQueueItem extends Session.QueueItem {
                         ByteBuffer
                                 .allocate(value.length)
                                 .put(value)
+                                .position(0)
                 );
             } else {
                 terminate = true;
