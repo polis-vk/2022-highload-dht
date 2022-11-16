@@ -22,8 +22,6 @@ public class HttpClientDao {
     public static final String TIMESTAMP_HEADER = "TIMESTAMP_HEADER";
     public static final String CLUSTER_HEADER = "CLUSTER_HEADER";
 
-    private final ScheduledExecutorService listenerConnect = Executors.newSingleThreadScheduledExecutor();
-
     private final HttpClient httpClient = HttpClient
             .newBuilder()
             .connectTimeout(Duration.ofSeconds(1))
@@ -58,9 +56,5 @@ public class HttpClientDao {
         };
 
         return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-    }
-
-    public void close() {
-        listenerConnect.shutdown();
     }
 }

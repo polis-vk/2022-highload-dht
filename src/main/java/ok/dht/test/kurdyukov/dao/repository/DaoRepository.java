@@ -2,18 +2,20 @@ package ok.dht.test.kurdyukov.dao.repository;
 
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.DBException;
+import org.iq80.leveldb.DBIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Map;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.bytes;
 
-public class DaoRepository {
+public class DaoRepository implements Iterable<Map.Entry<byte[], byte[]>> {
     private static final Logger logger = LoggerFactory.getLogger(DaoRepository.class);
 
     private final DB levelDB;
-    
+
     public DaoRepository(DB levelDB) {
         this.levelDB = levelDB;
     }
@@ -46,5 +48,10 @@ public class DaoRepository {
 
             throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    public DBIterator iterator() {
+        return levelDB.iterator();
     }
 }
