@@ -62,6 +62,7 @@ public class ChunkedResponse extends Response {
         if (byteBuffer.length() > 0) {
             flush();
         }
+        // Equivalent to sending `0\r\n\r\n`, indicating end of the response
         flush();
     }
 
