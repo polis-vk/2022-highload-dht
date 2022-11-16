@@ -7,6 +7,7 @@ import one.nio.net.Socket;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Iterator;
 
 class UniversalHttpSession extends HttpSession {
     public UniversalHttpSession(Socket socket, HttpServer server) {
@@ -19,19 +20,20 @@ class UniversalHttpSession extends HttpSession {
             // Writing headers
             super.writeResponse(response, false);
             // Writing body
-            super.write(new ChunkedQueueItem((ChunkedResponse) response));
+            Iterator<ByteBuffer> iterator = ((ChunkedResponse) response).iterator;
+            while (iterator.hasNext()) {
+                super.write(new ChunkedQueueItem(iterator.next()));
+            }
         } else {
             super.writeResponse(response, includeBody);
         }
     }
 
     private static class ChunkedQueueItem extends QueueItem {
-        private final ChunkedResponse response;
         private final ByteBuffer buffer;
 
-        public ChunkedQueueItem(ChunkedResponse response) {
-            this.response = response;
-            buffer = response.iterator.next();
+        public ChunkedQueueItem(ByteBuffer buffer) {
+            this.buffer = buffer;
         }
 
         @Override
@@ -41,12 +43,7 @@ class UniversalHttpSession extends HttpSession {
 
         @Override
         public int write(Socket socket) throws IOException {
-            int bytes = socket.write(buffer);
-            // Lazy linked list increasing
-            if (buffer.remaining() == 0 && response.iterator.hasNext()) {
-                append(new ChunkedQueueItem(response));
-            }
-            return bytes;
+            return socket.write(buffer);
         }
     }
 }

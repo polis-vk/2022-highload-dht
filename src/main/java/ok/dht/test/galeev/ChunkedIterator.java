@@ -21,7 +21,7 @@ public class ChunkedIterator implements Iterator<ByteBuffer> {
 
     public ChunkedIterator(Iterator<Entry<String, Entry<Timestamp, byte[]>>> delegate) {
         this.delegate = delegate;
-        this.hasEnded = !delegate.hasNext();
+        this.hasEnded = false;
     }
 
     @Override
