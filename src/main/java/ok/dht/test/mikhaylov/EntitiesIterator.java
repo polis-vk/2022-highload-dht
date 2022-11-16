@@ -1,6 +1,7 @@
 package ok.dht.test.mikhaylov;
 
 import one.nio.util.ByteArrayBuilder;
+import org.apache.log4j.Logger;
 import org.rocksdb.RocksIterator;
 
 import javax.annotation.Nullable;
@@ -12,6 +13,8 @@ public class EntitiesIterator implements Iterator<byte[]> {
     private final @Nullable byte[] end;
 
     private final RocksIterator iterator;
+
+    private final static Logger log = Logger.getLogger(EntitiesIterator.class);
 
     public EntitiesIterator(RocksIterator iterator, String start, @Nullable String end) {
         this.end = end == null ? null : end.getBytes(StandardCharsets.UTF_8);
@@ -27,6 +30,7 @@ public class EntitiesIterator implements Iterator<byte[]> {
     @Override
     public byte[] next() {
         byte[] key = iterator.key();
+        log.error("key: " + new String(key, StandardCharsets.UTF_8));
         byte[] value = DatabaseUtilities.getValue(iterator.value());
         iterator.next();
         return new ByteArrayBuilder(key.length + 1 + value.length)

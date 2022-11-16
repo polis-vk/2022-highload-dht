@@ -3,7 +3,6 @@ package ok.dht.test.mikhaylov;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.mikhaylov.chunk.ChunkTransfer;
 import ok.dht.test.mikhaylov.chunk.ChunkedResponse;
 import ok.dht.test.mikhaylov.internal.InternalHttpClient;
 import ok.dht.test.mikhaylov.internal.JavaHttpClient;
@@ -27,9 +26,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
