@@ -10,15 +10,9 @@ import one.nio.http.Response;
 import one.nio.util.ByteArrayBuilder;
 import one.nio.util.Utf8;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
-
 import static ok.dht.test.vihnin.ParallelHttpServer.TIME_HEADER_NAME;
-import static ok.dht.test.vihnin.ServiceUtils.ENDPOINT;
-import static ok.dht.test.vihnin.ServiceUtils.RANGE_ENDPOINT;
-import static ok.dht.test.vihnin.ServiceUtils.emptyResponse;
+import static ok.dht.test.vihnin.utils.ServiceUtils.ENDPOINT;
+import static ok.dht.test.vihnin.utils.ServiceUtils.emptyResponse;
 
 public class ResponseManager {
 

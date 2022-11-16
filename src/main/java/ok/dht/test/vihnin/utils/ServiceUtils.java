@@ -1,5 +1,6 @@
-package ok.dht.test.vihnin;
+package ok.dht.test.vihnin.utils;
 
+import ok.dht.test.vihnin.ShardHelper;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -10,15 +11,12 @@ import org.slf4j.LoggerFactory;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.HashSet;
-import java.util.Optional;
 import java.util.Set;
 
 import static ok.dht.test.vihnin.ParallelHttpServer.INNER_HEADER_NAME;
 import static ok.dht.test.vihnin.ParallelHttpServer.INNER_HEADER_VALUE;
-import static ok.dht.test.vihnin.ParallelHttpServer.TIME_HEADER_NAME;
 
 public final class ServiceUtils {
     private static final Logger logger = LoggerFactory.getLogger(ServiceUtils.class);
@@ -33,11 +31,11 @@ public final class ServiceUtils {
 
     }
 
-    static Response emptyResponse(String code) {
+    public static Response emptyResponse(String code) {
         return new Response(code, Response.EMPTY);
     }
 
-    static String getHeaderValue(Response response, String headerName) {
+    public static String getHeaderValue(Response response, String headerName) {
         var v = response.getHeader(headerName);
         if (v == null) {
             return null;
@@ -45,7 +43,7 @@ public final class ServiceUtils {
         return v.substring(2);
     }
 
-    static String getHeaderValue(Request request, String headerName) {
+    public static String getHeaderValue(Request request, String headerName) {
         var v = request.getHeader(headerName);
         if (v == null) {
             return null;
@@ -53,7 +51,7 @@ public final class ServiceUtils {
         return v.substring(2);
     }
 
-    static HttpServerConfig createConfigFromPort(int port) {
+    public static HttpServerConfig createConfigFromPort(int port) {
         HttpServerConfig httpConfig = new HttpServerConfig();
         AcceptorConfig acceptor = new AcceptorConfig();
         acceptor.port = port;
@@ -77,7 +75,7 @@ public final class ServiceUtils {
         }
     }
 
-    static HttpRequest createJavaRequest(Request request, String destinationUrl) throws URISyntaxException {
+    public static HttpRequest createJavaRequest(Request request, String destinationUrl) throws URISyntaxException {
         var builder = HttpRequest.newBuilder()
                 .uri(new URI(destinationUrl + request.getURI()))
                 .method(request.getMethodName(),
@@ -104,32 +102,5 @@ public final class ServiceUtils {
         }
 
         return builder.build();
-    }
-
-    static HttpResponse<byte[]> handleSingleAcknowledgment(
-            ResponseAccumulator responseAccumulator,
-            HttpResponse<byte[]> httpResponse,
-            Throwable throwable) {
-        if (throwable == null) {
-            if (httpResponse == null) {
-                responseAccumulator.acknowledgeFailed();
-            } else {
-                Optional<String> time = httpResponse.headers()
-                        .firstValue(TIME_HEADER_NAME);
-                if (time.isPresent()) {
-                    responseAccumulator.acknowledgeSucceed(
-                            Long.parseLong(time.get()),
-                            httpResponse.statusCode(),
-                            httpResponse.body()
-                    );
-                } else {
-                    responseAccumulator.acknowledgeFailed();
-                }
-            }
-            return httpResponse;
-        } else {
-            responseAccumulator.acknowledgeMissed();
-            return null;
-        }
     }
 }

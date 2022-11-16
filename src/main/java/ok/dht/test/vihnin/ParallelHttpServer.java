@@ -1,6 +1,7 @@
 package ok.dht.test.vihnin;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.vihnin.utils.ServiceUtils;
 import one.nio.http.HttpException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
@@ -24,15 +25,14 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import static ok.dht.test.vihnin.ServiceUtils.ENDPOINT;
-import static ok.dht.test.vihnin.ServiceUtils.RANGE_ENDPOINT;
-import static ok.dht.test.vihnin.ServiceUtils.emptyResponse;
-import static ok.dht.test.vihnin.ServiceUtils.handleSingleAcknowledgment;
+import static ok.dht.test.vihnin.utils.ServerUtils.handleSingleAcknowledgment;
+import static ok.dht.test.vihnin.utils.ServerUtils.methodAllowed;
+import static ok.dht.test.vihnin.utils.ServiceUtils.emptyResponse;
 
 public class ParallelHttpServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(ParallelHttpServer.class);
-    static final String INNER_HEADER_NAME = "Inner";
-    static final String INNER_HEADER_VALUE = "True";
+    public static final String INNER_HEADER_NAME = "Inner";
+    public static final String INNER_HEADER_VALUE = "True";
 
     public static final String TIME_HEADER_NAME = "Timestamp";
     private static final int WORKERS_NUMBER = 4;
@@ -95,9 +95,9 @@ public class ParallelHttpServer extends HttpServer {
             return;
         }
 
-        if (ENDPOINT.equals(request.getPath())) {
+        if (ServiceUtils.ENDPOINT.equals(request.getPath())) {
             handleSingleValueRequest(request, session);
-        } else if (RANGE_ENDPOINT.equals(request.getPath())) {
+        } else if (ServiceUtils.RANGE_ENDPOINT.equals(request.getPath())) {
             handleRangeRequest(request, session);
         } else {
             session.sendResponse(emptyResponse(Response.BAD_REQUEST));
@@ -198,12 +198,6 @@ public class ParallelHttpServer extends HttpServer {
         }
     }
 
-    private static boolean methodAllowed(int method) {
-        return method == Request.METHOD_GET
-                || method == Request.METHOD_DELETE
-                || method == Request.METHOD_PUT;
-    }
-
     private void handleAckRequest(Request request, String destinationUrl, ResponseAccumulator responseAccumulator) {
         try {
             HttpRequest javaRequest = ServiceUtils.createJavaRequest(request, destinationUrl);
@@ -253,34 +247,7 @@ public class ParallelHttpServer extends HttpServer {
         }
     }
 
-    static void processAcknowledgment(
-            int method,
-            HttpSession session,
-            boolean reachAckNumber,
-            int freshestStatus,
-            byte[] freshestData) {
-        try {
-            if (reachAckNumber) {
-                if (method == Request.METHOD_DELETE) {
-                    session.sendResponse(emptyResponse("202 Accepted"));
-                } else if (method == Request.METHOD_PUT) {
-                    session.sendResponse(emptyResponse("201 Created"));
-                } else if (method == Request.METHOD_GET) {
-                    if (freshestStatus == 200) {
-                        session.sendResponse(new Response("200 OK", freshestData));
-                    } else {
-                        session.sendResponse(emptyResponse("404 Not Found"));
-                    }
-                }
-            } else {
-                session.sendResponse(emptyResponse("504 Not Enough Replicas"));
-            }
-        } catch (IOException e) {
-            handleException(session, e);
-        }
-    }
-
-    private static void handleException(HttpSession session, Exception e) {
+    public static void handleException(HttpSession session, Exception e) {
         // ask about it on lecture
         if (e instanceof HttpException) {
             try {
