@@ -44,26 +44,16 @@ public class ReplicationHandler {
         this.key = key;
     }
 
-    public void tryFinishReplication(String nodeUrl) throws IOException {
-        // must be called only after section with atomicAcked changes is finished!!!!
-        int finished = atomicFinished.incrementAndGet();
-        int acked = atomicAcked.get();
-
-        if (finished == from && acked < ack) {
-            logAndSendClientResponse(responseNotEnoughReplicas(), nodeUrl);
-        }
-    }
-
     public void handleLocalResponse(Response response, String nodeUrl) {
         try {
-            handleResponse(response.getStatus(), response.getBody(), nodeUrl);
+            handleNodeResponse(response.getStatus(), response.getBody(), nodeUrl);
             tryFinishReplication(nodeUrl);
         } catch (IOException e) {
             log.error("Error occurred while responding to client", e);
         }
     }
 
-    public void handleRemoteResponse(HttpResponse<byte[]> response, Throwable e, String nodeUrl) {
+    public void handleInternalResponse(HttpResponse<byte[]> response, Throwable e, String nodeUrl) {
         try {
             int responded = atomicResponded.incrementAndGet();
 
@@ -73,7 +63,7 @@ public class ReplicationHandler {
                     nodeUrl, selfUrl, key, response.statusCode(), responded, from)
                 );
 
-                handleResponse(response.statusCode(), response.body(), nodeUrl);
+                handleNodeResponse(response.statusCode(), response.body(), nodeUrl);
             }
 
             if (e != null) {
@@ -89,7 +79,17 @@ public class ReplicationHandler {
         }
     }
 
-    public void handleResponse(int statusCode, byte[] body, String nodeUrl) throws IOException {
+    private void tryFinishReplication(String nodeUrl) throws IOException {
+        // must be called only after section with atomicAcked changes is finished!!!!
+        int finished = atomicFinished.incrementAndGet();
+        int acked = atomicAcked.get();
+
+        if (finished == from && acked < ack) {
+            logAndSendClientResponse(responseNotEnoughReplicas(), nodeUrl);
+        }
+    }
+
+    private void handleNodeResponse(int statusCode, byte[] body, String nodeUrl) throws IOException {
         switch (request.getMethod()) {
         case Request.METHOD_GET -> {
             if (statusCode == HTTP_OK) {

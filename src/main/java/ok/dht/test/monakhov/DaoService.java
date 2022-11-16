@@ -17,7 +17,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -89,11 +88,6 @@ public class DaoService implements Service {
         @Param(value = "ack") String ackParam, Request request, HttpSession session
     ) throws IOException
     {
-        if (id == null || id.isBlank() || isInvalidReplica(ackParam, fromParam)) {
-            session.sendResponse(responseBadRequest());
-            return;
-        }
-
         if (request.getMethod() != Request.METHOD_GET
             && request.getMethod() != Request.METHOD_DELETE
             && request.getMethod() != Request.METHOD_PUT
@@ -105,6 +99,11 @@ public class DaoService implements Service {
         int clusterSize = serviceConfig.clusterUrls().size();
         int ack = clusterSize / 2 + 1;
         int from = clusterSize;
+
+        if (id == null || id.isBlank() || isInvalidReplica(ackParam, fromParam)) {
+            session.sendResponse(responseBadRequest());
+            return;
+        }
 
         if (ackParam != null) {
             ack = Integer.parseInt(ackParam);
@@ -187,11 +186,11 @@ public class DaoService implements Service {
                     .build();
 
             client.sendAsync(redirectRequest, HttpResponse.BodyHandlers.ofByteArray())
-                .whenComplete((response, e) -> handler.handleRemoteResponse(response, e, nodeUrl));
+                .whenComplete((response, e) -> handler.handleInternalResponse(response, e, nodeUrl));
         }
     }
 
-    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

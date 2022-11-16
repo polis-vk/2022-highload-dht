@@ -48,6 +48,10 @@ public final class ServiceUtils {
         return (ack == null && from != null) || (ack != null && from == null);
     }
 
+    public static boolean validateStringParam(String param) {
+        return param == null || param.isBlank();
+    }
+
     public static AsyncHttpServerConfig createConfigFromPort(ServiceConfig serviceConfig) {
         AsyncHttpServerConfig httpConfig = new AsyncHttpServerConfig();
         httpConfig.clusterUrls = serviceConfig.clusterUrls();

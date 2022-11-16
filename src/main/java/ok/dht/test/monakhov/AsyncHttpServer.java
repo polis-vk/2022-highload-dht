@@ -1,5 +1,7 @@
 package ok.dht.test.monakhov;
 
+import ok.dht.test.monakhov.chunk.ChunkedQueueItem;
+import ok.dht.test.monakhov.chunk.ChunkedResponse;
 import ok.dht.test.monakhov.utils.ExecutorUtils;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
@@ -65,7 +67,7 @@ public class AsyncHttpServer extends HttpServer {
             @Override
             protected void writeResponse(Response response, boolean includeBody) throws IOException {
                 if (response instanceof ChunkedResponse) {
-                    super.write(new ChunkedQueueItem(((ChunkedResponse) response).iterator));
+                    super.write(new ChunkedQueueItem((ChunkedResponse) response));
                 } else {
                     super.writeResponse(response, includeBody);
                 }

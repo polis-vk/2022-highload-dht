@@ -1,6 +1,6 @@
 package ok.dht.test.monakhov.repository;
 
-import ok.dht.test.monakhov.ChunkedResponse;
+import ok.dht.test.monakhov.chunk.ChunkedResponse;
 import ok.dht.test.monakhov.model.EntryWrapper;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -10,6 +10,7 @@ import org.apache.commons.logging.LogFactory;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
+import org.rocksdb.RocksIterator;
 import org.rocksdb.Slice;
 
 import java.io.IOException;
@@ -36,8 +37,9 @@ public class DaoRepository implements AutoCloseable {
     }
 
     public ChunkedResponse rangeGet(String start, String end) {
-        final var iterator = dao.newIterator(new ReadOptions().setIterateUpperBound(new Slice(end))); // todo not to allocate each time + try????!!!))))
-
+        RocksIterator iterator = end == null
+            ? dao.newIterator()
+            : dao.newIterator(new ReadOptions().setIterateUpperBound(new Slice(end)));
         iterator.seek(Utf8.toBytes(start));
 
         return new ChunkedResponse(Response.OK, iterator);
