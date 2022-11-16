@@ -7,17 +7,21 @@ import one.nio.net.Socket;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
+import java.util.PriorityQueue;
 
 public class MyQueueItem extends Session.QueueItem {
 
     private static final byte[] CRLF = "\r\n".getBytes(DaoUtils.BASE_CHARSET);
     private static final byte[] EOF = "0\r\n\r\n".getBytes(DaoUtils.BASE_CHARSET);
     private static final String KEY_VALUE_SEPARATOR = "\n";
+    private static final byte[] EMPTY = new byte[0];
     private final Iterator<TypedTimedEntry> mergeIterator;
-    private final List<byte[]> plannedToWrite = new ArrayList<>();
+    private byte[] plannedToWrite = EMPTY;
     private boolean isDrained;
 
     public MyQueueItem(Iterator<TypedTimedEntry> mergeIterator) {
@@ -36,7 +40,7 @@ public class MyQueueItem extends Session.QueueItem {
         }
 
         int writtenUpPlanned = tryToWriteUpPlanned(socket);
-        if (!plannedToWrite.isEmpty()) {
+        if (plannedToWrite.length != 0) {
             return writtenUpPlanned;
         }
 
@@ -78,21 +82,11 @@ public class MyQueueItem extends Session.QueueItem {
     }
 
     private int tryToWriteUpPlanned(Socket socket) throws IOException {
-        int writtenUp = 0;
-        while (!plannedToWrite.isEmpty()) {
-            byte[] first = plannedToWrite.get(0);
-            int written = Math.max(0, socket.write(first, 0, first.length));
-            writtenUp += written;
-            if (written != first.length) {
-                int remained = first.length - written;
-                byte[] bytesRemained = new byte[remained];
-                System.arraycopy(first, written, bytesRemained, 0, remained);
-                plannedToWrite.set(0, bytesRemained);
-                break;
-            }
-            plannedToWrite.remove(0);
+        if (plannedToWrite.length == 0) {
+            return 0;
         }
-        return writtenUp;
+
+        return tryToWrite(socket, plannedToWrite, 0, plannedToWrite.length);
     }
 
     private int tryToWrite(Socket socket, byte[] data, int offset, int count) throws IOException {
@@ -100,9 +94,8 @@ public class MyQueueItem extends Session.QueueItem {
         if (written != data.length) {
             written = Math.max(0, written);
             int remained = data.length - written;
-            byte[] bytesRemained = new byte[remained];
-            System.arraycopy(data, written, bytesRemained, 0, remained);
-            plannedToWrite.add(bytesRemained);
+            plannedToWrite = new byte[remained];
+            System.arraycopy(data, written, plannedToWrite, 0, remained);
         }
         return written;
     }
