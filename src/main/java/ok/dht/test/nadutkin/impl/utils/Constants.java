@@ -33,6 +33,8 @@ public final class Constants {
     public static final String PATH = "/v0/entity";
     public static final String REPLICA_PATH = "/v1/entity";
     public static final Integer MAX_FAILS = 100;
+    public static final Integer CHUNK_SIZE = 1000;
+    public static final String SEPARATOR = "\r\n";
 
     private Constants() {
     }
