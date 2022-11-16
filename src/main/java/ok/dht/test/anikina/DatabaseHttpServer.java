@@ -134,6 +134,12 @@ public class DatabaseHttpServer extends HttpServer {
 
     private void processStreamingRequest(Request request, final HttpSession session) throws IOException {
         StreamingHttpSession streamingSession = (StreamingHttpSession) session;
+
+        if (request.getMethod() != Request.METHOD_GET) {
+            streamingSession.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            return;
+        }
+
         String start = request.getParameter("start=");
         String end = request.getParameter("end=");
 
