@@ -103,8 +103,7 @@ public class DaoHttpServer extends HttpServer {
 
     @Override
     public void handleDefault(Request request, HttpSession session) throws IOException {
-        String resultCode = request.getMethod() == Request.METHOD_GET
-                || request.getMethod() == Request.METHOD_PUT
+        String resultCode = request.getMethod() == Request.METHOD_GET || request.getMethod() == Request.METHOD_PUT
                 ? Response.BAD_REQUEST : Response.METHOD_NOT_ALLOWED;
         Response defaultResponse = new Response(resultCode, Response.EMPTY);
         session.sendResponse(defaultResponse);
