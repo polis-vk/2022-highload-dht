@@ -61,6 +61,14 @@ public class ChunkedResponse extends Response {
             return hasNext;
         }
 
+        private byte[] extractResult() {
+            byte[] result = new byte[buffer.position()];
+            buffer.flip();
+            buffer.get(result);
+            buffer.clear();
+            return result;
+        }
+
         @Override
         public byte[] next() {
             while (true) {
@@ -76,10 +84,7 @@ public class ChunkedResponse extends Response {
                 boolean flush = (buffer.position() != 0 && buffer.remaining() < length.length + 2 + next.length + 2);
                 if (flush) {
                     // store result to return it later since we should still save `next`
-                    result = new byte[buffer.position()];
-                    buffer.flip();
-                    buffer.get(result);
-                    buffer.clear();
+                    result = extractResult();
                 }
                 buffer.put(length);
                 buffer.put(CRLF);
@@ -87,6 +92,9 @@ public class ChunkedResponse extends Response {
                 buffer.put(CRLF);
                 if (flush) {
                     return result;
+                }
+                if (!hasNext) {
+                    return extractResult();
                 }
             }
         }
