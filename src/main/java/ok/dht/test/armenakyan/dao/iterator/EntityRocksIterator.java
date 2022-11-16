@@ -5,23 +5,29 @@ import one.nio.util.Utf8;
 import org.rocksdb.RocksIterator;
 
 import javax.annotation.Nullable;
-import java.util.Arrays;
+import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 
 public class EntityRocksIterator implements Iterator<Entity> {
     private final RocksIterator iterator;
-    private final byte[] toKey;
+    private final String toKey;
 
     public EntityRocksIterator(RocksIterator iterator, String fromInclusive, @Nullable String toExclusive) {
         this.iterator = iterator;
-        this.toKey = toExclusive == null ? null : Utf8.toBytes(toExclusive);
+        this.toKey = toExclusive;
 
         iterator.seek(Utf8.toBytes(fromInclusive));
     }
 
     @Override
     public boolean hasNext() {
-        return iterator.isValid() && !Arrays.equals(iterator.key(), toKey);
+        if (!iterator.isValid()) {
+            return false;
+        }
+
+        String currentKey = new String(iterator.key(), StandardCharsets.UTF_8);
+
+        return toKey == null || currentKey.compareTo(toKey) < 0;
     }
 
     @Override
