@@ -3,6 +3,7 @@ package ok.dht.test.frolovm;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.util.ByteArrayBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,11 +13,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -24,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ReplicationManager {
 
     public static final String NOT_ENOUGH_REPLICAS = "Not Enough Replicas";
+    public static final int CHUNK_REQUEST_CAPACITY = 512;
     private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(4);
     private static final Logger LOGGER = LoggerFactory.getLogger(ReplicationManager.class);
     private final ShardingAlgorithm algorithm;
@@ -197,10 +197,18 @@ public class ReplicationManager {
     }
 
     public void handleRange(String start, String end, HttpSession session) {
-        Iterator<Map.Entry<byte[], byte[]>> iterator = requestExecutor.entityHandlerRange(start, end);
-        while(iterator.hasNext()) {
-            Map.Entry<byte[], byte[]> current = iterator.next();
-            Utils.sendResponse(session, RangeResponse.createOneChunk(current));
+        Iterator<Pair<byte[], byte[]>> iterator = requestExecutor.entityHandlerRange(start, end);
+        Utils.sendResponse(session, RangeResponse.OPEN_CHUNKED);
+        ByteArrayBuilder byteArrayBuilder = new ByteArrayBuilder();
+        while (iterator.hasNext()) {
+            Pair<byte[], byte[]> current = iterator.next();
+            byteArrayBuilder.append(current.getKey()).append('\n').append(current.getValue());
+            if (CHUNK_REQUEST_CAPACITY < byteArrayBuilder.length()) {
+                Utils.sendResponse(session, RangeResponse.createOneChunk(byteArrayBuilder.toBytes()));
+            }
+        }
+        if (byteArrayBuilder.length() != 0) {
+            Utils.sendResponse(session, RangeResponse.createOneChunk(byteArrayBuilder.toBytes()));
         }
         Utils.sendResponse(session, RangeResponse.ENDING_RESPONSE);
     }

@@ -39,28 +39,27 @@ public class RequestExecutor {
         };
     }
 
-    public Iterator<Map.Entry<byte[], byte[]>> entityHandlerRange(String start, String end) {
-        byte[] startBytes = Utils.stringToByte(start);
-        final byte[] endBytes = Utils.checkId(end) ? Utils.stringToByte(start) : null;
-        DBIterator it = dao.iterator();
+    public Iterator<Pair<byte[], byte[]>> entityHandlerRange(String start, String end) {
+        final byte[] startBytes = Utils.stringToByte(start);
+        final byte[] endBytes = Utils.checkId(end) ? Utils.stringToByte(end) : null;
+        final DBIterator it = dao.iterator();
         it.seek(startBytes);
         return new Iterator<>() {
             @Override
             public boolean hasNext() {
-                return it.hasNext() && canNext(it.next().getKey(), endBytes);
-            }
-
-            private boolean canNext(byte[] current, byte[] endBytes) {
-                return Utils.compareArrays(current, endBytes) <= 0;
+                return it.hasNext() && Utils.compareArrays(it.peekNext().getKey(), endBytes) < 0;
             }
 
             @Override
-            public Map.Entry<byte[], byte[]> next() {
-                return it.next();
+            public Pair<byte[], byte[]> next() {
+                Map.Entry<byte[], byte[]> entry = it.next();
+                ByteBuffer buffer = ByteBuffer.allocate(entry.getValue().length);
+                buffer.put(entry.getValue());
+                buffer.flip();
+                return new Pair<>(entry.getKey(), getData(entry.getValue(), buffer));
             }
         };
     }
-
 
 
     private Response putHandler(Request request, String id, long timestamp) {

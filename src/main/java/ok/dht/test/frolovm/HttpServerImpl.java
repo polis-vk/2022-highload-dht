@@ -6,6 +6,8 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,6 +65,28 @@ public class HttpServerImpl extends HttpServer {
     public synchronized void stop() {
         closeSessions();
         super.stop();
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new HttpSession(socket, this) {
+
+            @Override
+            public synchronized void sendResponse(Response response) throws IOException {
+                if (response instanceof RangeResponse) {
+                    super.write(
+                            new QueueItem() {
+                                @Override
+                                public int write(Socket socket) throws IOException {
+                                    return socket.write(response.getBody(), 0, response.getBody().length);
+                                }
+                            }
+                    );
+                } else {
+                    super.sendResponse(response);
+                }
+            }
+        };
     }
 
     private void closeSessions() {
