@@ -1,8 +1,12 @@
 package ok.dht.test.anikina;
 
+import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
 import ok.dht.test.anikina.consistenthashing.ConsistentHashingImpl;
+import ok.dht.test.anikina.dao.Entry;
 import ok.dht.test.anikina.replication.ReplicationParameters;
+import ok.dht.test.anikina.streaming.ChunkedResponse;
+import ok.dht.test.anikina.streaming.StreamingHttpSession;
 import ok.dht.test.anikina.utils.RequestUtils;
 import ok.dht.test.anikina.utils.Utils;
 import one.nio.http.HttpServer;
@@ -11,7 +15,9 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -22,7 +28,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -39,6 +48,8 @@ public class DatabaseHttpServer extends HttpServer {
     private static final Log log = LogFactory.getLog(DatabaseHttpServer.class);
 
     private static final String QUERY_PATH = "/v0/entity";
+    private static final String STREAMING_PATH = "/v0/entities";
+
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
     private static final int HTTP_SERVICE_THREADS = 3;
@@ -76,7 +87,9 @@ public class DatabaseHttpServer extends HttpServer {
         this.consistentHashing = new ConsistentHashingImpl(config.clusterUrls());
         this.requestHandler = new DatabaseRequestHandler(config.workingDir());
         this.numberOfNodes = config.clusterUrls().size();
-        this.client = HttpClient.newHttpClient();
+        this.client = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
     }
 
     private static HttpServerConfig createHttpServerConfig(int port) {
@@ -89,36 +102,28 @@ public class DatabaseHttpServer extends HttpServer {
     }
 
     @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new StreamingHttpSession(socket, this);
+    }
+
+    @Override
     public void handleRequest(Request request, final HttpSession session) {
         httpRequestService.execute(() -> {
             try {
-                String key = request.getParameter("id=");
-
-                if (request.getPath().equals(SYNCHRONIZATION_PATH)) {
-                    session.sendResponse(processSynchronizationRequest(key, request));
-                    return;
-                }
-
-                ReplicationParameters parameters =
-                        ReplicationParameters.parse(
-                                request.getParameter("from="),
-                                request.getParameter("ack="),
-                                this.numberOfNodes
-                        );
-
                 if (!SUPPORTED_METHODS.contains(request.getMethod())) {
                     session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
                     return;
                 }
 
-                if (!request.getPath().equals(QUERY_PATH)
-                        || invalidKey(key)
-                        || parameters.areInvalid()) {
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                    return;
+                switch (request.getPath()) {
+                    case SYNCHRONIZATION_PATH ->
+                            processSynchronizationRequest(request, session);
+                    case QUERY_PATH ->
+                            processQueryRequest(request, session);
+                    case STREAMING_PATH -> processStreamingRequest(request, session);
+                    default ->
+                            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                 }
-
-                session.sendResponse(aggregateResponse(parameters, key, request));
             } catch (IOException e) {
                 if (log.isDebugEnabled()) {
                     log.debug(e.getMessage());
@@ -127,10 +132,50 @@ public class DatabaseHttpServer extends HttpServer {
         });
     }
 
-    private Response processSynchronizationRequest(String key, Request request) {
+    private void processStreamingRequest(Request request, final HttpSession session) throws IOException {
+        StreamingHttpSession streamingSession = (StreamingHttpSession) session;
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+
+        if (invalidKey(end)) {
+            end = null;
+        }
+        if (invalidKey(start) || (end != null && start.compareTo(end) >= 0)) {
+            streamingSession.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        Iterator<Entry<MemorySegment>> iterator = requestHandler.getIterator(start, end);
+
+        streamingSession.sendResponse(iterator);
+    }
+
+    private void processSynchronizationRequest(Request request, final HttpSession session)
+            throws IOException {
+        String key = request.getParameter("id=");
+
         byte[] timestamp = Arrays.copyOfRange(request.getBody(), 0, Long.BYTES);
         byte[] body = Arrays.copyOfRange(request.getBody(), Long.BYTES, request.getBody().length);
-        return requestHandler.handle(request.getMethod(), key, body, timestamp);
+        session.sendResponse(requestHandler.handle(request.getMethod(), key, body, timestamp));
+    }
+
+    private void processQueryRequest(Request request, final HttpSession session)
+            throws IOException {
+        String key = request.getParameter("id=");
+
+        ReplicationParameters parameters =
+                ReplicationParameters.parse(
+                        request.getParameter("from="),
+                        request.getParameter("ack="),
+                        this.numberOfNodes
+                );
+
+        if (invalidKey(key) || parameters.areInvalid()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+
+        session.sendResponse(aggregateResponse(parameters, key, request));
     }
 
     private Response aggregateResponse(

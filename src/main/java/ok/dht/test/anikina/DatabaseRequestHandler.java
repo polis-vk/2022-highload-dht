@@ -11,6 +11,7 @@ import one.nio.http.Response;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Iterator;
 
 class DatabaseRequestHandler {
     private static final long FLUSH_THRESHOLD_BYTES = 4 * 1024 * 1024;
@@ -50,6 +51,10 @@ class DatabaseRequestHandler {
             }
             default -> throw new IllegalArgumentException("Request method not supported.");
         }
+    }
+
+    Iterator<Entry<MemorySegment>> getIterator(String start, String end) {
+        return dao.get(Utils.memorySegmentFromString(start), Utils.memorySegmentFromString(end));
     }
 
     private void insertIntoDao(String key, byte[] bytes, byte[] timestamp) {
