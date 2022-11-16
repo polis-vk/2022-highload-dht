@@ -12,7 +12,6 @@ import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.net.Socket;
 import one.nio.server.SelectorThread;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +32,7 @@ public class DemoHttpServer extends HttpServer {
     private static final Logger LOGGER = LoggerFactory.getLogger(DemoHttpServer.class);
     private static final String RESPONSE_NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final int NOT_FOUND_CODE = 404;
+    public static final String INTERNAL_ERROR_IN_SERVER_MSG = "Internal error in server {}";
     private final HttpClient httpClient;
     private final ServiceConfig serviceConfig;
     private final ExecutorService workersPool;
@@ -64,7 +64,7 @@ public class DemoHttpServer extends HttpServer {
             try {
                 session.sendResponse(requestsHandler.handleGetRange(start, end));
             } catch (IOException e) {
-                LOGGER.error("Internal error in server {}", serviceConfig.selfUrl());
+                LOGGER.error(INTERNAL_ERROR_IN_SERVER_MSG, serviceConfig.selfUrl());
                 tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
             }
             return;
@@ -96,7 +96,7 @@ public class DemoHttpServer extends HttpServer {
                 LOGGER.error("Method not allowed {} method: {}", serviceConfig.selfUrl(), request.getMethod());
                 tryToSendResponseWithEmptyBody(session, Response.METHOD_NOT_ALLOWED);
             } catch (IOException e) {
-                LOGGER.error("Internal error in server {}", serviceConfig.selfUrl());
+                LOGGER.error(INTERNAL_ERROR_IN_SERVER_MSG, serviceConfig.selfUrl());
                 tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
             }
         });
@@ -104,41 +104,7 @@ public class DemoHttpServer extends HttpServer {
 
     @Override
     public HttpSession createSession(Socket socket) {
-        return new HttpSession(socket, this) {
-            @Override
-            public synchronized void sendResponse(Response response) throws IOException {
-                if (response instanceof ChunkedResponse) {
-                    Request handling = this.handling;
-                    if (handling == null) {
-                        throw new IOException("Out of order response");
-                    }
-
-                    server.incRequestsProcessed();
-
-                    String connection = handling.getHeader("Connection:");
-                    boolean keepAlive = handling.isHttp11()
-                            ? !"close".equalsIgnoreCase(connection)
-                            : "Keep-Alive".equalsIgnoreCase(connection);
-                    response.addHeader(keepAlive ? "Connection: Keep-Alive" : "Connection: close");
-                    response.addHeader("Transfer-Encoding: chunked");
-
-                    super.writeResponse(response, false);
-                    super.write(new MyQueueItem((ChunkedResponse) response));
-
-                    if (!keepAlive) scheduleClose();
-
-                    if ((this.handling = handling = pipeline.pollFirst()) != null) {
-                        if (handling == FIN) {
-                            super.scheduleClose();
-                        } else {
-                            server.handleRequest(handling, this);
-                        }
-                    }
-                    return;
-                }
-                super.sendResponse(response);
-            }
-        };
+        return new DemoHttpSession(socket, this);
     }
 
     private void executeHandlingRequest(Request request, HttpSession session, String key, int ack,
@@ -165,7 +131,7 @@ public class DemoHttpServer extends HttpServer {
                         }
                         aggregateResponsesAndSend(session, list);
                     } catch (IOException e) {
-                        LOGGER.error("Internal error in server {}", serviceConfig.selfUrl());
+                        LOGGER.error(INTERNAL_ERROR_IN_SERVER_MSG, serviceConfig.selfUrl());
                         tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
                     }
                 });

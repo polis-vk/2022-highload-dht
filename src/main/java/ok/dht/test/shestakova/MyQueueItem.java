@@ -12,9 +12,9 @@ import java.util.Iterator;
 
 public class MyQueueItem extends Session.QueueItem {
     private static final int BUFFER_CAPACITY = 1024;
-    private final byte[] DELIMITER = "\n".getBytes(StandardCharsets.UTF_8);
-    private final byte[] EO_LINE = "\r\n".getBytes(StandardCharsets.UTF_8);
-    private final byte[] EO_MSG = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] DELIMITER = "\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] EO_LINE = "\r\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] EO_MSG = "0\r\n\r\n".getBytes(StandardCharsets.UTF_8);
 
     private final Iterator<BaseEntry<MemorySegment>> entryIterator;
     private final ByteBuffer buffer = ByteBuffer.allocate(BUFFER_CAPACITY);

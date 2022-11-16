@@ -1,7 +1,6 @@
 package ok.dht.test.shestakova;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
-
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
