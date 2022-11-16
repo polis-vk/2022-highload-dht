@@ -34,13 +34,9 @@ public class ClusterInteractions {
         private final BufferedReader reader;
         Entry<MemorySegment> nextValue = null;
         boolean hasNext = true;
-
-        {
-            next();
-        }
-
         public ProxyRangeIterator(BufferedReader reader) {
             this.reader = reader;
+            next();
         }
 
         @Override

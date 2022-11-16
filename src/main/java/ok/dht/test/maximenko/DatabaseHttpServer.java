@@ -180,7 +180,7 @@ public class DatabaseHttpServer extends HttpServer {
         List<Iterator<Entry<MemorySegment>>> result = thisNodeIterator(startString, endString);
         for (Integer node : coveringNodes) {
             if (node != selfId) {
-                result.add(ClusterInteractions.getProxyRange(RANGE_REQUEST_PATH + clusterConfig[node],
+                result.add(ClusterInteractions.getProxyRange(clusterConfig[node] + RANGE_REQUEST_PATH,
                         startString,
                         endString,
                         httpClient));
