@@ -1,6 +1,7 @@
 package ok.dht.test.anikina.utils;
 
 import jdk.incubator.foreign.MemorySegment;
+import one.nio.util.Utf8;
 
 import java.nio.ByteBuffer;
 
@@ -12,12 +13,16 @@ public final class Utils {
         return s == null ? null : s.toByteArray();
     }
 
+    public static byte[] toBytes(String str) {
+        return Utf8.toBytes(str);
+    }
+
     public static MemorySegment memorySegmentFromBytes(byte[] bytes) {
         return bytes == null ? null : MemorySegment.ofArray(bytes);
     }
 
     public static MemorySegment memorySegmentFromString(String data) {
-        return data == null ? null : MemorySegment.ofArray(data.toCharArray());
+        return data == null ? null : memorySegmentFromBytes(toBytes(data));
     }
 
     public static byte[] toByteArray(byte[] timestamp, byte[] value) {
