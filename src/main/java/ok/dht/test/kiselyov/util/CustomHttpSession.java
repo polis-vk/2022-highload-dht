@@ -22,7 +22,6 @@ public class CustomHttpSession extends HttpSession {
             if (handling == null) {
                 throw new IOException("Out of order response");
             }
-
             server.incRequestsProcessed();
 
             Iterator<BaseEntry<byte[], Long>> entriesIterator = ((ChunkedResponse) response).getIterator();
