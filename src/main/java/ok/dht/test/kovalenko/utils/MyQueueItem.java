@@ -1,15 +1,15 @@
 package ok.dht.test.kovalenko.utils;
 
 import ok.dht.test.kovalenko.dao.aliases.TypedTimedEntry;
-import ok.dht.test.kovalenko.dao.base.Dao;
 import ok.dht.test.kovalenko.dao.utils.DaoUtils;
 import one.nio.net.Session;
 import one.nio.net.Socket;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 
 public class MyQueueItem extends Session.QueueItem {
 
@@ -18,6 +18,7 @@ public class MyQueueItem extends Session.QueueItem {
     private static final String KEY_VALUE_SEPARATOR = "\n";
     private final Iterator<TypedTimedEntry> mergeIterator;
     private boolean isDrained = false;
+    private final List<byte[]> plannedToWrite = new ArrayList<byte[]>();
 
     public MyQueueItem(Iterator<TypedTimedEntry> mergeIterator) {
         this.mergeIterator = mergeIterator;
@@ -34,9 +35,17 @@ public class MyQueueItem extends Session.QueueItem {
             throw new IllegalStateException("Content has already drained");
         }
 
+        int writtenUpPlanned = tryToWriteUpPlanned(socket);
+        if (!plannedToWrite.isEmpty()) {
+            return writtenUpPlanned;
+        }
+
         if (!mergeIterator.hasNext()) {
-            isDrained = true;
-            return socket.write(EOF, 0, EOF.length);
+            int written = tryToWrite(socket, EOF, 0, EOF.length);
+            if (written == EOF.length) {
+                isDrained = true;
+            }
+            return writtenUpPlanned + written;
         }
 
         TypedTimedEntry e = mergeIterator.next();
@@ -59,10 +68,43 @@ public class MyQueueItem extends Session.QueueItem {
         chunkBuffer.put(CRLF);
         if (!mergeIterator.hasNext()) {
             chunkBuffer.put(EOF);
-            isDrained = true;
         }
 
-        return socket.write(chunk, 0, chunk.length);
+        int written = tryToWrite(socket, chunk, 0, chunk.length);
+        if (written == chunk.length && !mergeIterator.hasNext()) {
+            isDrained = true;
+        }
+        return writtenUpPlanned + written;
+    }
+
+    private int tryToWriteUpPlanned(Socket socket) throws IOException {
+        int writtenUp = 0;
+        while (!plannedToWrite.isEmpty()) {
+            byte[] first = plannedToWrite.get(0);
+            int written = Math.max(0, socket.write(first, 0, first.length));
+            writtenUp += written;
+            if (written != first.length) {
+                int remained = first.length - written;
+                byte[] bytesRemained = new byte[remained];
+                System.arraycopy(first, written, bytesRemained, 0, remained);
+                plannedToWrite.set(0, bytesRemained);
+                break;
+            }
+            plannedToWrite.remove(0);
+        }
+        return writtenUp;
+    }
+
+    private int tryToWrite(Socket socket, byte[] data, int offset, int count) throws IOException {
+        int written = socket.write(data, offset, count);
+        if (written != data.length) {
+            written = Math.max(0, written);
+            int remained = data.length - written;
+            byte[] bytesRemained = new byte[remained];
+            System.arraycopy(data, written, bytesRemained, 0, remained);
+            plannedToWrite.add(bytesRemained);
+        }
+        return written;
     }
 
 }
