@@ -33,7 +33,7 @@ public class BorderedMergeIterator implements Iterator<Entry<MemorySegment>> {
             this.id = id;
         }
 
-        public Source(Iterator<Entry<MemorySegment>> iterator,  int id) {
+        public Source(Iterator<Entry<MemorySegment>> iterator, int id) {
             this.iterator = iterator;
             if (iterator.hasNext()) {
                 element = iterator.next();
@@ -61,6 +61,9 @@ public class BorderedMergeIterator implements Iterator<Entry<MemorySegment>> {
         sources = new TreeMap<>(COMPARATOR);
         int sourceId = 0;
 
+        if (size != iterators.size()) {
+            throw new RuntimeException();
+        }
         for (Iterator<Entry<MemorySegment>> iterator : iterators) {
             Source source = new Source(iterator, sourceId);
             addSource(source);

@@ -18,13 +18,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class ClusterInteractions {
+public abstract class ClusterInteractions {
     private static final String NOT_SPREAD_HEADER = "notSpread";
     private static final String NOT_SPREAD_HEADER_VALUE = "true";
     private static final String TIME_HEADER = "time";
@@ -32,8 +31,9 @@ public class ClusterInteractions {
 
     static class ProxyRangeIterator implements Iterator<Entry<MemorySegment>> {
         private final BufferedReader reader;
-        Entry<MemorySegment> nextValue = null;
+        Entry<MemorySegment> nextValue;
         boolean hasNext = true;
+
         public ProxyRangeIterator(BufferedReader reader) {
             this.reader = reader;
             next();
@@ -45,9 +45,10 @@ public class ClusterInteractions {
         }
 
         @Override
-        public Entry<MemorySegment> next() {
+        public final Entry<MemorySegment> next() {
             Entry<MemorySegment> tmp = nextValue;
-            String key, value;
+            String key;
+            String value;
             try {
                 key = reader.readLine();
                 value = reader.readLine();
@@ -69,6 +70,7 @@ public class ClusterInteractions {
             nextValue = null;
         }
     }
+
     public static CompletableFuture<Response> proxyRequest(String url,
                                                            String key,
                                                            Request request,
@@ -121,7 +123,6 @@ public class ClusterInteractions {
                 .header(NOT_SPREAD_HEADER, NOT_SPREAD_HEADER_VALUE)
                 .build();
 
-
         HttpResponse<InputStream> response;
 
         try {
@@ -142,10 +143,6 @@ public class ClusterInteractions {
 
     public static boolean isItRequestFRomOtherNode(Request request) {
         String spreadHeaderValue = request.getHeader(NOT_SPREAD_HEADER);
-        if (spreadHeaderValue != null && spreadHeaderValue.equals(": " + NOT_SPREAD_HEADER_VALUE)) {
-            return true;
-        }
-
-        return false;
+        return spreadHeaderValue != null && spreadHeaderValue.equals(": " + NOT_SPREAD_HEADER_VALUE);
     }
 }

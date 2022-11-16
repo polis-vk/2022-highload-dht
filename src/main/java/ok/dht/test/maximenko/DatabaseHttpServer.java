@@ -190,8 +190,6 @@ public class DatabaseHttpServer extends HttpServer {
         return result;
     }
 
-
-
     private List<Iterator<Entry<MemorySegment>>> thisNodeIterator(String startString, String endString) {
 
         MemorySegment start = startString == null ? null :
@@ -315,7 +313,6 @@ public class DatabaseHttpServer extends HttpServer {
             }
         });
     }
-
 
     Response handleMethod(String key, int method, byte[] body, long time) throws IOException {
         return switch (method) {

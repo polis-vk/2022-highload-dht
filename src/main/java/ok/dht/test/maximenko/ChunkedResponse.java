@@ -34,14 +34,14 @@ public class ChunkedResponse extends Response {
     public byte[] getNextChunk(boolean toClient) {
         Entry<MemorySegment> entry = iterator.next();
 
-        byte[] key  = entry.key().toByteArray();
+        byte[] key = entry.key().toByteArray();
         byte[] value = entry.value().toByteArray();
         int chunkSize = key.length + 1 + value.length;
         if (!toClient) {
             chunkSize += 1;
         }
         String chunkSizeString = Integer.toHexString(chunkSize);
-        int estimatedSize = chunkSizeString.length()  + 2 + chunkSize + 2;
+        int estimatedSize = chunkSizeString.length() + 2 + chunkSize + 2;
 
         ByteArrayBuilder builder = new ByteArrayBuilder(estimatedSize);
         builder.append(chunkSizeString);
