@@ -5,6 +5,8 @@ import ok.dht.test.skroba.db.base.Entity;
 import one.nio.net.Session;
 import one.nio.net.Socket;
 import org.iq80.leveldb.DBIterator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -12,6 +14,7 @@ import java.util.Arrays;
 import java.util.Map;
 
 public class ChunkedQueueItem extends Session.QueueItem {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ChunkedQueueItem.class);
     private static final byte[] ENDING_CHUNK = new byte[]{ '0', '\r', '\n', '\r', '\n' };
     private static final byte[] CRLF_BYTES = new byte[]{ '\r', '\n' };
     private static final byte[] DELIMITER_BYTES = new byte[]{ '\n' };
@@ -39,7 +42,7 @@ public class ChunkedQueueItem extends Session.QueueItem {
         try {
             iterator.close();
         } catch (IOException e) {
-            // Ignore
+            LOGGER.warn("Exception while closing iterator!");
         }
     }
     

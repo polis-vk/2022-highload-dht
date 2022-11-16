@@ -10,6 +10,7 @@ public class ChunkedResponse extends Response {
     final DBIterator iterator;
     final byte[] end;
     
+    @SuppressWarnings("PMD.ArrayIsStoredDirectly")
     public ChunkedResponse(final String resultCode, final DBIterator iterator, final byte[] end) {
         super(resultCode);
         this.iterator = iterator;
