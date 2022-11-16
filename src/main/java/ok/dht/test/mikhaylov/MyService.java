@@ -10,7 +10,6 @@ import ok.dht.test.mikhaylov.internal.ReplicaRequirements;
 import ok.dht.test.mikhaylov.internal.ShardResponseProcessor;
 import ok.dht.test.mikhaylov.resolver.ConsistentHashingResolver;
 import ok.dht.test.mikhaylov.resolver.ShardResolver;
-import ok.dht.test.panov.dao.lsm.StorageCompanionObject;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -320,13 +319,13 @@ public class MyService implements Service {
         @Override
         public synchronized void stop() {
             requestHandlers.shutdown();
-//            try {
-//                if (!requestHandlers.awaitTermination(1, TimeUnit.SECONDS)) {
-//                    requestHandlers.shutdownNow();
-//                }
-//            } catch (InterruptedException e) {
-//                Thread.currentThread().interrupt();
-//            }
+            try {
+                if (!requestHandlers.awaitTermination(1, TimeUnit.SECONDS)) {
+                    requestHandlers.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
             for (SelectorThread selectorThread : selectors) {
                 for (Session session : selectorThread.selector) {
                     session.close();
