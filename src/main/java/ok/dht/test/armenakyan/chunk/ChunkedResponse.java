@@ -11,7 +11,7 @@ public class ChunkedResponse extends Response {
 
     public ChunkedResponse(String resultCode, Iterator<Entity> entitiesIterator) {
         super(resultCode, Response.EMPTY);
-        getHeaders()[1] = (CHUNKED_ENCODING_HEADER);
+        getHeaders()[1] = CHUNKED_ENCODING_HEADER;
         this.entitiesIterator = entitiesIterator;
     }
 
