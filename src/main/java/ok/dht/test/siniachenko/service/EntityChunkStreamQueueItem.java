@@ -75,7 +75,7 @@ public class EntityChunkStreamQueueItem extends Session.QueueItem {
     private int writeFromBuffer(Socket socket) throws IOException {
         int written = socket.write(tempChunkByteBuffer);
         if (!tempChunkByteBuffer.hasRemaining()) {
-            if (tempChunkByteBuffer == terminatingChunkByteBuffer) {
+            if (tempChunkByteBuffer.equals(terminatingChunkByteBuffer)) {
                 // That was last buffer with terminating chunk
                 tempChunkByteBuffer = null;
             } else {
