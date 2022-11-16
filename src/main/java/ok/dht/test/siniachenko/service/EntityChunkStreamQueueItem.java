@@ -5,8 +5,6 @@ import one.nio.net.Session;
 import one.nio.net.Socket;
 import one.nio.util.ByteArrayBuilder;
 import one.nio.util.Utf8;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -77,11 +75,11 @@ public class EntityChunkStreamQueueItem extends Session.QueueItem {
     private int writeFromBuffer(Socket socket) throws IOException {
         int written = socket.write(tempChunkByteBuffer);
         if (!tempChunkByteBuffer.hasRemaining()) {
-            if (tempChunkByteBuffer != terminatingChunkByteBuffer) {
-                nextByteBuffer();
-            } else {
+            if (tempChunkByteBuffer == terminatingChunkByteBuffer) {
                 // That was last buffer with terminating chunk
                 tempChunkByteBuffer = null;
+            } else {
+                nextByteBuffer();
             }
         }
         return written;

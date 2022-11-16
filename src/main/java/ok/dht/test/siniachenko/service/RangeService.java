@@ -2,14 +2,11 @@ package ok.dht.test.siniachenko.service;
 
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.DBIterator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Iterator;
 import java.util.Map;
 
 public class RangeService {
-    private static final Logger LOG = LoggerFactory.getLogger(RangeService.class);
 
     private final DB levelDb;
     private final ChunkedTransferEncoder chunkedTransferEncoder;
