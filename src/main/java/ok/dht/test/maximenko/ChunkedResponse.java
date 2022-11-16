@@ -11,6 +11,7 @@ public class ChunkedResponse extends Response {
     private final Iterator<Entry<MemorySegment>> iterator;
     private final String resultCode;
     final boolean toClient;
+
     public boolean hasNext() {
         return iterator.hasNext();
     }

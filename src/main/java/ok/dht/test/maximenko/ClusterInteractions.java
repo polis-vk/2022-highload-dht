@@ -23,11 +23,13 @@ import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public abstract class ClusterInteractions {
+public class ClusterInteractions {
     private static final String NOT_SPREAD_HEADER = "notSpread";
     private static final String NOT_SPREAD_HEADER_VALUE = "true";
     private static final String TIME_HEADER = "time";
     private static final Logger LOGGER = Logger.getLogger(String.valueOf(ClusterInteractions.class));
+
+    private ClusterInteractions(){}
 
     static class ProxyRangeIterator implements Iterator<Entry<MemorySegment>> {
         private final BufferedReader reader;
@@ -88,25 +90,20 @@ public abstract class ClusterInteractions {
                 .header("time", String.valueOf(time))
                 .build();
 
-        try {
-            return CompletableFuture.supplyAsync(() -> {
-                HttpResponse<byte[]> response;
-                try {
-                    response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-                } catch (Exception e) {
-                    LOGGER.log(Level.INFO, "Failed to send request to another node");
-                    return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-                }
-                Optional<String> timeHeader = response.headers().firstValue(TIME_HEADER);
-                Response result = new Response(HttpUtils.convertStatusCode(response.statusCode()),
-                        response.body());
-                timeHeader.ifPresent(s -> result.addHeader(TIME_HEADER + ": " + s));
-                return result;
-            });
-        } catch (Exception e) {
-            LOGGER.log(Level.INFO, "Inter node interaction failure");
-            return CompletableFuture.completedFuture(null);
-        }
+        return CompletableFuture.supplyAsync(() -> {
+            HttpResponse<byte[]> response;
+            try {
+                response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+            } catch (Exception e) {
+                LOGGER.log(Level.INFO, "Failed to send request to another node");
+                return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
+            }
+            Optional<String> timeHeader = response.headers().firstValue(TIME_HEADER);
+            Response result = new Response(HttpUtils.convertStatusCode(response.statusCode()),
+                    response.body());
+            timeHeader.ifPresent(s -> result.addHeader(TIME_HEADER + ": " + s));
+            return result;
+        });
     }
 
     public static Iterator<Entry<MemorySegment>> getProxyRange(String url,
