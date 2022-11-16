@@ -106,6 +106,7 @@ public class ReplicaService implements Service {
         }
         if (start == null || (end != null && start.compareTo(end) >= 0)) {
             session.sendResponse(new Response(Response.BAD_REQUEST, getBytes("Start must be less than end")));
+            return;
         }
         Response startResponse = new Response(Response.OK, Response.EMPTY);
         startResponse.getHeaders()[1] = "Transfer-Encoding: chunked";
