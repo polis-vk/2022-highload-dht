@@ -132,6 +132,11 @@ public class DhtService implements Service {
 
     @Path("/v0/entities")
     public void handleRange(Request request, HttpSession session) throws IOException {
+        if (request.getMethod() != Request.METHOD_GET) {
+            session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
+            return;
+        }
+
         String startId = request.getParameter(START_PARAM);
         if (startId == null || startId.isBlank()) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
