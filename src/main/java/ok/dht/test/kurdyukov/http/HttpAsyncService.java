@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 
-abstract public class HttpAsyncService {
+public abstract class HttpAsyncService {
 
     protected static final Logger logger = LoggerFactory.getLogger(HttpAsyncService.class);
 

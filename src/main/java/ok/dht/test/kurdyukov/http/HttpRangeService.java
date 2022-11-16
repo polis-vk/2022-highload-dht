@@ -42,7 +42,7 @@ public class HttpRangeService extends HttpAsyncService {
                 new HttpChunkedResponse(
                         Response.OK,
                         iterator,
-                        bytes(end)
+                        end
                 )
         );
     }

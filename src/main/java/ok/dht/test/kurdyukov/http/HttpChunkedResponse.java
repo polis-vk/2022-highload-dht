@@ -7,12 +7,12 @@ class HttpChunkedResponse extends Response {
     private static final String TRANSFER_ENCODING_CHUNKED_HEADER = "Transfer-Encoding: chunked";
 
     public DBIterator iterator;
-    public byte[] upperBound;
+    public String upperBound;
 
     public HttpChunkedResponse(
             String resultCode,
             DBIterator iterator,
-            byte[] upperBound
+            String upperBound
     ) {
         super(resultCode);
 

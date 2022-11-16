@@ -22,9 +22,9 @@ public class ChunkedQueueItem extends Session.QueueItem {
 
     private boolean terminate;
 
-    public ChunkedQueueItem(DBIterator iterator, byte[] upperBound) {
+    public ChunkedQueueItem(DBIterator iterator, String upperBound) {
         this.dbIterator = iterator;
-        this.upperBound = upperBound;
+        this.upperBound = bytes(upperBound);
     }
 
     @Override
