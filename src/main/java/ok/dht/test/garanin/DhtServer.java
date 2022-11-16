@@ -25,7 +25,7 @@ public final class DhtServer {
             ServiceConfig cfg = new ServiceConfig(
                     port,
                     url,
-                    new ArrayList<>(Arrays.asList(args).subList(2, args.length)),
+                    new ArrayList<>(Arrays.asList(args).subList(2, args.length)).stream().sorted().toList(),
                     dir
             );
             new DhtService(cfg).start().get(1, TimeUnit.SECONDS);

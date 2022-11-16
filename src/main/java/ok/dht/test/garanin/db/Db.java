@@ -58,4 +58,10 @@ public final class Db {
             throw new DbException(e);
         }
     }
+
+    public static DbIterator range(RocksDB rocksDB, String from, String to) {
+        var dbInterator = rocksDB.newIterator();
+        dbInterator.seek(Utf8.toBytes(from));
+        return new DbIterator(dbInterator, to);
+    }
 }
