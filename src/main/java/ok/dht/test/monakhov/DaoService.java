@@ -11,7 +11,6 @@ import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
