@@ -2,6 +2,7 @@ package ok.dht.test.shik;
 
 import ok.dht.ServiceConfig;
 import ok.dht.test.shik.events.FollowerRequestState;
+import ok.dht.test.shik.events.HandlerRangeRequest;
 import ok.dht.test.shik.events.HandlerRequest;
 import ok.dht.test.shik.events.HandlerResponse;
 import ok.dht.test.shik.events.LeaderRequestState;
@@ -9,6 +10,7 @@ import ok.dht.test.shik.events.RequestState;
 import ok.dht.test.shik.illness.IllNodesService;
 import ok.dht.test.shik.sharding.ConsistentHash;
 import ok.dht.test.shik.sharding.ShardingConfig;
+import ok.dht.test.shik.streaming.StreamingSession;
 import ok.dht.test.shik.utils.HttpServerUtils;
 import ok.dht.test.shik.validator.ValidationResult;
 import ok.dht.test.shik.validator.Validator;
@@ -20,6 +22,8 @@ import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -115,6 +119,11 @@ public class CustomHttpServer extends HttpServer {
     }
 
     @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new StreamingSession(socket, this);
+    }
+
+    @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         ValidationResult params = validator.validate(request);
         if (params.getCode() == HttpURLConnection.HTTP_BAD_REQUEST) {
@@ -132,6 +141,17 @@ public class CustomHttpServer extends HttpServer {
             FollowerRequestState state =
                 new FollowerRequestState(request, session, id, params.getTimestamp());
             handleCurrentShardRequest(state);
+            return;
+        }
+
+        if (params.getStart() != null) {
+            workersService.submitTask(() -> {
+                HandlerResponse handlerResponse = new HandlerResponse();
+                requestHandler.handleGetRange(
+                    new HandlerRangeRequest(new FollowerRequestState(request, session), params.getStart(), params.getEnd()),
+                    handlerResponse);
+                HttpServerUtils.sendResponse(session, handlerResponse.getResponse());
+            });
             return;
         }
 

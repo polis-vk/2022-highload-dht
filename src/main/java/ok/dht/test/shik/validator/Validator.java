@@ -9,6 +9,7 @@ import java.util.function.Function;
 public class Validator {
 
     private static final String PATH_PREFIX = "/v0/entity";
+    private static final String PATH_RANGE_PREFIX = "/v0/entities";
     private static final String REQUESTED_REPLICAS = "from=";
     private static final String REQUIRED_REPLICAS = "ack=";
     private static final String TIMESTAMP = "timestamp=";
@@ -33,15 +34,18 @@ public class Validator {
         String path = request.getPath();
         ValidationResult result = new ValidationResult();
 
-        if (!path.startsWith(PATH_PREFIX)) {
+        if (!path.startsWith(PATH_PREFIX) && !path.startsWith(PATH_RANGE_PREFIX)) {
             result.setCode(HttpURLConnection.HTTP_BAD_REQUEST);
             return result;
         }
 
         String id = request.getParameter(ID_PARAM);
-        if (id == null || id.isEmpty()) {
-            result.setCode(HttpURLConnection.HTTP_BAD_REQUEST);
-            return result;
+        if (id != null) {
+            if (id.isEmpty()) {
+                result.setCode(HttpURLConnection.HTTP_BAD_REQUEST);
+                return result;
+            }
+            result.setId(id);
         }
 
         if (request.getMethod() == Request.METHOD_PUT && request.getBody() == null) {
@@ -49,23 +53,36 @@ public class Validator {
             return result;
         }
 
-        String start = request.getParameter(START_PARAM);
-        if (start != null) {
-            result.setStart(start);
+        return validateRangeParams(request, result);
+    }
+
+    private ValidationResult validateRangeParams(Request request, ValidationResult result) {
+        String start = getNonEmptyParam(request, result, START_PARAM);
+        result.setStart(start);
+        String end = getNonEmptyParam(request, result, END_PARAM);
+        result.setEnd(end);
+
+        if (start == null && end != null) {
+            result.setCode(HttpURLConnection.HTTP_BAD_REQUEST);
         }
 
-        String end = request.getParameter(END_PARAM);
-        if (end != null) {
-            if (start == null) {
-                result.setCode(HttpURLConnection.HTTP_BAD_REQUEST);
-                return result;
-            }
-
-            result.setEnd(end);
+        if (result.getId() == null && result.getStart() == null) {
+            result.setCode(HttpURLConnection.HTTP_BAD_REQUEST);
         }
 
-        result.setId(id);
+        if (result.getCode() == HttpURLConnection.HTTP_BAD_REQUEST) {
+            return result;
+        }
+
         return validateReplicationParams(request, result);
+    }
+
+    private String getNonEmptyParam(Request request, ValidationResult result, String name) {
+        String param = request.getParameter(name);
+        if (param != null && param.isEmpty()) {
+            result.setCode(HttpURLConnection.HTTP_BAD_REQUEST);
+        }
+        return param;
     }
 
     private ValidationResult validateReplicationParams(Request request, ValidationResult result) {

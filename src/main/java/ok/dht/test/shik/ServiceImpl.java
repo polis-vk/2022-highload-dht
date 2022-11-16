@@ -3,6 +3,7 @@ package ok.dht.test.shik;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.shik.events.HandlerRangeRequest;
 import ok.dht.test.shik.events.HandlerRequest;
 import ok.dht.test.shik.events.HandlerResponse;
 import ok.dht.test.shik.events.LeaderRequestState;
@@ -10,6 +11,7 @@ import ok.dht.test.shik.model.DBValue;
 import ok.dht.test.shik.serialization.ByteArraySerializer;
 import ok.dht.test.shik.serialization.ByteArraySerializerFactory;
 import ok.dht.test.shik.sharding.ShardingConfig;
+import ok.dht.test.shik.streaming.ChunkedResponse;
 import ok.dht.test.shik.workers.WorkersConfig;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.Response;
@@ -18,6 +20,7 @@ import one.nio.server.ServerConfig;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.iq80.leveldb.DB;
+import org.iq80.leveldb.DBIterator;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.impl.Iq80DBFactory;
 
@@ -110,6 +113,24 @@ public class ServiceImpl implements CustomService {
     }
 
     @Override
+    public void handleGetRange(HandlerRangeRequest request, HandlerResponse response) {
+        DBIterator iterator = levelDB.iterator();
+        byte[] end = request.getEnd() == null ? null : request.getEnd().getBytes(StandardCharsets.UTF_8);
+        byte[] upperBound = null;
+        if (end != null) {
+            iterator.seek(end);
+            if (iterator.hasNext()) {
+                upperBound = iterator.next().getValue();
+            }
+        }
+        ChunkedResponse chunkedResponse = new ChunkedResponse(Response.OK, Response.EMPTY);
+        chunkedResponse.setUpperBound(upperBound);
+        iterator.seek(request.getStart().getBytes(StandardCharsets.UTF_8));
+        chunkedResponse.setIterator(iterator);
+        response.setResponse(chunkedResponse);
+    }
+
+    @Override
     public void handleLeaderPut(HandlerRequest request, HandlerResponse response) {
         response.setResponse(request.getState().isSuccess()
             ? new Response(Response.CREATED, Response.EMPTY) : new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
@@ -146,7 +167,7 @@ public class ServiceImpl implements CustomService {
         return httpServerConfig;
     }
 
-    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

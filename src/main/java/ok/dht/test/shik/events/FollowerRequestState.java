@@ -11,6 +11,10 @@ public class FollowerRequestState extends AbstractRequestState {
     private final CompletableFuture<Response> responseFuture;
     private volatile Response readyResponse;
 
+    public FollowerRequestState(Request request, HttpSession session) {
+        this(request, session, null, System.currentTimeMillis());
+    }
+
     public FollowerRequestState(Request request, HttpSession session, String id, long timestamp) {
         super(request, session, id, timestamp);
         responseFuture = new CompletableFuture<>();
