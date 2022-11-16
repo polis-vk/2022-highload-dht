@@ -3,40 +3,36 @@ package ok.dht.test.galeev;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Path;
 import one.nio.http.PathMapper;
 import one.nio.http.Request;
 import one.nio.http.RequestHandler;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
 public class CustomHttpServer extends HttpServer {
     private final PathMapper defaultMapper = new PathMapper();
     private final ExecutorService executorService;
     private static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
+    private static final Set<Integer> SUPPORTED_METHODS = new HashSet<>();
+    private boolean isStopping;
 
     public CustomHttpServer(HttpServerConfig config,
-                            ExecutorService executorService,
-                            Object... routers) throws IOException {
-        super(config, routers);
+                            ExecutorService executorService) throws IOException {
+        super(config);
         this.executorService = executorService;
     }
 
     @Override
     public void handleDefault(Request request,
                               HttpSession session) throws IOException {
-        if (request.getMethod() == Request.METHOD_GET
-                || request.getMethod() == Request.METHOD_PUT
-                || request.getMethod() == Request.METHOD_DELETE) {
+        if (SUPPORTED_METHODS.contains(request.getMethod())) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
         } else {
             session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
@@ -46,94 +42,65 @@ public class CustomHttpServer extends HttpServer {
     @Override
     public synchronized void stop() {
         for (SelectorThread thread : selectors) {
-            for (Session session : thread.selector) {
-                session.socket().close();
+            if (thread.isAlive()) {
+                for (Session session : thread.selector) {
+                    if (session.socket().isOpen()) {
+                        session.socket().close();
+                    }
+                }
+                thread.interrupt();
             }
         }
         super.stop();
     }
 
-    @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
-        RequestHandler handler = findHandlerByHost(request);
-        if (handler == null) {
-            handler = defaultMapper.find(request.getPath(), request.getMethod());
+    public void addRequestHandlers(String path, int[] methods, RequestHandler handler) {
+        for (int i : methods) {
+            SUPPORTED_METHODS.add(i);
         }
 
-        if (handler != null) {
-            handler.handleRequest(request, session);
-        } else {
-            handleDefault(request, session);
-        }
+        defaultMapper.add(path, methods, handler);
     }
 
     @Override
-    public void addRequestHandlers(Object router) {
-        ArrayList<Class> supers = new ArrayList<>(4);
-        for (Class<?> cls = router.getClass(); cls != Object.class; cls = cls.getSuperclass()) {
-            supers.add(cls);
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        if (isStopping) {
+            session.sendError(Response.SERVICE_UNAVAILABLE, "Server is shutting down");
+            return;
         }
+        String path = request.getPath();
+        int method = request.getMethod();
 
-        for (int i = supers.size(); --i >= 0; ) {
-            Class<?> cls = supers.get(i);
+        RequestHandler requestHandler = defaultMapper.find(path, method);
 
-            for (Method m : cls.getMethods()) {
-                Path annotation = m.getAnnotation(Path.class);
-                if (annotation == null) {
-                    continue;
-                }
-
-                RequestMethod requestMethod = m.getAnnotation(RequestMethod.class);
-                int[] methods = requestMethod == null ? null : requestMethod.value();
-
-                for (String path : annotation.value()) {
-                    if (!path.startsWith("/")) {
-                        throw new IllegalArgumentException("Path '" + path + "' is not absolute");
-                    }
-                    defaultMapper.add(path, methods, (request, session)
-                            -> executorService.submit(new RunnableForRequestHandler(request, session, m, router)));
-                }
-            }
+        if (requestHandler == null) {
+            // If handler wasn't found - trying to understand whether its METHOD_NOT_ALLOWED or BAD_REQUEST
+            handleDefault(request, session);
+        } else {
+            // If handler was found - then everything is OK
+            executorService.submit(new RunnableForRequestHandler(requestHandler, request, session));
         }
+    }
+
+    public void prepareStopping() {
+        isStopping = true;
     }
 
     public static class RunnableForRequestHandler implements Runnable {
-        private final Request request;
         private final HttpSession session;
-        private final Method handlerMethod;
-        private final Object router;
+        private final Request request;
+        private final RequestHandler requestHandler;
 
-        public RunnableForRequestHandler(Request request, HttpSession session, Method handlerMethod, Object router) {
+        public RunnableForRequestHandler(RequestHandler requestHandler, Request request, HttpSession session) {
             this.request = request;
             this.session = session;
-            this.handlerMethod = handlerMethod;
-            this.router = router;
+            this.requestHandler = requestHandler;
         }
 
         @Override
         public void run() {
             try {
-                switch (request.getMethod()) {
-                    case Request.METHOD_GET, Request.METHOD_DELETE -> session.sendResponse(
-                            (Response) handlerMethod.invoke(router, request.getParameter("id="))
-                    );
-                    case Request.METHOD_PUT -> session.sendResponse(
-                            (Response) handlerMethod.invoke(router, request, request.getParameter("id="))
-                    );
-                    default -> session.sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY));
-                }
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException("Can not access method with name: " + handlerMethod.getName(), e);
-            } catch (InvocationTargetException e) {
-                Throwable cause = e.getCause();
-                if (cause instanceof IOException) {
-                    throw new UncheckedIOException("Thread with name: " + Thread.currentThread().getName()
-                            + " produced IOException with name: " + handlerMethod.getName(), (IOException) cause);
-                } else {
-                    throw new RuntimeException(
-                            "Method with name: " + handlerMethod.getName() + " produced exception", e
-                    );
-                }
+                requestHandler.handleRequest(request, session);
             } catch (IOException e) {
                 throw new UncheckedIOException("Too many answers. Can not write anything", e);
             }

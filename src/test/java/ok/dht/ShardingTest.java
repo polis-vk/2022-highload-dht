@@ -16,16 +16,13 @@
 
 package ok.dht;
 
-import one.nio.http.Response;
-import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
-
 import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
-import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Unit tests for a sharded two node {@link Service} cluster.
@@ -33,7 +30,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author Vadim Tsesko
  */
 class ShardingTest extends TestBase {
-    private static final Duration TIMEOUT = Duration.ofMinutes(1);
 
     @ServiceTest(stage = 3, clusterSize = 2)
     void insert(List<ServiceInfo> serviceInfos) throws Exception {
@@ -173,24 +169,28 @@ class ShardingTest extends TestBase {
         final byte[] value = randomValue();
 
         // Insert
-        assertEquals(HttpURLConnection.HTTP_CREATED, serviceInfos.get(0).upsert(key, value).statusCode());
-        assertEquals(HttpURLConnection.HTTP_CREATED, serviceInfos.get(1).upsert(key, value).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, serviceInfos.get(0).upsert(key, value, 1, 1).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, serviceInfos.get(1).upsert(key, value, 1, 1).statusCode());
 
         // Stop all
         for (ServiceInfo serviceInfo : serviceInfos) {
             serviceInfo.stop();
         }
 
+        int successCount = 0;
         // Check each
         for (ServiceInfo serviceInfo : serviceInfos) {
             serviceInfo.start();
 
-            HttpResponse<byte[]> response = serviceInfo.get(key);
-            assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
-            assertArrayEquals(value, response.body());
+            HttpResponse<byte[]> response = serviceInfo.get(key, 1, 1);
+            if (response.statusCode() == HttpURLConnection.HTTP_OK && Arrays.equals(value, response.body())) {
+                successCount++;
+            }
 
             serviceInfo.stop();
         }
+
+        assertEquals(1, successCount);
     }
 
 }
