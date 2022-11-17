@@ -197,7 +197,7 @@ public class DemoHttpServer extends HttpServer {
     private Response handleInternalRequest(Request request, HttpSession session) {
         int methodNum = request.getMethod();
         Response response;
-        String id = request.getParameter("id");
+        String id = request.getParameter("id=");
         if (methodNum == Request.METHOD_GET) {
             response = requestsHandler.handleGet(id);
         } else if (methodNum == Request.METHOD_PUT) {
