@@ -24,8 +24,8 @@ public final class ServiceServer {
             throws IOException, ExecutionException, InterruptedException, TimeoutException {
         int port = switch (args[0]) {
             case "first" -> 19234;
-            case "second" -> 12399;
-            case "third" -> 13939;
+             case "second" -> 12399;
+             case "third" -> 13939;
             default -> throw new RuntimeException("Unknown port selection");
         };
 
@@ -33,7 +33,7 @@ public final class ServiceServer {
         ServiceConfig cfg = new ServiceConfig(
                 port,
                 baseUrl + port,
-                List.of(baseUrl + 19234, baseUrl + 12399, baseUrl + 13939),
+                List.of(baseUrl + 19234),
                 Files.createTempDirectory("highload-server")
         );
         new ServiceImpl(cfg).start().get(1, TimeUnit.SECONDS);

@@ -375,7 +375,7 @@ public final class HttpApi extends HttpServer {
             protected void writeResponse(final Response response, final boolean includeBody) throws IOException {
                 super.writeResponse(response, includeBody);
                 if (response instanceof ChunkedResponse chunkedResponse) {
-                    super.write(new LinkedQueueItem(chunkedResponse.iterator));
+                    super.write(new LinkedQueueItem(chunkedResponse.iterator, 1));
                 }
             }
         };
@@ -388,6 +388,10 @@ public final class HttpApi extends HttpServer {
                           final Request req,
                           final HttpSession session) throws IOException {
         if (keyStart.isEmpty()) {
+            session.sendResponse(getEmptyResponse(Response.BAD_REQUEST));
+            return;
+        }
+        if (keyEnd != null && keyStart.compareTo(keyEnd) >= 0) {
             session.sendResponse(getEmptyResponse(Response.BAD_REQUEST));
             return;
         }
