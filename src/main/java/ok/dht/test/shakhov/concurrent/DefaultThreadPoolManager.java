@@ -24,16 +24,16 @@ public final class DefaultThreadPoolManager {
     }
 
     public static ThreadPoolExecutor createThreadPool(String name, int poolSize) {
-        poolSize = Math.max(poolSize, 1);
         int threadPoolId = nextThreadPoolId.incrementAndGet();
         String threadPoolFullName = name + "-" + threadPoolId;
         ThreadFactory namedThreadFactory = new CustomThreadFactory(threadPoolFullName);
         RejectedExecutionHandler loggableRejectedExecutionHandler =
                 new LoggableRejectedExecutionHandler(threadPoolFullName);
 
+        int lowerBoundedPoolSize = Math.max(poolSize, 1);
         return new ThreadPoolExecutor(
-                poolSize,
-                poolSize,
+                lowerBoundedPoolSize,
+                lowerBoundedPoolSize,
                 0L,
                 TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(QUEUE_MAX_SIZE),
