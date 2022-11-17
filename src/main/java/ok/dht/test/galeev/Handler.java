@@ -19,9 +19,13 @@ public interface Handler<T> {
 
     Response responseError();
 
+    @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
     void onSuccess(Optional<?> input);
 
+    @SuppressWarnings("EmptyMethod")
     void onError();
+
+    void finishResponse();
 
     static Handler<?> getHandler(Request request) {
         switch (request.getMethod()) {
@@ -34,20 +38,22 @@ public interface Handler<T> {
             case Request.METHOD_DELETE -> {
                 return new DeleteHandler(request);
             }
-            default -> {
-                throw new MethodNotAllowedException();
-            }
+            default -> throw new MethodNotAllowedException();
         }
     }
 
     class GetHandler implements Handler<Entry<Timestamp, byte[]>> {
         private final AtomicReference<Entry<Timestamp, byte[]>> newestEntry = new AtomicReference<>();
+        private volatile boolean hasFinished;
 
-        public GetHandler(Request ignored) {
+        public GetHandler(@SuppressWarnings("unused") Request ignored) {
         }
 
         @Override
         public CompletableFuture<Optional<Entry<Timestamp, byte[]>>> action(Node node, String key) {
+            if (hasFinished) {
+                return CompletableFuture.completedFuture(null);
+            }
             return node.get(key).thenApply(entry -> {
                 if (entry == null) {
                     return Optional.empty();
@@ -82,6 +88,11 @@ public interface Handler<T> {
         @Override
         public void onError() {
 
+        }
+
+        @Override
+        public void finishResponse() {
+            hasFinished = true;
         }
 
         private static void updateNewestEntry(
@@ -153,13 +164,17 @@ public interface Handler<T> {
         public void onError() {
 
         }
+
+        @Override
+        public void finishResponse() {
+        }
     }
 
     class DeleteHandler implements Handler<Boolean> {
 
         private final Timestamp currentTime;
 
-        public DeleteHandler(Request ignored) {
+        public DeleteHandler(@SuppressWarnings("unused") Request ignored) {
             currentTime = new Timestamp(System.currentTimeMillis());
         }
 
@@ -190,6 +205,10 @@ public interface Handler<T> {
 
         @Override
         public void onError() {
+        }
+
+        @Override
+        public void finishResponse() {
         }
     }
 }
