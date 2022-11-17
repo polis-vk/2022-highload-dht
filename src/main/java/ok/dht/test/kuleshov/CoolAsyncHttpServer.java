@@ -36,6 +36,8 @@ import static ok.dht.test.kuleshov.utils.ResponseUtils.emptyResponse;
 
 public class CoolAsyncHttpServer extends CoolHttpServer {
     private static final String TIMESTAMP_HEADER = "timestamp";
+    private static final String ERROR_RESPONSE_SENDING = "Error sending response to client: ";
+    private static final String ERROR_SENDING_ERROR = "Error sending error to client: ";
 
     private static final int WORKER_CORE_POOL_SIZE = 4;
     private static final int WORKER_MAXIMUM_POOL_SIZE = 4;
@@ -107,16 +109,6 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                 }
 
                 String path = request.getPath();
-
-                if (!"/v0/entity".equals(path)
-                        && !"/master/v0/entity".equals(path)
-                        && !"/v0/entities".equals(path)
-                ) {
-                    session.sendResponse(emptyResponse(Response.BAD_REQUEST));
-
-                    return;
-                }
-
                 if ("/v0/entities".equals(path)
                 ) {
                     handleRangeRequest(request, session);
@@ -131,20 +123,20 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                     return;
                 }
 
-                if (path.startsWith("/master")) {
-                    Response resp = service.handle(method, id, request, getTimestampHeader(request));
-                    session.sendResponse(resp);
-
-                    return;
+                switch (path) {
+                    case "/v0/entity" -> handleRequest(id, request, session);
+                    case "/master/v0/entity" -> {
+                        Response resp = service.handle(method, id, request, getTimestampHeader(request));
+                        session.sendResponse(resp);
+                    }
+                    default -> session.sendResponse(emptyResponse(Response.BAD_REQUEST));
                 }
-
-                handleRequest(id, request, session);
             } catch (Exception e) {
-                log.error("Error sending response to client: " + e.getCause());
+                log.error(ERROR_RESPONSE_SENDING + e.getCause());
                 try {
                     session.sendResponse(emptyResponse(Response.BAD_REQUEST));
                 } catch (IOException exception) {
-                    log.error("Error sending error to client: " + exception.getMessage());
+                    log.error(ERROR_SENDING_ERROR + exception.getMessage());
                     session.close();
                 }
             }
@@ -165,11 +157,11 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
             try {
                 session.sendResponse(emptyResponse(Response.BAD_REQUEST));
             } catch (IOException e) {
-                log.error("Error sending response to client: " + e.getCause());
+                log.error(ERROR_RESPONSE_SENDING + e.getCause());
                 try {
                     session.sendResponse(emptyResponse(Response.SERVICE_UNAVAILABLE));
                 } catch (IOException exception) {
-                    log.error("Error sending error to client: " + exception.getMessage());
+                    log.error(ERROR_SENDING_ERROR + exception.getMessage());
                     session.close();
                 }
             }
@@ -183,15 +175,14 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
             session.sendResponse(createChunkedHeaderResponse());
             ((CoolSession) session).writeChunks(chunkIterator);
         } catch (IOException e) {
-            log.error("Error sending response to client: " + e.getCause());
+            log.error(ERROR_RESPONSE_SENDING + e.getCause());
             try {
                 session.sendResponse(emptyResponse(Response.BAD_REQUEST));
             } catch (IOException exception) {
-                log.error("Error sending error to client: " + exception.getMessage());
+                log.error(ERROR_SENDING_ERROR + exception.getMessage());
                 session.close();
             }
         }
-
 
     }
 

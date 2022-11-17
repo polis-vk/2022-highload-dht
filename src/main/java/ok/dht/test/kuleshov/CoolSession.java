@@ -9,7 +9,7 @@ import java.util.Iterator;
 
 public class CoolSession extends HttpSession {
     Iterator<byte[]> iterator;
-    boolean isChunked = false;
+    boolean isChunked;
 
     public CoolSession(Socket socket, HttpServer server) {
         super(socket, server);
