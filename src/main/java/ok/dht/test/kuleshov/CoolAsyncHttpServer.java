@@ -81,7 +81,7 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                 SENDER_MAXIMUM_POOL_SIZE,
                 100,
                 TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>(128)
+                new LinkedBlockingQueue<>()
         );
 
         httpClient = HttpClient
@@ -127,10 +127,11 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
                 handleRequest(id, request, session);
             } catch (Exception e) {
+                log.error("Error sending response to client: " + e.getCause());
                 try {
                     session.sendResponse(emptyResponse(Response.BAD_REQUEST));
                 } catch (IOException exception) {
-                    log.error(exception.getMessage());
+                    log.error("Error sending error to client: " + exception.getMessage());
                     session.close();
                 }
             }
@@ -183,6 +184,7 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                 if (exception == null) {
                     slaveResponseHandler.handleResponse(request.getMethod(), HandleResponse.fromHttpResponse(response));
                 } else {
+                    log.error("Error slave's response" + exception.getMessage());
                     slaveResponseHandler.handleFrom();
                 }
             });
@@ -196,7 +198,9 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
     private HttpRequest createRequestToSlave(Request request, String url, long timestamp) {
         return HttpRequest.newBuilder()
-                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(
+                        request.getBody() == null ? new byte[0] : request.getBody()
+                ))
                 .timeout(Duration.of(2, ChronoUnit.SECONDS))
                 .header(TIMESTAMP_HEADER, String.valueOf(timestamp))
                 .uri(URI.create(url + "/master" + request.getURI()))
@@ -217,6 +221,8 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
     private static void terminateExecutor(ExecutorService executorService) {
         boolean isFinished = false;
+        executorService.shutdown();
+
         try {
             isFinished = executorService.awaitTermination(500, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
@@ -224,7 +230,7 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
         }
 
         if (isFinished) {
-            executorService.shutdown();
+            executorService.shutdownNow();
         }
 
     }
