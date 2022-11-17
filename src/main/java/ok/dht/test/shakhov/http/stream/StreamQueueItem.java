@@ -4,10 +4,12 @@ import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.shakhov.dao.Entry;
 import one.nio.net.Session.ArrayQueueItem;
 import one.nio.net.Socket;
+import one.nio.util.ByteArrayBuilder;
 import one.nio.util.Utf8;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Iterator;
 
 public class StreamQueueItem extends ArrayQueueItem {
@@ -16,7 +18,7 @@ public class StreamQueueItem extends ArrayQueueItem {
     private static final byte[] LF = Utf8.toBytes("\n");
 
     private final Iterator<Entry<MemorySegment>> streamIterator;
-    private boolean endSent = false;
+    private boolean endSent;
 
     public StreamQueueItem(byte[] streamStart, Iterator<Entry<MemorySegment>> streamIterator) {
         super(streamStart, 0, streamStart.length, 0);
@@ -51,7 +53,7 @@ public class StreamQueueItem extends ArrayQueueItem {
     }
 
     private void setData(byte[] data) {
-        this.data = data;
+        this.data = Arrays.copyOf(data, data.length);
         this.offset = 0;
         this.count = data.length;
         this.flags = 0;
@@ -59,25 +61,18 @@ public class StreamQueueItem extends ArrayQueueItem {
     }
 
     private static byte[] createChunk(Entry<MemorySegment> entry) {
-        byte[] key = entry.key().toByteArray();
-        byte[] value = entry.value().toByteArray();
-        int dataSize = key.length + LF.length + value.length;
+        byte[] keyBytes = entry.key().toByteArray();
+        byte[] valueBytes = entry.value().toByteArray();
+        int dataSize = keyBytes.length + LF.length + valueBytes.length;
         byte[] dataSizeBytes = Integer.toHexString(dataSize).getBytes(StandardCharsets.US_ASCII);
-        byte[] chunk = new byte[dataSizeBytes.length + CRLF.length + dataSize + CRLF.length];
-
-        int currentPos = 0;
-        currentPos = copyArray(dataSizeBytes, chunk, currentPos);
-        currentPos = copyArray(CRLF, chunk, currentPos);
-        currentPos = copyArray(key, chunk, currentPos);
-        currentPos = copyArray(LF, chunk, currentPos);
-        currentPos = copyArray(value, chunk, currentPos);
-        copyArray(CRLF, chunk, currentPos);
-
-        return chunk;
-    }
-
-    private static int copyArray(byte[] from, byte[] to, int currentPos) {
-        System.arraycopy(from, 0, to, currentPos, from.length);
-        return currentPos + from.length;
+        int chunkSize = dataSizeBytes.length + CRLF.length + dataSize + CRLF.length;
+        return new ByteArrayBuilder(chunkSize)
+                .append(dataSizeBytes)
+                .append(CRLF)
+                .append(keyBytes)
+                .append(LF)
+                .append(valueBytes)
+                .append(CRLF)
+                .toBytes();
     }
 }

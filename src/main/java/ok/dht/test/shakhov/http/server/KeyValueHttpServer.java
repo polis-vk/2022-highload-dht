@@ -19,17 +19,17 @@ import java.io.IOException;
 import java.util.Set;
 import java.util.concurrent.ThreadPoolExecutor;
 
-import static ok.dht.test.shakhov.http.HttpUtils.ACK_PARAM;
-import static ok.dht.test.shakhov.http.HttpUtils.END_PARAMETER;
-import static ok.dht.test.shakhov.http.HttpUtils.FROM_PARAM;
-import static ok.dht.test.shakhov.http.HttpUtils.ID_PARAMETER;
 import static ok.dht.test.shakhov.http.HttpUtils.ONE_NIO_X_LEADER_TIMESTAMP_HEADER;
-import static ok.dht.test.shakhov.http.HttpUtils.START_PARAMETER;
 
 public class KeyValueHttpServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(KeyValueHttpServer.class);
 
-    private static final int RESPONSE_EXECUTOR_POOL_SIZE = (Runtime.getRuntime().availableProcessors() + 1) / 3;
+    private static final String ID_PARAMETER = "id=";
+    private static final String ACK_PARAM = "ack=";
+    private static final String FROM_PARAM = "from=";
+    private static final String START_PARAMETER = "start=";
+    private static final String END_PARAMETER = "end=";
+
     private static final String ENDPOINT = "/v0/entity";
     private static final Set<Integer> SUPPORTED_METHODS = Set.of(
             Request.METHOD_GET,
@@ -38,6 +38,8 @@ public class KeyValueHttpServer extends HttpServer {
     );
     private static final String STREAM_ENDPOINT = "/v0/entities";
     private static final Set<Integer> STREAM_SUPPORTED_METHODS = Set.of(Request.METHOD_GET);
+
+    private static final int RESPONSE_EXECUTOR_POOL_SIZE = (Runtime.getRuntime().availableProcessors() + 1) / 3;
 
     private final int clusterSize;
     private final ClientRequestAsyncHandler clientRequestAsyncHandler;
@@ -49,8 +51,7 @@ public class KeyValueHttpServer extends HttpServer {
                               int clusterSize,
                               ClientRequestAsyncHandler clientRequestAsyncHandler,
                               InternalRequestAsyncHandler internalRequestAsyncHandler,
-                              StreamRequestHandler streamRequestHandler) throws IOException
-    {
+                              StreamRequestHandler streamRequestHandler) throws IOException {
         super(config);
         this.clusterSize = clusterSize;
         this.clientRequestAsyncHandler = clientRequestAsyncHandler;
@@ -176,7 +177,6 @@ public class KeyValueHttpServer extends HttpServer {
     public HttpSession createSession(Socket socket) throws RejectedSessionException {
         return new StreamAwareSession(socket, this);
     }
-
 
     @Override
     public synchronized void stop() {

@@ -12,12 +12,6 @@ public final class HttpUtils {
     public static final String ONE_NIO_X_RECORD_TIMESTAMP_HEADER = X_RECORD_TIMESTAMP_HEADER + ':';
     public static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
-    public static final String ID_PARAMETER = "id=";
-    public static final String ACK_PARAM = "ack=";
-    public static final String FROM_PARAM = "from=";
-    public static final String START_PARAMETER = "start=";
-    public static final String END_PARAMETER = "end=";
-
     private HttpUtils() {
     }
 
