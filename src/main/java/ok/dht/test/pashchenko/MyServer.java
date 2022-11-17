@@ -8,7 +8,9 @@ import ok.dht.test.pashchenko.dao.MemorySegmentDao;
 import one.nio.async.CustomThreadFactory;
 import one.nio.http.*;
 import one.nio.net.Session;
+import one.nio.net.Socket;
 import one.nio.server.AcceptorConfig;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import one.nio.util.Utf8;
 import org.slf4j.Logger;
@@ -20,6 +22,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -77,13 +80,56 @@ public class MyServer extends HttpServer {
         return httpConfig;
     }
 
-    @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
-        if (!"/v0/entity".equals(request.getPath())) {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-            return;
+    public static class ChunkedResponse extends Response {
+        public ChunkedResponse(String resultCode) {
+            super(resultCode);
         }
+    }
 
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new HttpSession(socket, this) {
+            @Override
+            protected void writeResponse(Response response, boolean includeBody) throws IOException {
+                if (response instanceof ChunkedResponse) {
+                    super.write(new QueueItem() {
+                        int count = 0;
+
+                        @Override
+                        public int remaining() {
+                            return 1;
+                        }
+
+                        @Override
+                        public int write(Socket socket) throws IOException {
+                            byte[] bytes = (count++ + "\n").getBytes(StandardCharsets.UTF_8);
+                            return socket.write(bytes, 0, bytes.length);
+                        }
+                    });
+                } else {
+                    super.writeResponse(response, includeBody);
+                }
+            }
+        };
+    }
+
+    private void handleCounterRequest(Request request, HttpSession session) throws IOException {
+        session.sendResponse(new ChunkedResponse("Debug"));
+    }
+
+    private static class ResultState {
+        final int success;
+        final int completed;
+        final HandleResult bestResult;
+
+        ResultState(int success, int completed, HandleResult bestResult) {
+            this.success = success;
+            this.completed = completed;
+            this.bestResult = bestResult;
+        }
+    }
+
+    private void handleEntityRequest(Request request, HttpSession session) throws IOException {
         if (request.getMethod() != Request.METHOD_PUT
                 && request.getMethod() != Request.METHOD_GET
                 && request.getMethod() != Request.METHOD_DELETE) {
@@ -139,27 +185,26 @@ public class MyServer extends HttpServer {
 
         int firstIndex = getNodeIndexForKey(id);
         long now = System.currentTimeMillis();
-        CompletableFuture[] completableFuturesResults = new CompletableFuture[from];
+        List<CompletableFuture<HandleResult>> completableFuturesResults = new ArrayList<>(from);
         for (int i = 0; i < from; i++) {
-            int iFinal = i;
             Node node = nodes.get((firstIndex + i) % nodes.size());
 
+            CompletableFuture<HandleResult> future;
             try {
                 String url = node.url;
                 LOG.debug("Url {} for id {} (my port is {})", url, id, config.selfPort());
-                completableFuturesResults[iFinal] =
-                        url.equals(config.selfUrl())
-                                ? handleRequestAsync(request, id, now)
-                                : proxyRequest(request, url, now);
+                future = url.equals(config.selfUrl())
+                        ? handleRequestAsync(request, id, now)
+                        : proxyRequest(request, url, now);
             } catch (Exception e) {
                 LOG.error("error handle request", e);
-                completableFuturesResults[iFinal] = CompletableFuture.completedFuture(new HandleResult(Response.INTERNAL_ERROR));
+                future = CompletableFuture.completedFuture(new HandleResult(Response.INTERNAL_ERROR));
             }
+            completableFuturesResults.add(future);
         }
 
-        AtomicInteger successAtomic = new AtomicInteger();
-        AtomicInteger completed = new AtomicInteger();
-        AtomicReference<HandleResult> winResult = new AtomicReference<>(new HandleResult(Response.GATEWAY_TIMEOUT));
+        AtomicReference<ResultState> resultState = new AtomicReference<>(new ResultState(0, 0, new HandleResult(Response.GATEWAY_TIMEOUT)));
+
         for (CompletableFuture<HandleResult> completableFuture : completableFuturesResults) {
             completableFuture.whenCompleteAsync((result, throwable) -> {
                 if (throwable != null) {
@@ -167,45 +212,32 @@ public class MyServer extends HttpServer {
                     result = new HandleResult(Response.INTERNAL_ERROR);
                 }
 
-                int success = 0;
-                if (result.status.equals(Response.OK)
+                boolean success = result.status.equals(Response.OK)
                         || result.status.equals(Response.CREATED)
                         || result.status.equals(Response.ACCEPTED)
-                        || result.status.equals(Response.NOT_FOUND)) {
-                    boolean compareAndSetResult = false;
-                    while (!compareAndSetResult) {
-                        HandleResult winResultGet = winResult.get();
-                        if (winResultGet.timestamp <= result.timestamp) {
-                            compareAndSetResult = winResult.compareAndSet(winResultGet, result);
-                        } else {
-                            compareAndSetResult = true;
-                        }
-                    }
-                    success = successAtomic.incrementAndGet();
-                }
+                        || result.status.equals(Response.NOT_FOUND);
 
+                HandleResult r = result;
+                ResultState state = resultState.updateAndGet(old -> new ResultState(
+                        success ? old.success + 1 : old.success,
+                        old.completed + 1,
+                        success && r.timestamp >= old.bestResult.timestamp ? r : old.bestResult
+                ));
 
-                if (success == ack) {
-                    HandleResult winResultGet = winResult.get();
+                if (success && state.success == ack) {
                     try {
-                        session.sendResponse(new Response(winResultGet.status, winResultGet.data));
+                        session.sendResponse(new Response(state.bestResult.status, state.bestResult.data));
                     } catch (IOException e) {
                         LOG.error("executor sendResponse", e);
                         sessionClose(session);
-                        return;
                     }
-                    return;
-                }
-                int completedGet = completed.incrementAndGet();
-                if (completedGet == from && success < ack) {
+                } else if (state.completed == from && state.success < ack) {
                     try {
                         session.sendResponse(new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY));
                     } catch (IOException e) {
                         LOG.error("executor sendResponse", e);
                         sessionClose(session);
-                        return;
                     }
-                    return;
                 }
             }, executorAggregator);
         }
@@ -247,6 +279,15 @@ public class MyServer extends HttpServer {
 //        }
 //        return true;
 //    }
+
+    @Override
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+        switch (request.getPath()) {
+            case "/v0/counter" -> handleCounterRequest(request, session);
+            case "/v0/entity" -> handleEntityRequest(request, session);
+            default -> session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+        }
+    }
 
     private int getInt(Request request, String param, int defaultValue) throws Exception_400 {
         String fromStr = request.getParameter(param);
@@ -337,7 +378,7 @@ public class MyServer extends HttpServer {
                     }
                     return new HandleResult(status, timestamp, response.body());
                 }
-        , executorAggregator).exceptionally(throwable -> {
+                , executorAggregator).exceptionally(throwable -> {
             LOG.error("error send async", throwable);
             return new HandleResult(Response.INTERNAL_ERROR);
         });
