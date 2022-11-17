@@ -378,7 +378,7 @@ public class MyServer extends HttpServer {
                     }
                     return new HandleResult(status, timestamp, response.body());
                 }
-                , executorAggregator).exceptionally(throwable -> {
+        , executorAggregator).exceptionally(throwable -> {
             LOG.error("error send async", throwable);
             return new HandleResult(Response.INTERNAL_ERROR);
         });
