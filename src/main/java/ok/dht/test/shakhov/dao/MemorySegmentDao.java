@@ -107,7 +107,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                     return CompletableFuture.completedFuture(null);
                 }
                 try {
-                    if (spinAttempts > 0) {
+                    if (spinAttempts <= 0) {
                         noFlushInProgress.await();
                     }
                 } catch (InterruptedException e) {

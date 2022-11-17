@@ -24,6 +24,7 @@ import static ok.dht.test.shakhov.http.HttpUtils.ONE_NIO_X_LEADER_TIMESTAMP_HEAD
 public class KeyValueHttpServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(KeyValueHttpServer.class);
 
+    private static final int RESPONSE_EXECUTOR_POOL_SIZE = (Runtime.getRuntime().availableProcessors() + 1) / 3;
     private static final String ENDPOINT = "/v0/entity";
     private static final Set<Integer> SUPPORTED_METHODS = Set.of(
             Request.METHOD_GET,
@@ -49,7 +50,7 @@ public class KeyValueHttpServer extends HttpServer {
     @Override
     public synchronized void start() {
         super.start();
-        responseExecutor = DefaultThreadPoolManager.createThreadPool("response");
+        responseExecutor = DefaultThreadPoolManager.createThreadPool("response", RESPONSE_EXECUTOR_POOL_SIZE);
     }
 
     @Override

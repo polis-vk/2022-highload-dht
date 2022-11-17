@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class DefaultThreadPoolManager {
-    private static final int DEFAULT_POOL_SIZE = Math.max(Runtime.getRuntime().availableProcessors() / 2, 1);
+    private static final int DEFAULT_POOL_SIZE = Runtime.getRuntime().availableProcessors() / 2;
     private static final int AWAIT_TERMINATION_TIMEOUT_SECONDS = 20;
     private static final int QUEUE_MAX_SIZE = 10_000;
 
@@ -24,6 +24,7 @@ public final class DefaultThreadPoolManager {
     }
 
     public static ThreadPoolExecutor createThreadPool(String name, int poolSize) {
+        poolSize = Math.max(poolSize, 1);
         int threadPoolId = nextThreadPoolId.incrementAndGet();
         String threadPoolFullName = name + "-" + threadPoolId;
         ThreadFactory namedThreadFactory = new CustomThreadFactory(threadPoolFullName);
