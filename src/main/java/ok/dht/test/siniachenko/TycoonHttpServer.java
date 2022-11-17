@@ -93,15 +93,19 @@ public class TycoonHttpServer extends HttpServer {
         } else if (request.getMethod() != Request.METHOD_GET) {
             sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY), session);
         } else {
-            EntityChunkStreamQueueItem entityChunkStreamQueueItem = rangeService.handleRange(
-                startParameter,
-                endParameter
+            execute(() -> {
+                    EntityChunkStreamQueueItem entityChunkStreamQueueItem = rangeService.handleRange(
+                        startParameter,
+                        endParameter
+                    );
+                    try {
+                        session.write(entityChunkStreamQueueItem);
+                    } catch (IOException e) {
+                        onSessionException(session, e);
+                    }
+                },
+                session
             );
-            try {
-                session.write(entityChunkStreamQueueItem);
-            } catch (IOException e) {
-                onSessionException(session, e);
-            }
         }
     }
 
