@@ -13,6 +13,7 @@ import one.nio.http.Response;
 import one.nio.util.Utf8;
 
 import java.io.IOException;
+import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 
 import static ok.dht.test.kuleshov.Validator.isCorrectId;
@@ -70,6 +71,13 @@ public class Service implements ok.dht.Service {
                 return emptyResponse(Response.BAD_REQUEST);
             }
         }
+    }
+
+    public Iterator<Entry<MemorySegment>> getRange(String start, String end) throws IOException {
+        return memorySegmentDao.get(
+                MemorySegment.ofArray(Utf8.toBytes(start)),
+                end != null ? MemorySegment.ofArray(Utf8.toBytes(end)) : null
+        );
     }
 
     public Response handleGet(String id) {

@@ -5,6 +5,8 @@ import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +19,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
@@ -105,8 +108,18 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
                 String path = request.getPath();
 
-                if (!"/v0/entity".equals(path) && !"/master/v0/entity".equals(path)) {
+                if (!"/v0/entity".equals(path)
+                        && !"/master/v0/entity".equals(path)
+                        && !"/v0/entities".equals(path)
+                ) {
                     session.sendResponse(emptyResponse(Response.BAD_REQUEST));
+
+                    return;
+                }
+
+                if ("/v0/entities".equals(path)
+                ) {
+                    handleRangeRequest(request, session);
 
                     return;
                 }
@@ -143,6 +156,55 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
         terminateExecutor(workerExecutorService);
 
         super.stop();
+    }
+
+    private void handleRangeRequest(Request request, HttpSession session) {
+        String start = request.getParameter("start=");
+        String end = request.getParameter("end=");
+        if (start == null || start.isBlank() || (end != null && end.isBlank())) {
+            try {
+                session.sendResponse(emptyResponse(Response.BAD_REQUEST));
+            } catch (IOException e) {
+                log.error("Error sending response to client: " + e.getCause());
+                try {
+                    session.sendResponse(emptyResponse(Response.SERVICE_UNAVAILABLE));
+                } catch (IOException exception) {
+                    log.error("Error sending error to client: " + exception.getMessage());
+                    session.close();
+                }
+            }
+
+            return;
+        }
+
+        try {
+            Iterator<byte[]> chunkIterator = new ChunkIterator(service.getRange(start, end));
+
+            session.sendResponse(createChunkedHeaderResponse());
+            ((CoolSession) session).writeChunks(chunkIterator);
+        } catch (IOException e) {
+            log.error("Error sending response to client: " + e.getCause());
+            try {
+                session.sendResponse(emptyResponse(Response.BAD_REQUEST));
+            } catch (IOException exception) {
+                log.error("Error sending error to client: " + exception.getMessage());
+                session.close();
+            }
+        }
+
+
+    }
+
+    public static Response createChunkedHeaderResponse() {
+        Response response = new Response(Response.OK);
+        response.addHeader("Transfer-Encoding: chunked");
+
+        return response;
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new CoolSession(socket, this);
     }
 
     private void handleRequest(String id, Request request, HttpSession session) {
