@@ -64,7 +64,10 @@ public class MemorySegmentDao {
             result = state.flushing.get(key);
         }
         if (result == null) {
-            result = state.storage.get(key);
+            result = state.flushing.get(key);
+            if (result == null) {
+                result = state.storage.get(key);
+            }
         }
 
         return result;
