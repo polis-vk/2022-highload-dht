@@ -2,12 +2,15 @@ package ok.dht.test.shakhov.http.server;
 
 import ok.dht.test.shakhov.concurrent.DefaultThreadPoolManager;
 import ok.dht.test.shakhov.http.HttpUtils;
+import ok.dht.test.shakhov.http.stream.StreamAwareSession;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,9 +20,11 @@ import java.util.Set;
 import java.util.concurrent.ThreadPoolExecutor;
 
 import static ok.dht.test.shakhov.http.HttpUtils.ACK_PARAM;
+import static ok.dht.test.shakhov.http.HttpUtils.END_PARAMETER;
 import static ok.dht.test.shakhov.http.HttpUtils.FROM_PARAM;
 import static ok.dht.test.shakhov.http.HttpUtils.ID_PARAMETER;
 import static ok.dht.test.shakhov.http.HttpUtils.ONE_NIO_X_LEADER_TIMESTAMP_HEADER;
+import static ok.dht.test.shakhov.http.HttpUtils.START_PARAMETER;
 
 public class KeyValueHttpServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(KeyValueHttpServer.class);
@@ -31,20 +36,26 @@ public class KeyValueHttpServer extends HttpServer {
             Request.METHOD_PUT,
             Request.METHOD_DELETE
     );
+    private static final String STREAM_ENDPOINT = "/v0/entities";
+    private static final Set<Integer> STREAM_SUPPORTED_METHODS = Set.of(Request.METHOD_GET);
 
     private final int clusterSize;
     private final ClientRequestAsyncHandler clientRequestAsyncHandler;
     private final InternalRequestAsyncHandler internalRequestAsyncHandler;
+    private final StreamRequestHandler streamRequestHandler;
     private ThreadPoolExecutor responseExecutor;
 
     public KeyValueHttpServer(HttpServerConfig config,
                               int clusterSize,
                               ClientRequestAsyncHandler clientRequestAsyncHandler,
-                              InternalRequestAsyncHandler internalRequestAsyncHandler) throws IOException {
+                              InternalRequestAsyncHandler internalRequestAsyncHandler,
+                              StreamRequestHandler streamRequestHandler) throws IOException
+    {
         super(config);
         this.clusterSize = clusterSize;
         this.clientRequestAsyncHandler = clientRequestAsyncHandler;
         this.internalRequestAsyncHandler = internalRequestAsyncHandler;
+        this.streamRequestHandler = streamRequestHandler;
     }
 
     @Override
@@ -55,11 +66,32 @@ public class KeyValueHttpServer extends HttpServer {
 
     @Override
     public void handleRequest(Request request, HttpSession session) {
-        if (!ENDPOINT.equals(request.getPath())) {
+        String requestPath = request.getPath();
+        if (ENDPOINT.equals(requestPath)) {
+            handleBasicRequest(request, session);
+        } else if (STREAM_ENDPOINT.equals(requestPath)) {
+            handleStreamRequest(request, session);
+        } else {
             sendResponseAsync(session, HttpUtils.badRequest());
+        }
+    }
+
+    private void handleStreamRequest(Request request, HttpSession session) {
+        if (!STREAM_SUPPORTED_METHODS.contains(request.getMethod())) {
+            sendResponseAsync(session, HttpUtils.methodNotAllowed());
             return;
         }
 
+        String start = request.getParameter(START_PARAMETER);
+        if (start == null || start.isEmpty()) {
+            sendResponseAsync(session, HttpUtils.badRequest());
+            return;
+        }
+        String end = request.getParameter(END_PARAMETER);
+        sendResponseAsync(session, streamRequestHandler.handleStreamRequest(request, start, end));
+    }
+
+    private void handleBasicRequest(Request request, HttpSession session) {
         if (!SUPPORTED_METHODS.contains(request.getMethod())) {
             sendResponseAsync(session, HttpUtils.methodNotAllowed());
             return;
@@ -139,6 +171,12 @@ public class KeyValueHttpServer extends HttpServer {
             session.close();
         }
     }
+
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new StreamAwareSession(socket, this);
+    }
+
 
     @Override
     public synchronized void stop() {

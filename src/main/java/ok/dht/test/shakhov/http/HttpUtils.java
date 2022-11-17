@@ -15,6 +15,8 @@ public final class HttpUtils {
     public static final String ID_PARAMETER = "id=";
     public static final String ACK_PARAM = "ack=";
     public static final String FROM_PARAM = "from=";
+    public static final String START_PARAMETER = "start=";
+    public static final String END_PARAMETER = "end=";
 
     private HttpUtils() {
     }

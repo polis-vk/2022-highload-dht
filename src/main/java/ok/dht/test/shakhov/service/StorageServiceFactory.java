@@ -6,7 +6,7 @@ import ok.dht.test.ServiceFactory;
 
 import java.time.Clock;
 
-@ServiceFactory(stage = 5, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
+@ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
 public class StorageServiceFactory implements ServiceFactory.Factory {
 
     @Override

@@ -13,6 +13,7 @@ import ok.dht.test.shakhov.http.HttpUtils;
 import ok.dht.test.shakhov.http.response.ResponseHandler;
 import ok.dht.test.shakhov.http.response.ResponseWithTimestamp;
 import ok.dht.test.shakhov.http.server.KeyValueHttpServer;
+import ok.dht.test.shakhov.http.stream.StreamResponse;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.Request;
@@ -32,6 +33,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,6 +49,7 @@ import static ok.dht.test.shakhov.http.HttpClientFactory.createHttpClient;
 import static ok.dht.test.shakhov.http.HttpUtils.NOT_ENOUGH_REPLICAS;
 import static ok.dht.test.shakhov.http.HttpUtils.X_LEADER_TIMESTAMP_HEADER;
 import static ok.dht.test.shakhov.http.HttpUtils.createHttpServerConfigFromPort;
+import static ok.dht.test.shakhov.http.HttpUtils.internalError;
 import static ok.dht.test.shakhov.http.HttpUtils.methodNotAllowed;
 
 public class KeyValueService implements Service {
@@ -88,7 +91,8 @@ public class KeyValueService implements Service {
                 httpServerConfig,
                 serviceConfig.clusterUrls().size(),
                 this::handleClientRequestAsync,
-                this::handleInternalRequestAsync
+                this::handleInternalRequestAsync,
+                this::handleStreamRequestAsync
         );
         server.start();
         return CompletableFuture.completedFuture(null);
@@ -148,7 +152,8 @@ public class KeyValueService implements Service {
 
     private CompletableFuture<ResponseWithTimestamp> sendInternalRequestAsync(Request clientRequest,
                                                                               String url,
-                                                                              long timestamp) {
+                                                                              long timestamp)
+    {
         byte[] requestBody = clientRequest.getBody();
         HttpRequest.BodyPublisher bodyPublisher;
         if (requestBody != null) {
@@ -235,5 +240,17 @@ public class KeyValueService implements Service {
         }
 
         return new Response(String.valueOf(winResponse.statusCode()), winResponse.body());
+    }
+
+    private Response handleStreamRequestAsync(Request request, String start, String end) {
+        try {
+            MemorySegment startSegment = MemorySegment.ofArray(Utf8.toBytes(start));
+            MemorySegment endSegment = end == null ? null : MemorySegment.ofArray(Utf8.toBytes(end));
+            Iterator<Entry<MemorySegment>> streamIterator = dao.get(startSegment, endSegment);
+            return new StreamResponse(streamIterator);
+        } catch (Exception e) {
+            log.error("Unexpected error during processing stream {}", request, e);
+            return internalError();
+        }
     }
 }
