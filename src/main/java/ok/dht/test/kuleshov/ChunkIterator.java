@@ -10,9 +10,8 @@ import java.util.Iterator;
 public class ChunkIterator implements Iterator<byte[]> {
     private static final byte[] CHUNK_SEPARATOR = Utf8.toBytes("\r\n");
     private static final byte[] KEY_VALUE_SEPARATOR = Utf8.toBytes("\n");
-    private static final byte[] END = Utf8.toBytes("0\r\n\r\n");
     Iterator<Entry<MemorySegment>> entryIterator;
-    boolean isEnd = false;
+    boolean isEnd;
 
     public ChunkIterator(Iterator<Entry<MemorySegment>> entryIterator) {
         this.entryIterator = entryIterator;
@@ -26,13 +25,13 @@ public class ChunkIterator implements Iterator<byte[]> {
     @Override
     public byte[] next() {
         if (isEnd) {
-            return null;
+            return new byte[0];
         }
 
         if (!entryIterator.hasNext()) {
             isEnd = true;
 
-            return END;
+            return Utf8.toBytes("0\r\n\r\n");
         }
 
         Entry<MemorySegment> entry = entryIterator.next();
