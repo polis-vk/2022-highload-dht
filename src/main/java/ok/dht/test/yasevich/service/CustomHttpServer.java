@@ -96,10 +96,6 @@ class CustomHttpServer extends HttpServer {
         sendResponseAsync(session, new ChunkedResponse(Response.OK, entries));
     }
 
-    private void sendResponseAsync(HttpSession session, Response response) {
-        submitOrSendUnavailable(workersPool, session, () -> sendResponse(session, response));
-    }
-
     private void handleUsual(Request request, HttpSession session) {
         String key = request.getParameter("id=");
         String coordinatorTimestamp = request.getHeader(ServiceImpl.COORDINATOR_TIMESTAMP_HEADER + ':');
@@ -121,12 +117,11 @@ class CustomHttpServer extends HttpServer {
         int ack;
         int from;
         try {
-            ReplicationParams params = ReplicationParams.fromHeader(request, serviceConfig.clusterUrls().size());
+            ReplicationParams params = ReplicationParams.parsed(request, serviceConfig.clusterUrls().size());
             ack = params.ack;
             from = params.from;
         } catch (NumberFormatException e) {
-            submitOrSendUnavailable(workersPool, session,
-                    () -> sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY)));
+            sendResponseAsync(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
 
@@ -140,6 +135,10 @@ class CustomHttpServer extends HttpServer {
             long time = System.currentTimeMillis();
             replicationManager.handleReplicatingRequest(session, request, key, time, ack, from);
         });
+    }
+
+    private void sendResponseAsync(HttpSession session, Response response) {
+        submitOrSendUnavailable(workersPool, session, () -> sendResponse(session, response));
     }
 
     private static void submitOrSendUnavailable(Executor pool, HttpSession session, Runnable runnable) {
@@ -205,16 +204,12 @@ class CustomHttpServer extends HttpServer {
             this.from = from;
         }
 
-        public static ReplicationParams fromHeader(Request request, int clusterSize) throws NumberFormatException {
-            String replicasParam = request.getParameter("replicas=");
+        public static ReplicationParams parsed(Request request, int clusterSize) throws NumberFormatException {
             String ackParam = request.getParameter("ack=");
             String fromParam = request.getParameter("from=");
-            String[] replicasParams = replicasParam == null ? null : replicasParam.split("/");
-            int from = replicasParams != null ? Integer.parseInt(replicasParams[1]) :
-                    fromParam != null ? Integer.parseInt(fromParam) : clusterSize;
-            int ack = replicasParams != null ? Integer.parseInt(replicasParams[0]) :
-                    ackParam != null ? Integer.parseInt(ackParam) :
-                            from / 2 + 1 <= clusterSize ? from / 2 + 1 : from;
+            int from = fromParam != null ? Integer.parseInt(fromParam) : clusterSize;
+            int ack = ackParam != null ? Integer.parseInt(ackParam) :
+                    from / 2 + 1 <= clusterSize ? from / 2 + 1 : from;
             return new ReplicationParams(ack, from);
         }
     }
