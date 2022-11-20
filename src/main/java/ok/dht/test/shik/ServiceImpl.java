@@ -3,6 +3,7 @@ package ok.dht.test.shik;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.shik.workers.WorkersConfig;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.Param;
 import one.nio.http.Path;
@@ -27,11 +28,18 @@ public class ServiceImpl implements Service {
     private static final Log LOG = LogFactory.getLog(ServiceImpl.class);
 
     private final ServiceConfig config;
+    private final WorkersConfig workersConfig;
     private CustomHttpServer server;
     private DB levelDB;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
+        workersConfig = new WorkersConfig();
+    }
+
+    public ServiceImpl(ServiceConfig config, WorkersConfig workersConfig) {
+        this.config = config;
+        this.workersConfig = workersConfig;
     }
 
     @Override
@@ -42,7 +50,7 @@ public class ServiceImpl implements Service {
             LOG.error("Error while starting database: ", e);
             throw e;
         }
-        server = new CustomHttpServer(createHttpConfig(config));
+        server = new CustomHttpServer(createHttpConfig(config), workersConfig);
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
@@ -107,7 +115,7 @@ public class ServiceImpl implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
