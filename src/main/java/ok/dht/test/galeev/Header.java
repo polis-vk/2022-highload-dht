@@ -3,9 +3,9 @@ package ok.dht.test.galeev;
 import one.nio.http.Request;
 
 public class Header {
-    public static final String FROM_PARAMETR = "from=";
-    public static final String ID_PARAMETR = "id=";
-    public static final String ACK_PARAMETR = "ack=";
+    public static final String FROM_PARAMETER = "from=";
+    public static final String ID_PARAMETER = "id=";
+    public static final String ACK_PARAMETER = "ack=";
 
     private final String key;
     private final int ack;
@@ -17,12 +17,12 @@ public class Header {
         int tmpAck;
         int tmpFrom;
         boolean tmpIsOk = true;
-        tmpKey = request.getParameter(ID_PARAMETR);
+        tmpKey = request.getParameter(ID_PARAMETER);
         if (tmpKey == null || tmpKey.isEmpty()) {
             tmpIsOk = false;
         }
-        String ackString = request.getParameter(ACK_PARAMETR);
-        String fromString = request.getParameter(FROM_PARAMETR);
+        String ackString = request.getParameter(ACK_PARAMETER);
+        String fromString = request.getParameter(FROM_PARAMETER);
         try {
             tmpFrom = (fromString == null) ? amountOfPhysicalNodes
                     : Integer.parseInt(fromString);

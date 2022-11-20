@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit;
 
 public final class DhtServer {
 
-    private static final Logger logger = LoggerFactory.getLogger(DhtServer.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(DhtServer.class);
 
     private DhtServer() {
         // Only main method
@@ -28,7 +28,7 @@ public final class DhtServer {
                     dir
             );
             new DhtService(cfg).start().get(1, TimeUnit.SECONDS);
-            logger.info("Socket is ready: " + url);
+            LOGGER.info("Socket is ready: " + url);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
