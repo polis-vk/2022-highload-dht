@@ -31,7 +31,6 @@ public class DemoHttpServer extends HttpServer {
     private static final Logger LOGGER = LoggerFactory.getLogger(DemoHttpServer.class);
     private static final String RESPONSE_NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final int NOT_FOUND_CODE = 404;
-    private static final int METHOD_NOT_ALLOWED_CODE = 405;
     private final HttpClient httpClient;
     private final ServiceConfig serviceConfig;
     private final ExecutorService workersPool;
