@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -152,43 +153,66 @@ public class DemoHttpServer extends HttpServer {
         AtomicInteger errorCount = new AtomicInteger(httpRequests.size() - ack + 1);
         for (HttpRequest httpRequest : httpRequests) {
             if (httpRequest == null) {
-                workersPool.execute(() -> {
-                    Response response = handleInternalRequest(request, session);
-                    if (response == null) {
-                        if (errorCount.decrementAndGet() == 0) {
-                            resultFuture.completeExceptionally(new NotEnoughReplicasException());
-                        }
-                        return;
-                    }
-                    responses.add(response);
+                try {
+                    Response tmpResponse = getInternalResponse(request, session);
+                    responses.add(tmpResponse);
                     if (successCount.decrementAndGet() == 0) {
                         resultFuture.complete(responses);
                     }
-                });
+                } catch (Exception e) {
+                    if (errorCount.decrementAndGet() == 0) {
+                        resultFuture.completeExceptionally(new NotEnoughReplicasException());
+                    }
+                }
                 continue;
             }
-            httpClient
-                    .sendAsync(
-                            httpRequest,
-                            HttpResponse.BodyHandlers.ofByteArray()
-                    )
-                    .whenComplete((response, throwable) -> {
-                        if (throwable != null) {
-                            if (errorCount.decrementAndGet() == 0) {
-                                resultFuture.completeExceptionally(new NotEnoughReplicasException());
-                            }
-                            return;
-                        }
-                        responses.add(new Response(
-                                StatusCodes.statuses.getOrDefault(response.statusCode(), "UNKNOWN ERROR"),
-                                response.body()
-                        ));
-                        if (successCount.decrementAndGet() == 0) {
-                            resultFuture.complete(responses);
-                        }
-                    });
+            try {
+                Response tmpResponse = proxyRequest(httpRequest);
+                responses.add(tmpResponse);
+                if (successCount.decrementAndGet() == 0) {
+                    resultFuture.complete(responses);
+                }
+            } catch (Exception e) {
+                if (errorCount.decrementAndGet() == 0) {
+                    resultFuture.completeExceptionally(new NotEnoughReplicasException());
+                }
+            }
         }
         return resultFuture;
+    }
+
+    private Response getInternalResponse(Request request, HttpSession session) throws ExecutionException,
+            InterruptedException {
+        final CompletableFuture<Response> responseCompletableFuture = new CompletableFuture<>();
+        workersPool.execute(() -> {
+            Response response = handleInternalRequest(request, session);
+            if (response == null) {
+                responseCompletableFuture.completeExceptionally(new Exception());
+                return;
+            }
+            responseCompletableFuture.complete(response);
+        });
+        return responseCompletableFuture.get();
+    }
+
+    private Response proxyRequest(HttpRequest httpRequest) throws ExecutionException, InterruptedException {
+        final CompletableFuture<Response> responseCompletableFuture = new CompletableFuture<>();
+        httpClient
+                .sendAsync(
+                        httpRequest,
+                        HttpResponse.BodyHandlers.ofByteArray()
+                )
+                .whenComplete((response, throwable) -> {
+                    if (throwable != null) {
+                        responseCompletableFuture.completeExceptionally(new Exception());
+                        return;
+                    }
+                    responseCompletableFuture.complete(new Response(
+                            StatusCodes.statuses.getOrDefault(response.statusCode(), "UNKNOWN ERROR"),
+                            response.body()
+                    ));
+                });
+        return responseCompletableFuture.get();
     }
 
     private void tryToSendResponseWithEmptyBody(HttpSession session, String resultCode) {
