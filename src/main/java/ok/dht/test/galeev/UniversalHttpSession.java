@@ -8,10 +8,18 @@ import one.nio.net.Socket;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 
 class UniversalHttpSession extends HttpSession {
-    public UniversalHttpSession(Socket socket, HttpServer server) {
+
+    private final ExecutorService executorService;
+
+    public UniversalHttpSession(Socket socket, ExecutorService executorService, HttpServer server) {
         super(socket, server);
+        this.executorService = executorService;
     }
 
     @Override
@@ -21,8 +29,22 @@ class UniversalHttpSession extends HttpSession {
             super.writeResponse(response, false);
             // Writing body
             Iterator<ByteBuffer> iterator = ((ChunkedResponse) response).iterator;
-            while (iterator.hasNext()) {
-                super.write(new ChunkedQueueItem(iterator.next()));
+            BlockingQueue<ChunkedQueueItem> daoQueue = new ArrayBlockingQueue<>(2);
+            Future<?> future = executorService.submit(() -> {
+                while (iterator.hasNext()) {
+                    try {
+                        daoQueue.put(new ChunkedQueueItem(iterator.next()));
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            });
+            while (!future.isDone() || !daoQueue.isEmpty()) {
+                try {
+                    super.write(daoQueue.take());
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
             }
         } else {
             super.writeResponse(response, includeBody);

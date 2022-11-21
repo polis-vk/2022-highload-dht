@@ -44,7 +44,7 @@ public class CustomHttpServer extends HttpServer {
     @SuppressWarnings("RedundantThrows")
     @Override
     public HttpSession createSession(Socket socket) throws RejectedSessionException {
-        return new UniversalHttpSession(socket, this);
+        return new UniversalHttpSession(socket, executorService, this);
     }
 
     @Override
