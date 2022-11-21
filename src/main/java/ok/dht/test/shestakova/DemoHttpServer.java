@@ -11,7 +11,6 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -159,11 +158,14 @@ public class DemoHttpServer extends HttpServer {
             try {
                 Response tmpResponse = httpRequest == null ? getInternalResponse(request, session)
                         : proxyRequest(httpRequest);
+                if (tmpResponse == null) {
+                    throw new IllegalArgumentException("Error during getting response");
+                }
                 responses.add(tmpResponse);
                 if (successCount.decrementAndGet() == 0) {
                     resultFuture.complete(responses);
                 }
-            } catch (Exception e) {
+            } catch (IllegalArgumentException | ExecutionException | InterruptedException e) {
                 if (errorCount.decrementAndGet() == 0) {
                     resultFuture.completeExceptionally(new NotEnoughReplicasException());
                 }
@@ -178,7 +180,7 @@ public class DemoHttpServer extends HttpServer {
         workersPool.execute(() -> {
             Response response = handleInternalRequest(request, session);
             if (response == null) {
-                responseCompletableFuture.completeExceptionally(new Exception());
+                responseCompletableFuture.completeExceptionally(new IllegalArgumentException());
                 return;
             }
             responseCompletableFuture.complete(response);
@@ -195,7 +197,7 @@ public class DemoHttpServer extends HttpServer {
                 )
                 .whenComplete((response, throwable) -> {
                     if (throwable != null) {
-                        responseCompletableFuture.completeExceptionally(new Exception());
+                        responseCompletableFuture.completeExceptionally(new IllegalArgumentException());
                         return;
                     }
                     responseCompletableFuture.complete(new Response(
