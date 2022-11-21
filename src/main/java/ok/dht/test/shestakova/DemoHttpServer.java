@@ -11,6 +11,7 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -101,7 +102,7 @@ public class DemoHttpServer extends HttpServer {
         List<String> targetNodes = HttpServerUtils.INSTANCE.getNodesSortedByRendezvousHashing(key, circuitBreaker,
                 serviceConfig, from);
         List<HttpRequest> httpRequests = requestsHandler.getHttpRequests(request, key, targetNodes, serviceConfig);
-        getResponses(request, session, ack, httpRequests)
+        CompletableFuture<List<Response>> completableFuture = getResponses(request, session, ack, httpRequests)
                 .whenComplete((list, throwable) -> {
                     if (throwable != null || list == null || list.size() < ack) {
                         tryToSendResponseWithEmptyBody(session, RESPONSE_NOT_ENOUGH_REPLICAS);
@@ -118,6 +119,9 @@ public class DemoHttpServer extends HttpServer {
                         tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
                     }
                 });
+        if (completableFuture == null) {
+            LOGGER.error("Internal error in server {} during working with CF", serviceConfig.selfUrl());
+        }
     }
 
     private void aggregateResponsesAndSend(HttpSession session, List<Response> responses) throws IOException {
@@ -152,22 +156,9 @@ public class DemoHttpServer extends HttpServer {
         // если ack < from, допускаем from - ack + 1 ошибку
         AtomicInteger errorCount = new AtomicInteger(httpRequests.size() - ack + 1);
         for (HttpRequest httpRequest : httpRequests) {
-            if (httpRequest == null) {
-                try {
-                    Response tmpResponse = getInternalResponse(request, session);
-                    responses.add(tmpResponse);
-                    if (successCount.decrementAndGet() == 0) {
-                        resultFuture.complete(responses);
-                    }
-                } catch (Exception e) {
-                    if (errorCount.decrementAndGet() == 0) {
-                        resultFuture.completeExceptionally(new NotEnoughReplicasException());
-                    }
-                }
-                continue;
-            }
             try {
-                Response tmpResponse = proxyRequest(httpRequest);
+                Response tmpResponse = httpRequest == null ? getInternalResponse(request, session)
+                        : proxyRequest(httpRequest);
                 responses.add(tmpResponse);
                 if (successCount.decrementAndGet() == 0) {
                     resultFuture.complete(responses);
@@ -197,7 +188,7 @@ public class DemoHttpServer extends HttpServer {
 
     private Response proxyRequest(HttpRequest httpRequest) throws ExecutionException, InterruptedException {
         final CompletableFuture<Response> responseCompletableFuture = new CompletableFuture<>();
-        httpClient
+        CompletableFuture<HttpResponse<byte[]>> completableFuture = httpClient
                 .sendAsync(
                         httpRequest,
                         HttpResponse.BodyHandlers.ofByteArray()
@@ -212,6 +203,9 @@ public class DemoHttpServer extends HttpServer {
                             response.body()
                     ));
                 });
+        if (completableFuture == null) {
+            LOGGER.error("Internal error in server {} during working with CF", serviceConfig.selfUrl());
+        }
         return responseCompletableFuture.get();
     }
 
