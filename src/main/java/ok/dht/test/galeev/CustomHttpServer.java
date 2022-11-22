@@ -39,6 +39,7 @@ public class CustomHttpServer extends HttpServer {
         }
     }
 
+    @SuppressWarnings("RedundantThrows")
     @Override
     public synchronized void stop() {
         for (SelectorThread thread : selectors) {
@@ -62,6 +63,7 @@ public class CustomHttpServer extends HttpServer {
         defaultMapper.add(path, methods, handler);
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         if (isStopping) {
@@ -86,6 +88,7 @@ public class CustomHttpServer extends HttpServer {
         isStopping = true;
     }
 
+    @SuppressWarnings("ClassCanBeRecord")
     public static class RunnableForRequestHandler implements Runnable {
         private final HttpSession session;
         private final Request request;
