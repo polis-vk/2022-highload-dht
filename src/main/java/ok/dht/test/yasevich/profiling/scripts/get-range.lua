@@ -1,15 +1,19 @@
 request = function()
     local entryLength = 6
-    local rangeLength = 1000
-    local from = math.random(0, math.pow(10, entryLength) - 1) .. ""
-    local to = (from + rangeLength) .. ""
-    if(string.len(to) > entryLength) then to = string.rep("9", entryLength)
-    while string.len(from) < entryLength do
-        from = "0" .. from
+    local rangeLength = 10000
+    local from = math.random(0, math.pow(10, entryLength) - 1)
+    local to = from + rangeLength
+    if to > math.pow(10, entryLength) - 1 then
+        to = math.pow(10, entryLength) - 1
     end
-    while string.len(to) < entryLength do
-        to = "0" .. to
+    local startParam = tostring(from)
+    local endParam = tostring(to)
+    while string.len(startParam) < entryLength - 1 do
+        startParam = "0" .. startParam
     end
-    path = "/v0/entities?start=" .. from .. "&end=" .. to
+    while string.len(endParam) < entryLength - 1 do
+        endParam = "0" .. endParam
+    end
+    path = "/v0/entities?start=" .. startParam .. "&end=" .. endParam
     return "GET " .. path .. " HTTP/1.1\r\n" .. "Host: http://localhost:12353\r\n\r\n"
 end
