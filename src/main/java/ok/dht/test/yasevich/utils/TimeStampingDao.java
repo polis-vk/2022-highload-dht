@@ -21,9 +21,14 @@ public class TimeStampingDao {
         this.dao = dao;
     }
 
-    public Iterator<Entry<byte[]>> get(String start, String end) throws IOException {
+    public Iterator<Entry<byte[]>> get(String start, String end) {
         MemorySegment endSegment = end == null ? null : memSegmentOfString(end);
-        Iterator<Entry<MemorySegment>> entries = dao.get(memSegmentOfString(start), endSegment);
+        Iterator<Entry<MemorySegment>> entries;
+        try {
+            entries = dao.get(memSegmentOfString(start), endSegment);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
         return new Iterator<>() {
             @Override
             public boolean hasNext() {

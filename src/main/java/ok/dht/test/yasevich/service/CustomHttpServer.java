@@ -2,7 +2,6 @@ package ok.dht.test.yasevich.service;
 
 import ok.dht.ServiceConfig;
 import ok.dht.test.yasevich.artyomdrozdov.MemorySegmentDao;
-import ok.dht.test.yasevich.chunking.ChunkedQueueItem;
 import ok.dht.test.yasevich.chunking.ChunkedResponse;
 import ok.dht.test.yasevich.dao.Config;
 import ok.dht.test.yasevich.dao.Entry;
@@ -26,6 +25,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import static ok.dht.test.yasevich.service.ServiceImpl.sendResponse;
 
@@ -55,18 +55,7 @@ class CustomHttpServer extends HttpServer {
 
     @Override
     public HttpSession createSession(Socket socket) throws RejectedSessionException {
-        return new HttpSession(socket, this) {
-
-            @Override
-            protected void writeResponse(Response response, boolean includeBody) throws IOException {
-                if (response instanceof ChunkedResponse) {
-                    super.write(new ChunkedQueueItem((ChunkedResponse) response));
-                } else {
-                    super.writeResponse(response, includeBody);
-                }
-            }
-        };
-
+        return new CustomHttpSession(socket, this, workersPool);
     }
 
     @Override
@@ -86,13 +75,7 @@ class CustomHttpServer extends HttpServer {
             sendResponseAsync(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
-        Iterator<Entry<byte[]>> entries;
-        try {
-            entries = timeStampingDao.get(start, end);
-        } catch (IOException e) {
-            sendResponseAsync(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-            return;
-        }
+        Supplier<Iterator<Entry<byte[]>>> entries = () -> timeStampingDao.get(start, end);
         sendResponseAsync(session, new ChunkedResponse(Response.OK, entries));
     }
 
