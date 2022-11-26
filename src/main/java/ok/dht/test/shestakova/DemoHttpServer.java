@@ -23,7 +23,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -155,60 +154,51 @@ public class DemoHttpServer extends HttpServer {
         // если ack < from, допускаем from - ack + 1 ошибку
         AtomicInteger errorCount = new AtomicInteger(httpRequests.size() - ack + 1);
         for (HttpRequest httpRequest : httpRequests) {
-            try {
-                Response tmpResponse = httpRequest == null ? getInternalResponse(request, session)
-                        : proxyRequest(httpRequest);
-                if (tmpResponse == null) {
-                    throw new IllegalArgumentException("Error during getting response");
-                }
-                responses.add(tmpResponse);
-                if (successCount.decrementAndGet() == 0) {
-                    resultFuture.complete(responses);
-                }
-            } catch (IllegalArgumentException | ExecutionException | InterruptedException e) {
-                if (errorCount.decrementAndGet() == 0) {
-                    resultFuture.completeExceptionally(new NotEnoughReplicasException());
-                }
+            if (httpRequest == null) {
+                workersPool.execute(() -> {
+                    Response response = handleInternalRequest(request, session);
+                    if (response == null) {
+                        errorCount.decrementAndGet();
+                        checkErrorCount(resultFuture, errorCount);
+                        return;
+                    }
+                    responses.add(response);
+                    if (successCount.decrementAndGet() == 0) {
+                        resultFuture.complete(responses);
+                    }
+                });
+                continue;
+            }
+            CompletableFuture<HttpResponse<byte[]>> completableFuture = httpClient
+                    .sendAsync(
+                            httpRequest,
+                            HttpResponse.BodyHandlers.ofByteArray()
+                    )
+                    .whenComplete((response, throwable) -> {
+                        if (throwable != null) {
+                            errorCount.decrementAndGet();
+                            checkErrorCount(resultFuture, errorCount);
+                            return;
+                        }
+                        responses.add(new Response(
+                                StatusCodes.statuses.getOrDefault(response.statusCode(), "UNKNOWN ERROR"),
+                                response.body()
+                        ));
+                        if (successCount.decrementAndGet() == 0) {
+                            resultFuture.complete(responses);
+                        }
+                    });
+            if (completableFuture == null) {
+                LOGGER.error("Internal error in server {} during working with CF", serviceConfig.selfUrl());
             }
         }
         return resultFuture;
     }
 
-    private Response getInternalResponse(Request request, HttpSession session) throws ExecutionException,
-            InterruptedException {
-        final CompletableFuture<Response> responseCompletableFuture = new CompletableFuture<>();
-        workersPool.execute(() -> {
-            Response response = handleInternalRequest(request, session);
-            if (response == null) {
-                responseCompletableFuture.completeExceptionally(new IllegalArgumentException());
-                return;
-            }
-            responseCompletableFuture.complete(response);
-        });
-        return responseCompletableFuture.get();
-    }
-
-    private Response proxyRequest(HttpRequest httpRequest) throws ExecutionException, InterruptedException {
-        final CompletableFuture<Response> responseCompletableFuture = new CompletableFuture<>();
-        CompletableFuture<HttpResponse<byte[]>> completableFuture = httpClient
-                .sendAsync(
-                        httpRequest,
-                        HttpResponse.BodyHandlers.ofByteArray()
-                )
-                .whenComplete((response, throwable) -> {
-                    if (throwable != null) {
-                        responseCompletableFuture.completeExceptionally(new IllegalArgumentException());
-                        return;
-                    }
-                    responseCompletableFuture.complete(new Response(
-                            StatusCodes.statuses.getOrDefault(response.statusCode(), "UNKNOWN ERROR"),
-                            response.body()
-                    ));
-                });
-        if (completableFuture == null) {
-            LOGGER.error("Internal error in server {} during working with CF", serviceConfig.selfUrl());
+    private void checkErrorCount(CompletableFuture<List<Response>> resultFuture, AtomicInteger errorCount) {
+        if (errorCount.get() == 0) {
+            resultFuture.completeExceptionally(new NotEnoughReplicasException());
         }
-        return responseCompletableFuture.get();
     }
 
     private void tryToSendResponseWithEmptyBody(HttpSession session, String resultCode) {
