@@ -213,7 +213,7 @@ public class MyServer extends HttpServer {
         }
 
         String end = request.getParameter("end=");
-        if (end != null && end.isEmpty()) {
+        if (end != null && (end.isEmpty() || end.compareTo(start) < 0)) {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
             return;
         }
