@@ -117,9 +117,7 @@ public class DemoHttpServer extends HttpServer {
                         tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
                     }
                 });
-        if (completableFuture == null) {
-            LOGGER.error("Internal error in server {} during working with CF", serviceConfig.selfUrl());
-        }
+        checkCompletableFuture(completableFuture);
     }
 
     private void aggregateResponsesAndSend(HttpSession session, List<Response> responses) throws IOException {
@@ -188,11 +186,15 @@ public class DemoHttpServer extends HttpServer {
                             resultFuture.complete(responses);
                         }
                     });
-            if (completableFuture == null) {
-                LOGGER.error("Internal error in server {} during working with CF", serviceConfig.selfUrl());
-            }
+            checkCompletableFuture(completableFuture);
         }
         return resultFuture;
+    }
+
+    private void checkCompletableFuture(CompletableFuture<?> completableFuture) {
+        if (completableFuture == null) {
+            LOGGER.error("Internal error in server {} during working with CF", serviceConfig.selfUrl());
+        }
     }
 
     private void checkErrorCount(CompletableFuture<List<Response>> resultFuture, AtomicInteger errorCount) {
