@@ -152,54 +152,60 @@ public class DemoHttpServer extends HttpServer {
         // если ack < from, допускаем from - ack + 1 ошибку
         AtomicInteger errorCount = new AtomicInteger(httpRequests.size() - ack + 1);
         for (HttpRequest httpRequest : httpRequests) {
-            if (httpRequest == null) {
-                workersPool.execute(() -> {
-                    Response response = handleInternalRequest(request, session);
-                    if (response == null) {
-                        errorCount.decrementAndGet();
-                        checkErrorCount(resultFuture, errorCount);
-                        return;
-                    }
-                    responses.add(response);
-                    if (successCount.decrementAndGet() == 0) {
-                        resultFuture.complete(responses);
-                    }
-                });
-                continue;
-            }
-            CompletableFuture<HttpResponse<byte[]>> completableFuture = httpClient
-                    .sendAsync(
-                            httpRequest,
-                            HttpResponse.BodyHandlers.ofByteArray()
-                    )
+            (httpRequest == null ? getInternalResponse(request, session) : proxyRequest(httpRequest))
                     .whenComplete((response, throwable) -> {
-                        if (throwable != null) {
-                            errorCount.decrementAndGet();
-                            checkErrorCount(resultFuture, errorCount);
+                        if (response == null) {
+                            if (errorCount.decrementAndGet() == 0) {
+                                resultFuture.completeExceptionally(new NotEnoughReplicasException());
+                            }
                             return;
                         }
-                        responses.add(new Response(
-                                StatusCodes.statuses.getOrDefault(response.statusCode(), "UNKNOWN ERROR"),
-                                response.body()
-                        ));
+                        responses.add(response);
                         if (successCount.decrementAndGet() == 0) {
                             resultFuture.complete(responses);
                         }
                     });
-            checkCompletableFuture(completableFuture);
         }
         return resultFuture;
+    }
+
+    private CompletableFuture<Response> getInternalResponse(Request request, HttpSession session) {
+        final CompletableFuture<Response> responseCompletableFuture = new CompletableFuture<>();
+        workersPool.execute(() -> {
+            Response response = handleInternalRequest(request, session);
+            if (response == null) {
+                responseCompletableFuture.completeExceptionally(new IllegalArgumentException());
+                return;
+            }
+            responseCompletableFuture.complete(response);
+        });
+        return responseCompletableFuture;
+    }
+
+    private CompletableFuture<Response> proxyRequest(HttpRequest httpRequest) {
+        final CompletableFuture<Response> responseCompletableFuture = new CompletableFuture<>();
+        CompletableFuture<HttpResponse<byte[]>> completableFuture = httpClient
+                .sendAsync(
+                        httpRequest,
+                        HttpResponse.BodyHandlers.ofByteArray()
+                )
+                .whenComplete((response, throwable) -> {
+                    if (throwable != null) {
+                        responseCompletableFuture.completeExceptionally(new IllegalArgumentException());
+                        return;
+                    }
+                    responseCompletableFuture.complete(new Response(
+                            StatusCodes.statuses.getOrDefault(response.statusCode(), "UNKNOWN ERROR"),
+                            response.body()
+                    ));
+                });
+        checkCompletableFuture(completableFuture);
+        return responseCompletableFuture;
     }
 
     private void checkCompletableFuture(CompletableFuture<?> completableFuture) {
         if (completableFuture == null) {
             LOGGER.error("Internal error in server {} during working with CF", serviceConfig.selfUrl());
-        }
-    }
-
-    private void checkErrorCount(CompletableFuture<List<Response>> resultFuture, AtomicInteger errorCount) {
-        if (errorCount.get() == 0) {
-            resultFuture.completeExceptionally(new NotEnoughReplicasException());
         }
     }
 
