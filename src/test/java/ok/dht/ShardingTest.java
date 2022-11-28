@@ -18,13 +18,10 @@ package ok.dht;
 
 import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -227,59 +224,4 @@ class ShardingTest extends TestBase {
     }
 
     private record Entry(String key, byte[] value) {}
-
-    @ServiceTest(stage = 3, clusterSize = 2)
-    void checkDistributionUniformity(List<ServiceInfo> serviceInfos) throws Exception {
-        final int keysCount = 10_000;
-        final float error = 0.01f;
-        String key;
-        final byte[] value = randomValue();
-
-        for (int i = 0; i < keysCount; i++) {
-            key = String.valueOf(i);
-            serviceInfos.get(0).upsert(key, value, 1, 1);
-        }
-
-        float avgEntriesCountPerNode = (float) keysCount / serviceInfos.size();
-
-        serviceInfos.get(1).stop();
-
-        int oneNodeEntriesCount = 0;
-        for (int i = 0; i < keysCount; i++) {
-            if (serviceInfos.get(0).get(String.valueOf(i), 1, 1).statusCode() == HttpURLConnection.HTTP_OK) {
-                oneNodeEntriesCount++;
-            }
-        }
-
-        assertEquals(avgEntriesCountPerNode, oneNodeEntriesCount, keysCount * error);
-    }
-
-    @ServiceTest(stage = 3, clusterSize = 2)
-    void checkDistributionUniformity2(List<ServiceInfo> serviceInfos) throws Exception {
-        final int keysCount = 150_000;
-        final int delta = 1;
-        String key;
-        final byte[] value = randomValue();
-
-        for (int i = 0; i < keysCount; i++) {
-            key = randomId();
-            serviceInfos.get(0).upsert(key, value, 1, 1);
-        }
-
-        final int[] nodesFilesCount = new int[serviceInfos.size()];
-        float avgFilesCountPerNode = 0;
-        for (int i = 0; i < serviceInfos.size(); i++) {
-            try (Stream<Path> files = Files.list(serviceInfos.get(i).getConfig().workingDir())) {
-                nodesFilesCount[i] = (int) files.count();
-            }
-            avgFilesCountPerNode += nodesFilesCount[i];
-        }
-
-        avgFilesCountPerNode /= serviceInfos.size();
-
-        for (int i = 0; i < serviceInfos.size(); i++) {
-            assertEquals(avgFilesCountPerNode, nodesFilesCount[i], delta);
-        }
-    }
-
 }
