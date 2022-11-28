@@ -46,7 +46,7 @@ public class DaoHandler implements Closeable {
 
     public void handle(Request request, HttpSession session, String id, Long requestTime) {
         proceed(id, request, requestTime)
-                .whenComplete((response, throwable) -> ServiceUtils.sendResponse(session, response));
+                .thenAccept(response -> ServiceUtils.sendResponse(session, response));
     }
 
     private Response proceedGet(String id) {
