@@ -22,9 +22,9 @@ public final class StorageUtils {
 
     public static long getSize(Entry<MemorySegment> entry) {
         if (entry.value() == null) {
-            return Long.BYTES + entry.key().byteSize() + Long.BYTES;
+            return Long.BYTES + entry.key().byteSize() + 2 * Long.BYTES;
         } else {
-            return Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
+            return Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + 2 * Long.BYTES;
         }
     }
 
@@ -36,11 +36,12 @@ public final class StorageUtils {
         try {
             long offset = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + keyIndex * INDEX_RECORD_SIZE);
             long keySize = MemoryAccess.getLongAtOffset(sstable, offset);
-            long valueOffset = offset + Long.BYTES + keySize;
+            long valueOffset = offset + 2 * Long.BYTES + keySize;
             long valueSize = MemoryAccess.getLongAtOffset(sstable, valueOffset);
             return new BaseEntry<>(
                     sstable.asSlice(offset + Long.BYTES, keySize),
-                    valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize)
+                    valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize),
+                    MemoryAccess.getLongAtOffset(sstable, offset + Long.BYTES + keySize)
             );
         } catch (IllegalStateException e) {
             throw checkForClose(e, scope);
