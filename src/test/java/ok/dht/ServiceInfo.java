@@ -114,4 +114,8 @@ public class ServiceInfo {
     private HttpRequest.Builder requestForRange(String start, String end) {
         return request("/v0/entities?start=" + start + (end == null ? "" : ("&end=" + end)));
     }
+
+    public ServiceConfig getConfig() {
+        return config;
+    }
 }
