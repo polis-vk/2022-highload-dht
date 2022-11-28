@@ -173,7 +173,7 @@ public class DemoService implements Service {
         List<CompletableFuture<Response>> replicaResponsesFutures = new ArrayList<>(from);
         for (int nodeNumber : getReplicaNodeNumbers(id, from)) {
             replicaResponsesFutures.add(nodeNumber == selfNodeNumber
-                    ? CompletableFuture.completedFuture(daoHandler.proceed(id, request, requestTime))
+                    ? daoHandler.proceed(id, request, requestTime)
                     : proxyHandler.proceed(request, nodesNumberToUrlMap.get(nodeNumber), requestTime)
             );
         }
@@ -185,7 +185,7 @@ public class DemoService implements Service {
         if (virtualNode == null) {
             virtualNode = virtualNodes.firstEntry();
         }
-        Set<Integer> replicaNodesPositions = new HashSet<>(from);
+        Set<Integer> replicaNodesPositions = new HashSet<>(2 * from);
         Collection<Integer> nextVirtualNodesPositions = virtualNodes.tailMap(virtualNode.getKey()).values();
         addReplicaNodePositions(replicaNodesPositions, nextVirtualNodesPositions, from);
         if (replicaNodesPositions.size() < from) {

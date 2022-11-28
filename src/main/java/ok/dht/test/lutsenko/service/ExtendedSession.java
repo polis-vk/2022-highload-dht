@@ -22,14 +22,14 @@ public class ExtendedSession extends HttpSession {
         if (handling == null) {
             throw new IOException("Out of order response");
         }
-        server.incRequestsProcessed();
+        super.server.incRequestsProcessed();
         write(queueItem);
         this.handling = handling = pipeline.pollFirst();
         if (handling != null) {
             if (handling == FIN) {
                 scheduleClose();
             } else {
-                server.handleRequest(handling, this);
+                super.server.handleRequest(handling, this);
             }
         }
     }
