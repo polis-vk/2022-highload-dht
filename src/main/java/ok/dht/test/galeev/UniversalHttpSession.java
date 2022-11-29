@@ -4,6 +4,8 @@ import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
 import one.nio.http.Response;
 import one.nio.net.Socket;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -14,6 +16,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
 class UniversalHttpSession extends HttpSession {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DemoService.class);
 
     private final ExecutorService executorService;
 
@@ -35,7 +38,7 @@ class UniversalHttpSession extends HttpSession {
                     try {
                         daoQueue.put(new ChunkedQueueItem(iterator.next()));
                     } catch (InterruptedException e) {
-                        e.printStackTrace();
+                        LOGGER.error("Got interrupted exception while waiting write to socket");
                     }
                 }
             });
@@ -43,7 +46,7 @@ class UniversalHttpSession extends HttpSession {
                 try {
                     super.write(daoQueue.take());
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    LOGGER.error("Got interrupted exception while waiting read from dao");
                 }
             }
         } else {
