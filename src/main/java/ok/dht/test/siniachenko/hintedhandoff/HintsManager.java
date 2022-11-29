@@ -7,4 +7,6 @@ public interface HintsManager {
     void addHintForReplica(String replicaUrl, Hint hint);
 
     EntityChunkStreamQueueItem getReplicaHintsStream(String replicaUrl);
+
+    void deleteHintsForReplica(String replicaUrl);
 }

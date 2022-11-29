@@ -72,7 +72,8 @@ public class TycoonService implements ok.dht.Service {
                 nodeTaskManager, hintsManager
             ),
             new EntityServiceReplica(levelDb),
-            new RangeService(levelDb, chunkedTransferEncoder)
+            new RangeService(levelDb, chunkedTransferEncoder),
+            hintsManager
         );
         server.start();
         LOG.info("Service started on {}, executor threads: {}", config.selfUrl(), threadPoolSize);

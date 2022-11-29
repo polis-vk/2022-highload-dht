@@ -37,4 +37,9 @@ public class InMemoryHintsManager implements HintsManager {
             replicaHintsIterator
         );
     }
+
+    @Override
+    public void deleteHintsForReplica(String replicaUrl) {
+        replicaUrlToHints.remove(replicaUrl);
+    }
 }

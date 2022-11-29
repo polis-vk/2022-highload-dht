@@ -1,5 +1,6 @@
 package ok.dht.test.siniachenko;
 
+import ok.dht.test.siniachenko.hintedhandoff.HintsManager;
 import ok.dht.test.siniachenko.service.AsyncEntityService;
 import ok.dht.test.siniachenko.range.EntityChunkStreamQueueItem;
 import ok.dht.test.siniachenko.service.EntityService;
@@ -27,12 +28,15 @@ public class TycoonHttpServer extends HttpServer {
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
     public static final String ENTITY_SERVICE_PATH = "/v0/entity";
     public static final String RANGE_SERVICE_PATH = "/v0/entities";
+    public static final String HINTS_PATH = "/v0/hints";
     public static final String REQUEST_TO_REPLICA_HEADER = "Request-to-replica";
+    public static final String REPLICA_URL_HEADER = "Replica-url";
 
     private final ExecutorService executorService;
     private final EntityServiceCoordinator entityServiceCoordinator;
     private final EntityServiceReplica entityServiceReplica;
     private final RangeService rangeService;
+    private final HintsManager hintsManager;
     private boolean closed = true;
 
     public TycoonHttpServer(
@@ -40,12 +44,13 @@ public class TycoonHttpServer extends HttpServer {
         ExecutorService executorService,
         EntityServiceCoordinator entityServiceCoordinator,
         EntityServiceReplica entityServiceReplica,
-        RangeService rangeService) throws IOException {
+        RangeService rangeService, HintsManager hintsManager) throws IOException {
         super(createHttpConfigFromPort(port));
         this.executorService = executorService;
         this.entityServiceCoordinator = entityServiceCoordinator;
         this.entityServiceReplica = entityServiceReplica;
         this.rangeService = rangeService;
+        this.hintsManager = hintsManager;
     }
 
     private static HttpServerConfig createHttpConfigFromPort(int port) {
@@ -65,6 +70,8 @@ public class TycoonHttpServer extends HttpServer {
             handleEntityServiceRequest(request, session);
         } else if (RANGE_SERVICE_PATH.equals(request.getPath())) {
             handleRangeServiceRequest(request, session);
+        } else if (HINTS_PATH.equals(request.getPath())) {
+            handleHintsRequest(request, session);
         } else {
             sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
         }
@@ -103,6 +110,33 @@ public class TycoonHttpServer extends HttpServer {
                     } catch (IOException e) {
                         onSessionException(session, e);
                     }
+                },
+                session
+            );
+        }
+    }
+
+    private void handleHintsRequest(Request request, HttpSession session) {
+        if (request.getMethod() != Request.METHOD_GET) {
+            sendResponse(new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY), session);
+        } else {
+            execute(() -> {
+                    String replicaUrl = request.getHeader(REPLICA_URL_HEADER);
+                    if (replicaUrl == null) {
+                        sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
+                        return;
+                    }
+                    EntityChunkStreamQueueItem entityChunkStreamQueueItem = hintsManager.getReplicaHintsStream(
+                        replicaUrl
+                    );
+                    try {
+                        session.write(entityChunkStreamQueueItem);
+                    } catch (IOException e) {
+                        onSessionException(session, e);
+                        return;
+                    }
+                    // Only in case of no errors or exception!
+                    hintsManager.deleteHintsForReplica(replicaUrl);
                 },
                 session
             );
