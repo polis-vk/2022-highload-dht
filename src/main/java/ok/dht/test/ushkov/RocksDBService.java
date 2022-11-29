@@ -249,12 +249,12 @@ public class RocksDBService implements Service {
     private void v0EntityGet(Request request, HttpSession session)
             throws InvalidParamsException, InternalErrorException {
         executeReplicatingRequest(request, session,
-                (id, body, timestamp) -> executeV0EntityGet(id), this::aggregateV0EntityGet);
+                (id, body, timestamp, ttl) -> executeV0EntityGet(id, timestamp), this::aggregateV0EntityGet);
     }
 
-    private Response executeV0EntityGet(String id) throws InternalErrorException {
+    private Response executeV0EntityGet(String id, long timestamp) throws InternalErrorException {
         try {
-            Entry entry = dao.get(Utf8.toBytes(id));
+            Entry entry = dao.get(Utf8.toBytes(id), timestamp);
             if (entry.value() == null) {
                 Response response = new Response(Response.NOT_FOUND, Response.EMPTY);
                 response.addHeader("Timestamp: " + entry.timestamp());
@@ -289,9 +289,9 @@ public class RocksDBService implements Service {
                 this::executeV0EntityPut, this::aggregateV0EntityPut);
     }
 
-    private Response executeV0EntityPut(String id, byte[] body, long timestamp) throws InternalErrorException {
+    private Response executeV0EntityPut(String id, byte[] body, long timestamp, long ttl) throws InternalErrorException {
         try {
-            dao.put(Utf8.toBytes(id), body, timestamp);
+            dao.put(Utf8.toBytes(id), body, timestamp, ttl);
 
             Response response = new Response(Response.CREATED, Response.EMPTY);
             response.addHeader("Timestamp: " + timestamp);
@@ -318,7 +318,7 @@ public class RocksDBService implements Service {
     private void v0EntityDelete(Request request, HttpSession session)
             throws InvalidParamsException, InternalErrorException {
         executeReplicatingRequest(request, session,
-                (id, body, timestamp) -> executeV0EntityDelete(id, timestamp), this::aggregateV0EntityDelete);
+                (id, body, timestamp, ttl) -> executeV0EntityDelete(id, timestamp), this::aggregateV0EntityDelete);
     }
 
     private Response executeV0EntityDelete(String id, long timestamp) throws InternalErrorException {
@@ -368,6 +368,9 @@ public class RocksDBService implements Service {
             throw new InvalidParamsException();
         }
 
+        String ttlString = request.getParameter("ttl=");
+        long ttl = ttlString != null ? Util.parseLong(ttlString) : 0;
+
         // if request is proxied from another node, execute it and leave
         if (request.getHeader("Proxy: ") != null) {
             long timestamp;
@@ -376,7 +379,7 @@ public class RocksDBService implements Service {
             } catch (NumberFormatException e) {
                 throw new InternalErrorException();
             }
-            Response response = requestExecution.execute(id, request.getBody(), timestamp);
+            Response response = requestExecution.execute(id, request.getBody(), timestamp, ttl);
             try {
                 session.sendResponse(response);
             } catch (IOException e) {
@@ -396,7 +399,7 @@ public class RocksDBService implements Service {
             executor.execute(() -> {
                 Response response;
                 try {
-                    response = requestExecution.execute(id, request.getBody(), timestamp);
+                    response = requestExecution.execute(id, request.getBody(), timestamp, ttl);
                 } catch (InternalErrorException e) {
                     replicatingRequestsAggregator.failure();
                     return;
@@ -485,7 +488,7 @@ public class RocksDBService implements Service {
         });
     }
 
-    @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 7, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {

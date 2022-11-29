@@ -16,18 +16,25 @@ public class RocksDBDao {
         return db;
     }
 
-    public Entry get(byte[] key) throws RocksDBException {
-        byte[] entry = db.get(key);
-        return Entry.newEntry(key, entry);
+    public Entry get(byte[] key, long timestamp) throws RocksDBException {
+        byte[] value = db.get(key);
+        Entry entry = Entry.newEntry(key, value);
+        if (entry.ttl() != 0 && entry.timestamp() + entry.ttl() < timestamp) {
+            // ttl expired
+            return new Entry(key, null, entry.timestamp() + entry.ttl(), 0);
+        } else {
+            return entry;
+        }
     }
 
-    public void put(byte[] key, byte[] value, long timestamp) throws RocksDBException {
-        ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES + 1 + value.length);
+    public void put(byte[] key, byte[] value, long timestamp, long ttl) throws RocksDBException {
+        ByteBuffer buffer = ByteBuffer.allocate(2 * Long.BYTES + 1 + value.length);
         buffer.putLong(timestamp);
-        buffer.put((byte) 0);
-        buffer.put(Long.BYTES + 1, value);
+        buffer.putLong(ttl);
+        buffer.put((byte) 0); // tombstone
+        buffer.put(2 * Long.BYTES + 1, value);
 
-        Entry entry = get(key);
+        Entry entry = Entry.newEntry(key, db.get(key));
         if (entry.timestamp() > timestamp) {
             return;
         }
@@ -36,12 +43,12 @@ public class RocksDBDao {
     }
 
     public void delete(byte[] key, long timestamp) throws RocksDBException {
-        ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES + 1);
+        ByteBuffer buffer = ByteBuffer.allocate(2 * Long.BYTES + 1);
         buffer.putLong(timestamp);
-        // tombstone
-        buffer.put((byte) 1);
+        buffer.putLong(0);    // ttl(forever)
+        buffer.put((byte) 1); // tombstone
 
-        Entry entry = get(key);
+        Entry entry = Entry.newEntry(key, db.get(key));
         if (entry.timestamp() > timestamp) {
             return;
         }

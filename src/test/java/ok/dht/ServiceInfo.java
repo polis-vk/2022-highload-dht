@@ -85,6 +85,20 @@ public class ServiceInfo {
         );
     }
 
+    public HttpResponse<byte[]> upsert(String key, byte[] data, long ttl) throws Exception {
+        return client.send(
+                requestForKey(key, ttl).PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
+    public HttpResponse<byte[]> upsert(String key, byte[] data, int ack, int from, long ttl) throws Exception {
+        return client.send(
+                requestForKey(key, ack, from, ttl).PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
     public HttpResponse<byte[]> post(String key, byte[] data) throws Exception {
         return client.send(
                 requestForKey(key).POST(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
@@ -109,6 +123,14 @@ public class ServiceInfo {
 
     private HttpRequest.Builder requestForKey(String key, int ack, int from) {
         return request("/v0/entity?id=" + key + "&from=" + from + "&ack=" + ack);
+    }
+
+    private HttpRequest.Builder requestForKey(String key, long ttl) {
+        return request("/v0/entity?id=" + key + "&ttl=" + ttl);
+    }
+
+    private HttpRequest.Builder requestForKey(String key, int ack, int from, long ttl) {
+        return request("/v0/entity?id=" + key + "&from=" + from + "&ack=" + ack + "&ttl=" + ttl);
     }
 
     private HttpRequest.Builder requestForRange(String start, String end) {

@@ -74,8 +74,16 @@ final class Util {
         }
     }
 
+    static long parseLong(String param) throws InvalidParamsException {
+        try {
+            return Long.parseLong(param);
+        } catch (NumberFormatException e) {
+            throw new InvalidParamsException();
+        }
+    }
+
     @FunctionalInterface
     interface RequestExecution {
-        Response execute(String id, byte[] body, long timestamp) throws InternalErrorException;
+        Response execute(String id, byte[] body, long timestamp, long ttl) throws InternalErrorException;
     }
 }
