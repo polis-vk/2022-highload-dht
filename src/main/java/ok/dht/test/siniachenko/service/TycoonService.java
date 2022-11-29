@@ -3,6 +3,7 @@ package ok.dht.test.siniachenko.service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.siniachenko.TycoonHttpServer;
+import ok.dht.test.siniachenko.hintedhandoff.HintsClient;
 import ok.dht.test.siniachenko.hintedhandoff.HintsManager;
 import ok.dht.test.siniachenko.hintedhandoff.InMemoryHintsManager;
 import ok.dht.test.siniachenko.nodetaskmanager.NodeTaskManager;
@@ -59,8 +60,15 @@ public class TycoonService implements ok.dht.Service {
         // Chunked Transfer Encoder
         ChunkedTransferEncoder chunkedTransferEncoder = new ChunkedTransferEncoder();
 
+        // HTTP Client
+        HttpClient httpClient = HttpClient.newHttpClient();
+
         // Hints Manager
         HintsManager hintsManager = new InMemoryHintsManager(chunkedTransferEncoder);
+
+        // Hints Client
+        HintsClient hintsClient = new HintsClient(config, levelDb, httpClient, executorService);
+        fetchHintsFromAllReplicas(hintsClient);
 
         // Http Server
         server = new TycoonHttpServer(
@@ -68,7 +76,7 @@ public class TycoonService implements ok.dht.Service {
             executorService,
             new EntityServiceCoordinator(
                 config, levelDb,
-                executorService, HttpClient.newHttpClient(),
+                executorService, httpClient,
                 nodeTaskManager, hintsManager
             ),
             new EntityServiceReplica(levelDb),
@@ -79,6 +87,14 @@ public class TycoonService implements ok.dht.Service {
         LOG.info("Service started on {}, executor threads: {}", config.selfUrl(), threadPoolSize);
 
         return CompletableFuture.completedFuture(null);
+    }
+
+    private void fetchHintsFromAllReplicas(HintsClient hintsClient) {
+        for (String replicaUrl : config.clusterUrls()) {
+            if (!replicaUrl.equals(config.selfUrl())) {
+                hintsClient.fetchHintsFromReplica(replicaUrl);
+            }
+        }
     }
 
     @Override
