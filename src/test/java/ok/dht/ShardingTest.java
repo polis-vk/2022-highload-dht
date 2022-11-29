@@ -18,6 +18,8 @@ package ok.dht;
 
 import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -193,4 +195,33 @@ class ShardingTest extends TestBase {
         assertEquals(1, successCount);
     }
 
+    @ServiceTest(stage = 3, clusterSize = 3)
+    void distributeIntensity(List<ServiceInfo> serviceInfos) throws Exception {
+        List<Entry> entries = new ArrayList<>();
+
+        int size = 10_000;
+
+        for (int i = 0; i < size; i++) {
+            final String key = randomId();
+            final byte[] value = randomValue();
+
+            assertEquals(HttpURLConnection.HTTP_CREATED, serviceInfos.get(0).upsert(key, value).statusCode());
+
+            entries.add(new Entry(key, value));
+        }
+
+        for (ServiceInfo serviceInfo : serviceInfos) {
+            for (int i = 0; i < size; i++) {
+                final String key = entries.get(i).key();
+                final byte[] value = entries.get(i).value();
+
+                // Check
+                HttpResponse<byte[]> response = serviceInfo.get(key);
+                assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
+                assertArrayEquals(value, response.body());
+            }
+        }
+    }
+
+    private record Entry(String key, byte[] value) {}
 }
