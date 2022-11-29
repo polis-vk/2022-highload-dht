@@ -39,6 +39,7 @@ class UniversalHttpSession extends HttpSession {
                         daoQueue.put(new ChunkedQueueItem(iterator.next()));
                     } catch (InterruptedException e) {
                         LOGGER.error("Got interrupted exception while waiting write to socket");
+                        Thread.currentThread().interrupt();
                     }
                 }
             });
@@ -47,6 +48,7 @@ class UniversalHttpSession extends HttpSession {
                     super.write(daoQueue.take());
                 } catch (InterruptedException e) {
                     LOGGER.error("Got interrupted exception while waiting read from dao");
+                    Thread.currentThread().interrupt();
                 }
             }
         } else {
