@@ -3,7 +3,10 @@ package ok.dht.test.siniachenko.service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.siniachenko.TycoonHttpServer;
+import ok.dht.test.siniachenko.hintedhandoff.HintsManager;
+import ok.dht.test.siniachenko.hintedhandoff.InMemoryHintsManager;
 import ok.dht.test.siniachenko.nodetaskmanager.NodeTaskManager;
+import ok.dht.test.siniachenko.range.ChunkedTransferEncoder;
 import ok.dht.test.siniachenko.range.RangeService;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.Options;
@@ -53,13 +56,23 @@ public class TycoonService implements ok.dht.Service {
             THREAD_POOL_QUEUE_CAPACITY, AVAILABLE_PROCESSORS / 2
         );
 
+        // Chunked Transfer Encoder
+        ChunkedTransferEncoder chunkedTransferEncoder = new ChunkedTransferEncoder();
+
+        // Hints Manager
+        HintsManager hintsManager = new InMemoryHintsManager(chunkedTransferEncoder);
+
         // Http Server
         server = new TycoonHttpServer(
             config.selfPort(),
             executorService,
-            new EntityServiceCoordinator(config, levelDb, executorService, HttpClient.newHttpClient(), nodeTaskManager),
+            new EntityServiceCoordinator(
+                config, levelDb,
+                executorService, HttpClient.newHttpClient(),
+                nodeTaskManager, hintsManager
+            ),
             new EntityServiceReplica(levelDb),
-            new RangeService(levelDb)
+            new RangeService(levelDb, chunkedTransferEncoder)
         );
         server.start();
         LOG.info("Service started on {}, executor threads: {}", config.selfUrl(), threadPoolSize);

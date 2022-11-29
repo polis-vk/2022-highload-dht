@@ -3,6 +3,7 @@ package ok.dht.test.siniachenko.service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.siniachenko.Utils;
 import ok.dht.test.siniachenko.exception.NotEnoughReplicasException;
+import ok.dht.test.siniachenko.hintedhandoff.HintsManager;
 import ok.dht.test.siniachenko.nodemapper.NodeMapper;
 import ok.dht.test.siniachenko.nodetaskmanager.NodeTaskManager;
 import one.nio.http.Request;
@@ -31,12 +32,13 @@ public class EntityServiceCoordinator implements AsyncEntityService {
     private final ExecutorService executorService;
     private final NodeTaskManager nodeTaskManager;
     private final NodeMapper nodeMapper;
+    private final HintsManager hintsManager;
     private final int defaultFromCount;
     private final int defaultAckCount;
 
     public EntityServiceCoordinator(
         ServiceConfig config, DB levelDb, ExecutorService executorService,
-        HttpClient httpClient, NodeTaskManager nodeTaskManager
+        HttpClient httpClient, NodeTaskManager nodeTaskManager, HintsManager hintsManager
     ) {
         this.config = config;
         this.levelDb = levelDb;
@@ -44,6 +46,7 @@ public class EntityServiceCoordinator implements AsyncEntityService {
         this.httpClient = httpClient;
         this.nodeTaskManager = nodeTaskManager;
         this.nodeMapper = new NodeMapper(config.clusterUrls());
+        this.hintsManager = hintsManager;
         this.defaultFromCount = config.clusterUrls().size();
         this.defaultAckCount = config.clusterUrls().size() / 2 + 1;
     }
@@ -139,7 +142,9 @@ public class EntityServiceCoordinator implements AsyncEntityService {
             executorService, request, id, localWork, ack, from
         );
 
-        return replicatedRequestExecutor.execute(config.selfUrl(), nodeMapper, nodeTaskManager, httpClient)
+        return replicatedRequestExecutor.execute(
+                config.selfUrl(), nodeMapper, nodeTaskManager, httpClient, hintsManager
+            )
             .thenApply(onSuccess)
             .exceptionally(completionException -> {
                 Throwable cause = completionException.getCause();

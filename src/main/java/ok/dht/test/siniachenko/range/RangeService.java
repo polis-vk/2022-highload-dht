@@ -11,9 +11,9 @@ public class RangeService {
     private final DB levelDb;
     private final ChunkedTransferEncoder chunkedTransferEncoder;
 
-    public RangeService(DB levelDb) {
+    public RangeService(DB levelDb, ChunkedTransferEncoder chunkedTransferEncoder) {
         this.levelDb = levelDb;
-        chunkedTransferEncoder = new ChunkedTransferEncoder();
+        this.chunkedTransferEncoder = chunkedTransferEncoder;
     }
 
     public EntityChunkStreamQueueItem handleRange(String start, String end) {

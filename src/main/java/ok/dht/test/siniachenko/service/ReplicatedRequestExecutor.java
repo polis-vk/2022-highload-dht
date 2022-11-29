@@ -2,6 +2,8 @@ package ok.dht.test.siniachenko.service;
 
 import ok.dht.test.siniachenko.TycoonHttpServer;
 import ok.dht.test.siniachenko.exception.NotEnoughReplicasException;
+import ok.dht.test.siniachenko.hintedhandoff.Hint;
+import ok.dht.test.siniachenko.hintedhandoff.HintsManager;
 import ok.dht.test.siniachenko.nodemapper.NodeMapper;
 import ok.dht.test.siniachenko.nodetaskmanager.NodeTaskManager;
 import one.nio.http.Request;
@@ -43,6 +45,9 @@ public class ReplicatedRequestExecutor {
     private AtomicInteger readyCount;
     byte[][] values;
 
+    // Lazy initialized field just for HintManager
+    private Hint hint;
+
     public ReplicatedRequestExecutor(
         ExecutorService executorService, Request request, String id,
         Supplier<byte[]> localWork, int ack, int from
@@ -56,7 +61,8 @@ public class ReplicatedRequestExecutor {
     }
 
     public CompletableFuture<byte[][]> execute(
-        String selfUrl, NodeMapper nodeMapper, NodeTaskManager nodeTaskManager, HttpClient httpClient
+        String selfUrl, NodeMapper nodeMapper, NodeTaskManager nodeTaskManager,
+        HttpClient httpClient, HintsManager hintsManager
     ) {
         successStatusCodes = METHOD_NAME_TO_SUCCESS_STATUS_CODES.get(request.getMethodName());
 
@@ -76,7 +82,7 @@ public class ReplicatedRequestExecutor {
             if (selfUrl.equals(nodeUrlByKey)) {
                 needLocalWork = true;
             } else {
-                proxyAndHandle(nodeTaskManager, httpClient, nodeUrlByKey, resultFuture);
+                proxyAndHandle(nodeTaskManager, httpClient, hintsManager, nodeUrlByKey, resultFuture);
             }
         }
 
@@ -104,7 +110,7 @@ public class ReplicatedRequestExecutor {
     }
 
     private void proxyAndHandle(
-        NodeTaskManager nodeTaskManager, HttpClient httpClient,
+        NodeTaskManager nodeTaskManager, HttpClient httpClient, HintsManager hintsManager,
         String nodeUrlByKey, CompletableFuture<byte[][]> resultFuture
     ) {
         boolean taskAdded = nodeTaskManager.tryAddNodeTask(
@@ -113,7 +119,7 @@ public class ReplicatedRequestExecutor {
                 request, id, nodeUrlByKey, httpClient
             ).exceptionallyAsync(e -> {
                     LOG.error("Error after proxy request to {}", nodeUrlByKey, e);
-                    addFailure(resultFuture);
+                    handleReplicaFailure(nodeUrlByKey, hintsManager, resultFuture);
                     return null;
                 }, executorService
             ).thenAcceptAsync(response -> {
@@ -125,7 +131,7 @@ public class ReplicatedRequestExecutor {
                             response.statusCode(),
                             nodeUrlByKey
                         );
-                        addFailure(resultFuture);
+                        handleReplicaFailure(nodeUrlByKey, hintsManager, resultFuture);
                     }
                 }, executorService
             )
@@ -133,7 +139,7 @@ public class ReplicatedRequestExecutor {
 
         if (!taskAdded) {
             // Couldn't schedule task for the node
-            addFailure(resultFuture);
+            handleReplicaFailure(nodeUrlByKey, hintsManager, resultFuture);
         }
     }
 
@@ -164,10 +170,24 @@ public class ReplicatedRequestExecutor {
         }
     }
 
+    private void handleReplicaFailure(
+        String replicaUrl, HintsManager hintsManager, CompletableFuture<byte[][]> resultFuture
+    ) {
+        addHint(replicaUrl, hintsManager);
+        addFailure(resultFuture);
+    }
+
     private void addFailure(CompletableFuture<byte[][]> resultFuture) {
         int failure = failureCount.incrementAndGet();
         if (from - failure == ack - 1) { // first time when cannot achieve enough results
             resultFuture.completeExceptionally(new NotEnoughReplicasException());
         }
+    }
+
+    private void addHint(String replicaUrl, HintsManager hintsManager) {
+        if (hint == null) {
+            hint = new Hint(Utf8.toBytes(id), request.getBody());
+        }
+        hintsManager.addHintForReplica(replicaUrl, hint);
     }
 }
