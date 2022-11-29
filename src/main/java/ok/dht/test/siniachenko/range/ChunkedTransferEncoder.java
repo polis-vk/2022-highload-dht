@@ -1,4 +1,4 @@
-package ok.dht.test.siniachenko.service;
+package ok.dht.test.siniachenko.range;
 
 import one.nio.http.Response;
 

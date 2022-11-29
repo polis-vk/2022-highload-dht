@@ -1,4 +1,4 @@
-package ok.dht.test.siniachenko.service;
+package ok.dht.test.siniachenko.range;
 
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.DBIterator;

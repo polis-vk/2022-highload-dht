@@ -1,11 +1,11 @@
 package ok.dht.test.siniachenko;
 
 import ok.dht.test.siniachenko.service.AsyncEntityService;
-import ok.dht.test.siniachenko.service.EntityChunkStreamQueueItem;
+import ok.dht.test.siniachenko.range.EntityChunkStreamQueueItem;
 import ok.dht.test.siniachenko.service.EntityService;
 import ok.dht.test.siniachenko.service.EntityServiceCoordinator;
 import ok.dht.test.siniachenko.service.EntityServiceReplica;
-import ok.dht.test.siniachenko.service.RangeService;
+import ok.dht.test.siniachenko.range.RangeService;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;

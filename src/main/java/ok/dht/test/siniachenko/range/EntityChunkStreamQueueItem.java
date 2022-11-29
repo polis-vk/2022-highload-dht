@@ -1,4 +1,4 @@
-package ok.dht.test.siniachenko.service;
+package ok.dht.test.siniachenko.range;
 
 import ok.dht.test.siniachenko.Utils;
 import one.nio.net.Session;

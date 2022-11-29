@@ -4,6 +4,7 @@ import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.siniachenko.TycoonHttpServer;
 import ok.dht.test.siniachenko.nodetaskmanager.NodeTaskManager;
+import ok.dht.test.siniachenko.range.RangeService;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.impl.DbImpl;
