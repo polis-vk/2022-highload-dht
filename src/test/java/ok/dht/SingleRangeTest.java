@@ -16,8 +16,7 @@
 
 package ok.dht;
 
-import org.junit.jupiter.api.Test;
-
+import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -36,65 +35,65 @@ class SingleRangeTest extends TestBase {
         return (key + '\n' + value).getBytes();
     }
 
-    @Test
+    @ServiceTest(stage = 6)
     void emptyKey(ServiceInfo service) throws Exception {
-        assertEquals(400, service.range("", "").statusCode());
-        assertEquals(400, service.upsert("", new byte[]{0}).statusCode());
+        assertEquals(HttpURLConnection.HTTP_BAD_REQUEST, service.range("", "").statusCode());
+        assertEquals(HttpURLConnection.HTTP_BAD_REQUEST, service.upsert("", new byte[]{0}).statusCode());
     }
 
-    @Test
+    @ServiceTest(stage = 6)
     void absentParameterRequest(ServiceInfo service) throws Exception {
         assertEquals(
-                400,
+                HttpURLConnection.HTTP_BAD_REQUEST,
                 client.send(service.request("/v0/entities").GET().build(),
                         HttpResponse.BodyHandlers.ofByteArray()).statusCode()
         );
         assertEquals(
-                400,
+                HttpURLConnection.HTTP_BAD_REQUEST,
                 client.send(service.request("/v0/entities?end=end").GET().build(),
                         HttpResponse.BodyHandlers.ofByteArray()).statusCode()
         );
     }
 
-    @Test
+    @ServiceTest(stage = 6)
     void getAbsent(ServiceInfo service) throws Exception {
         HttpResponse<byte[]> response = service.range("absent0", "absent1");
-        assertEquals(200, response.statusCode());
+        assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
         assertEquals(0, response.body().length);
     }
 
-    @Test
+    @ServiceTest(stage = 6)
     void single(ServiceInfo service) throws Exception {
         String prefix = "single";
         String key = prefix + 1;
         String value = "value1";
 
         // Insert
-        assertEquals(201, service.upsert(key, value.getBytes()).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, service.upsert(key, value.getBytes()).statusCode());
 
         // Check
         {
             HttpResponse<byte[]> response = service.range(key, prefix + 2);
-            assertEquals(200, response.statusCode());
+            assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
             assertArrayEquals(chunkOf(key, value), response.body());
         }
 
         // Excluding the key
         {
             HttpResponse<byte[]> response = service.range("a", key);
-            assertEquals(200, response.statusCode());
+            assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
             assertEquals(0, response.body().length);
         }
 
         // After the key
         {
             HttpResponse<byte[]> response = service.range(prefix + 2, prefix + 3);
-            assertEquals(200, response.statusCode());
+            assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
             assertEquals(0, response.body().length);
         }
     }
 
-    @Test
+    @ServiceTest(stage = 6)
     void triple(ServiceInfo service) throws Exception {
         String prefix = "triple";
         String value1 = "value1";
@@ -102,9 +101,9 @@ class SingleRangeTest extends TestBase {
         String value3 = "value3";
 
         // Insert reversed
-        assertEquals(201, service.upsert(prefix + 3, value3.getBytes()).statusCode());
-        assertEquals(201, service.upsert(prefix + 2, value2.getBytes()).statusCode());
-        assertEquals(201, service.upsert(prefix + 1, value1.getBytes()).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, service.upsert(prefix + 3, value3.getBytes()).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, service.upsert(prefix + 2, value2.getBytes()).statusCode());
+        assertEquals(HttpURLConnection.HTTP_CREATED, service.upsert(prefix + 1, value1.getBytes()).statusCode());
 
         // Check all
         {
@@ -117,49 +116,49 @@ class SingleRangeTest extends TestBase {
             System.arraycopy(chunk3, 0, expected, expected.length - chunk3.length, chunk3.length);
 
             HttpResponse<byte[]> response = service.range(prefix + 1, prefix + 4);
-            assertEquals(200, response.statusCode());
+            assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
             assertArrayEquals(expected, response.body());
         }
 
         // To the left
         {
             HttpResponse<byte[]> response = service.range(prefix + 0, prefix + 1);
-            assertEquals(200, response.statusCode());
+            assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
             assertEquals(0, response.body().length);
         }
 
         // First left
         {
             HttpResponse<byte[]> response = service.range(prefix + 0, prefix + 2);
-            assertEquals(200, response.statusCode());
+            assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
             assertArrayEquals(chunkOf(prefix + 1, value1), response.body());
         }
 
         // First point
         {
             HttpResponse<byte[]> response = service.range(prefix + 1, prefix + 2);
-            assertEquals(200, response.statusCode());
+            assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
             assertArrayEquals(chunkOf(prefix + 1, value1), response.body());
         }
 
         // Second point
         {
             HttpResponse<byte[]> response = service.range(prefix + 2, prefix + 3);
-            assertEquals(200, response.statusCode());
+            assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
             assertArrayEquals(chunkOf(prefix + 2, value2), response.body());
         }
 
         // Third point
         {
             HttpResponse<byte[]> response = service.range(prefix + 3, prefix + 4);
-            assertEquals(200, response.statusCode());
+            assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
             assertArrayEquals(chunkOf(prefix + 3, value3), response.body());
         }
 
         // To the right
         {
             HttpResponse<byte[]> response = service.range(prefix + 4, null);
-            assertEquals(200, response.statusCode());
+            assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
             assertEquals(0, response.body().length);
         }
     }
