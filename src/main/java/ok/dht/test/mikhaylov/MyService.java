@@ -194,7 +194,11 @@ public class MyService implements Service {
 
         @Override
         public Service create(ServiceConfig config) {
-            return new MyService(config, new ConsistentHashingResolver(config.clusterUrls()));
+            ShardResolver resolver = new ConsistentHashingResolver();
+            for (String url : config.clusterUrls()) {
+                resolver.addShard(url);
+            }
+            return new MyService(config, resolver);
         }
     }
 
