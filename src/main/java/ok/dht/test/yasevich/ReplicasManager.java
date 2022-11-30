@@ -8,11 +8,12 @@ import one.nio.http.Response;
 import java.net.http.HttpResponse;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 public class ReplicasManager {
-    public static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
+    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
     private final TimeStampingDao dao;
     private final RandevouzHashingRouter shardingRouter;
@@ -28,7 +29,11 @@ public class ReplicasManager {
         this.selfUrl = selfUrl;
     }
 
-    void handleReplicatingRequest(HttpSession session, Request request, String key, long time, int ack, int from) {
+    public void handleReplicatingRequest(
+            HttpSession session, Request request,
+            String key, long time,
+            int ack, int from
+    ) {
         Queue<RandevouzHashingRouter.Node> responsibleNodes = shardingRouter.responsibleNodes(key, from);
         if (responsibleNodes.isEmpty()) {
             ServiceImpl.LOGGER.error("There is no nodes for handling request");
@@ -57,8 +62,10 @@ public class ReplicasManager {
         Consumer<HttpResponse<byte[]>> consumer = (httpResponse) -> {
             if (httpResponse.statusCode() == okStatusCode) {
                 responseToUpsertIfNeeded(session, okMessage, counter);
-            } else {
-                counter.responseFailureIfNeeded(session);
+                return;
+            }
+            if (counter.isTimeToRespondBad()) {
+                responseFailure(session);
             }
         };
 
@@ -110,22 +117,29 @@ public class ReplicasManager {
         for (RandevouzHashingRouter.Node node : responsibleNodes) {
             if (selfUrl.equals(node.url)) {
                 CompletableFuture.runAsync(daoWork).exceptionally(throwable -> {
-                    counter.responseFailureIfNeeded(session);
+                    if (counter.isTimeToRespondBad()) {
+                        responseFailure(session);
+                    }
                     handleFailure(throwable, selfUrl, request, key);
                     return null;
                 });
                 continue;
             }
-            node.routedRequestFuture(request, key, time)
+            Future<?> future = node.routedRequestFuture(request, key, time)
                     .orTimeout(ServiceImpl.ROUTED_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                     .whenComplete((httpResponse, throwable) -> {
                         if (throwable == null) {
                             httpResponseConsumer.accept(httpResponse);
                             return;
                         }
-                        counter.responseFailureIfNeeded(session);
+                        if (counter.isTimeToRespondBad()) {
+                            responseFailure(session);
+                        }
                         handleNodeFailure(throwable, node, request, key);
                     });
+            if (future.isDone()) {
+                ServiceImpl.LOGGER.debug("Future was done immediately");
+            }
         }
     }
 
@@ -152,6 +166,10 @@ public class ReplicasManager {
         } else {
             ServiceImpl.sendResponse(session, new Response(Response.OK, value.valueBytes()));
         }
+    }
+
+    private static void responseFailure(HttpSession session) {
+        ServiceImpl.sendResponse(session, new Response(ReplicasManager.NOT_ENOUGH_REPLICAS, Response.EMPTY));
     }
 
     private static void handleFailure(Throwable t, String selfUrl, Request request, String key) {
