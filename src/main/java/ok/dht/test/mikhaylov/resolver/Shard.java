@@ -22,10 +22,7 @@ public class Shard implements Comparable<Shard> {
 
     @Override
     public String toString() {
-        return "Shard{" +
-                "url='" + url + '\'' +
-                ", hash=" + hash +
-                '}';
+        return "Shard{url='" + url + '\'' + ", hash=" + hash + '}';
     }
 
     @Override
@@ -38,8 +35,7 @@ public class Shard implements Comparable<Shard> {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Shard shard = (Shard) o;
-        return hash == shard.hash &&
-                url.equals(shard.url);
+        return hash == shard.hash && url.equals(shard.url);
     }
 
     @Override
