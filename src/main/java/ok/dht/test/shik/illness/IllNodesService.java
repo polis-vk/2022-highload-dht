@@ -16,7 +16,7 @@ public class IllNodesService {
 
     private static final Log LOG = LogFactory.getLog(IllNodesService.class);
     private static final int ILLNESS_RATE_MILLIS = 5 * 60 * 1000;
-    private static final int FAILURES_THRESHOLD = 5;
+    private static final int FAILURES_THRESHOLD = 10;
     private static final int TIMEOUT_MILLIS = 10000;
     private static final String PATH_PREFIX = "/v0/entity";
 

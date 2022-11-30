@@ -1,13 +1,22 @@
 package ok.dht.test.shik;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.shik.consistency.InconsistencyResolutionStrategy;
+import ok.dht.test.shik.consistency.InconsistencyStrategyType;
+import ok.dht.test.shik.consistency.DigestResolutionStrategy;
+import ok.dht.test.shik.consistency.InconsistentStrategy;
+import ok.dht.test.shik.consistency.SimpleResolutionStrategy;
 import ok.dht.test.shik.events.FollowerRequestState;
+import ok.dht.test.shik.events.HandlerDigestRequest;
+import ok.dht.test.shik.events.HandlerLeaderResponse;
 import ok.dht.test.shik.events.HandlerRangeRequest;
+import ok.dht.test.shik.events.HandlerRepairRequest;
 import ok.dht.test.shik.events.HandlerRequest;
 import ok.dht.test.shik.events.HandlerResponse;
 import ok.dht.test.shik.events.LeaderRequestState;
 import ok.dht.test.shik.events.RequestState;
 import ok.dht.test.shik.illness.IllNodesService;
+import ok.dht.test.shik.model.DBValue;
 import ok.dht.test.shik.sharding.ConsistentHash;
 import ok.dht.test.shik.sharding.ShardingConfig;
 import ok.dht.test.shik.streaming.StreamingSession;
@@ -39,6 +48,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -53,6 +63,8 @@ public class CustomHttpServer extends HttpServer {
     private static final String URL_INFIX = PATH_PREFIX + "?id=";
     private static final String TIMESTAMP_PARAM = "&timestamp=";
     private static final String INTERNAL_HEADER = "Internal-Request";
+    private static final String DIGEST_HEADER = "Digest-Request";
+    private static final String REPAIR_HEADER = "Repair-Request";
     private static final String TRUE = "true";
     private static final Log LOG = LogFactory.getLog(CustomHttpServer.class);
     private static final Map<Integer, String> HTTP_CODE_TO_MESSAGE = Map.of(
@@ -65,6 +77,7 @@ public class CustomHttpServer extends HttpServer {
         HttpURLConnection.HTTP_BAD_METHOD, Response.METHOD_NOT_ALLOWED,
         HttpURLConnection.HTTP_NOT_FOUND, Response.NOT_FOUND
     );
+    private static final Set<Integer> DIGEST_SUPPORTED_METHODS = Set.of(Request.METHOD_GET);
 
     private static final int TIMEOUT_MILLIS = 10000;
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
@@ -75,6 +88,7 @@ public class CustomHttpServer extends HttpServer {
     private final String selfUrl;
     private final HttpClient httpClient;
     private final Validator validator;
+    private final InconsistencyStrategyType inconsistencyStrategyType;
 
     private CustomService requestHandler;
 
@@ -83,6 +97,7 @@ public class CustomHttpServer extends HttpServer {
                             WorkersConfig workersConfig,
                             WorkersConfig httpClientWorkersConfig,
                             ShardingConfig shardingConfig,
+                            InconsistencyStrategyType inconsistencyStrategyType,
                             Object... routers) throws IOException {
         super(config, routers);
         workersService = new WorkersService(workersConfig);
@@ -96,6 +111,7 @@ public class CustomHttpServer extends HttpServer {
         selfUrl = serviceConfig.selfUrl();
         illNodesService = new IllNodesService(clusterUrls);
         validator = new Validator(clusterUrls.size());
+        this.inconsistencyStrategyType = inconsistencyStrategyType;
     }
 
     private static ExecutorService createExecutor(WorkersConfig config) {
@@ -138,8 +154,10 @@ public class CustomHttpServer extends HttpServer {
         int requiredReplicas = params.getRequiredReplicas();
 
         if (request.getHeader(INTERNAL_HEADER) != null) {
+            boolean digestOnly = request.getHeader(DIGEST_HEADER) != null;
+            boolean repairRequest = request.getHeader(REPAIR_HEADER) != null;
             FollowerRequestState state =
-                new FollowerRequestState(request, session, id, params.getTimestamp());
+                new FollowerRequestState(request, session, id, params.getTimestamp(), digestOnly, repairRequest);
             handleCurrentShardRequest(state);
             return;
         }
@@ -163,9 +181,12 @@ public class CustomHttpServer extends HttpServer {
             return;
         }
 
-        LeaderRequestState state = new LeaderRequestState(requestedReplicas, requiredReplicas, request,
-            session, id, System.currentTimeMillis());
-        for (String shardUrl : shardUrls) {
+        handleNodeRequests(new LeaderRequestState(requestedReplicas, requiredReplicas, shardUrls,
+            request, session, id, System.currentTimeMillis(), getInconsistencyStrategy(shardUrls)));
+    }
+
+    private void handleNodeRequests(LeaderRequestState state) {
+        for (String shardUrl : state.getNodeUrls()) {
             if (!illNodesService.isIllNode(shardUrl)) {
                 workersService.submitTask(() -> {
                     if (selfUrl.equals(shardUrl)) {
@@ -180,9 +201,24 @@ public class CustomHttpServer extends HttpServer {
         }
     }
 
-    private void handleLeaderRequest(RequestState state) {
-        HandlerResponse handlerResponse = new HandlerResponse();
+    private InconsistencyResolutionStrategy getInconsistencyStrategy(List<String> shardUrls) {
+        switch (inconsistencyStrategyType) {
+            case READ_REPAIR_DIGEST -> {
+                return new DigestResolutionStrategy(shardUrls, selfUrl);
+            }
+            case READ_REPAIR -> {
+                return new SimpleResolutionStrategy();
+            }
+            case NONE -> {
+                return new InconsistentStrategy();
+            }
+            default -> throw new IllegalStateException("Cannot recognize inconsistency strategy type");
+        }
+    }
+
+    private HandlerLeaderResponse handleLeaderRequest(LeaderRequestState state) {
         HandlerRequest handlerRequest = new HandlerRequest(state);
+        HandlerLeaderResponse handlerResponse = new HandlerLeaderResponse();
         Request request = state.getRequest();
         switch (request.getMethod()) {
             case Request.METHOD_GET -> requestHandler.handleLeaderGet(handlerRequest, handlerResponse);
@@ -190,12 +226,42 @@ public class CustomHttpServer extends HttpServer {
             case Request.METHOD_DELETE -> requestHandler.handleLeaderDelete(handlerRequest, handlerResponse);
             default -> throw new IllegalStateException("Expected one of supported methods");
         }
-        HttpServerUtils.sendResponse(state.getSession(), handlerResponse.getResponse());
+        return handlerResponse;
     }
 
-    private void handleProxyRequest(LeaderRequestState state, String shardUrl) {
+    private void sendRepairRequests(LeaderRequestState state, HandlerLeaderResponse handlerResponse) {
+        DBValue actualValue = handlerResponse.getActualValue();
+        for (String url : handlerResponse.getInconsistentReplicas()) {
+            if (url.equals(selfUrl)) {
+                requestHandler.handleRepairPut(new HandlerRepairRequest(state, actualValue));
+                continue;
+            }
+
+            String uri = new StringBuilder(url)
+                .append(URL_INFIX)
+                .append(state.getId())
+                .append(TIMESTAMP_PARAM)
+                .append(actualValue.getTimestamp())
+                .toString();
+            HttpRequest.Builder httpRequestBuilder = HttpRequest
+                .newBuilder(URI.create(uri))
+                .timeout(Duration.ofMillis(TIMEOUT_MILLIS))
+                .header(INTERNAL_HEADER, TRUE)
+                .header(REPAIR_HEADER, TRUE);
+            HttpRequest httpRequest;
+            if (actualValue.getValue() == null) {
+                httpRequest = httpRequestBuilder.DELETE().build();
+            } else {
+                httpRequest = httpRequestBuilder
+                    .PUT(HttpRequest.BodyPublishers.ofByteArray(actualValue.getValue())).build();
+            }
+            httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+        }
+    }
+
+    private void handleProxyRequest(LeaderRequestState state, String url) {
         Request request = state.getRequest();
-        StringBuilder uriBuilder = new StringBuilder(shardUrl)
+        StringBuilder uriBuilder = new StringBuilder(url)
             .append(URL_INFIX)
             .append(state.getId());
         if (Request.METHOD_PUT == request.getMethod() || Request.METHOD_DELETE == request.getMethod()) {
@@ -207,6 +273,9 @@ public class CustomHttpServer extends HttpServer {
             .newBuilder(URI.create(uriBuilder.toString()))
             .timeout(Duration.ofMillis(TIMEOUT_MILLIS))
             .header(INTERNAL_HEADER, TRUE);
+        if (state.getInconsistencyStrategy().sendDigestRequest(url)) {
+            builder = builder.header(DIGEST_HEADER, TRUE);
+        }
         HttpRequest httpRequest;
         switch (request.getMethod()) {
             case Request.METHOD_GET -> httpRequest = builder.GET().build();
@@ -216,10 +285,10 @@ public class CustomHttpServer extends HttpServer {
             default -> throw new IllegalStateException("Expected one of supported methods");
         }
 
-        sendProxyRequest(httpRequest, state);
+        sendProxyRequest(httpRequest, state, url);
     }
 
-    private void sendProxyRequest(HttpRequest httpRequest, LeaderRequestState state) {
+    private void sendProxyRequest(HttpRequest httpRequest, LeaderRequestState state, String url) {
         httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray())
             .thenAcceptAsync(httpResponse -> {
                 Response failureResponse = checkProxyResponseFailure(httpRequest, httpResponse);
@@ -236,7 +305,7 @@ public class CustomHttpServer extends HttpServer {
                     handleResponseFailure(state);
                 } else {
                     Response response = new Response(statusCode, body);
-                    handleResponseSuccess(state, response);
+                    handleResponseSuccess(state, response, url);
                 }
             }, workersService.getExecutorReference())
             .exceptionallyAsync(e -> {
@@ -270,10 +339,15 @@ public class CustomHttpServer extends HttpServer {
                     state, new HandlerRequest(state),
                     handlerResponse, requestHandler::handleGet
                 );
-                case Request.METHOD_PUT -> handleConcreteRequest(
-                    state, new HandlerRequest(state),
-                    handlerResponse, requestHandler::handlePut
-                );
+                case Request.METHOD_PUT -> {
+                    if (state.isRepairRequest()) {
+                        requestHandler.handleRepairPut(new HandlerRepairRequest(state,
+                            new DBValue(state.getRequest().getBody(), state.getTimestamp())));
+                    } else {
+                        handleConcreteRequest(state, new HandlerRequest(state),
+                            handlerResponse, requestHandler::handlePut);
+                    }
+                }
                 case Request.METHOD_DELETE -> handleConcreteRequest(
                     state, new HandlerRequest(state),
                     handlerResponse, requestHandler::handleDelete
@@ -315,11 +389,11 @@ public class CustomHttpServer extends HttpServer {
         } catch (Exception e) {
             handleResponseFailure(state);
         }
-        handleResponseSuccess(state, response.getResponse());
+        handleResponseSuccess(state, response.getResponse(), selfUrl);
     }
 
-    private void handleResponseSuccess(RequestState state, Response response) {
-        if (state.onResponseSuccess(response)) {
+    private void handleResponseSuccess(RequestState state, Response response, String url) {
+        if (state.onResponseSuccess(response, url)) {
             handleWhenAllCompleted(state, response);
         }
     }
@@ -332,9 +406,34 @@ public class CustomHttpServer extends HttpServer {
 
     private void handleWhenAllCompleted(RequestState state, Response response) {
         if (state.isLeader()) {
-            handleLeaderRequest(state);
+            LeaderRequestState leaderState = (LeaderRequestState) state;
+            if (((LeaderRequestState) state).getInconsistencyStrategy() instanceof DigestResolutionStrategy
+                && DIGEST_SUPPORTED_METHODS.contains(state.getRequest().getMethod())) {
+                handleWhenAllCompletedDigest(leaderState);
+            } else {
+                handleWhenAllCompletedFull(leaderState);
+            }
         } else {
             HttpServerUtils.sendResponse(state.getSession(), response);
+        }
+    }
+
+    private void handleWhenAllCompletedDigest(LeaderRequestState state) {
+        HandlerLeaderResponse handlerResponse = new HandlerLeaderResponse();
+        requestHandler.handleLeaderDigestGet(new HandlerDigestRequest(state, selfUrl), handlerResponse);
+        if (state.getInconsistencyStrategy().shouldRepair() && !handlerResponse.isEqualDigests()) {
+            handleNodeRequests(new LeaderRequestState(state, new SimpleResolutionStrategy()));
+        }
+    }
+
+    private void handleWhenAllCompletedFull(LeaderRequestState state) {
+        HandlerLeaderResponse handlerResponse = handleLeaderRequest(state);
+        HttpServerUtils.sendResponse(state.getSession(), handlerResponse.getResponse());
+
+        List<String> inconsistentReplicas = handlerResponse.getInconsistentReplicas();
+        if (state.getInconsistencyStrategy().shouldRepair()
+            && inconsistentReplicas != null && !inconsistentReplicas.isEmpty()) {
+            sendRepairRequests(state, handlerResponse);
         }
     }
 }

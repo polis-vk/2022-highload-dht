@@ -16,9 +16,13 @@ public interface RequestState {
 
     boolean onResponseFailure();
 
-    boolean onResponseSuccess(Response response);
+    boolean onResponseSuccess(Response response, String url);
 
     boolean isSuccess();
 
     boolean isLeader();
+
+    boolean isDigestOnly();
+
+    boolean isRepairRequest();
 }

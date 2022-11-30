@@ -1,6 +1,7 @@
 package ok.dht.test.shik;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.shik.consistency.InconsistencyStrategyType;
 import ok.dht.test.shik.sharding.ShardingConfig;
 import ok.dht.test.shik.workers.WorkersConfig;
 import org.apache.commons.logging.Log;
@@ -69,7 +70,8 @@ public final class Server {
 
     public static void main(String[] args) throws IOException,
         ExecutionException, InterruptedException, TimeoutException {
-        new ServiceImpl(DEFAULT_CONFIG1, WORKERS_CONFIG, HTTP_CLIENT_WORKERS_CONFIG, SHARDING_CONFIG)
+        new ServiceImpl(DEFAULT_CONFIG1, WORKERS_CONFIG, HTTP_CLIENT_WORKERS_CONFIG,
+            SHARDING_CONFIG, InconsistencyStrategyType.READ_REPAIR)
             .start().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         LOG.info("Socket is ready: " + DEFAULT_URL1);
     }

@@ -10,14 +10,19 @@ public class FollowerRequestState extends AbstractRequestState {
 
     private final CompletableFuture<Response> responseFuture;
     private volatile Response readyResponse;
+    private final boolean digestOnly;
+    private final boolean repairRequest;
 
     public FollowerRequestState(Request request, HttpSession session) {
-        this(request, session, null, System.currentTimeMillis());
+        this(request, session, null, System.currentTimeMillis(), false, false);
     }
 
-    public FollowerRequestState(Request request, HttpSession session, String id, long timestamp) {
+    public FollowerRequestState(Request request, HttpSession session, String id, long timestamp,
+                                boolean digestOnly, boolean repairRequest) {
         super(request, session, id, timestamp);
         responseFuture = new CompletableFuture<>();
+        this.digestOnly = digestOnly;
+        this.repairRequest = repairRequest;
     }
 
     @Override
@@ -26,7 +31,7 @@ public class FollowerRequestState extends AbstractRequestState {
     }
 
     @Override
-    public boolean onResponseSuccess(Response response) {
+    public boolean onResponseSuccess(Response response, String url) {
         readyResponse = response;
         responseFuture.complete(response);
         return true;
@@ -40,5 +45,15 @@ public class FollowerRequestState extends AbstractRequestState {
     @Override
     public boolean isLeader() {
         return false;
+    }
+
+    @Override
+    public boolean isDigestOnly() {
+        return digestOnly;
+    }
+
+    @Override
+    public boolean isRepairRequest() {
+        return repairRequest;
     }
 }
