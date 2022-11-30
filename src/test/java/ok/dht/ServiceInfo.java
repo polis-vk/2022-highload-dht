@@ -1,5 +1,6 @@
 package ok.dht;
 
+import java.awt.image.PixelGrabber;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -42,9 +43,30 @@ public class ServiceInfo {
         );
     }
 
+    public HttpResponse<byte[]> get(String key, int ack, int from) throws Exception {
+        return client.send(
+                requestForKey(key, ack, from).GET().build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
+    public HttpResponse<byte[]> range(String start, String end) throws Exception {
+        return client.send(
+                requestForRange(start, end).GET().build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
     public HttpResponse<byte[]> delete(String key) throws Exception {
         return client.send(
                 requestForKey(key).DELETE().build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
+    public HttpResponse<byte[]> delete(String key, int ack, int from) throws Exception {
+        return client.send(
+                requestForKey(key, ack, from).DELETE().build(),
                 HttpResponse.BodyHandlers.ofByteArray()
         );
     }
@@ -56,9 +78,23 @@ public class ServiceInfo {
         );
     }
 
+    public HttpResponse<byte[]> upsert(String key, byte[] data, int ack, int from) throws Exception {
+        return client.send(
+                requestForKey(key, ack, from).PUT(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
     public HttpResponse<byte[]> post(String key, byte[] data) throws Exception {
         return client.send(
                 requestForKey(key).POST(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+        );
+    }
+
+    public HttpResponse<byte[]> post(String key, byte[] data, int ack, int from) throws Exception {
+        return client.send(
+                requestForKey(key, ack, from).POST(HttpRequest.BodyPublishers.ofByteArray(data)).build(),
                 HttpResponse.BodyHandlers.ofByteArray()
         );
     }
@@ -71,7 +107,11 @@ public class ServiceInfo {
         return request("/v0/entity?id=" + key);
     }
 
-    private HttpRequest.Builder requestForRange(String key) {
-        return request("/v0/entity?id=" + key);
+    private HttpRequest.Builder requestForKey(String key, int ack, int from) {
+        return request("/v0/entity?id=" + key + "&from=" + from + "&ack=" + ack);
+    }
+
+    private HttpRequest.Builder requestForRange(String start, String end) {
+        return request("/v0/entities?start=" + start + (end == null ? "" : ("&end=" + end)));
     }
 }
