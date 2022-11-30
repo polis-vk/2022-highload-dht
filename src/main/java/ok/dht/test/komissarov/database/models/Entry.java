@@ -5,6 +5,8 @@ public interface Entry<D> {
 
     D value();
 
+    long timestamp();
+
     default boolean isTombstone() {
         return value() == null;
     }

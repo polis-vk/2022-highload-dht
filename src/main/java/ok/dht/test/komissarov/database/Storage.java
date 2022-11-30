@@ -116,6 +116,8 @@ public class Storage implements Closeable {
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
                 offset += writeRecord(nextSSTable, offset, entry.key());
+                MemoryAccess.setLongAtOffset(nextSSTable, offset, entry.timestamp());
+                offset += Long.BYTES;
                 offset += writeRecord(nextSSTable, offset, entry.value());
 
                 index++;
