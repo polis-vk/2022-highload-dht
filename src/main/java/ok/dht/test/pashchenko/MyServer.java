@@ -269,9 +269,17 @@ public class MyServer extends HttpServer {
         int from;
         int ack;
         try {
-            from = getInt(request, "from=", nodes.size());
-            ack = getInt(request, "ack=", (nodes.size() / 2) + 1);
-            if (ack > from || ack <= 0) {
+            String fromString = request.getParameter("from=");
+            String ackString = request.getParameter("ack=");
+
+            if (fromString != null && ackString == null || fromString == null && ackString != null) {
+                throw new Exception400();
+            }
+
+            from = getInt(fromString, "from", nodes.size());
+            ack = getInt(ackString, "ack", (nodes.size() / 2) + 1);
+
+            if (ack > from || ack <= 0 || from > config.clusterUrls().size()) {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
@@ -413,15 +421,14 @@ public class MyServer extends HttpServer {
         }
     }
 
-    private int getInt(Request request, String param, int defaultValue) throws Exception400 {
-        String fromStr = request.getParameter(param);
-        if (fromStr == null) {
+    private int getInt(String parameter, String parameterName, int defaultValue) throws Exception400 {
+        if (parameter == null) {
             return defaultValue;
         } else {
             try {
-                return Integer.parseInt(fromStr);
+                return Integer.parseInt(parameter);
             } catch (NumberFormatException e) {
-                LOG.error("Error parse int" + param, e);
+                LOG.error("Error parse int {}", parameterName, e);
                 throw new Exception400();
             }
         }
