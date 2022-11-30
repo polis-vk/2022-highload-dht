@@ -1,7 +1,10 @@
 package ok.dht.test.mikhaylov.resolver;
 
+import com.google.common.hash.HashFunction;
+import com.google.common.hash.Hashing;
 import one.nio.util.Hash;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -12,22 +15,17 @@ import java.util.List;
 public class ConsistentHashingResolver implements ShardResolver {
     private final List<Shard> shards = new ArrayList<>();
 
-    private interface HashFunction {
-        int hash(String s);
-    }
-
     private static final HashFunction[] HASH_FUNCTIONS = {
-            Hash::murmur3,
-            String::hashCode,
-            s -> {
-                byte[] bytes = s.getBytes();
-                return Hash.xxhash(bytes, 0, bytes.length);
-            }
+            Hashing.murmur3_128(0x486fdec0),
+            Hashing.murmur3_128(0x148a976e),
+            Hashing.murmur3_128(0x6dbcadbb),
+            Hashing.murmur3_128(0x297efa28),
+            Hashing.murmur3_128(0x008142c8)
     };
 
     public void addShard(String shardUrl) {
         for (HashFunction hashFunction : HASH_FUNCTIONS) {
-            shards.add(new Shard(shardUrl, hashFunction.hash(shardUrl)));
+            shards.add(new Shard(shardUrl, hashFunction.hashString(shardUrl, StandardCharsets.UTF_8).asInt()));
         }
         shards.sort(Shard::compareTo);
     }
