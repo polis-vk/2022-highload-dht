@@ -123,9 +123,9 @@ public class MyService implements Service {
         }
         String shard = shardResolver.resolve(id);
         if (shard.equals(config.selfUrl())) {
-            shard = null;
+            return handleLocal(request, id);
         }
-        return handleValidated(request, id, shard);
+        return proxyRequest(request, shard);
     }
 
     // Assumes everything is valid and the shard containing the id is this node
@@ -133,29 +133,24 @@ public class MyService implements Service {
     public Response handleInternal(Request request) {
         // todo: verify that the request is not coming from outside
         String id = request.getParameter("id=");
-        return handleValidated(request, id, null);
+        return handleLocal(request, id);
     }
 
-    // shard is null if the shard is this node
-    private Response handleValidated(Request request, String id, @Nullable String shard) {
-        if (shard != null) {
-            return proxyRequest(request, shard);
-        } else {
-            try {
-                return switch (request.getMethod()) {
-                    case Request.METHOD_GET -> dbGet(id);
-                    case Request.METHOD_PUT -> dbPut(id, request.getBody());
-                    case Request.METHOD_DELETE -> dbDelete(id);
-                    // Should never happen
-                    default -> {
-                        logger.error("Unexpected method: {}", request.getMethod());
-                        throw new IllegalArgumentException("Method " + request.getMethod() + " is not allowed");
-                    }
-                };
-            } catch (RocksDBException e) {
-                logger.error("RocksDB error while handling request: {}", request, e);
-                return new Response(Response.INTERNAL_ERROR, strToBytes("Could not access database"));
-            }
+    private Response handleLocal(Request request, String id) {
+        try {
+            return switch (request.getMethod()) {
+                case Request.METHOD_GET -> dbGet(id);
+                case Request.METHOD_PUT -> dbPut(id, request.getBody());
+                case Request.METHOD_DELETE -> dbDelete(id);
+                // Should never happen
+                default -> {
+                    logger.error("Unexpected method: {}", request.getMethod());
+                    throw new IllegalArgumentException("Method " + request.getMethod() + " is not allowed");
+                }
+            };
+        } catch (RocksDBException e) {
+            logger.error("RocksDB error while handling request: {}", request, e);
+            return new Response(Response.INTERNAL_ERROR, strToBytes("Could not access database"));
         }
     }
 
