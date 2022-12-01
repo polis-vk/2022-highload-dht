@@ -88,6 +88,9 @@ class ReadRepairTest extends TestBase {
             HttpResponse<byte[]> response = nodes.get(2).get(key, 2, 3);
             assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
             assertArrayEquals(value2, response.body());
+
+            // request for absent value, so that background repair has time to complete
+            nodes.get(2).get(randomId(), 3, 3);
         }
 
         // check that repair is completed successfully and first server has value2
@@ -144,6 +147,9 @@ class ReadRepairTest extends TestBase {
             HttpResponse<byte[]> response = nodes.get(0).get(key, 2, 3);
             assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
             assertArrayEquals(value2, response.body());
+
+            // request for absent value, so that background repair has time to complete
+            nodes.get(0).get(randomId(), 3, 3);
         }
 
         // check that repair is completed successfully and first server has value2
