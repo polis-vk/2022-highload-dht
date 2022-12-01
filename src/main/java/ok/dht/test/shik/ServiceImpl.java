@@ -109,8 +109,8 @@ public class ServiceImpl implements CustomService {
 
         LeaderRequestState leaderState = (LeaderRequestState) request.getState();
         Map<String, Response> responses = leaderState.getReplicaResponses();
-        Response leaderResponse = responses.get(request.getLeaderUrl());
-        byte[] leaderDigest = hashing.hash(leaderResponse.getBody());
+        byte[] leaderResponseBody = responses.get(request.getLeaderUrl()).getBody();
+        byte[] leaderDigest = hashing.hash(leaderResponseBody);
         for (Map.Entry<String, Response> entry : responses.entrySet()) {
             if (!request.getLeaderUrl().equals(entry.getKey())
                 && !Arrays.equals(entry.getValue().getBody(), leaderDigest)) {
@@ -119,7 +119,7 @@ public class ServiceImpl implements CustomService {
         }
 
         response.setEqualDigests(true);
-        DBValue actualValue = serializer.deserialize(leaderResponse.getBody());
+        DBValue actualValue = leaderResponseBody.length == 0 ? null : serializer.deserialize(leaderResponseBody);
         response.setResponse(actualValue == null || actualValue.getValue() == null
             ? new Response(Response.NOT_FOUND, Response.EMPTY) : Response.ok(actualValue.getValue()));
     }
@@ -136,7 +136,7 @@ public class ServiceImpl implements CustomService {
         Map<String, DBValue> dbValues = new HashMap<>(responses.size());
         for (Map.Entry<String, Response> entry : responses.entrySet()) {
             byte[] body = entry.getValue().getBody();
-            dbValues.put(entry.getKey(), body == null || body.length == 0 ? null : serializer.deserialize(body));
+            dbValues.put(entry.getKey(), body.length == 0 ? null : serializer.deserialize(body));
         }
 
         DBValue actualValue = ServiceUtils.getActualValue(dbValues);
