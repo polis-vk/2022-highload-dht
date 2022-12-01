@@ -41,6 +41,9 @@ class ReadRepairTest extends TestBase {
             HttpResponse<byte[]> response = nodes.get(0).get(key, 2, 3);
             assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
             assertArrayEquals(value1, response.body());
+
+            // request for absent value, so that background repair has time to complete
+            nodes.get(0).get(randomId(), 1, 3);
         }
 
         // check that repair is completed successfully and third server has value1
