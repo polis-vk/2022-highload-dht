@@ -1,17 +1,17 @@
 package ok.dht.test.shik.utils;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-
 import ok.dht.ServiceConfig;
 import ok.dht.test.shik.model.DBValue;
 import one.nio.http.HttpServerConfig;
 import one.nio.net.ConnectionString;
 import one.nio.server.ServerConfig;
 
-public class ServiceUtils {
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+
+public final class ServiceUtils {
 
     private ServiceUtils() {
 

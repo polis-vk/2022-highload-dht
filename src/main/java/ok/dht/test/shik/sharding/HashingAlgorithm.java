@@ -1,12 +1,11 @@
 package ok.dht.test.shik.sharding;
 
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-
+import ok.dht.test.shik.ServiceImpl;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import ok.dht.test.shik.ServiceImpl;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 public class HashingAlgorithm {
 
