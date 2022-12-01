@@ -4,8 +4,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -17,23 +15,14 @@ import java.util.Set;
 public class ConsistentHash {
 
     private static final Log LOG = LogFactory.getLog(ConsistentHash.class);
-    private static final String HASHING_ALGORITHMS = "SHA-256";
 
-    // MessageDigest is not thread safe
-    private static final ThreadLocal<MessageDigest> DIGEST = ThreadLocal.withInitial(() -> {
-        try {
-            return MessageDigest.getInstance(HASHING_ALGORITHMS);
-        } catch (NoSuchAlgorithmException e) {
-            LOG.error("Cannot instantiate sha-256 algorithm", e);
-            throw new RuntimeException("Cannot instantiate sha-256 algorithm", e);
-        }
-    });
-
+    private final HashingAlgorithm hashing;
     private final int[] hashes;
     private final int[] nodeIndex;
     private final List<String> clusterUrls;
 
     public ConsistentHash(int virtualNodesNumber, List<String> clusterUrls) {
+        hashing = new HashingAlgorithm();
         int length = clusterUrls.size() * virtualNodesNumber;
         hashes = new int[length];
         nodeIndex = new int[length];
@@ -44,7 +33,7 @@ public class ConsistentHash {
         for (int i = 0; i < clusterUrls.size(); ++i) {
             String url = clusterUrls.get(i);
             for (int j = 0; j < virtualNodesNumber; ++j) {
-                byte[] hash = DIGEST.get().digest((url + j + url).getBytes(StandardCharsets.UTF_8));
+                byte[] hash = hashing.hash((url + j + url).getBytes(StandardCharsets.UTF_8));
                 queue.add(new Pair(convertToIntHash(hash), i));
             }
         }
@@ -63,7 +52,7 @@ public class ConsistentHash {
     }
 
     public List<String> getShardUrlByKey(byte[] key, int nodesCount) {
-        byte[] hash = DIGEST.get().digest(key);
+        byte[] hash = hashing.hash(key);
         int insertionPoint = Arrays.binarySearch(hashes, convertToIntHash(hash));
         if (insertionPoint >= 0) {
             return getFromOffset(insertionPoint, nodesCount);

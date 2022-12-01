@@ -15,13 +15,12 @@ import ok.dht.test.shik.events.LeaderRequestState;
 import ok.dht.test.shik.model.DBValue;
 import ok.dht.test.shik.serialization.ByteArraySerializer;
 import ok.dht.test.shik.serialization.ByteArraySerializerFactory;
+import ok.dht.test.shik.sharding.HashingAlgorithm;
 import ok.dht.test.shik.sharding.ShardingConfig;
 import ok.dht.test.shik.streaming.ChunkedResponse;
+import ok.dht.test.shik.utils.ServiceUtils;
 import ok.dht.test.shik.workers.WorkersConfig;
-import one.nio.http.HttpServerConfig;
 import one.nio.http.Response;
-import one.nio.net.ConnectionString;
-import one.nio.server.ServerConfig;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.iq80.leveldb.DB;
@@ -31,12 +30,8 @@ import org.iq80.leveldb.impl.Iq80DBFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.locks.Lock;
@@ -48,15 +43,6 @@ public class ServiceImpl implements CustomService {
     private static final Log LOG = LogFactory.getLog(ServiceImpl.class);
     private static final Options LEVELDB_OPTIONS = new Options();
     private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
-    private static final String HASHING_ALGORITHMS = "SHA-256";
-    private static final ThreadLocal<MessageDigest> DIGEST = ThreadLocal.withInitial(() -> {
-        try {
-            return MessageDigest.getInstance(HASHING_ALGORITHMS);
-        } catch (NoSuchAlgorithmException e) {
-            LOG.error("Cannot instantiate sha-256 algorithm", e);
-            throw new RuntimeException("Cannot instantiate sha-256 algorithm", e);
-        }
-    });
 
     private final ServiceConfig config;
     private final WorkersConfig workersConfig;
@@ -65,6 +51,7 @@ public class ServiceImpl implements CustomService {
     private final ByteArraySerializer serializer;
     private final InconsistencyStrategyType inconsistencyStrategyType;
     private final ReadWriteLock repairLock;
+    private final HashingAlgorithm hashing;
 
     private CustomHttpServer server;
     private DB levelDB;
@@ -84,6 +71,7 @@ public class ServiceImpl implements CustomService {
         this.inconsistencyStrategyType = inconsistencyStrategyType;
         serializer = ByteArraySerializerFactory.latest();
         repairLock = new ReentrantReadWriteLock();
+        hashing = new HashingAlgorithm();
     }
 
     @Override
@@ -94,7 +82,7 @@ public class ServiceImpl implements CustomService {
             LOG.error("Error while starting database: ", e);
             throw e;
         }
-        server = new CustomHttpServer(createHttpConfig(config), config, workersConfig,
+        server = new CustomHttpServer(ServiceUtils.createHttpConfig(config), config, workersConfig,
             httpClientWorkersConfig, shardingConfig, inconsistencyStrategyType);
         server.setRequestHandler(this);
         server.start();
@@ -122,17 +110,18 @@ public class ServiceImpl implements CustomService {
         LeaderRequestState leaderState = (LeaderRequestState) request.getState();
         Map<String, Response> responses = leaderState.getReplicaResponses();
         Response leaderResponse = responses.get(request.getLeaderUrl());
-        byte[] leaderDigest = DIGEST.get().digest(leaderResponse.getBody());
+        byte[] leaderDigest = hashing.hash(leaderResponse.getBody());
         for (Map.Entry<String, Response> entry : responses.entrySet()) {
-            if (!Arrays.equals(entry.getValue().getBody(), leaderDigest)) {
-                response.setEqualDigests(false);
+            if (!request.getLeaderUrl().equals(entry.getKey())
+                && !Arrays.equals(entry.getValue().getBody(), leaderDigest)) {
                 return;
             }
         }
 
+        response.setEqualDigests(true);
         DBValue actualValue = serializer.deserialize(leaderResponse.getBody());
         response.setResponse(actualValue == null || actualValue.getValue() == null
-            ?  new Response(Response.NOT_FOUND, Response.EMPTY) : Response.ok(actualValue.getValue()));
+            ? new Response(Response.NOT_FOUND, Response.EMPTY) : Response.ok(actualValue.getValue()));
     }
 
     @Override
@@ -150,37 +139,15 @@ public class ServiceImpl implements CustomService {
             dbValues.put(entry.getKey(), body == null || body.length == 0 ? null : serializer.deserialize(body));
         }
 
-        DBValue actualValue = getActualValue(dbValues);
+        DBValue actualValue = ServiceUtils.getActualValue(dbValues);
         response.setResponse(actualValue == null || actualValue.getValue() == null
-            ?  new Response(Response.NOT_FOUND, Response.EMPTY) : Response.ok(actualValue.getValue()));
+            ? new Response(Response.NOT_FOUND, Response.EMPTY) : Response.ok(actualValue.getValue()));
 
         if (actualValue != null
             && leaderState.getInconsistencyStrategy() instanceof RepairResolutionStrategy) {
-            response.setInconsistentReplicas(getInconsistentReplicas(dbValues, actualValue));
+            response.setInconsistentReplicas(ServiceUtils.getInconsistentReplicas(dbValues, actualValue));
             response.setActualValue(actualValue);
         }
-    }
-
-    private DBValue getActualValue(Map<String, DBValue> dbValues) {
-        DBValue actualValue = null;
-        for (Map.Entry<String, DBValue> entry : dbValues.entrySet()) {
-            DBValue current = entry.getValue();
-            if (current != null && (actualValue == null || DBValue.COMPARATOR.compare(actualValue, current) < 0)) {
-                actualValue = current;
-            }
-        }
-        return actualValue;
-    }
-
-    private List<String> getInconsistentReplicas(Map<String, DBValue> dbValues, DBValue latestValue) {
-        List<String> inconsistentReplicas = new ArrayList<>();
-        for (Map.Entry<String, DBValue> entry : dbValues.entrySet()) {
-            DBValue current = entry.getValue();
-            if (current == null || DBValue.COMPARATOR.compare(latestValue, current) != 0) {
-                inconsistentReplicas.add(entry.getKey());
-            }
-        }
-        return inconsistentReplicas;
     }
 
     @Override
@@ -192,7 +159,7 @@ public class ServiceImpl implements CustomService {
             return;
         }
 
-        response.setResponse(Response.ok(request.getState().isDigestOnly() ? DIGEST.get().digest(value) : value));
+        response.setResponse(Response.ok(request.getState().isDigestOnly() ? hashing.hash(value) : value));
     }
 
     @Override
@@ -224,7 +191,9 @@ public class ServiceImpl implements CustomService {
         byte[] key = request.getState().getId().getBytes(StandardCharsets.UTF_8);
         byte[] dbValue = serializer.serialize(
             new DBValue(request.getState().getRequest().getBody(), request.getState().getTimestamp()));
-        if (inconsistencyStrategyType != InconsistencyStrategyType.NONE) {
+        if (inconsistencyStrategyType == InconsistencyStrategyType.NONE) {
+            levelDB.put(key, dbValue);
+        } else {
             Lock readLock = repairLock.readLock();
             readLock.lock();
             try {
@@ -232,8 +201,6 @@ public class ServiceImpl implements CustomService {
             } finally {
                 readLock.unlock();
             }
-        } else {
-            levelDB.put(key, dbValue);
         }
         response.setResponse(new Response(Response.CREATED, Response.EMPTY));
     }
@@ -271,15 +238,6 @@ public class ServiceImpl implements CustomService {
         byte[] key = request.getState().getId().getBytes(StandardCharsets.UTF_8);
         levelDB.put(key, serializer.serialize(new DBValue(null, request.getState().getTimestamp())));
         response.setResponse(new Response(Response.ACCEPTED, Response.EMPTY));
-    }
-
-    private static HttpServerConfig createHttpConfig(ServiceConfig config) {
-        ServerConfig serverConfig = ServerConfig.from(new ConnectionString(config.selfUrl()));
-        HttpServerConfig httpServerConfig = new HttpServerConfig();
-        httpServerConfig.acceptors = serverConfig.acceptors;
-        Arrays.stream(httpServerConfig.acceptors).forEach(x -> x.reusePort = true);
-        httpServerConfig.schedulingPolicy = serverConfig.schedulingPolicy;
-        return httpServerConfig;
     }
 
     @ServiceFactory(stage = 7, week = 1, bonuses = "SingleNodeTest#respectFileFolder")

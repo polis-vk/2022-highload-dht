@@ -1,8 +1,8 @@
 package ok.dht.test.shik.events;
 
-import java.util.List;
-
 import ok.dht.test.shik.model.DBValue;
+
+import java.util.List;
 
 public class HandlerLeaderResponse extends HandlerResponse {
 

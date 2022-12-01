@@ -7,7 +7,7 @@ public class DigestResolutionStrategy implements RepairResolutionStrategy {
     private final List<String> requestedReplicasUrls;
     private final String currentNodeUrl;
 
-    private boolean isCurrentNodeRequested = false;
+    private boolean isCurrentNodeRequested;
 
     public DigestResolutionStrategy(List<String> requestedReplicasUrls, String currentNodeUrl) {
         this.requestedReplicasUrls = requestedReplicasUrls;

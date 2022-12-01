@@ -1,11 +1,12 @@
 package ok.dht.test.shik;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.shik.consistency.DigestResolutionStrategy;
 import ok.dht.test.shik.consistency.InconsistencyResolutionStrategy;
 import ok.dht.test.shik.consistency.InconsistencyStrategyType;
-import ok.dht.test.shik.consistency.DigestResolutionStrategy;
 import ok.dht.test.shik.consistency.InconsistentStrategy;
 import ok.dht.test.shik.consistency.SimpleResolutionStrategy;
+import ok.dht.test.shik.events.CommonRequestStateParams;
 import ok.dht.test.shik.events.FollowerRequestState;
 import ok.dht.test.shik.events.HandlerDigestRequest;
 import ok.dht.test.shik.events.HandlerLeaderResponse;
@@ -49,11 +50,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.RejectedExecutionHandler;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.BiConsumer;
 
 public class CustomHttpServer extends HttpServer {
@@ -105,22 +102,13 @@ public class CustomHttpServer extends HttpServer {
         consistentHash = new ConsistentHash(shardingConfig.getVNodesNumber(), clusterUrls);
 
         httpClient = HttpClient.newBuilder()
-            .executor(createExecutor(httpClientWorkersConfig))
+            .executor(HttpServerUtils.createExecutor(httpClientWorkersConfig))
             .connectTimeout(Duration.ofMillis(TIMEOUT_MILLIS))
             .build();
         selfUrl = serviceConfig.selfUrl();
         illNodesService = new IllNodesService(clusterUrls);
         validator = new Validator(clusterUrls.size());
         this.inconsistencyStrategyType = inconsistencyStrategyType;
-    }
-
-    private static ExecutorService createExecutor(WorkersConfig config) {
-        RejectedExecutionHandler rejectedHandler = config.getQueuePolicy() == WorkersConfig.QueuePolicy.FIFO
-            ? new ThreadPoolExecutor.DiscardPolicy()
-            : new ThreadPoolExecutor.DiscardOldestPolicy();
-        return new ThreadPoolExecutor(config.getCorePoolSize(), config.getMaxPoolSize(),
-            config.getKeepAliveTime(), config.getUnit(), new ArrayBlockingQueue<>(config.getQueueCapacity()),
-            r -> new Thread(r, "httpClientThread"), rejectedHandler);
     }
 
     public void setRequestHandler(CustomService requestHandler) {
@@ -152,12 +140,13 @@ public class CustomHttpServer extends HttpServer {
         String id = params.getId();
         int requestedReplicas = params.getRequestedReplicas();
         int requiredReplicas = params.getRequiredReplicas();
+        CommonRequestStateParams commonParams = new CommonRequestStateParams(request, session, id,
+                params.getTimestamp() == 0L ? System.currentTimeMillis() : params.getTimestamp());
 
         if (request.getHeader(INTERNAL_HEADER) != null) {
             boolean digestOnly = request.getHeader(DIGEST_HEADER) != null;
             boolean repairRequest = request.getHeader(REPAIR_HEADER) != null;
-            FollowerRequestState state =
-                new FollowerRequestState(request, session, id, params.getTimestamp(), digestOnly, repairRequest);
+            FollowerRequestState state = new FollowerRequestState(commonParams, digestOnly, repairRequest);
             handleCurrentShardRequest(state);
             return;
         }
@@ -181,8 +170,8 @@ public class CustomHttpServer extends HttpServer {
             return;
         }
 
-        handleNodeRequests(new LeaderRequestState(requestedReplicas, requiredReplicas, shardUrls,
-            request, session, id, System.currentTimeMillis(), getInconsistencyStrategy(shardUrls)));
+        handleNodeRequests(new LeaderRequestState(commonParams, requestedReplicas, requiredReplicas,
+            shardUrls, getInconsistencyStrategy(shardUrls)));
     }
 
     private void handleNodeRequests(LeaderRequestState state) {
@@ -237,12 +226,7 @@ public class CustomHttpServer extends HttpServer {
                 continue;
             }
 
-            String uri = new StringBuilder(url)
-                .append(URL_INFIX)
-                .append(state.getId())
-                .append(TIMESTAMP_PARAM)
-                .append(actualValue.getTimestamp())
-                .toString();
+            String uri = url + URL_INFIX + state.getId() + TIMESTAMP_PARAM + actualValue.getTimestamp();
             HttpRequest.Builder httpRequestBuilder = HttpRequest
                 .newBuilder(URI.create(uri))
                 .timeout(Duration.ofMillis(TIMEOUT_MILLIS))
@@ -423,6 +407,8 @@ public class CustomHttpServer extends HttpServer {
         requestHandler.handleLeaderDigestGet(new HandlerDigestRequest(state, selfUrl), handlerResponse);
         if (state.getInconsistencyStrategy().shouldRepair() && !handlerResponse.isEqualDigests()) {
             handleNodeRequests(new LeaderRequestState(state, new SimpleResolutionStrategy()));
+        } else {
+            HttpServerUtils.sendResponse(state.getSession(), handlerResponse.getResponse());
         }
     }
 

@@ -1,5 +1,6 @@
 package ok.dht.test.shik.utils;
 
+import ok.dht.test.shik.workers.WorkersConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Response;
 import org.apache.commons.logging.Log;
@@ -7,6 +8,10 @@ import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
 import java.nio.BufferOverflowException;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionHandler;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeoutException;
 
 public final class HttpServerUtils {
@@ -15,6 +20,15 @@ public final class HttpServerUtils {
 
     private HttpServerUtils() {
 
+    }
+
+    public static ExecutorService createExecutor(WorkersConfig config) {
+        RejectedExecutionHandler rejectedHandler = config.getQueuePolicy() == WorkersConfig.QueuePolicy.FIFO
+            ? new ThreadPoolExecutor.DiscardPolicy()
+            : new ThreadPoolExecutor.DiscardOldestPolicy();
+        return new ThreadPoolExecutor(config.getCorePoolSize(), config.getMaxPoolSize(),
+            config.getKeepAliveTime(), config.getUnit(), new ArrayBlockingQueue<>(config.getQueueCapacity()),
+            r -> new Thread(r, "httpClientThread"), rejectedHandler);
     }
 
     public static void sendResponse(HttpSession session, Response response) {

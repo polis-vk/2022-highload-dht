@@ -1,8 +1,6 @@
 package ok.dht.test.shik.events;
 
 import ok.dht.test.shik.consistency.InconsistencyResolutionStrategy;
-import one.nio.http.HttpSession;
-import one.nio.http.Request;
 import one.nio.http.Response;
 
 import java.util.List;
@@ -21,10 +19,10 @@ public class LeaderRequestState extends AbstractRequestState {
     private final AtomicBoolean completed;
     private final InconsistencyResolutionStrategy inconsistencyStrategy;
 
-    public LeaderRequestState(int requestedReplicas, int requiredReplicas, List<String> nodeUrls,
-                              Request request, HttpSession session, String id, long timestamp,
+    public LeaderRequestState(CommonRequestStateParams commonParams,
+                              int requestedReplicas, int requiredReplicas, List<String> nodeUrls,
                               InconsistencyResolutionStrategy inconsistencyStrategy) {
-        super(request, session, id, timestamp);
+        super(commonParams);
         this.requiredReplicas = requiredReplicas;
         this.nodeUrls = nodeUrls;
         this.requestedReplicas = requestedReplicas;
@@ -35,8 +33,8 @@ public class LeaderRequestState extends AbstractRequestState {
     }
 
     public LeaderRequestState(LeaderRequestState state, InconsistencyResolutionStrategy strategy) {
-        this(state.requestedReplicas, state.requiredReplicas, state.nodeUrls, state.getRequest(),
-            state.getSession(), state.getId(), state.getTimestamp(), strategy);
+        this(new CommonRequestStateParams(state.getRequest(), state.getSession(), state.getId(), state.getTimestamp()),
+            state.requestedReplicas, state.requiredReplicas, state.nodeUrls, strategy);
 
     }
 

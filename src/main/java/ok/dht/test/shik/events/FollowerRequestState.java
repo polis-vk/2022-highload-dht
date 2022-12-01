@@ -14,12 +14,11 @@ public class FollowerRequestState extends AbstractRequestState {
     private final boolean repairRequest;
 
     public FollowerRequestState(Request request, HttpSession session) {
-        this(request, session, null, System.currentTimeMillis(), false, false);
+        this(new CommonRequestStateParams(request, session, null, System.currentTimeMillis()), false, false);
     }
 
-    public FollowerRequestState(Request request, HttpSession session, String id, long timestamp,
-                                boolean digestOnly, boolean repairRequest) {
-        super(request, session, id, timestamp);
+    public FollowerRequestState(CommonRequestStateParams commonParams, boolean digestOnly, boolean repairRequest) {
+        super(commonParams);
         responseFuture = new CompletableFuture<>();
         this.digestOnly = digestOnly;
         this.repairRequest = repairRequest;
