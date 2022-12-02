@@ -18,8 +18,9 @@ import org.apache.commons.logging.LogFactory;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -82,10 +83,12 @@ public class ServiceImpl implements Service {
     private class CustomHttpServer extends HttpServer {
         private static final int CPUs = Runtime.getRuntime().availableProcessors();
 
+        private final ExecutorService httpClientPool = Executors.newFixedThreadPool(16);
         private final ExecutorService workersPool = new ThreadPoolExecutor(CPUs, CPUs, 0L,
-                TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(POOL_QUEUE_SIZE));
+                TimeUnit.MILLISECONDS, new AlmostLifoQueue(POOL_QUEUE_SIZE, 3));
+
         private final ReplicasManager replicasManager = new ReplicasManager(timeStampingDao,
-                new RandevouzHashingRouter(serviceConfig.clusterUrls()), serviceConfig.selfUrl());
+                new RandevouzHashingRouter(serviceConfig.clusterUrls(), httpClientPool), serviceConfig.selfUrl());
 
         public CustomHttpServer(
                 HttpServerConfig config,
@@ -98,55 +101,49 @@ public class ServiceImpl implements Service {
             String key = request.getParameter("id=");
             String coordinatorTimestamp = request.getHeader(COORDINATOR_TIMESTAMP_HEADER + ':');
             if (coordinatorTimestamp != null) {
-                try {
-                    workersPool.execute(() -> {
-                        try {
-                            long time = Long.parseLong(coordinatorTimestamp);
-                            Response response = handleInnerRequest(request, key, time);
-                            sendResponse(session, response);
-                        } catch (NumberFormatException e) {
-                            sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-                        } catch (IOException e) {
-                            sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-                        }
-                    });
-                } catch (RejectedExecutionException e) {
-                    session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
-                }
-                return;
-            }
-
-            String replicasParam = request.getParameter("replicas=");
-            String ackParam = request.getParameter("ack=");
-            String fromParam = request.getParameter("from=");
-            String[] replicasParams = replicasParam == null ? null : replicasParam.split("/");
-            int from;
-            int ack;
-            try {
-                from = replicasParams != null ? Integer.parseInt(replicasParams[1]) :
-                        fromParam != null ? Integer.parseInt(fromParam) : serviceConfig.clusterUrls().size();
-                ack = replicasParams != null ? Integer.parseInt(replicasParams[0]) :
-                        ackParam != null ? Integer.parseInt(ackParam) :
-                                from / 2 + 1 <= serviceConfig.clusterUrls().size() ? from / 2 + 1 : from;
-            } catch (NumberFormatException e) {
-                sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-                return;
-            }
-
-            try {
-                workersPool.execute(() -> {
-                    if (!request.getPath().equals("/v0/entity")
-                            || key == null || key.isEmpty()
-                            || ack > from || ack <= 0) {
+                submitOrSendUnavailable(workersPool, session, () -> {
+                    try {
+                        long time = Long.parseLong(coordinatorTimestamp);
+                        Response response = handleInnerRequest(request, key, time);
+                        sendResponse(session, response);
+                    } catch (NumberFormatException e) {
                         sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
-                        return;
+                    } catch (IOException e) {
+                        sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                     }
-                    long time = System.currentTimeMillis();
-                    replicasManager.handleReplicatingRequest(session, request, key, time, ack, from);
                 });
+                return;
+            }
+
+            int ack;
+            int from;
+            try {
+                ReplicationParams params = ReplicationParams.fromHeader(request, serviceConfig.clusterUrls().size());
+                ack = params.ack;
+                from = params.from;
+            } catch (NumberFormatException e) {
+                submitOrSendUnavailable(workersPool, session,
+                        () -> sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY)));
+                return;
+            }
+
+            submitOrSendUnavailable(workersPool, session, () -> {
+                if (!request.getPath().equals("/v0/entity")
+                        || key == null || key.isEmpty()
+                        || ack > from || ack <= 0) {
+                    sendResponse(session, new Response(Response.BAD_REQUEST, Response.EMPTY));
+                    return;
+                }
+                long time = System.currentTimeMillis();
+                replicasManager.handleReplicatingRequest(session, request, key, time, ack, from);
+            });
+        }
+
+        private static void submitOrSendUnavailable(Executor pool, HttpSession session, Runnable runnable) {
+            try {
+                pool.execute(runnable);
             } catch (RejectedExecutionException e) {
-                workersPool.execute(() ->
-                        sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY)));
+                sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
             }
         }
 
@@ -191,12 +188,37 @@ public class ServiceImpl implements Service {
                 }
             }
             workersPool.shutdown();
+            httpClientPool.shutdown();
             super.stop();
         }
 
     }
 
-    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    private static class ReplicationParams {
+        public final int ack;
+        public final int from;
+
+        private ReplicationParams(int ack, int from) {
+            this.ack = ack;
+            this.from = from;
+        }
+
+        public static ReplicationParams fromHeader(Request request, int clusterSize) throws NumberFormatException {
+            String replicasParam = request.getParameter("replicas=");
+            String ackParam = request.getParameter("ack=");
+            String fromParam = request.getParameter("from=");
+            String[] replicasParams = replicasParam == null ? null : replicasParam.split("/");
+            int from = replicasParams != null ? Integer.parseInt(replicasParams[1]) :
+                    fromParam != null ? Integer.parseInt(fromParam) : clusterSize;
+            int ack = replicasParams != null ? Integer.parseInt(replicasParams[0]) :
+                    ackParam != null ? Integer.parseInt(ackParam) :
+                            from / 2 + 1 <= clusterSize ? from / 2 + 1 : from;
+            return new ReplicationParams(ack, from);
+        }
+
+    }
+
+    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
