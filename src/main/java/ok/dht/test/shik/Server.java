@@ -63,6 +63,8 @@ public final class Server {
     private static final int V_NODES_NUMBER = 50;
     private static final ShardingConfig SHARDING_CONFIG = new ShardingConfig(V_NODES_NUMBER);
     private static final int TIMEOUT_SECONDS = 10;
+    private static final InconsistencyStrategyType INCONSISTENCY_STRATEGY_TYPE
+        = InconsistencyStrategyType.READ_REPAIR_DIGEST;
 
     private Server() {
         // Only main method
@@ -71,7 +73,7 @@ public final class Server {
     public static void main(String[] args) throws IOException,
         ExecutionException, InterruptedException, TimeoutException {
         new ServiceImpl(DEFAULT_CONFIG1, WORKERS_CONFIG, HTTP_CLIENT_WORKERS_CONFIG,
-            SHARDING_CONFIG, InconsistencyStrategyType.READ_REPAIR)
+            SHARDING_CONFIG, INCONSISTENCY_STRATEGY_TYPE)
             .start().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         LOG.info("Socket is ready: " + DEFAULT_URL1);
     }

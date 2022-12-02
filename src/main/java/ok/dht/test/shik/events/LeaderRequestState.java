@@ -18,13 +18,15 @@ public class LeaderRequestState extends AbstractRequestState {
     private final int requiredReplicas;
     private final AtomicBoolean completed;
     private final InconsistencyResolutionStrategy inconsistencyStrategy;
+    private final String mainNodeUrl;
 
     public LeaderRequestState(CommonRequestStateParams commonParams,
-                              int requestedReplicas, int requiredReplicas, List<String> nodeUrls,
+                              int requestedReplicas, int requiredReplicas, List<String> nodeUrls, String mainNodeUrl,
                               InconsistencyResolutionStrategy inconsistencyStrategy) {
         super(commonParams);
         this.requiredReplicas = requiredReplicas;
         this.nodeUrls = nodeUrls;
+        this.mainNodeUrl = mainNodeUrl;
         this.requestedReplicas = requestedReplicas;
         remainToSuccess = new AtomicInteger(requestedReplicas);
         replicaResponses = new ConcurrentHashMap<>();
@@ -34,7 +36,7 @@ public class LeaderRequestState extends AbstractRequestState {
 
     public LeaderRequestState(LeaderRequestState state, InconsistencyResolutionStrategy strategy) {
         this(new CommonRequestStateParams(state.getRequest(), state.getSession(), state.getId(), state.getTimestamp()),
-            state.requestedReplicas, state.requiredReplicas, state.nodeUrls, strategy);
+            state.requestedReplicas, state.requiredReplicas, state.nodeUrls, state.mainNodeUrl, strategy);
 
     }
 
@@ -85,6 +87,10 @@ public class LeaderRequestState extends AbstractRequestState {
 
     public List<String> getNodeUrls() {
         return nodeUrls;
+    }
+
+    public String getMainNodeUrl() {
+        return mainNodeUrl;
     }
 
     @Override

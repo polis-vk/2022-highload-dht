@@ -170,8 +170,9 @@ public class CustomHttpServer extends HttpServer {
             return;
         }
 
+        String mainNodeUrl = shardUrls.contains(selfUrl) ? selfUrl : shardUrls.get(0);
         handleNodeRequests(new LeaderRequestState(commonParams, requestedReplicas, requiredReplicas,
-            shardUrls, getInconsistencyStrategy(shardUrls)));
+            shardUrls, mainNodeUrl, getInconsistencyStrategy(shardUrls)));
     }
 
     private void handleNodeRequests(LeaderRequestState state) {
@@ -404,7 +405,7 @@ public class CustomHttpServer extends HttpServer {
 
     private void handleWhenAllCompletedDigest(LeaderRequestState state) {
         HandlerLeaderResponse handlerResponse = new HandlerLeaderResponse();
-        requestHandler.handleLeaderDigestGet(new HandlerDigestRequest(state, selfUrl), handlerResponse);
+        requestHandler.handleLeaderDigestGet(new HandlerDigestRequest(state, state.getMainNodeUrl()), handlerResponse);
         if (state.getInconsistencyStrategy().shouldRepair() && !handlerResponse.isEqualDigests()) {
             handleNodeRequests(new LeaderRequestState(state, new SimpleResolutionStrategy()));
         } else {

@@ -2,14 +2,14 @@ package ok.dht.test.shik.events;
 
 public class HandlerDigestRequest extends HandlerRequest {
 
-    private final String leaderUrl;
+    private final String mainNodeUrl;
 
-    public HandlerDigestRequest(RequestState state, String leaderUrl) {
+    public HandlerDigestRequest(RequestState state, String mainNodeUrl) {
         super(state);
-        this.leaderUrl = leaderUrl;
+        this.mainNodeUrl = mainNodeUrl;
     }
 
     public String getLeaderUrl() {
-        return leaderUrl;
+        return mainNodeUrl;
     }
 }
