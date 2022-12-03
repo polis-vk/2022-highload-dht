@@ -60,7 +60,7 @@ public class RequestsHandler {
         return httpRequest.build();
     }
 
-    public Response handleInternalRequest(Request request, HttpSession session, CircuitBreakerImpl circuitBreaker) {
+    public Response handleInternalRequest(Request request, CircuitBreakerImpl circuitBreaker) {
         int methodNum = request.getMethod();
         Response response;
         String id = request.getParameter("id=");

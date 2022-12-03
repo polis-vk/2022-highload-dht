@@ -117,7 +117,7 @@ public class DemoHttpServer extends HttpServer {
     private void executeHandlingRequest(Request request, HttpSession session, String key, int ack, int from)
             throws IOException {
         if (request.getHeader("internal") != null || request.getPath().contains("/service/message")) {
-            Response response = requestsHandler.handleInternalRequest(request, session, circuitBreaker);
+            Response response = requestsHandler.handleInternalRequest(request, circuitBreaker);
             if (response == null) {
                 tryToSendResponseWithEmptyBody(session, Response.SERVICE_UNAVAILABLE);
                 return;
@@ -203,7 +203,7 @@ public class DemoHttpServer extends HttpServer {
     private CompletableFuture<Response> getInternalResponse(Request request, HttpSession session) {
         final CompletableFuture<Response> responseCompletableFuture = new CompletableFuture<>();
         workersPool.execute(() -> {
-            Response response = requestsHandler.handleInternalRequest(request, session, circuitBreaker);
+            Response response = requestsHandler.handleInternalRequest(request, circuitBreaker);
             if (response == null) {
                 responseCompletableFuture.completeExceptionally(new IllegalArgumentException());
                 return;
