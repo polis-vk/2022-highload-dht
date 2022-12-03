@@ -129,7 +129,7 @@ public class DemoHttpServer extends HttpServer {
         List<String> targetNodes = HttpServerUtils.INSTANCE.getNodesSortedByRendezvousHashing(key, circuitBreaker,
                 serviceConfig, from);
         List<HttpRequest> httpRequests = requestsHandler.getHttpRequests(request, key, targetNodes, serviceConfig);
-        CompletableFuture<List<Response>> completableFuture = getResponses(request, session, ack, httpRequests)
+        CompletableFuture<List<Response>> completableFuture = getResponses(request, ack, httpRequests)
                 .whenComplete((list, throwable) -> {
                     if (throwable != null || list == null || list.size() < ack) {
                         tryToSendResponseWithEmptyBody(session, RESPONSE_NOT_ENOUGH_REPLICAS);
@@ -173,8 +173,7 @@ public class DemoHttpServer extends HttpServer {
         ));
     }
 
-    private CompletableFuture<List<Response>> getResponses(Request request, HttpSession session, int ack,
-                                                           List<HttpRequest> httpRequests) {
+    private CompletableFuture<List<Response>> getResponses(Request request, int ack, List<HttpRequest> httpRequests) {
         final CompletableFuture<List<Response>> resultFuture = new CompletableFuture<>();
         List<Response> responses = new CopyOnWriteArrayList<>();
         AtomicInteger successCount = new AtomicInteger(ack);
