@@ -181,7 +181,7 @@ public class DemoHttpServer extends HttpServer {
         // если ack < from, допускаем from - ack + 1 ошибку
         AtomicInteger errorCount = new AtomicInteger(httpRequests.size() - ack + 1);
         for (HttpRequest httpRequest : httpRequests) {
-            CompletableFuture<Response> completableFuture = (httpRequest == null ? getInternalResponse(request, session)
+            CompletableFuture<Response> completableFuture = (httpRequest == null ? getInternalResponse(request)
                     : proxyRequest(httpRequest))
                     .whenComplete((response, throwable) -> {
                         if (response == null) {
@@ -200,7 +200,7 @@ public class DemoHttpServer extends HttpServer {
         return resultFuture;
     }
 
-    private CompletableFuture<Response> getInternalResponse(Request request, HttpSession session) {
+    private CompletableFuture<Response> getInternalResponse(Request request) {
         final CompletableFuture<Response> responseCompletableFuture = new CompletableFuture<>();
         workersPool.execute(() -> {
             Response response = requestsHandler.handleInternalRequest(request, circuitBreaker);

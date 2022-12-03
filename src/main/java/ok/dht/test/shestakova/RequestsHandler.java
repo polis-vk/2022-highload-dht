@@ -5,7 +5,6 @@ import ok.dht.ServiceConfig;
 import ok.dht.test.shestakova.dao.MemorySegmentDao;
 import ok.dht.test.shestakova.dao.base.BaseEntry;
 import ok.dht.test.shestakova.exceptions.MethodNotAllowedException;
-import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;
