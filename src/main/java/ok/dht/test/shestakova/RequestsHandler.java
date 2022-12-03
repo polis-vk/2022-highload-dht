@@ -5,6 +5,7 @@ import ok.dht.ServiceConfig;
 import ok.dht.test.shestakova.dao.MemorySegmentDao;
 import ok.dht.test.shestakova.dao.base.BaseEntry;
 import ok.dht.test.shestakova.exceptions.MethodNotAllowedException;
+import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;
@@ -13,6 +14,7 @@ import java.net.URI;
 import java.net.http.HttpRequest;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 
@@ -56,6 +58,31 @@ public class RequestsHandler {
         }
         httpRequest.setHeader("internal", "true");
         return httpRequest.build();
+    }
+
+    public Response handleInternalRequest(Request request, HttpSession session, CircuitBreakerImpl circuitBreaker) {
+        int methodNum = request.getMethod();
+        Response response;
+        String id = request.getParameter("id=");
+        if (methodNum == Request.METHOD_GET) {
+            response = handleGet(id);
+        } else if (methodNum == Request.METHOD_PUT) {
+            String requestPath = request.getPath();
+            if (requestPath.contains("/service/message")) {
+                circuitBreaker.putNodesIllnessInfo(Arrays.toString(request.getBody()),
+                        "/service/message/ill".equals(requestPath));
+                return null;
+            }
+            response = handlePut(request, id);
+        } else if (methodNum == Request.METHOD_DELETE) {
+            response = handleDelete(id);
+        } else {
+            response = new Response(
+                    Response.METHOD_NOT_ALLOWED,
+                    Response.EMPTY
+            );
+        }
+        return response;
     }
 
     public Response handleGet(@Param(value = "id") String id) {

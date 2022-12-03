@@ -20,7 +20,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -115,12 +114,15 @@ public class DemoHttpServer extends HttpServer {
         return new DemoHttpSession(socket, this);
     }
 
-    private void executeHandlingRequest(Request request, HttpSession session, String key, int ack, int from) throws IOException {
+    private void executeHandlingRequest(Request request, HttpSession session, String key, int ack, int from)
+            throws IOException {
         if (request.getHeader("internal") != null || request.getPath().contains("/service/message")) {
-            Response response = handleInternalRequest(request, session);
-            if (response != null) {
-                session.sendResponse(response);
+            Response response = requestsHandler.handleInternalRequest(request, session, circuitBreaker);
+            if (response == null) {
+                tryToSendResponseWithEmptyBody(session, Response.SERVICE_UNAVAILABLE);
+                return;
             }
+            session.sendResponse(response);
             return;
         }
 
@@ -179,7 +181,8 @@ public class DemoHttpServer extends HttpServer {
         // если ack < from, допускаем from - ack + 1 ошибку
         AtomicInteger errorCount = new AtomicInteger(httpRequests.size() - ack + 1);
         for (HttpRequest httpRequest : httpRequests) {
-            (httpRequest == null ? getInternalResponse(request, session) : proxyRequest(httpRequest))
+            CompletableFuture<Response> completableFuture = (httpRequest == null ? getInternalResponse(request, session)
+                    : proxyRequest(httpRequest))
                     .whenComplete((response, throwable) -> {
                         if (response == null) {
                             if (errorCount.decrementAndGet() == 0) {
@@ -192,6 +195,7 @@ public class DemoHttpServer extends HttpServer {
                             resultFuture.complete(responses);
                         }
                     });
+            checkCompletableFuture(completableFuture);
         }
         return resultFuture;
     }
@@ -199,7 +203,7 @@ public class DemoHttpServer extends HttpServer {
     private CompletableFuture<Response> getInternalResponse(Request request, HttpSession session) {
         final CompletableFuture<Response> responseCompletableFuture = new CompletableFuture<>();
         workersPool.execute(() -> {
-            Response response = handleInternalRequest(request, session);
+            Response response = requestsHandler.handleInternalRequest(request, session, circuitBreaker);
             if (response == null) {
                 responseCompletableFuture.completeExceptionally(new IllegalArgumentException());
                 return;
@@ -245,32 +249,6 @@ public class DemoHttpServer extends HttpServer {
         } catch (IOException e) {
             LOGGER.error("Error while sending response in server {}", serviceConfig.selfUrl());
         }
-    }
-
-    private Response handleInternalRequest(Request request, HttpSession session) {
-        int methodNum = request.getMethod();
-        Response response;
-        String id = request.getParameter("id=");
-        if (methodNum == Request.METHOD_GET) {
-            response = requestsHandler.handleGet(id);
-        } else if (methodNum == Request.METHOD_PUT) {
-            String requestPath = request.getPath();
-            if (requestPath.contains("/service/message")) {
-                circuitBreaker.putNodesIllnessInfo(Arrays.toString(request.getBody()),
-                        "/service/message/ill".equals(requestPath));
-                tryToSendResponseWithEmptyBody(session, Response.SERVICE_UNAVAILABLE);
-                return null;
-            }
-            response = requestsHandler.handlePut(request, id);
-        } else if (methodNum == Request.METHOD_DELETE) {
-            response = requestsHandler.handleDelete(id);
-        } else {
-            response = new Response(
-                    Response.METHOD_NOT_ALLOWED,
-                    Response.EMPTY
-            );
-        }
-        return response;
     }
 
     @Override
