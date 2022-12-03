@@ -236,7 +236,17 @@ public class ServiceImpl implements CustomService {
     @Override
     public void handleDelete(HandlerRequest request, HandlerResponse response) {
         byte[] key = request.getState().getId().getBytes(StandardCharsets.UTF_8);
-        levelDB.put(key, serializer.serialize(new DBValue(null, request.getState().getTimestamp())));
+        if (inconsistencyStrategyType == InconsistencyStrategyType.NONE) {
+            levelDB.put(key, serializer.serialize(new DBValue(null, request.getState().getTimestamp())));
+        } else {
+            Lock readLock = repairLock.readLock();
+            readLock.lock();
+            try {
+                levelDB.put(key, serializer.serialize(new DBValue(null, request.getState().getTimestamp())));
+            } finally {
+                readLock.unlock();
+            }
+        }
         response.setResponse(new Response(Response.ACCEPTED, Response.EMPTY));
     }
 
