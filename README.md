@@ -160,3 +160,22 @@ HTTP API расширяется query-параметрами `from` и `ack`, с
 
 ### Report
 После прохождения модульных тестов, присылайте pull request с изменениями.
+
+## Этап 7. Бонусный (deadline 2022-11-30 23:59:59 MSK)
+
+Фичи, которые позволяют получить дополнительные баллы (при условии **добавления набора тестов**, демонстрирующих корректность, где применимо):
+* Развёрнутая конструктивная обратная связь по курсу: достоинства и недостатки курса, сложность тем, предложения по улучшению
+* Кластерные range-запросы с учётом шардирования и репликации
+* Read repair при обнаружении расхождений между репликами
+* Expire: возможность указания [времени жизни записей](https://en.wikipedia.org/wiki/Time_to_live)
+* Server-side processing: трансформация данных с помощью скрипта, запускаемого на узлах кластера через API
+* Нагрузочное тестирование при помощи [Y!CSB](https://github.com/brianfrankcooper/YCSB)
+* Нагрузочное тестирование при помощи [Yandex.Tank](https://overload.yandex.net)
+* Регулярный автоматический фоновый compaction (модульные и нагрузочные тесты)
+* Hinted handoff [по аналогии с Cassandra](https://cassandra.apache.org/doc/latest/operating/hints.html)
+* Устранение неконсистентностей между репликами [по аналогии с Cassandra](https://www.datastax.com/blog/advanced-repair-techniques) [nodetool repair](https://docs.datastax.com/en/archived/cassandra/2.0/cassandra/operations/ops_repair_nodes_c.html), например, на основе [Merkle Tree](https://en.wikipedia.org/wiki/Merkle_tree)
+* Тесты для consistent/rendezvous hashing, демонстрирующие равномерность распределения данных
+* Блочная компрессия данных на основе LZ4/zSTD/...
+* Что-нибудь **своё**?
+
+Перед началом работ продумайте и согласуйте с преподавателем её технический дизайн и получите вспомогательные материалы.

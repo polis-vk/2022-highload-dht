@@ -79,6 +79,7 @@ class Storage implements Closeable {
         Path sstableTmpPath = sstablePath.resolveSibling(sstablePath.getFileName().toString() + FILE_EXT_TMP);
 
         Files.deleteIfExists(sstableTmpPath);
+        Files.createDirectories(sstableTmpPath.getParent());
         Files.createFile(sstableTmpPath);
 
         try (ResourceScope writeScope = ResourceScope.newConfinedScope()) {
