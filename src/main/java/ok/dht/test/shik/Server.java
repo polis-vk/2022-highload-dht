@@ -64,7 +64,7 @@ public final class Server {
     private static final ShardingConfig SHARDING_CONFIG = new ShardingConfig(V_NODES_NUMBER);
     private static final int TIMEOUT_SECONDS = 10;
     private static final InconsistencyStrategyType INCONSISTENCY_STRATEGY_TYPE
-        = InconsistencyStrategyType.READ_REPAIR_DIGEST;
+        = InconsistencyStrategyType.READ_REPAIR;
 
     private Server() {
         // Only main method
