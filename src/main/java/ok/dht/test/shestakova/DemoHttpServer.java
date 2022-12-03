@@ -65,6 +65,12 @@ public class DemoHttpServer extends HttpServer {
             return;
         }
 
+        int methodNum = request.getMethod();
+        if (methodNum != Request.METHOD_GET && methodNum != Request.METHOD_PUT && methodNum != Request.METHOD_DELETE) {
+            tryToSendResponseWithEmptyBody(session, Response.METHOD_NOT_ALLOWED);
+            return;
+        }
+
         String fromString = request.getParameter("from=");
         String ackString = request.getParameter("ack=");
         int from = fromString == null || fromString.isEmpty() ? serviceConfig.clusterUrls().size()
@@ -76,11 +82,9 @@ public class DemoHttpServer extends HttpServer {
             return;
         }
 
-        List<String> targetNodes = HttpServerUtils.INSTANCE.getNodesSortedByRendezvousHashing(key, circuitBreaker,
-                serviceConfig, from);
         workersPool.execute(() -> {
             try {
-                executeHandlingRequest(request, session, key, ack, targetNodes);
+                executeHandlingRequest(request, session, key, ack, from);
             } catch (MethodNotAllowedException e) {
                 LOGGER.error("Method not allowed {} method: {}", serviceConfig.selfUrl(), request.getMethod());
                 tryToSendResponseWithEmptyBody(session, Response.METHOD_NOT_ALLOWED);
@@ -111,8 +115,7 @@ public class DemoHttpServer extends HttpServer {
         return new DemoHttpSession(socket, this);
     }
 
-    private void executeHandlingRequest(Request request, HttpSession session, String key, int ack,
-                                        List<String> targetNodes) throws IOException {
+    private void executeHandlingRequest(Request request, HttpSession session, String key, int ack, int from) throws IOException {
         if (request.getHeader("internal") != null || request.getPath().contains("/service/message")) {
             Response response = handleInternalRequest(request, session);
             if (response != null) {
@@ -121,8 +124,10 @@ public class DemoHttpServer extends HttpServer {
             return;
         }
 
+        List<String> targetNodes = HttpServerUtils.INSTANCE.getNodesSortedByRendezvousHashing(key, circuitBreaker,
+                serviceConfig, from);
         List<HttpRequest> httpRequests = requestsHandler.getHttpRequests(request, key, targetNodes, serviceConfig);
-        getResponses(request, session, ack, httpRequests)
+        CompletableFuture<List<Response>> completableFuture = getResponses(request, session, ack, httpRequests)
                 .whenComplete((list, throwable) -> {
                     if (throwable != null || list == null || list.size() < ack) {
                         tryToSendResponseWithEmptyBody(session, RESPONSE_NOT_ENOUGH_REPLICAS);
@@ -139,6 +144,7 @@ public class DemoHttpServer extends HttpServer {
                         tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
                     }
                 });
+        checkCompletableFuture(completableFuture);
     }
 
     private void aggregateResponsesAndSend(HttpSession session, List<Response> responses) throws IOException {
@@ -173,42 +179,61 @@ public class DemoHttpServer extends HttpServer {
         // если ack < from, допускаем from - ack + 1 ошибку
         AtomicInteger errorCount = new AtomicInteger(httpRequests.size() - ack + 1);
         for (HttpRequest httpRequest : httpRequests) {
-            if (httpRequest == null) {
-                Response response = handleInternalRequest(request, session);
-                responses.add(response);
-                if (successCount.decrementAndGet() == 0) {
-                    resultFuture.complete(responses);
-                    break;
-                }
-                continue;
-            }
-            sendAsync(resultFuture, responses, successCount, errorCount, httpRequest);
+            (httpRequest == null ? getInternalResponse(request, session) : proxyRequest(httpRequest))
+                    .whenComplete((response, throwable) -> {
+                        if (response == null) {
+                            if (errorCount.decrementAndGet() == 0) {
+                                resultFuture.completeExceptionally(new NotEnoughReplicasException());
+                            }
+                            return;
+                        }
+                        responses.add(response);
+                        if (successCount.decrementAndGet() == 0) {
+                            resultFuture.complete(responses);
+                        }
+                    });
         }
         return resultFuture;
     }
 
-    private void sendAsync(CompletableFuture<List<Response>> resultFuture, List<Response> responses,
-                           AtomicInteger successCount, AtomicInteger errorCount, HttpRequest httpRequest) {
-        httpClient
+    private CompletableFuture<Response> getInternalResponse(Request request, HttpSession session) {
+        final CompletableFuture<Response> responseCompletableFuture = new CompletableFuture<>();
+        workersPool.execute(() -> {
+            Response response = handleInternalRequest(request, session);
+            if (response == null) {
+                responseCompletableFuture.completeExceptionally(new IllegalArgumentException());
+                return;
+            }
+            responseCompletableFuture.complete(response);
+        });
+        return responseCompletableFuture;
+    }
+
+    private CompletableFuture<Response> proxyRequest(HttpRequest httpRequest) {
+        final CompletableFuture<Response> responseCompletableFuture = new CompletableFuture<>();
+        CompletableFuture<HttpResponse<byte[]>> completableFuture = httpClient
                 .sendAsync(
                         httpRequest,
                         HttpResponse.BodyHandlers.ofByteArray()
                 )
                 .whenComplete((response, throwable) -> {
                     if (throwable != null) {
-                        if (errorCount.decrementAndGet() == 0) {
-                            resultFuture.completeExceptionally(new NotEnoughReplicasException());
-                        }
+                        responseCompletableFuture.completeExceptionally(new IllegalArgumentException());
                         return;
                     }
-                    responses.add(new Response(
+                    responseCompletableFuture.complete(new Response(
                             StatusCodes.statuses.getOrDefault(response.statusCode(), "UNKNOWN ERROR"),
                             response.body()
                     ));
-                    if (successCount.decrementAndGet() == 0) {
-                        resultFuture.complete(responses);
-                    }
                 });
+        checkCompletableFuture(completableFuture);
+        return responseCompletableFuture;
+    }
+
+    private void checkCompletableFuture(CompletableFuture<?> completableFuture) {
+        if (completableFuture == null) {
+            LOGGER.error("Internal error in server {} during working with CF", serviceConfig.selfUrl());
+        }
     }
 
     private void tryToSendResponseWithEmptyBody(HttpSession session, String resultCode) {
