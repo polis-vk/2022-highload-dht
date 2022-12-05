@@ -15,7 +15,6 @@ import one.nio.server.SelectorThread;
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 
 public final class Server extends HttpServer {
@@ -62,7 +61,7 @@ public final class Server extends HttpServer {
     public void handleRequest(Request request, HttpSession session) throws IOException {
         try {
             executorService.execute(() -> wrappedHandleRequest(request, session));
-        } catch (RejectedExecutionException e) {
+        } catch (Exception e) {
             session.sendResponse(ResponseEntity.serviceUnavailable());
         }
     }

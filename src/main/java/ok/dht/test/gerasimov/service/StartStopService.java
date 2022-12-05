@@ -31,23 +31,32 @@ public class StartStopService implements Service {
             this.dao = Factory.createDao(serviceConfig.workingDir());
 
             ConsistentHash<String> consistentHash = Factory.createConsistentHash(serviceConfig);
+            CircuitBreakerClient client = new CircuitBreakerClient();
 
             HandleService entityService = new EntityService(
                     dao,
                     consistentHash,
                     serviceConfig.selfPort(),
-                    new CircuitBreakerClient()
+                    client
             );
 
             HandleService entitiesService = new EntitiesService(
                     dao
             );
 
+            HandleService mapReduceService = new MapReduceService(
+                    dao,
+                    consistentHash,
+                    serviceConfig.selfPort(),
+                    client
+            );
+
             this.httpServer = Factory.createHttpServer(
                     serviceConfig,
                     Map.of(
                             entityService.getEndpoint(), entityService,
-                            entitiesService.getEndpoint(), entitiesService
+                            entitiesService.getEndpoint(), entitiesService,
+                            mapReduceService.getEndpoint(), mapReduceService
                     )
             );
 
