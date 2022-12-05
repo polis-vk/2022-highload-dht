@@ -42,6 +42,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 public class RocksDBService implements Service {
@@ -58,10 +59,12 @@ public class RocksDBService implements Service {
     
     private static final String V0_ENTITY = "/v0/entity";
     private static final String V0_ENTITIES = "/v0/entities";
+    private static final String V0_CLEAN = "/v0/clean";
     private static final Logger LOG = LoggerFactory.getLogger(RocksDBService.class);
 
     private final ServiceConfig config;
     private final KeyManager keyManager = new ConsistentHashing();
+    private final AtomicBoolean clean = new AtomicBoolean(false);
 
     public RocksDBDao dao;
     private HttpServer httpServer;
@@ -187,6 +190,10 @@ public class RocksDBService implements Service {
                 try {
                     executor.execute(() -> {
                         try {
+                            if (clean.get()) {
+                                session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                                return;
+                            }
                             multiplex(request, session);
                         } catch (Exception e) {
                             try {
@@ -234,6 +241,12 @@ public class RocksDBService implements Service {
                 case V0_ENTITIES -> {
                     switch (request.getMethod()) {
                         case Request.METHOD_GET -> v0EntitiesGet(request, session);
+                        default -> throw new MethodNotAllowedException();
+                    }
+                }
+                case V0_CLEAN -> {
+                    switch (request.getMethod()) {
+                        case Request.METHOD_GET -> v0Clean(request, session);
                         default -> throw new MethodNotAllowedException();
                     }
                 }
@@ -486,6 +499,33 @@ public class RocksDBService implements Service {
                 // No ops.
             }
         });
+    }
+
+    private void v0Clean(Request request, HttpSession session) throws IOException {
+        if (!clean.compareAndSet(false, true)) {
+            session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
+            return;
+        }
+        try {
+            session.sendResponse(new Response(Response.OK, Response.EMPTY));
+            executor.execute(() -> {
+                long timestamp = System.currentTimeMillis();
+                EntryIterator it = dao.range();
+                while (it.hasNext()) {
+                    Entry entry = it.next();
+                    if (entry.timestamp() + entry.ttl() < timestamp
+                            || entry.value() == null) {
+                        try {
+                            dao.db.delete(entry.key());
+                        } catch (RocksDBException e) {
+                            LOG.error("Could not delete entry", e);
+                        }
+                    }
+                }
+            });
+        } finally {
+            clean.set(false);
+        }
     }
 
     @ServiceFactory(stage = 7, week = 1, bonuses = "SingleNodeTest#respectFileFolder")

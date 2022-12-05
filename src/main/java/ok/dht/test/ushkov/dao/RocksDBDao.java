@@ -63,4 +63,8 @@ public class RocksDBDao {
     public EntryIterator range(byte[] from) {
         return new EntryIterator(db, from);
     }
+
+    public EntryIterator range() {
+        return new EntryIterator(db);
+    }
 }
