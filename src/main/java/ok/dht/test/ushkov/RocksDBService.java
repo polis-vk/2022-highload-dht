@@ -302,7 +302,8 @@ public class RocksDBService implements Service {
                 this::executeV0EntityPut, this::aggregateV0EntityPut);
     }
 
-    private Response executeV0EntityPut(String id, byte[] body, long timestamp, long ttl) throws InternalErrorException {
+    private Response executeV0EntityPut(String id, byte[] body,
+                                        long timestamp, long ttl) throws InternalErrorException {
         try {
             dao.put(Utf8.toBytes(id), body, timestamp, ttl);
 

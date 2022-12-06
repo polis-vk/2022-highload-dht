@@ -34,13 +34,12 @@ public class EntryIterator implements Iterator<Entry> {
         if (!rocksIterator.isValid()) {
             return false;
         }
-        if (to != null) {
-            String key = new String(rocksIterator.key(), StandardCharsets.UTF_8);
-            String toString = new String(to, StandardCharsets.UTF_8);
-            return key.compareTo(toString) < 0;
-        } else {
+        if (to == null) {
             return true;
         }
+        String key = new String(rocksIterator.key(), StandardCharsets.UTF_8);
+        String toString = new String(to, StandardCharsets.UTF_8);
+        return key.compareTo(toString) < 0;
     }
 
     @Override

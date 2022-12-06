@@ -45,7 +45,7 @@ public class RocksDBDao {
     public void delete(byte[] key, long timestamp) throws RocksDBException {
         ByteBuffer buffer = ByteBuffer.allocate(2 * Long.BYTES + 1);
         buffer.putLong(timestamp);
-        buffer.putLong(0);    // ttl(forever)
+        buffer.putLong(0); // ttl(forever)
         buffer.put((byte) 1); // tombstone
 
         Entry entry = Entry.newEntry(key, db.get(key));
