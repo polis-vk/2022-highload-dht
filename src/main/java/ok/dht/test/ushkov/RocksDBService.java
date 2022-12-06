@@ -43,6 +43,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 
 public class RocksDBService implements Service {
@@ -56,7 +57,7 @@ public class RocksDBService implements Service {
     public static final int NODE_QUEUE_TASKS_LIMIT = 128;
     public static final int NODE_QUEUE_TASKS_ON_EXECUTOR_LIMIT = 3;
     public static final int CHUNK_SIZE = 512;
-    
+
     private static final String V0_ENTITY = "/v0/entity";
     private static final String V0_ENTITIES = "/v0/entities";
     private static final String V0_CLEAN = "/v0/clean";
@@ -64,7 +65,12 @@ public class RocksDBService implements Service {
 
     private final ServiceConfig config;
     private final KeyManager keyManager = new ConsistentHashing();
+
+    // atomic bool added to distinguish two situations in handle /v0/clean:
+    // - read lock acquired
+    // - another cleaning is started
     private final AtomicBoolean clean = new AtomicBoolean(false);
+    private final ReentrantReadWriteLock cleanLock = new ReentrantReadWriteLock();
 
     public RocksDBDao dao;
     private HttpServer httpServer;
@@ -190,11 +196,15 @@ public class RocksDBService implements Service {
                 try {
                     executor.execute(() -> {
                         try {
-                            if (clean.get()) {
+                            if (!cleanLock.readLock().tryLock()) {
                                 session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
                                 return;
                             }
-                            multiplex(request, session);
+                            try {
+                                multiplex(request, session);
+                            } finally {
+                                cleanLock.readLock().unlock();
+                            }
                         } catch (Exception e) {
                             try {
                                 session.sendError(Response.SERVICE_UNAVAILABLE, "Internal error");
@@ -227,7 +237,7 @@ public class RocksDBService implements Service {
     }
 
     private void multiplex(Request request, HttpSession session)
-            throws IOException, InternalErrorException {
+            throws IOException, InternalErrorException, RocksDBException {
         try {
             switch (request.getPath()) {
                 case V0_ENTITY -> {
@@ -502,29 +512,29 @@ public class RocksDBService implements Service {
         });
     }
 
-    private void v0Clean(Request request, HttpSession session) throws IOException {
-        if (!clean.compareAndSet(false, true)) {
-            session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
-            return;
-        }
+    private void v0Clean(Request request, HttpSession session)
+            throws IOException, RocksDBException {
         try {
+            if (!clean.compareAndSet(false, true)) {
+                session.sendResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
+                return;
+            }
+            cleanLock.readLock().unlock(); // read lock of this thread
+            cleanLock.writeLock().lock();
             session.sendResponse(new Response(Response.OK, Response.EMPTY));
-            executor.execute(() -> {
-                long timestamp = System.currentTimeMillis();
-                EntryIterator it = dao.range();
-                while (it.hasNext()) {
-                    Entry entry = it.next();
-                    if (entry.timestamp() + entry.ttl() < timestamp
-                            || entry.value() == null) {
-                        try {
-                            dao.db.delete(entry.key());
-                        } catch (RocksDBException e) {
-                            LOG.error("Could not delete entry", e);
-                        }
-                    }
+            long timestamp = System.currentTimeMillis();
+            EntryIterator it = dao.range();
+            while (it.hasNext()) {
+                Entry entry = it.next();
+                if (entry.timestamp() + entry.ttl() < timestamp
+                        || entry.value() == null) {
+                    dao.db.delete(entry.key());
                 }
-            });
+            }
+            dao.db.compactRange();
         } finally {
+            cleanLock.writeLock().unlock();
+            cleanLock.readLock().lock();
             clean.set(false);
         }
     }
