@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 4px 8px 24px; background-color: #ffffff; overflow-y: scroll}
+    h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {margin: 5px 0 5px 0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {overflow: hidden; white-space: nowrap}
+	#match {overflow: hidden; white-space: nowrap; display: none; float: right; text-align: right}
+	#reset {cursor: pointer}
+	#canvas {width: 100%; height: 300px}
+
+    .selectionPart {position: absolute; display: none; pointer-events: none; box-sizing: border-box;}
+    .sel {background-color: #dada0040}
+    .act {background-color: #00da0040}
+    .dif {background-color: #00dada40}
+    .top {border-top: .1px solid #000}
+    .left {border-left: .1px solid #000}
+    .bottom {border-bottom: .1px solid #000}
+    .right {border-right: .1px solid #000}
+
+    #info-tooltip {display: none; position: absolute; top: 100px; right: 32px; width: 204px; border: 1px solid #666666; background: #ffffe0; border-radius: 8px; padding: 4px}
+    #heatmap-height-line, #heatmap-info { text-decoration: #0366d6 dashed underline; cursor: pointer; font-family: monospace}
+    #heatmap-info {cursor: help}
+    #heatmap-info:hover + #info-tooltip {display: block}
+
+    .colortip {width: 100px; box-sizing: border-box; padding: 4px; background: linear-gradient(var(--c1), var(--c2))}
+
+
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+
+
+<div style="display: flex">
+    <div style="width: 20px; margin-right: 2px; float: left; writing-mode: vertical-rl; transform: scale(-1); text-align: center; user-select: none"><pre id="heatmap-height-line"> 1 sec : 20 ms </pre></div>
+
+    <div id='heatmap-canvas-container' style="width: 100%; position: relative" autofocus>
+        <div id='heatmap-canvas-wrapper' style='overflow: hidden; width: 100%'>
+            <canvas id='heatmap-canvas' style='height: 314px'></canvas>
+        </div>
+
+        <div id='middleActive' class='selectionPart top bottom act'><span></span></div>
+        <div id='leftActive' class='selectionPart top left bottom act'><span></span></div>
+        <div id='rightActive' class='selectionPart top right bottom act'><span></span></div>
+        <div id='leftMiddleActive' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleActive' class='selectionPart left'><span></span></div>
+
+        <div id='middleSelection' class='selectionPart top bottom sel'><span></span></div>
+        <div id='leftSelection' class='selectionPart top left bottom sel'><span></span></div>
+        <div id='rightSelection' class='selectionPart top right bottom sel'><span></span></div>
+        <div id='leftMiddleSelection' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleSelection' class='selectionPart left'><span></span></div>
+
+        <div id='middleDiff' class='selectionPart top bottom dif'><span></span></div>
+        <div id='leftDiff' class='selectionPart top left bottom dif'><span></span></div>
+        <div id='rightDiff' class='selectionPart top right bottom dif'><span></span></div>
+        <div id='leftMiddleDiff' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleDiff' class='selectionPart left'><span></span></div>
+    </div>
+
+    <div id="heatmap-info" style="width: 20px; margin-right: 2px; writing-mode: vertical-rl; text-align: center; user-select: none">
+        <pre> Info </pre>
+    </div>
+    <div id="info-tooltip">
+        <div style="float:left">
+            <div style="padding: 4px;">Frame types:</div>
+            <div class="colortip" style="--c1:#b2e1b2;--c2:#c6f5c6">Interpreted</div>
+            <div class="colortip" style="--c1:#50e150;--c2:#6eff6e">JIT-Compiled</div>
+            <div class="colortip" style="--c1:#50cccc;--c2:#6eeaea">Inlined</div>
+            <div class="colortip" style="--c1:#e15a5a;--c2:#ff8282">Native</div>
+            <div class="colortip" style="--c1:#c8c83c;--c2:#e6e646">C++</div>
+            <div class="colortip" style="--c1:#e17d00;--c2:#ff9b00">Kernel</div>
+            <div class="colortip" style="--c1:#cce880;--c2:#e0fc94">C1-Compiled</div>
+        </div>
+        <div style="float:left; margin-left: 4px">
+            <div style="padding: 4px;">Special colors:</div>
+            <div class="colortip" style="--c1:#ee00ee;--c2:#ee00ee">Matches regexp</div>
+            <div class="colortip" style="--c1:#baa551;--c2:#baa551">New frames</div>
+            <div class="colortip" style="--c1:#f0f0c0;--c2:#f0f0c0">Same frames</div>
+            <div class="colortip" style="--c1:#99aaff;--c2:#99aaff">Less frames</div>
+            <div class="colortip" style="--c1:#ffaa99;--c2:#ffaa99">More frames</div>
+        </div>
+        <div style="float:left; margin-top: 4px; width: 100%; border: 1px solid #666666; border-radius: 2px; padding: 2px; box-sizing: border-box;">
+            Shift + Click - Select range<br>
+            Ctrl + Click - Compare<br>
+            Ctrl + F - Search<br>
+        </div>
+    </div>
+</div>
+<div id="executionsHeatmap" style="display:none">BFxDAIZh@w@tAx|AhbG???a??@p??RxW??cGBWLGZP`XRCIRpPRPhNKGhH`WhJYRKQYQ`LIKHSJQ`hJRKIpH`KH```LHTH`KQTGTIhJYRKHiWhSHUGLHSh?pBpSHTI``KI``ZRpWpJSI`\J[HhQhKJ\G`[KITHTJ`IxW```KIhCMGaI`ZQhKMIhKJ`Jh`RZKLG`pKH`hKKJkGx?xFJhaDIDOiZpFIpSRUJ`XxLPphEHhhUHphTJp[LHh\KIp`[IhUKIaTH`\MKKKKJ[KKKLMJ[LJ]KLKLI`pBha`cGh`EJaMJ``xSLI``aTI`\LKKKLIx`UKLIp`\LIh]I`xMIp`h[KJph``\KKMI```h[LKJp]J`pLIpZh`hTI`ph\I`p``bEHa`pKPiDLLLKKKKLJp`hVIaTMJhpTLIx]Ix`hVKKKLJphTMMJ`TMLJ`[KPh`x``Rxh``TKKPSLMKKJhhxJ`phhSKKNIrFGbKJph\KKRhSTJ`xhLLR\KQ`hxUKKOxVJxZa^Ix\JhpVJ`\Jx`]LNIhhp``p^HphxTMNHpppLLKQhph\KNKMKLNWENMIah`\PpppVNIppxNR`p`h[Rhx``xh]KQhphhhx\MHxUKQxhh\MJ`p``ph]MKJa``haX`xX`h]I\KI\J[HxLJTKLJ`[Pz@px`\KJ`p\J`pKPp[KKIp`PaR]LILJJJh[Ih``VI`SKKI```TJp[Jh`ZxhUKJhh`]LHxhZpZ`aXhxR`h`h`h\MIh`hSJhMITLHTIRZQpHEHhIX[IC`?LJ`IX``OGxQ@@NHJ[IEGCKHWVHHUKGpWCI`CKIVKIp[KKJ`xKMGppLHa`SPhxULKIaYaLNIhxSKPpxKQ`aHhxZiLMIp``KKJ\LLHp\IhZh`SKLLJh`LNWFQ]IEJ`pSQUP[P[QMKHphUH`hY`hSLJ\KJ^H`Z`TI[J`[I\HphYpZx\JPGZZpJaVJ]IhpYp\LIp`h[Jp``p\KLKLJx`xhh`hSNJppUKMMKNMKKN`IiVP`p`aZa`h`hxpVJpaULLMIphTLMKLKKKRhxVLHi\MIaXxh```h`h``h\LJYpLJ`\JhQpTMI`\HhMJh@ahKJhVJUH?SJ`YpTIhNJ``[LJhTI\Jh\WFOhx[OpxEMGxhMJ```TLI`xSLKIaYx\RVJph^J]IZxJxZxMLKNKLLLLKLLKNKMMLKKKLJxSLMNJ`hh`p`hxUKMLIa\MHahx`VJ^KLLJpTKQx[WbCKPq@yQaKKOppBaJxRLOTQSOSLKIxTLJVILNGx`[MKMIppCMIppKQ]LHpJWp`NJZpOiXiUMHi^LHiTNHiVLIi[MG[P`iCNH`xSLI]KIp[JpkGFPCWCWUOhxUOhx\ODNGxh[PhxLLJphhp`aUMHiOhh[LJ`pSLJ`hW`xLNGiWhxBxOx`HqGiWiWiWaWxhOahFJKRTLHahp`[SKQaZxQi[Qx`JprFO`aMPhp[Q[OTLKLPx[NKLKIYpMLKNJ`pph```UMLKJpppZppp^KKMLNLMIhppxhphx]LNJiVMMKNJhxp`pphxhx]LLLLNLNJiVMNJphbCWbMPbLQi`TRi[SLQi]OqVPyKXiUSKRi`a[TKTMMNMLMKSLLLNMMLNMMLMNNLMMMLLKRi\Qq^KKTLMKKQa[SMLNJacGy?bAiKKRxZa]JhxSR`a]LMLKKMLMMJhphpp`ph`hhhp`hhpphp`h`pphxVMIxhx[RhxSQih`h`p`i]LJx]MKLIi^KMKLLJx``h`x`hh[`NKGbEPKXiLSHa[SHiSTIxhhhaSLMMHph`]LMHhxhxDRphpp[Qppp^MJphhxhhhx]LMMIi`iUKMMMLMMJx]MMLLNJaUMMKKLQx]NNXhpUPq^I[QyLRa[NKNJa]MLMKNJphah`pph`a]MLMMJhhhx[TIa`hpp[TJpTR`p[TKO`x`iFKHhxKLHhpUMIq?phLMJaTNIaRaJa[`GyCWFOi`MPbELHySRa`TRp`ppVJph\Qx`ppphh`px]MLNMI`hx`UJSIpJa[MMMLNIi`xTMKKPph`aKSLNIi`iEPq]KMNHiVLIiU`MP\OCW`aDQERDQEREKHhxMLGaRiPaYaSLKMJ[Opx^IxpUJ\OhpFMIxSLHYxAZ\IpSLJ`pLLLNKKLLNIahx[MLMIph`p]LJ`pUJp`Y`hKSIaNLWqJiMRx`aTNJaLSLPp`xpTRp`p`pxLQppph`x\Rhx^KMLMKMNGiSTLMKLLNJhhph[LMLJhhh``x``]LJ`hp\NKMLMKLKMLNMIh`ppVKMMWyFPFPySQ\QaWi`xXa`VIp`[R^Jp`SSIp^J`x^IhxMKIiWiPiYxSQ`aKMKJpKMGhaDMHhpMLH`h\NJxRa`aMLJaMLHppJxNLNKKKQph`z@qCWyCNKKQ`phxLMKLOhp^KKMJ`phxSMJaCSJa`p[NIiSNKNJ]MNIx``p`xaKnQfQzTkUsSnSsU~UeVrSoVnVrVeUtVaKaSjTlSmS~TfV_UbUxStUaVzKcL~N{N{KoMvMyMmPsPyP|Q`SsT_LiMkMwMcOmOuO{OqPxP~PlQoQtQtRuRxRqSmTiUmU_VzVbKdKfKhKjKxKyK}K~K`LaLbLdLhLlLnLoLpLqLsLuLwLyL{L}L_MaMbMdMeMfMgMhMjMmMnMpMrMsMtM{M}M_NaNgNsN}N`OaOeOfOgOiOkOlOnOpOrOsOwOxOyOzO|O~O_PaPbPcPePfPhPjPkPlPoPpPrPuPvPwP{P|P}P_QaQcQdQgQjQkQmQqQrQsQuQwQxQyQzQ{Q}Q~Q_R`RbRcRdReRgRhRjRkRmRnRoRqRsRwRyRzR{R_SbSdSfSgSoStSvSySaTcTdTfThTkToTpTqTrTtTuTvTxT{T|T}T`UaUcUfUhUlUnUoUpUqUrUuUwUxUyUzU{U}U`VbVcVgVhViVjVlVmVpVqVsVuVvVwVxVyV{V}V~VcKeKgKiKkKlKmKnKoKpKqKrKsKtKuKvKwK|KeLfLgLiLjLkLmLrLtLvLxLzL|L~L`McMlMqMuMxMzM|M~M`NbNcNdNeNfNhNiNjNkNlNmNnNoNpNqNrNtNuNvNwNxNyNzN|N_ObOdOhOjOoOqOtOvO}O`PdPgPiPnPtPzP`QbQeQhQiQpQvQaRfRiRlRpRrRvR|R}R~RcSeShSiSjSkSpSuSwSzS{S|S}S~S_T`TbTeTgTiTlTnTwTyTdUgUjUvU|UdVkV|V_W`WaWbWfvKNNN[NNpAN[N[N_@NNNyA[NNZZZZNZNNZ`@o@NZZ[NNNNN@NZN???N?NN?Ne@NN`@m@[_@NZ[N?@?NNNNmBZ?N@@NO@?NNNnB?NN?N@@`@??@N|D@?NZ?W?ZR?m@ZN?e@@@N_@@???@@??NR?nDo@r@?HZN?PRR@@@@uCf@ZN@N?@W?O@?????O??pD?ZN@O??QW@?Vf@??CNN@?V?A?ZO?@???@N?[A?BO@@RV?@@?BO@U?LfD??@W?@U@@DW???UAjD[B@PR???@@?P@?VOLAH?W@@f@??@@?@?PP@?@@@Z@NC@??V?@A@@@@@@@@W??N?@??VSNELA?WP@?R@P@????@@????E@@@N???@?W@?B?O@?@XOO@@B@P@LLEx@OW@@Z??V?@@@R@u@@@@???V?UDRR@X?U?@S@???@OQ?e@?NQFDFQVSwEASCS?@hC@B@@@RRL@@@FNS@RW@?@@B?@BOr@Os@?VP?N?VN?@?V?@FAL@??@WL@OBO?@B?VHDS??@?@STS[???@@???@@@ELT@?@@OD???@@@AH@A@?Y@T??YC??@W@??@@??DXY@@Y@W@`F@AL@??STS?C????Sx@NF@@V???O@@PT???S@C@W??DCu@@@?@P@??@@HE?SQ?@TLN??@@W@DX?V@S@@@B@@@@H?@QT@@@??CF???D?@VXR??BB??A@@??@XY??X@WC@U?V@NE@W@?GPPVs@@@W@R@@WlF@@BO@?BYXNQ@@@@XESS@DB?V??U@P?D?@W@@???AU?PP?CA@W?@Q@@@VYJC@@C??@@@@@@@HSQBFF??FFU?FFFQRJIDGAJX?O@@B@?@?Y??@@@@?@R??VDH[DALIS?@UR????QT?@XW??WU@?@@E@GPG?A?Y??BNIQ??BV@?@?B@@@?@??@Y@BO@AEE?B?A@@P?VKH?@??@??B@O???@?@V?I?BQH?AAH@L?X?B@@KSDIQ@VQ?BO@@?@?@@C??B?@??@RGC@?@??QVA?B@J@F@?@L@@@R?@@CFAB?@?@?VAA@?B?R@O@W@??A?BC?K@?B@?@D?BI?@@?BTA@FCJ@?T??B?OR?@?@PDFVOE?E??BV@@?@?I@O??BI?@P@??@R?@?@?@C@?CA@FU??M?@?B?A@@@?@H@@@?@@@??B?S@BU?D??A@?@GPH@?AL@V@??G??W?BU??@?@?QF@?A?@V?B@?PE?BMGH??B@?A@B@R@@T@?@@@D?B?D???B?O@?X@?IGW@?@AE?P?????UFF?UF?FFQJBJJ@?RQ@Y@?K?@X?B?WAC@??I?D?B?V?P@?E?@CAH?@Y??B@M@BKAG?@VB@@A?@@?@@?L?B?C?SGA@D@@CJ@?UAB@@?@@?B@?G??BAB?M@?I@FXVO@?@@P?AB??@?K@@@AH@A?@?B?J???B?@@A@?JC?BB@??@GFAS@?JIA@@QR@?@L?@KM?C??@?B??J?BM@@AO@@BA@?B?A?IP?PA@??BPPUJU?DA@@U??J@@HES????BOE???B???G@?CG?A?BP@A?@???@Y?BA@@?U??DD@@?C@B@S@FOO@?B@?@L?BOC@J@?G@OAW???HBDI@@@??BGW@B?B@GBD?BT@??FE@H@@GA@@?W?BC?@?@?L?@??B?M@A@??H???BSYBEDI@A@@?BUK?D@?Q@TG@?@MQ@HE?G@?S@QA@@AL@?@@B@@@???BHE@?LE@??@TFFUDFFQQQJ@Y?B@O?SCG@?R@@?DEGL??B@@???B@?GBU?D@?J?BAM@@@VO??@@@?JBA?DFBW?JLEL??P@@??@E@JCSG@@@??FA?@@?@@@@ED@FS?MK?@XMPYO@F?@@???AJU?OH@?@?@?LES@?@?XAFE@@G@AH@??@AH?M?R??B?E@F@?@?F@@?@?BD@?EGOA@@?SI??EC@@@R?B?K?@?BA@HE??B?J?V?BV?@??BJ?KCRJC???G@?B?SQ@?B@@A?FAA@A?@@??KB?@??@@XO@ACA@?P??E?J@@??OQ@@?@L?BDF?E???@?HE???@U??@M@?K??@AFM@G?HB@??@?@?@@?C@?EDC@?HFDX?@?@?@??@?B?DDUFEBWF@RLE??@@@?R@WAAH??AF@EL??J@@X@@?@?@?@@HA@?K?JTF?BA@PO?B@?@?GAC@YF@@?L@?G@X@?@@??BPAJOE?L??G?@?@I?@Qg@FTFFP?FFBJ?DJ??B??@@JCE@CK?@?B??A??BBR?L?BEMCV@S@G?@CB@??S?I?BMIK@??BGWA@@?B@@@?ELA@G?H??BG@@??B?O@@GAH@HE@D?BVO??@??GBM?LEOD?A@B@@@@@@?F?CTAAHE?@P??B?D@?EL?A?@D?BC?RMM@??@A@AJ@?@XJM@F@C@P??H@A@?B@@D@GA@I@@BDI?@@GT@?SL?J@@??HHR@@??C@@?BDD??@YOD@L??CK@@@@@?CKB?GAL@?BA?B@@?A?@?LEBE@?B?@H??BE?@?AH@AH?OQ@@I?D@@??@VAGA?G@M?@?@J@A@@??@@FFA@I?D@JC??@L?@?V@?AB@IAFV@AL@?C?@@?@?BA@?CAHYF@@?@K?@?BQ@@@@?ECG?CA?B@@@??B@??EJCG?AII??B??@@?B@@GSCLD?CM@@R???@?AC@??A@LE?HQEU?BQ??C?B@K@AEDI?@C@?B@PHR??BA?G@M@?I??@DTDN?Q@FFF?JJ??@?B?O@ALJCAHW?@@?CW?@@??CCFL??BD@B??B@GKXM?DFBPBD@?B@Q?VFK?ICCA?@@??BVAGA??A?D?B@D?F@@@??@@MDIFA?EA???B??@?FEAB@G@??BFJW???B@?MOCGAJA??X?B@QD@@?FM@CA?B@?@OYLJUWF?DHEG?G??@T@@K??ELD@CLB?@???L@?BA?E@HDAH@@@H@?B@@?KCJF@A@SKFE?@I?@DI?CI?VP?B@AIU??B@@E@KMF??DAT?B?@VAFAF?@@CEID@KB@??BH?A?BB@@CHL@W?B?X?DELW@HA?KMC@?@T?BGOP@AAGFH@T?@?@K?@@?GM@KF@X@R@@?JC@E@A?HDG?B?@@?IVEQBGEABUJ@@@??@@FAHA@EP?DELD@?O?@BDF?E@@@?C?I@??B@??CGIG@IC??AM??PQLG?ADV?O@FXK?@?B?H@JBFC@@C?D??B@@?D@?CG@?DGCJF@TRU@?GL@?B@?LE@C@@?BBWEA@?BBF?G?GA??VAH?F?DFDBFQQ@@U??T@@@AGCGAL@D??B?BP?DGFG?B@?CJ@@???C@DIFR@EES?BY@DCF@?B@@?@JCH?@@EAAA?@@ACA?B?@VIDIF@@?LLAH@??CG?U?HO@@KAE@??L@EOGYG?AHO@?@YEMHA?F?FS?BE?@@KC@H@F?AAH?B?EW?BAD@A??X@A?@L?@?HL?@A@@?BG@IBO@IC@@C@W?H?@M??BLG@?@KM@HQ@H?@?DR@LH?@?CB@C@@?F??K?FE?D??C?@?@A?E?LFTE@VA?@??E@E??BAA?SH@@?@E?F?@?AC?@D@@??K?@MK@AL@?H?B@@GFSFA@AA@@?@?TE@C@@?AHH@U@U?W?DG??BAOAC?@B@?@AAU?BID@?C@R??VIH??BMH?OUAL?@?DM?P?BLC?K??B?P?FAL@FLX?FDI???CDY?BS?AI@CJR?@D?LE?@MUA?CJB@?GC@@?@OE@LJ?FOA@O@?I??IMUHAR???EA?AC??E?B?A?AMD@???@D?BDC?OCH@??K?C@S@@F@AL@?BJX@W@?AA?OKJ@??G@CC@?QFFBFFFQQ@@?Q???B@@IIFAGH@??RX@LEDEA@@X@@??JCCJPKH?WO@@CB?@?C@GIITEC???UJAVADD@@?B@ESKMADI?@??CM??KC@L?BI??@FAD@@A@A?BCBPA?O@CF@J@?CKP@Q@JGGECOO@FJO@F@@AC?DJ?M?@?O@ABAHHJ@?FR@?SCCD@E@?@?MS?BAAXCMU@?@J@@@?FJYEA?MMTO@?@?CAADO@@?@I@MAYKEMB@?@?BL?@E?CJ@DA?UG@???AC@DDE@@H??@?@LHA?G@??K@?@?CAE?D@@??A?YR?JLMG??B@C?@?EL?ILK??EL?@?EDMID?T?@CJ@EQVCJID@?@CX?BFC?E?EX@@WA??BFEGCVV?B?RD@@?MJDLT??BQA?EA?KMAP@??@?D@DID?@?G?@?GA@@@CHIDI@@?@@?CLEG@F??BX@@@ACD@GGAW@P?V??FAHGXLWFOMC?@BL?AJG@C?X?AHW??LMI?B?L@?ID@AG@K?@?XF@A?@?MJWRE?KE?@E@?@?EFMP@@DIB??FCHCM?@@?BOTFFFFFQQJ@U?X@?R@AGAAEDI@?@??BIACJJ?@?B??AJGGHS@A@V@@?HDAE@@T@?UJ@EGA@?BABU@?BAA?REG@J@C@SKO?BE@?WDIMA@F?@?@??EDIGBAIDOV?@MKHD?D?S@?BPAC@HGJ@?GW?@CK@AAE@@@W?@F@FL@?BGH@??CDY@J?E@DIL@@BEWO@C?F@LC@?B@K@@DJ?A@FE?F?B@C?@FABHIGS?@@?OE@MA@ACE@@SB@?MLF@Q?MFJ?Q?C??BFF?BDFB@?@M?BFEK??AC?@@?A@?BDMDBJC@@?@?PIFD?FDVO?F??DD?LDU@JR@??MD?J@AC@PAVPFAPE@??CKK@IR@G??B@IM@MJ?R??I?@P?CAC?@G??B@C?FA@Q@D@L?@@?MLIR??JA?A?@E@HA@L?@K@?BJ@FYCK??B@?AD?KQM??DAS?BE@F?G?@?A@@KWHKA?@A@@?BGD@@JA??BA@?L@DF@AE@?@?BAK@?AQAH@H?@M?EL?TA@?AMCSE?@E??BM@EG@?K@A?M@@CJFB?F@?LJ?L?E??ECA@?@FBJH??M@C?JH??DRA?KSM@FV?AH@EE@Y@???TXFDLFFAMIMI?S?@?@DAEIE?X@@?@QCGIMCE?X@@?@TJAADHDI@O??@?EIAG?AY?B@?IAMH@T@@I@P@?GIAE@SQKM?@WDMFG@??@G?EL@A@ED@@Q@?AF@@CJEFO?@C?@?G?@CHJ@?B?J@@MKWLKK@U@O@JBG?D@ACH@@BPGAG@I?@GI@?TAGC@@?BCA@@@FEA?L@@HA@?RBFCDD??BTE?@B@ELAA@@XCG@P@DDC?AH???@HK?FLD??H@?@IE@GMUAL??@OELSAME@VAU??JARA?Q@OAIPBM@ICA@?@@?DM@SLDM?B?BAICY@?GM@@@?BGED??OCJFWR?AJH?B?GDJP?@?IRD?@?BAD@C@??BFC?SRFAEA@@?ADW??IGGF@?@??G?OFMI?DH?O?VO?M@AWAGIA?@@M@?B?DFAUD?@??@A@?BIKFA@?S@??@HJFKAX@??O?FA@EQJC?KR?@?MGAP@?BMUE@?BHFF????BKJQ@EAK?B@IRDA??BVL?E??BEJSL?B?BIA@?@EFAJS@K@TALB@?AGDP?B?@AFT?BADA@?@?BDL@@JIE@???F@IDI@VCA????BEC?GS@?GCR@BDFFFQQQQ@F?D???@?IEKGOK@??B?YHPH?HJLA?U?B@ODECC?VO@I@?@?ADIAQ?@EL?P?KFAMCA@?MO@?BAEE@@@IA@AB@MIEO@U?IM@DI?DAP@?P?MIA??DL?B@BEJAG?@??F@@@?HHCDB?G@?V?ILAJ?DI@??@?BGHCDI???SB@MACIVAC?@B?@?DAJAFS@?BR@@KKMGARAXBM@??SAGFKA@???MX@?LAHF?@O?B@I@JGAF@O?TAL@@?@DLD??U?F@HY@MKA@HY@LUCJ??LDOJ@U?@CM?U@?DFE???GAXA@?GLJR??LAOG?@?DA??@T@KLJ@?GH@@?@GEAG@@??I@@?BAHKK@?D?BB@CMGKG?B?RRE@?MIGCU@AB@B?AEKKC@?X??K?BA?DKD@?AH@?SSGFEDA?AR??BPALECT@?BC@?@LEJMM@?D?O?@FKLI?@?B?A??DFC?EK?@GYO@AK@DGH?B?BQFCGD@GAS@A?B?ICA?JA?B@?QJJCC?GER???BD@A@FECR????GGI?ACJ@C@?BTC@HLO?BCA@P?AD@?GAA@K@??IK?@GMD?D??@@?HD?K?JLO@@H@CA@?BCJ?@??FFFQDF?QBQ@?@W@?ADEGG???BUSAJFAA@?@FQ?@?@IHE@DI?BO@?@AFMHAPM?@@??CKCA?A?BR?H@LGFIK@@??MK@@FFDE?@?U@@DAC?GAE@@A?B@VAFCICR?@@??KAEAA@FQO?B?KFG@EG@?@H?@FAF?KI?@K@?@IF@AFKP?@@@AAIH@KJTOWCJ??@AJJC@?@RIG?YOICA@B@R?CIQ?ACF@?Q?HEG?@?EC@???BCAA@AYE@?@?HKEC??BL@B?@?FAHGSA@?BOUAMCL?@?G?@@@?MJMH@@K?BX?CDAHET@?@@J?BIKKJS?O@?@J@CA?IJFO@@@HATEJ@MK@?B@M@KL@MC@A@??IDBJD?LAT?BYA??JCG@CMOPL@??ACVF?CGTH@@?AL@IC@CHQ?B?@KEC@JCD??@?S@EMCDCB@@??@KJIE?DF?@@O@?ALKLE@@@?Y@MJCM??BM??@?BIAGL@G@?BB?JAC?MK?G@@??BECKS?AK@?@SAA?E?FA@F@??BCISODJ@CG@?@FA@YOHCK?@@O@@JM?DIVKK?R??AHK?HIF@?W?@H?FGD@MK?@?R?BAIDMA@?U?@?KDGD?KC@@UODT?QN?DFBFAMFIE@??@?A@AFEM?@O?@A?AAFHEB@T?@?AAAME@@?B?@MQCEJLA@@X?@?FE?EIG?P??PD@AAAM?MU@@?BC?EAMD??B?@J@IEDHG@S?@@?A?@LLEDX@BAS?DISDAAS?J?B?ML?JJEB@U@BG@?CGAD@@H?BP@MDFKH?B@B@@AHCHF@D@?@??IJCAXAB@XOITJCKFG?@@@P?E@LDGAT?BBBA@P?ECJD?B@?BAOUFCMH@?@G@DV?BFHJXU@CJ@F?@EIDU??HG?G@B@KL?@@KKA@D?CJ?@?PHL?A??BAA??@IDD@G@AL@?B?A?JGUP?DES@@ECARF?DMWS@@@DGE@@?LL@@V@?ILH??II@?BRMLGAOS@DP@@?BDCAG?A@VO@@IJKA?@?C@?@?BKFAM@?C@??J@AAFA@??@@HKEITEA@@RB@?EEK?@CJI@@@?IDFI??CA@@?@KCD?@KME@?@?CJ@AHGA@YW??AUEE@?BJCVTVMH?HI@GJ??B?CRCF@@?FE@??AH@M@CEL@@?@IUEK@?BGL@PXAH??ELCM?R?@J@@ELD@EF??GP?@HAPBJACL??@@C@MCKFPC@?B@?CFAEPQ?TQJDFFFTJGMKM@@@?ADA?L@AP?@@@FDIIC@CK?@@??GGF@FKR?Y??AAHH?CL?A@B@?JM@LC?@?D@@@FCA?GA?@BDI?TCA@GA?BA@@?CJE@DAO@CO@?MCVLMJ?B?P??AHA?JDG@O@??FF@AHA@??V?J@?FKAE@P@GJ@B?MIAD?B?F@V?BKFAEBPA?BP?EGAA?FA??@@@?JCKC?C??BX@CFAE?@A?P@S?BACAK?G??B??FCDD@AH@?@?Q@CLAGPH@?B??ADJK?@?DR@@@?IFAA@AP@?T@ACHA@P?A?@?@?LFKH?G@P???CAJG??BAYV@?BJHGC@K@@?@@ALFH??B@H?@@?ALJMT@SAH?@RCCAA@??G@BFA@CMK@?AP@?G?DFECQ@???SAHFAA?AQ@@?@CGF?KC@???REACOJAM@@?AH?@EYEGHB@?M@?DEDCGU@QA?BYEEJ?F@@?K@W@GAIDA@~@?A@?OFG@AKC@?@@RJAJD@HIX??@?D@?DDFD@?YB?CHA@CGG?@F@?@LBEAKFB@???A?BADLC@@?EL@@?CIAAT@@D@PGHYGGF@@?GA@OA@AGH?B??CK?AHRAE@?@?BMK@E?KCTDDDFFVQOQQ@??@W?AGIDE@S@?@?ECEDC?B?A@T@?DGIL?@J?B@@JEEHP@?@M@??BAEEA@?AR??PELAC@@?@LY@?BEECG??AW?@F@JEIAB@O?D?@?CEEE????BE?@IJFFO@??LJ@@?GKAWS?ID?H@MAMXU?@HPGSX@AAAT???BKL@KDA@?B@?HCOFMAF??@@M@?KFACAS?Q@??MFDLE@????EELI@AJ@P?W?@GKA@MJ@???@IFECXH?A?@GI??LFH@M?B?@E?CDJJ@ABT?X@G@?AFGCO@@@C?HFHK@J@?VMK?@GFM?L@??E?@AHADA???H@??AGF?I@W?E@?VDIDA@L@K@?B@ALA@K?@?M?V?DIJG?G?M?@?@KALMS?AH?@B?CJML?II@?O@?EKG?FFO@?@?GCJKA@D@@@?B?AIELTCQ@@@@GHAELA@?PG?B?EFDI@E?B@Y?FGEHGC?@@@@?DPAI@AF@?@D@@FECE@J?@@EC@?GILTC?BUUL?IDGAHY@?YFK@KGQJJT@??C@HC@KMMYY@??BAKCH?E@O@?@DEGEM@?@?@?IDA?AMA@?@??EOCMGA@??@@AJC@AECX@@Q@@M?JKFDU?TFVF@FFFEDMI?H@?D?IF?@FLES@??AI?LHA@A?@Q@?GHAAW@D?B??IAA?MIE?T??X@HAEDA@??B@AAA@KI?B??@AELUDCA@U@?B@FJ@HGAR??O?FAJK@HFB?@CJ?BAAM@AB@?M??KMGJVD?@AS@?GKAF@?DI@@@?CDHMH@?D@@??ILJH???BG@@TIDGDA??H@@?@MJAGBXCK?P@OMKEKE?F@U@?@CHFA?@LJ@B@PIDADJ?C??@??EACK@C?BBB@EAHCIA?O@??BA@AAGG@@?U@I?FAJG?HB?PKD@@AAGYD?BX@C?AAHHIB@@B?BG@DJDC?@?@@I?ALEJD?P?WAH?@FHLL??B@D@?CGDHBA??PEC??AIA@A@?@H@A?KAEH?UT?CK@IEAA?@@?@AUKAGL@??@?ADIA@JJ???T@?IIJUEGW?B?UMGAARAKB?A@?YCF?EM??BGV@UIAMSLJ?EXYO@LH?KA@AD??T?MKM?DEA@@?BVDJ@LEG?BV?@K@?ACKCT@??BF??AKIE@???L@CJ@EFD@?P?B@KHC@IL@???@IALKF@A@?A?BRDALPDK@?@??JDIVJJK?@UHFU@C@KFF@?@IQA@FFTFFDQQQAQC@@?@?GAEIK?@T@@@KCAGAQ@?H@?GG?EJD?@C?B@QDFKGB?BTH@@@?DDFFBBE@??CGC@A@@?@AX@AHGE@F@?HX@@DCLJ?L?B?@@GGIFHD@?@A@??LHAI@?W?M?U?FAA@EG@G@@?@EH@GC@@I?@??DIGC@CE@@R?SFMOLGM@?@B@D@?JCFH@@@FA@@@HAMK?B@F@?@?EGEG?@W@?KB@DAAE@??@G@IDXCAA??BEL?PABIJCB@?H@?MKL?AE@@E@??MM@KAAO@@@?GDH@GAH?@K?B?G?CAKD@??V?FB@DADA?L?@?O@IDAFF@??@@?DIA?GLD??@?@K?CACLB@O??M@?KHHG??RT@D?OADDG?B@?I@?BFAIA?@@@?DBJ@CMC?BPA@OHFAA?G?@A?B?DAASE@?BA?@?ECAF@EXHV@??IIE@E@DI@O@?AHAKC?M??@BBDACA?C@?T@VIKKAD@D??QDI?@AFF?AYO@I??LEGPFA@?LR??F@ADKHT@@RRKIEDI?J??A?B?AC@CA?GA?B??HAI?EDD@?@?@MED@D@AH@@@?ELFD?KL@?O@SFFD@HJ?BXB@AKAA@CKX@@TFFFFAQQQQA@????BMCA@IK??B@?KEKRFGA@??@?BACJKH@?P?PMAHCC@?B@?@EID@HKE@B@C?G@DVGIDS@?WLARCJ?EE?@@@?CKFJGT@@?BSKAK@ADIW?@QVOCEEEG?OVO@?DGAEA?B?@??JAD@M@DF?@?BGK@A@LJA@@?SKCJRGFA??@?@A@ILAM@??U?RAHEHF?M@@B@@EKAA@I@??@@IDIMCA@X@@?B@GAHAG?@???@IJIC?MF??LO@?GDDWMK?B?@@KKMM?KE@@@@?@LMJ?AI@?@?@GEGLG@C@@F@??KGE@IBEL@@@@DHFH?FC?S@??FCG@JD@??@@GFCF?IKB?@@?A@CC@IK?B@?G@HAQAFC@Y@ELV??JGJIR?@J@@DI?AFA??I?B?H?MFI?AL@@?@AH?JGIC@??B@GFOML?GAXW?@?BAADHIP?@@?@AEJJA?B?@@@AAHEEQEQ??B?ALIF@DW??@?IECLK?G@T@LE?@KDKOH?B@D@?CHAJK@Y@C@?@AEJARCP?@@@KDFCHTI@??MH??HGF?H@?TTC@KDCM?M@W@AL??AFARC@??C??IAFADT?YL@?@AHLD@A?B@R@AQ?FFFFGQT~@QK?@?DI?MALI@@@??C?GIFG@?@C?@B@LDGM??@IDBAAAVA?W?TA?A?A@LCHB?@ID?AAED@@@?BE@AAGM?B@@@MFATC?KJ@W?B@JCK@@EA@AW?PAHAD@ITEBW?@LEA@E@CG@@@@AHH@JA@A??BSEAIE@?EL@?@?DIEKE@C?@@?@LCCG?A?B?S?EJCCAH@@@@?BDODAMRg@@???A?GAMML?@@BX@F?HMHKY?B@?A@AHE?KAT@?GJ?@CDPME@??D@@IDFG?I??IU??EGA@I?@?M@U?AHMGA??F@?B@EKDCB?GH@@?@ELDFI?M@W@??GECE@A@?@@?DEDKVEL@S?FE@?ADI@C@?@A??GIKE@GS@@?BH?MDKg@E@?@E?@ALHEK??P?HE@?GMAAU?BUM?@MMFKGO@?A@??MHEC?@DI@?@@CCMJA?C@@?BYDAAA@F@?@R?FFLLA?DVW@VOA@JEH@L?B@E?WGHIK?A@@D?BUEFAQDBGA@@U?ADHC?I?AY@??AFG@DA?B@@?MIFD?FK@LO?B?AC?LC?AF@P?@IAF@MAA?@?B@FC@AJ@JA?S??ELHBAGG@?Q@@AG?EE?EL?B?@?FFFGFQQQQD@?@?EIHJYLF?@@?@KGCGM??B?@@?AHJHQJFO@?B@@HGCCG@?@?E@D?IDAG@@??BH@AHEF?@??F@@DIDFL?YVOA?HD?JHAV@?PGP?ALJCD?@@@?BDAMCAU??B??HCJDC@?XO?JAF?JLF?@@@?@K?FEMM?B@U@EMKAJTF@@V?BE@EC@AE@?U@MRIDGDFB@??EL@@AGKHU?B@JV@KMAWAE@?I@??DD@MK??BXJ?@ECC@MC@@D?B@AFAE@@@??M?@DIKEI?@@G@??MMJCWE?B?X@LLEAKG@??@G?B?IKAG?@?@D@?MDDAWF@?E@?@?LEEH?O@?MT@?BKGAA?@J@??RDDGK@DUI??@U?EDKI?A@@?@@HHKI@AH???B?BALEAA@@O@R@JCEEE@?@@@TAHCAE?G@?@?@CAAG@F?B?@?GMAHAK@@O@@?K@FFKFT?BBG??CCKCA@@XF@?OIACVMB@?@A@@HAAA?J@?F?B?IAH?AK@????FGIDF@IS???BAQAG?AD?B@?F?CGGLA@??I?B@AKCD?SB@J??@ELDEI@@M@?B@EJAG?OECV@?VAAEAC??I??B@GCJH@@GA@R?@F?FFT?LFQDJQ@@@T@AJDFK?@@??AAG?@ECJ???@AAJJAEU???BPLDGHJ?@?B?VFAHMI@I@?@AHOYAKG?D?B@F?@CJHGKU?@AR?@GCLC?@@?@E@@CJE@ADX@F?B?HETDCBGA@?@?ELCAC@G??B@@ECFMTLYO@?@DDICJ@M@MW@?@IAG?K?I?D@?@LJAF@F@@A@?@LAC?HK@???@FIDA@AA???@?I?KD?CD?B@BD?AHC@MJ???EC?@HG?EL?B@@CL@IEG?C@?@LF?HAI?BMX@@@CAEAG?B@?@E?BMLDH@@?C@GU@EEAF@?WH?@X@CEDE@?J?BP?JELA??B?JT@@?DACA@@F@?@?ADCF??BA@T@?BAJAJ?H@@??UEHDA?ID?PP?@?GJMEMV@?B@@MDGEA@??@@?AAHG?IC@O@?BDGDC?I@?B?TFFEICG??@@@?@KHCCHV?BQ??LLED?FFPTL?B@IM?KHA?B@@@EDFAA@J???U?@GDA?DJ?B@??KDIG@EE@SC@??AC@MG@@?A@XYFEGMM@VA@?B@KK@EI@IDU?@?HAJAE?E@?@??EEF?GA?BB?PFFEI?HD@??DI@?AJ@AH@?PG?OTFFFFKQQQQM@D@Q@JCFEYCE??W??GGEDKS?BX@@DM@IKLDBBG?BB?LECA@?B?H@?GAL?LC@?CR?RCEG?I@?B@M??O@GALJB@C@??OJDAC?JC@@Q?JRCCIAA???BBKAG?CJ?BT@TKGJ?CLH?@@DIS?JA@EG?B?AX@MK?GLF?@@EL?CA?G@L@?@D?MHTJCG?@??CJQAAL?D@@?PA?GJMF@?@??G@?AKCE@??@?@D?ECKG?B???ET@CLAD?SY@?E@SEHMG@?@@A?S@JFAFXU?JC@?K?KGF@??PD@DI?JDM@O@AA@?KA@LC@??C@?EILAQA??M@?@DEAQMU@??E?@CJFDWGB?A?B?AIG?E@AH@Y?@AHAA@FTIW?B@KID@C?GA@@@WALGM@FHS@?B?ELAA@E?B@?@HGJAD@L@@@MK@FOJM@KO@B@D?LEDG?E?P@AL@PAAJ?G@?@J@?GCIAC@@?H?B?IHAJ@@AH?@??CJEGJ?MU?@??JGML@D?BB@@FHADE?MAT??B?CHJ@HUCJ?@?@HAJG?DA??@?@AJF@GA@?@?@DIKD?MIW@U@?CYHG@IE?BV?ISFAEWFA@@?GAT?AJ@HF@?@KU@FFFFGMQQQQQ@??JK?MAJF?@C?B@EF@@?BAMA???YOIAEL@@LB@LDBMCT@?B@ATKWAJDD@?@L?@??CDCF@R?B@HU?FACTCE@@DB@@EF@AC@EC?QB@EC@AADH??YOWF@EJAC?BO@R?DIEDGVG@P@?@ACDE?CP????KLJCAOMY@@DD@?EGG@AR??D@??BEEGMS@D@?@DED?DC@?@?OIDLABDF??I@?UMCJ?D@@?I@UPEAEPIG@G@@??GFL?G?@?E@O@ACABDA??LW?@ALE?EJ@?@@?DAHH@AM??KT@@DD@GDXELQV@@DIJ@CDJ?@@?@LI?EFJ@??@@E@?KAIG@?C?B?G?NANBNCNDNENFNGNHNINJNKNLNMNNNONPNQNRNSNTNUNVNWNXNYNZN[N\N]N^N_@N`@Na@Nb@^[fA]h@_@iAa@kA\gA^hA`@jAb@^c@Nd@Ne@Nf@Ng@mAd@nAf@Nh@Ni@Nj@Nk@Nl@Nm@Nn@No@Np@Nq@Nr@Ns@Nt@Nu@Nv@Nw@Nx@Ny@Nz@N{@N|@N}@N~@N_AzAx@{Az@}A|@_B~@`Bb@j@y@|A{@~A}@i@_AcBz@aB}@eBb@fB{@dB~@k@`ANaANbANcANdANeANfANgANhANiANjANkANlANmAa@aAgBcAhBeAiBnANoANpAjBiANqANrANsAqAe@oAg@rAi@sAk@tAm@uAo@vAq@wAs@xAu@NtAa@uANvANwA]xANyANzA\{AdAXkB|AN}AN~AN_Bl@}ApB_B]`BNaBNbB\cBNdB\eBNfBNgBNhBNiBrB~AqBYl@jBNkBNlBNmBNnBNoBNpBk@|@bBqBNrBa@sBNtBNuBNvBn@kBzBmB|BoBj@wBNxBNyBNzBN{BN|ByB_BlB}BN~BN_CN`CNaCNbCb@~BjC`Cp@cCNdCNeCNfC^gCNhCNiCNjCNkCNlCd@mCNnCd@hCpCjCrClCsBaBtBYiCYb@oCNpCNqCNrCNsCq@tCvCbBzCYwCpCNuCNvCNwCNxCNyClA]h@zCN{CN|CN}CN~CN_DN`Dc@_CkCaClCY~C^NzC_D|CaD~CcD`DgDzChD}CbD_DeCxBfCzBgC|BkD{C`D}ClD`D~B}@c@aDNbDdD`CmCdCoCfCqD~@sDaCNcCnCeCq@b@w@bCv@_An@cDNdD\eDNfDNqB_CYxDdDoBWeAYcClB{BnB}BpB]vAzDXvBfBwBhBxBYwDb@uBdBvDYc@gDNhD\yAsCnC~DhD{DmBdCpB`CtBaCvBy@b@_EnB_AB`ADaAFbAiDcAJNjDNkD]lDNmDrDbDb@nDeDbCd@oDNpDoD|CiD_Dy@Y`EuBbC~@mDyBNqDNrDNsDNtDNuDNvDz@zBaEoBtCiCqCkCdE`Cp@bCcEdBnEjCv@qBqErBrEY}DwAfE}CbEmDtEYgEvBi@qBeEpDt@uC{CwC}CyCuE~@yDrBmEpB{@_AoEaCsE~C|@cCuDfC{@qB|@bC}EYxEb@w@cC{Eb@zEdCtDb@_FeC|ErBvEvC|CxCyE_DdF`DcFwClE{BbFYpEkCt@qCxCsCfFlCeF|BaFfC~EdCiFeCgFrCyCfCNtC}@xCmFyChFb@kFsCnFfCoFtCjFfCpFb@z@qDhEsDjEuDqFrDiEtDkEvDtFsDsFvDvFtD}@wDrFtDxFrDuFuDwFuD?xD</div>
+<div id="globalStacks" style="display:none"></div>
+<div id="methods" style="display:none">@??A??B?????B??C??@W??F?D??E??P??gH?F??G??P??s@?F??G??@A?OB?H??G??PI?[W?H??I??PL?cY?J??G??@?????K??A??A?????B??C??PY?CF?L??M??`??w@?L??M??@??_B?N??O??p??__?P??O??@H?oJ?Q??O??p??{f?Q??R??pZ?ci?Q??S??`E?Sn?T??U??PL?{R?V??U??`A?[L@W??X??@@?cb?W??X??@}@{j?Y??Z??`B?KC?[??Z??p?BwO?\??X??p??gE?]??X??@B?_D?^??A??A?????_??C??@M?KC?`??a??@A?cE?b??a??P@?GH?b??c??`I?CG?d??e??pr?kG?d??f??@p?wM?d??g??pA?CR?h??i??@?????j??A??A?????`??a??P??_E?`??k??@H?CG?l??m??@\?oM?b??m??pB?GL?n??A??A?????_??C??pS?WC?o??p??@U?wL?q??r??@F?WC?o??s??@A??G?t??s??`D?CF?u??s??@Z?CY?h??s??@A?KO?h??s??pP?SQ?v??w??pB?[M?x??y??`G?oI?x??z??P??KK?{??|??P??_B?{??|??@@?kB?}??X??@A?CG?~??A??A??????@?C??pA?Cs?@@?C??P@?kf?A@?B@?@V??F@C@?C??@B????D@?E@?p??kA?L??F@?pB?wB?G@?H@?@C?SF?j??I@?PI?ShAJ@?K@?p@?Co?L??F@?PG?GC?L@?F@?`B????q??M@?pD?gM?N@?O@?@@?SL?P@?Q@?`??SE?P@?R@?PD?[D?S@?T@?`@?SJ?U@?V@?p??{W?W@?X@?pU?OU?Y@?Z@?`??oL?Y@?[@?p@?KN?Y@?\@?`I??Q?]@?^@?@?????_@?A??A?????U@?`@?`B?c\?U@?a@?pH?S]?U@?b@?@i?[b?Y@?[@?pL?sN?W@?X@?pA?OT?W@?A??A?????A??c@?B?????L@?F@?pA????d@?e@?PK??E?f@?A??A?????d@?e@?@M??E?f@?X??PF?_D?\??A??A?????f@?X??PG?_D?q??M@?@W?GN?q??g@?`??cO?f@?h@?`N?CJ?i@?X??`@?GA?d@?e@?@F?oD?j@?y??PA?{y@j@?y??@?????f@?X??pA?WD?k@?A??A?????f@?X??pI?_D?\??l@?`??sN?]??l@?`B?sr?]??m@?@G?OM?n@?o@?P??C\Bq??g@?pA?gO?o??p@?@B?WH?o??p@?PG?OI?q@?p@?pE?WQ?t??p@?pC?[D?r@?s@?@??_X?t@?A??A?????J@?K@?@C?Co?n@?u@?PI?wmBL@?F@?@A????G@?v@?`???J?G@?w@?`N?GG?j??I@?`@?SfAA@?B@?`E?GE@A@?x@?pc?WA@y@?z@?@@?gB?{@?|@?`D?S]?}@?~@?`B?gc@?A?A??A?????q??r??PJ?sC?q??@A?Pf?cJ?q??AA?`L?sL?BA?s??@A?SG?BA?s??`C?gG?BA?CA?P??sJ?BA?CA?`E??K?DA?EA?@D????FA?GA?@A????HA?IA?@B?__?`??a??@N?KF?`??JA?pB?{G?KA?LA?@@?CU?MA?LA?p@?wI?NA?LA?@??[|?OA?A??A?????`??JA?@A?sG?PA?A??A?????q??@A?@A@sK?q??QA?PD??H?D@?F@?p@?cA?RA?SA?p@????TA?GA?P?????UA?A??A?????D@?F@?@B?cA?A@?VA?PN?sS@y@?WA?P@?[@?{@?XA?@B??T?YA?A??A?????d??f??`d?OM?b??ZA?PY?KR?MA?R@?@A?sL?[A?\A?PA?Ge?[A?]A?@M?Sf?[A?^A?@??su@_A?A??A?????q??AA?@T?wL?G@?X??@O?[D?o??p@?P??WH?q@?A??A?????f@?X??`J?_D?\??`A?@C?S[?q??AA?pM?wL?G@?A??A?????aA?A??A?????L??M??`@?_B?q??X??@D?[A?d@?e@?PE?oD?BA?h@?@@?[K?q??@A?@o?oJ?`??JA?@S?[H?bA?A??A?????{@?|@?`@?C]?cA?dA?@@?GS?eA?dA?PA?cH?fA?gA?pB?gy?fA?gA?`u?[j?hA?A??A?????{@?XA?pE?GT?</div>
+<span style="position:fixed; bottom: 0; right:0; padding: 2px 4px; background-color: #ffffe0; border-top: 1px solid #ffc000; border-left: 1px solid #ffc000; border-top-left-radius: 4px;"><span id="produced">Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a>&nbsp;</span><span id='match' style="display: none">Matched: <span id='matchval'></span>&nbsp;<span id='reset' title='Clear'>&#x274c;</span></span></span>
+
+<h1 id="title">Heatmap, CPU</h1>
+
+<canvas id='canvas'></canvas>
+<div id='hl'><span></span></div>
+
+<span id='status' style="position:fixed; bottom: 0; left:0; padding: 2px 4px; background-color: #ffffe0; border-top: 1px solid #ffc000; border-right: 1px solid #ffc000; border-top-right-radius: 4px; display: none">&nbsp;</span>
+<script>
+	// Copyright 2020 Andrei Pangin
+	// Licensed under the Apache License, Version 2.0.
+	'use strict';
+	let root, rootLevel, px, pattern;
+	let reverse = true;
+	const levels = Array(0);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	let c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	let canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+    const search = typeof searchIterative === 'function' ? searchIterative : searchSimple;
+    const init = typeof renderHeatmap === 'function' ? renderHeatmap : render;
+
+	const palette = [
+		[0xb2e1b2, 20, 20, 20],
+		[0x50e150, 30, 30, 30],
+		[0x50cccc, 30, 30, 30],
+		[0xe15a5a, 30, 40, 40],
+		[0xc8c83c, 30, 30, 10],
+		[0xe17d00, 30, 30,  0],
+		[0xcce880, 20, 20, 20],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(level, left, width, type, title, inln, c1, int) {
+		levels[level].push({left: left, width: width, color: getColor(palette[type]), title: title,
+			details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
+		});
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+    const marked = [];
+
+    function render(newRoot, newLevel, minLevel) {
+        minLevel = minLevel || 0;
+        if (root && minLevel === 0) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+
+		if (minLevel === 0) {
+		    marked.length = 0;
+        }
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+                let match = pattern && pattern.test(f.title) && mark(f);
+                const fw = f.width * px;
+                if (fw < 0.1) {
+                    return;
+                }
+                c.fillStyle = match ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, fw, 15);
+
+				if (fw >= 21) {
+					const chars = Math.floor(fw / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, fw - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, fw, 15);
+				}
+			}
+		}
+
+		for (let h = minLevel; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				let details = f.details || '';
+				canvas.title = f.title + '\n(' + samples(f.width) + details + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f !== root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+                status.style.display = 'inline';
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.textContent = '\xa0';
+        status.style.display = 'none';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = '';
+	}
+
+    window.onkeydown = function() {
+        if (event.ctrlKey && event.keyCode === 70) {
+            event.preventDefault();
+            search(true);
+        } else if (event.keyCode === 27) {
+            search(false);
+        }
+    }
+
+    document.getElementById('reset').onclick = function() {
+        search(false);
+    }
+
+
+
+    class DataBuffer {
+        data;
+        pos = 0;
+        constructor(encodedData) {
+            this.data = encodedData;
+        }
+
+        nextVarInt() {
+            let res = 0;
+            let shift = 0;
+            let b;
+            do {
+                b = this.byteAt(this.pos++);
+                res |= (b & 0x1F) << shift
+                shift += 5;
+            } while (b >= 0x20)
+            return res;
+        }
+
+        byteAt(pos) {
+            return this.data.charCodeAt(pos) - 63;
+        }
+
+        int30(pos) {
+            return (this.byteAt(pos++) << 0)
+                | (this.byteAt(pos++) << 6)
+                | (this.byteAt(pos++) << 12)
+                | (this.byteAt(pos++) << 18)
+                | (this.byteAt(pos) << 24);
+        }
+
+        int36(pos) {
+            return (this.byteAt(pos++) << 0)
+                | (this.byteAt(pos++) << 6)
+                | (this.byteAt(pos++) << 12)
+                | (this.byteAt(pos++) << 18)
+                | (this.byteAt(pos++) << 24)
+                | (this.byteAt(pos++) << 30);
+        }
+
+        varInt(pos) {
+            let res = 0;
+            let shift = 0;
+            let b;
+            do {
+                b = this.byteAt(pos++);
+                res |= (b & 0x1F) << shift
+                shift += 5;
+            } while (b >= 0x20)
+            return res;
+        }
+
+    }
+
+    class HeatmapCollection extends DataBuffer {
+
+        maxZoom;
+        blocks;
+        zoomToCounts;
+        zoomToMaxes;
+        zoom;
+
+        constructor(encodedData) {
+            super(encodedData);
+
+            this.maxZoom = this.nextVarInt();   // fixme
+            this.maxZoom = 3;
+
+            const startMethodsCount = this.nextVarInt();
+            const starts = new Set();
+            for (let i = 0; i < startMethodsCount; i++) {
+                starts.add(this.nextVarInt());
+            }
+
+            const lz = new Lz78Data(this, starts);
+
+            let max = 1;
+
+            let prevByte = -1;
+            const blocksCount = this.nextVarInt();
+            let counts = new Uint32Array(blocksCount);
+            for (let i = 0; i < blocksCount; i++) {
+                let v = 0;
+                let p = 0;
+                let hasMore = false;
+                do {
+                    if (prevByte === -1) {
+                        prevByte = this.byteAt(this.pos++);
+                        hasMore = (prevByte >>> 5) === 1;
+                        v |= ((prevByte >>> 3) & 3) << p;
+                        prevByte &= 7;
+                    } else {
+                        hasMore = (prevByte >>> 2) === 1;
+                        v |= (prevByte & 3) << p;
+                        prevByte = -1;
+                    }
+                    p += 2;
+                } while (hasMore);
+                counts[i] = v;
+                max = Math.max(max, v);
+            }
+
+            this.blocks = lz.decode(counts);
+
+            this.zoomToCounts = new Array(this.maxZoom);
+            this.zoomToMaxes = new Array(this.maxZoom);
+
+            this.zoomToCounts[0] = counts;
+            this.zoomToMaxes[0] = max;
+
+            for (let z = 1; z < zoomToGroupSize.length; z++) {
+                const size = zoomToGroupSize[z] / zoomToGroupSize[z - 1];
+                const nextCounts = new Uint32Array(Math.ceil(counts.length / size));
+                for (let i = 0; i < counts.length; i++) {
+                    const index = (i / size) | 0;
+                    nextCounts[index] += counts[i];
+                    max = Math.max(max, nextCounts[index]);
+                }
+                this.zoomToCounts[z] = counts = nextCounts;
+                this.zoomToMaxes[z] = max;
+            }
+
+            this.data = null;
+        }
+
+        setZoom(zoom) {
+            this.zoom = zoom;
+        }
+
+        heatmap() {
+            return this.zoomToCounts[this.zoom];
+        }
+
+        max() {
+            return this.zoomToMaxes[this.zoom];
+        }
+
+        currentTimeBlock() {
+            // FIXME 20 is hardcoded
+            return 20 * zoomToGroupSize[this.zoom];
+        }
+
+        startBlock() {
+            const blockMs = this.currentTimeBlock();
+            const timeBlockMs = blockMs * heatHeight * 20;
+            return Math.floor(startMs % timeBlockMs / blockMs);
+        }
+
+        count() {
+            return Math.ceil((this.heatmap().length + this.startBlock()) / 20 / heatHeight) * 20 * heatHeight;
+        }
+
+    }
+
+    class LzChunk extends Uint32Array {
+        constructor(size) {
+            super(size);
+        }
+
+        copyWithNext(element) {
+            let result = new LzChunk(this.length + 1);
+            result.set(this);
+            result[this.length] = element;
+            return result;
+        }
+    }
+
+    class Lz78Data {
+        data;
+        starts;
+        lz78;
+
+        tmp = [];
+        prevSubTreeId = -1;
+
+        constructor(data, starts) {
+            this.data = data;
+            this.starts = starts;
+
+            this.lz78 = [new LzChunk(0)];
+        }
+
+        decode(counts) {
+            const synonymsCount = this.data.nextVarInt();
+            const synonyms = new Uint32Array(synonymsCount);
+            for (let i = 0; i < synonymsCount; i++) {
+                synonyms[i] = this.data.nextVarInt();
+            }
+
+            const tailsCount = this.data.nextVarInt();
+            const tails = new Uint32Array(tailsCount);
+            for (let i = 0; i < tailsCount; i++) {
+                const tail = this.data.nextVarInt();
+                tails[i] = (tail < synonyms.length ? synonyms[tail] : tail) - synonymsCount;
+            }
+
+            const result = new Array(counts.length);
+            for (let i = 0; i < counts.length; i++) {
+                result[i] = new Array(counts[i]);
+            }
+
+            let thisChunk = null;
+            let currentTail = 0;
+            const tmp = [];
+            let t = -1;
+            for (let block of result) {
+                for (let i = 0; i < block.length; i++, currentTail++) {
+                    t++;
+                    const tailId = tails[currentTail];
+                    if (tailId < this.lz78.length) {
+                        const tail = this.lz78[tailId];
+                        if (tail.length !== 0 && this.starts.has(tail[0])) {
+                            console.log(t, 'only', tailId);
+                            block[i] = tail;
+                            continue;
+                        }
+                    }
+
+                    if (thisChunk === null) {
+                        const chunkId = this.data.nextVarInt();
+                        const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
+                        const addMethodId = this.data.nextVarInt();
+                        console.log(t, 'chunk', chunkId, addMethodId);
+                        thisChunk = prevChunk.copyWithNext(addMethodId);
+                        this.lz78.push(thisChunk);
+                    }
+
+                    tmp.length = 0;
+                    tmp.push(...thisChunk); // FIXME it is ok to push as is, or even as lz78 index
+
+                    while (true) {
+                        const chunkId = this.data.nextVarInt();
+                        const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
+                        const addMethodId = this.data.nextVarInt();
+                        thisChunk = prevChunk.copyWithNext(addMethodId);
+                        this.lz78.push(thisChunk);
+                        console.log(t, 'chunk', chunkId, addMethodId);
+
+                        if (this.starts.has(thisChunk[0])) {
+                            console.log(t, 'starts', thisChunk[0]);
+                            console.log(t, 'ends', tailId);
+                            const tail = this.lz78[tailId];
+                            tmp.push(...tail);
+                            block[i] = new Uint32Array(tmp);
+                            break;
+                        } else {
+                            tmp.push(...thisChunk);
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+    }
+
+    class Queue {
+        data = new Array(1024);
+        first = 0;
+        afterLast = 0;
+
+        push(e) {
+            let a = this.afterLast;
+            let d = this.data;
+            d[a++] = e;
+            if (a >= this.data.length) {
+                a = 0;
+            }
+            if (a === this.first) {
+                let d2 = new Array(d.length * 2);
+                let i = 0;
+                for (let p = a; p < d.length; p++) {
+                    d2[i++] = d[p];
+                }
+                for (let p = 0; p < a; p++) {
+                    d2[i++] = d[p];
+                }
+                this.data = d2;
+                this.first = 0;
+                this.afterLast = i;
+            } else {
+                this.afterLast = a;
+            }
+        }
+
+        shift() {
+            let i = this.first;
+            let r = this.data[i++];
+            if (i >= this.data.length) {
+                this.first = 0;
+            } else {
+                this.first = i;
+            }
+            return r;
+        }
+
+        size() {
+            let r = this.afterLast - this.first;
+            if (r < 0) {
+                return r + this.data.length;
+            }
+            return r;
+        }
+
+        reset() {
+            this.first = this.afterLast = 0;
+        }
+    }
+
+    function claimHtml(id) {
+        let e = document.getElementById(id);
+        let r = e.innerHTML;
+        e.remove();
+        return r;
+    }
+
+    let sq = 5;
+    let sqPx = sq;
+    let sqScale = 1;
+    const canvasScrollPadding = 200;
+    let canvasTimeHeight = 12;
+    let canvasTimeHeightPx = 12;
+    let ticksPerSecond = 2591990283;
+    let startMs = 1664869168999;
+
+    const zoomToGroupSize = [
+        1,              // 20 ms
+        50,             // 1 s
+        50 * 5,         // 5 s
+        50 * 60         // 1 m
+    ];
+    const zoomToHeight = [50, 60, 60, 60]
+
+    let methods = new DataBuffer(claimHtml("methods"));
+    let executionsHeatmap = new HeatmapCollection(claimHtml("executionsHeatmap"));
+    let cpool = ["all","","one.nio.server.AcceptorThread","run","one.nio.net.Socket","acceptNonBlocking","one.nio.net.JavaServerSocket","accept","sun.nio.ch.ServerSocketChannelImpl","implAccept","sun.nio.ch.Net","java.net.Inet4Address","one.nio.http.HttpServer","createSession","java.lang.ClassLoader","loadClass","jdk.internal.loader.ClassLoaders$AppClassLoader","jdk.internal.loader.BuiltinClassLoader","loadClassOrNull","findClassOnClassPathOrNull","jdk.internal.loader.URLClassPath","getResource","jdk.internal.loader.URLClassPath$FileLoader","java.net.URL","<init>","sun.net.www.protocol.file.Handler","parseURL","java.net.URLStreamHandler","java.lang.StringBuilder","java.lang.AbstractStringBuilder","byte[]","one.nio.server.SelectorThread","one.nio.net.JavaSelector","select","sun.nio.ch.SelectorImpl","lockAndDoSelect","sun.nio.ch.KQueueSelectorImpl","doSelect","processEvents","clearInterrupt","sun.nio.ch.IOUtil","drain","java.lang.String","registerPendingSessions","java.nio.channels.spi.AbstractSelectableChannel","register","sun.nio.ch.SelectionKeyImpl","one.nio.net.Session","process","one.nio.http.HttpSession","processRead","read","one.nio.net.JavaSocket","sun.nio.ch.SocketChannelImpl","sun.nio.ch.Util","getTemporaryDirectBuffer","java.lang.ThreadLocal","get","setInitialValue","sun.nio.ch.Util$1","initialValue","sun.nio.ch.Util$BufferCache","java.nio.ByteBuffer[]","java.lang.Thread","java.util.concurrent.ThreadPoolExecutor$Worker","java.util.concurrent.ThreadPoolExecutor","runWorker","ok.dht.test.ushkov.RocksDBHttpServer$$Lambda$67.0x0000000800ccccf0","ok.dht.test.ushkov.RocksDBHttpServer","lambda$handleRequest$0","handleRequest","one.nio.http.Request","getPath","substring","java.lang.StringLatin1","newString","RequestHandler0_entityGet","sendResponse","one.nio.server.Server","incRequestsProcessed","java.util.concurrent.atomic.LongAdder","increment","add","java.util.concurrent.atomic.Striped64","casBase","java.lang.invoke.MethodHandleNatives","findMethodHandleType","java.lang.invoke.MethodType","makeImpl","java.lang.invoke.MethodTypeForm","findForm","canonicalize","canonicalizeAll","java.lang.Object","clone","java.lang.Class[]","linkMethod","linkMethodImpl","varHandleOperationLinkerMethod","no_Java_frame","ok.dht.test.ushkov.RocksDBService","entityGet","one.nio.http.Response","writeResponse","toBytes","one.nio.util.ByteArrayBuilder","org.rocksdb.RocksDB","java.lang.String[]","append","ensureCapacityInternal","java.util.Arrays","copyOf","write","one.nio.net.Session$ArrayQueueItem","java.nio.ByteBuffer","wrap","java.nio.HeapByteBuffer","copyOfRange","getRequiredParameter","getParameter","getTask","ok.dht.test.ushkov.queue.LinkedBlockingStack","take","java.util.concurrent.LinkedBlockingDeque","takeFirst","java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject","await","java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode","processHttpBuffer","parseRequest","one.nio.util.Utf8","toAsciiString","java.lang.invoke.LambdaForm$MH.0x0000000800cc8800","invokeExact_MT","java.lang.invoke.LambdaForm$DMH.0x0000000800cc9000","newInvokeSpecial","java.lang.invoke.DirectMethodHandle","allocateInstance","iteratorFor","sun.nio.ch.Util$2","iterator","java.util.HashSet","java.util.HashMap$KeySet","java.util.HashMap$KeyIterator","one.nio.net.Session[]","handleParsedRequest","java.lang.invoke.Invokers$Holder","linkToTargetMethod","java.lang.invoke.DirectMethodHandle$Holder","ok.dht.test.ushkov.RocksDBHttpServer$$Lambda$67+0x0000000800ccccf0","execute","offer","offerFirst","java.util.concurrent.LinkedBlockingDeque$Node","processReadyEvents","java.util.HashMap","put","putVal","newNode","java.util.HashMap$Node","toString","java.net.Inet6Address","one.nio.net.JavaSelector$1","java.util.concurrent.locks.ReentrantLock","lock","java.util.concurrent.locks.ReentrantLock$Sync","java.util.concurrent.locks.AbstractQueuedSynchronizer","acquire","java.util.concurrent.locks.AbstractQueuedSynchronizer$ExclusiveNode",];
+
+    let currentHeatmap = executionsHeatmap;
+    let currentHeatmapType = 'executions';
+
+    let heatHeight = 60;
+
+    let heatLastSample = -1;
+    let heatActiveSample1 = -1;
+    let heatActiveSample2 = -1;
+    let heatDiffStart = -1;
+    let heatDiffEnd = -1;
+    let highlightStart = -1;
+    let highlightEnd = -1;
+
+    const titleText = document.getElementById("title").textContent;
+    document.getElementById("title").style.display = 'none';
+    document.title = titleText;
+
+    const heatCanvas = document.getElementById('heatmap-canvas');
+    const heatStatus = document.getElementById('status');
+    const heatCanvasWrapper = document.getElementById('heatmap-canvas-wrapper');
+    const heatCanvasContainer = document.getElementById('heatmap-canvas-container');
+
+    let heatC;
+    let prevDx = -1000000000;
+
+    let searchExecutedCount = 0;
+    let searchMax = 0;
+
+    const timeOptions = {
+        year: '2-digit',
+        month: '2-digit',
+        day: '2-digit',
+        timeZoneName: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 2
+    };
+
+    const timeOptionsShort = {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 2
+    };
+
+    const timeOptionsTiny = {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23',
+        //hour12: false
+    };
+
+    function methodInfo(methodIndex, out) {
+        if (methodIndex === -1) {
+            out.className = '';
+            out.methodName = 'all';
+            out.location = 0;
+            out.type = 3;
+            return;
+        }
+
+        methodIndex--;
+
+        let methodAndClass = methods.int36(methodIndex * 12);
+        let locationAndType = methods.int36(methodIndex * 12 + 6)
+        let className = (methodAndClass & 0x3FFFF) - 1;
+        let methodName = (methodAndClass >>> 18) - 1;
+
+        out.className = cpool[className];
+        out.methodName = cpool[methodName];
+        out.location = locationAndType >>> 4;
+        out.type = locationAndType & 15;
+    }
+
+    function title(methodIndex, out) {
+        methodInfo(methodIndex, out);
+        const codeLine = (out.location & 0xffff);
+        let locationSuffix = codeLine === 0 ? "" : (":" + codeLine);
+
+        if (out.methodName === '') {
+            return out.className + locationSuffix;
+        }
+        if (out.className === '') {
+            return out.methodName + locationSuffix;
+        }
+        if (out.type >= 3 && out.type <= 5) {
+            return out.methodName + locationSuffix;
+        }
+
+        return out.className + "." + out.methodName + locationSuffix;
+    }
+
+    let bgInterval = null;
+    let bgTasks = [];
+    let cooldownTime = 0;
+    let nextTask = 0;
+
+    function addTask(id, iteration, afterFrame) {
+        for (let t of bgTasks) {
+            if (t.id === id) {
+                t.f = iteration;
+                t.a = afterFrame;
+                return;
+            }
+        }
+
+        bgTasks.push({id: id, f: iteration, a: afterFrame});
+        if (bgTasks.length === 1) {
+            bgInterval = setInterval(function() {
+                let start = performance.now();
+                if (start <= cooldownTime) {
+                    return;
+                }
+                let overflow = false;
+                do {
+                    let task = bgTasks[nextTask];
+                    if (task.f()) {
+                        nextTask++;
+                    } else {
+                        bgTasks.splice(nextTask, 1);
+                        if (bgTasks.length === 0) {
+                            clearInterval(bgInterval);
+                            nextTask = 0;
+                            return;
+                        }
+                    }
+
+                    if (nextTask >= bgTasks.length) {
+                        nextTask = 0;
+                        overflow = true;
+                    }
+                } while(performance.now() - start < 8);
+
+                for (let q = 0; q < overflow ? bgTasks.length : nextTask; q++) {
+                    bgTasks[q].a();
+                }
+            })
+        }
+    }
+
+    function prepareFrames(from, to) {
+        let mul = zoomToGroupSize[currentHeatmap.zoom];
+        from *= mul;
+        to = (to + 1) * mul - 1;
+        if (to >= currentHeatmap.blocks.length) {
+            to = currentHeatmap.blocks.length - 1;
+        }
+
+        const frames = new Queue();
+        const root = new Map();
+        root.c = 0;
+        root.m = -1;
+        root.x = 0;
+        const roots = [root];
+        let levelsCount = 1;
+
+        for (let pos = from; pos <= to; pos++) {
+            const block = currentHeatmap.blocks[pos];
+
+            root.c += block.length;
+
+            for (let stack of block) {
+                levelsCount = Math.max(stack.length + 1, levelsCount);
+
+                frames.push(root);
+                frames.push(stack);
+            }
+        }
+
+        return [frames, roots, levelsCount]
+    }
+
+    function nextFrames(frames, level) {
+        frames.push(null);  // end stacks marker
+
+        let nowFrame = null;
+
+        while (true) {
+            const frame = frames.shift();
+            if (frame === null) {   // end stack marker
+                break;
+            }
+
+            const stack = frames.shift();
+            if (level >= stack.length) {
+                continue;
+            }
+
+            const methodId = stack[level];
+            nowFrame = frame.get(methodId);
+            if (nowFrame === undefined) {
+                nowFrame = new Map();
+                nowFrame.m = methodId;
+                nowFrame.c = 0;
+                frame.set(methodId, nowFrame);
+            }
+            nowFrame.c++;
+
+            frames.push(nowFrame);
+            frames.push(stack);
+        }
+    }
+
+    function renderTraces(from, to) {
+        let [frames, roots, levelsCount] = prepareFrames(from, to);
+        levels.length = 0;
+        for (let i = 0; i < levelsCount; i++) {
+            levels.push([]);
+        }
+
+        let currentLevel = 0;
+        let levelToRedraw = 0;
+        let methodInfoOut = {};
+
+        addTask('flame', function () {
+                nextFrames(frames, currentLevel);
+
+                let level = levels[currentLevel];
+                let nextRoots = [];
+                for (let root of roots) {
+                    let x = root.x;
+                    const t = title(root.m, methodInfoOut);
+                    let color = getColor(palette[methodInfoOut.type]);
+                    level.push({left: x, width: root.c, color: color, title: t});
+
+                    let nextFrames = [...root.values()];
+
+                    nextFrames.sort((k1, k2) => k2.c - k1.c);
+                    for (let frame of nextFrames) {
+                        frame.x = x;
+                        x += frame.c;
+                        nextRoots.push(frame);
+                    }
+                }
+                level.sort((k1, k2) => k1.left - k2.left);
+
+                roots = nextRoots;
+                currentLevel++;
+                if (currentLevel < levelsCount) {
+                    return true;
+                }
+                renderWithMatch(levelsCount * 16, levels[0][0], 0);
+                return false;
+            },
+            function () {
+                renderWithMatch(4096, levels[0][0], 0, levelToRedraw);
+                levelToRedraw = currentLevel;
+            });
+    }
+
+    function renderWithMatch(newCanvasHeight, root, level, minLevel) {
+        newCanvasHeight = Math.min(32767, newCanvasHeight);
+        if (canvasHeight !== newCanvasHeight) {
+            canvasHeight = newCanvasHeight;
+            canvas.style.height = canvasHeight + 'px';
+            canvas.height = canvasHeight * (devicePixelRatio || 1);
+            c = canvas.getContext('2d');
+            if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+            c.font = document.body.style.font;
+        }
+        const matched = render(root, level, minLevel);
+        if (pattern === undefined) {
+            document.getElementById('match').style.display = 'none';
+            document.getElementById('produced').style.display = 'inherit';
+        } else {
+            document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+            document.getElementById('match').style.display = 'inline-block';
+            document.getElementById('produced').style.display = 'none';
+        }
+    }
+
+    function renderDiff(from, to, baseFrom, baseTo) {
+        let [frames, roots, levelsCount] = prepareFrames(from, to);
+        let [baseFrames, baseRoots, ] = prepareFrames(baseFrom, baseTo);
+        roots[0].b = baseRoots[0];
+
+        levels.length = 0;
+        for (let i = 0; i < levelsCount; i++) {
+            levels.push([]);
+        }
+        let currentLevel = 0;
+        let levelToRedraw = 0;
+        let methodInfoOut = {};
+
+        let minDiff = 0;
+        let maxDiff = 0;
+
+        addTask('flame', function () {
+                nextFrames(frames, currentLevel);
+                nextFrames(baseFrames, currentLevel);
+                let level = levels[currentLevel];
+
+                for (let root of roots) {
+                    let wasCount = root.b === undefined ? 0 : root.b.c;
+                    if (wasCount !== 0) {
+                        maxDiff = Math.max(maxDiff, root.c - wasCount);
+                        minDiff = Math.min(minDiff, root.c - wasCount)
+                    }
+                }
+
+                let nextRoots = [];
+                for (let root of roots) {
+                    let x = root.x;
+
+                    let wasCount = root.b === undefined ? 0 : root.b.c;
+                    const t = title(root.m, methodInfoOut) + " (" + root.c + "/" + wasCount +")";
+                    let color;
+                    if (wasCount === 0) {
+                        color = "#dac571";
+                    } else if (wasCount >= root.c) {
+                        const ratio = (root.c - wasCount) / minDiff;
+                        color = 'rgb(' + (245 - 90 * ratio) + ',' + (250 - 90 * ratio) + ',' + 255 +')';
+                    } else {
+                        const ratio = (root.c - wasCount) / maxDiff;
+                        color = 'rgb(' + 255 + ',' + (245 - 180 * ratio) + ',' + (240 - 200 * ratio) +')';
+                    }
+                    level.push({left: x, width: root.c, color: color, title: t});
+
+                    let nextFrames = [];
+                    for (let [methodId, frame] of root) {
+                        frame.b = root.b && root.b.get(methodId);
+                        nextFrames.push(frame);
+                    }
+                    nextFrames.sort((k1, k2) => k2.c - k1.c);
+                    for (let frame of nextFrames) {
+                        frame.x = x;
+                        x += frame.c;
+                        nextRoots.push(frame);
+                    }
+                }
+                level.sort((k1, k2) => k1.left - k2.left);
+
+                roots = nextRoots;
+                currentLevel++;
+                if (currentLevel < levelsCount) {
+                    return true;
+                }
+                renderWithMatch(levelsCount * 16, levels[0][0], 0);
+                return false;
+            },
+            function () {
+                renderWithMatch(4096, levels[0][0], 0, levelToRedraw);
+                levelToRedraw = currentLevel;
+            });
+    }
+
+    function redrawHeatSamplesImpl(from, to, dx) {
+        const patternDraw = !!pattern;
+        const startBlock = currentHeatmap.startBlock();
+
+        const max = currentHeatmap.max();
+        const heatmap = currentHeatmap.heatmap();
+
+        for (let index = from; index <= to; index++) {
+            let color;
+            let i = index - startBlock;
+            if (i < 0 || i >= heatmap.length) {
+                color = '#ddd';
+            } else {
+                let count = heatmap[i];
+
+                let useFound = patternDraw && searchExecutedCount > i;
+                let maxValue = useFound ? searchMax : max;
+                let value = useFound ? found[i] : count;
+                let ratio = value / (maxValue || 1);
+
+                if (useFound) {
+                    if (ratio < 0.8) {
+                        let value = Math.round(255 - ratio * 255 / 0.8);
+                        color = 'rgb(' + value + ',' + value + ',255)';
+                    } else {
+                        let value = Math.round(255 - (ratio - 0.8) * 100 / 0.2);
+                        color = 'rgb(0,0,' + value + ')';
+                    }
+                } else {
+                    if (ratio < 0.8) {
+                        let value = Math.round(255 - ratio * 255 / 0.8);
+                        color = 'rgb(255,' + value + ',' + value + ')';
+                    } else {
+                        let value = Math.round(255 - (ratio - 0.8) * 100 / 0.2);
+                        color = 'rgb('+ value + ',0,0)';
+                    }
+                }
+
+            }
+            heatC.fillStyle = color;
+
+            let x = Math.floor(index / heatHeight);
+            let y = index % heatHeight;
+            heatC.fillRect(x * sq - dx, y * sq + canvasTimeHeight, sq, sq);
+        }
+
+        let blocksBetweenMarks = 20;
+
+        let fromBlock = Math.floor(from / blocksBetweenMarks / heatHeight) - 1;
+        let toBlock = Math.ceil(to / blocksBetweenMarks / heatHeight);
+
+        let markPixels = blocksBetweenMarks * sq;
+
+        heatC.fillStyle = '#fff';
+        heatC.fillRect(
+            fromBlock * markPixels - dx,
+            0,
+            (toBlock - fromBlock + 1) * markPixels,
+            canvasTimeHeight
+        );
+
+        heatC.beginPath();
+        heatC.moveTo(fromBlock * markPixels - dx + 0.5, canvasTimeHeight + 0.5);
+        heatC.lineTo(toBlock * markPixels - dx + 0.5, canvasTimeHeight + 0.5);
+        heatC.stroke();
+
+        heatC.fillStyle = '#000';
+
+        let groupSize = heatHeight;
+        let oneBlockMs = currentHeatmap.currentTimeBlock();
+        let oneGroupMs = oneBlockMs * groupSize;
+        let oneMarkMs = oneGroupMs * blocksBetweenMarks;
+        for (let markIndex = fromBlock; markIndex <= toBlock; markIndex++) {
+            let origin = Math.floor(startMs / oneMarkMs) * oneMarkMs;
+            let ms = origin + markIndex * oneMarkMs;
+            let markOffset = markIndex * markPixels - dx;
+
+            let title = new Date(ms).toLocaleTimeString(undefined, timeOptionsTiny);
+
+            let w = heatC.measureText(title).width;
+            let x = markOffset + (markPixels - w) / 2;
+            heatC.fillText(title, x, canvasTimeHeight - 1, markPixels);
+
+            heatC.beginPath();
+            heatC.moveTo(markOffset + 0.5, canvasTimeHeight - 2 * sqScale + 0.5);
+            heatC.lineTo(markOffset + 0.5, canvasTimeHeight + 2 * sqScale + 0.5);
+            heatC.stroke();
+        }
+    }
+
+    function redrawHeatSamples(from, to) {
+        let dx = Math.floor((heatCanvasContainer.scrollLeft - canvasScrollPadding) * sqScale);
+
+        from = Math.max(from, heatHeight * Math.floor(dx / sq));
+        to = Math.min(to, heatHeight * Math.ceil((dx + heatCanvas.width) / sq));
+        redrawHeatSamplesImpl(from, to, dx);
+    }
+
+    function redrawHeatMap() {
+        redrawHeatSamples(0, (1 + currentHeatmap.count() / heatHeight | 0) * heatHeight);
+    }
+
+    function fillCanvasWithEvents(zoom) {
+        searchExecutedCount = 0;
+        searchMax = 0;
+
+        addTask('search', function () {
+            return false;
+        }, function (){});
+
+        currentHeatmap.setZoom(zoom);
+        heatHeight = zoomToHeight[zoom];
+
+        const m = devicePixelRatio || 1;
+        sqScale = m;
+        sqPx = 5;
+        sq = Math.floor(sqPx * m);
+        sqPx = sq / m;
+        canvasTimeHeight = sq * 2 + 2;
+        canvasTimeHeightPx = canvasTimeHeight / m;
+
+        const widthPx = canvasScrollPadding + heatCanvasContainer.offsetWidth + canvasScrollPadding;
+        const heightPx = sqPx * heatHeight + canvasTimeHeightPx;
+
+        const heatWidthPx = Math.max(20, Math.ceil(currentHeatmap.count() / heatHeight)) * sqPx;
+        heatCanvasWrapper.style.width = heatWidthPx + 'px';
+        if (heatCanvasContainer.offsetWidth > heatWidthPx) {
+            heatCanvasContainer.style.overflowX = 'hidden';
+        } else {
+            heatCanvasContainer.style.overflowX = 'scroll';
+        }
+
+        heatCanvas.width = Math.ceil(widthPx * m);
+        heatCanvas.height = Math.ceil(heightPx * m);
+        heatCanvas.style.width = widthPx + 'px';
+        heatCanvas.style.height = heightPx + 'px';
+
+        heatC = heatCanvas.getContext('2d');
+        heatC.font = sq * 2 + 'px Verdana, sans-serif';
+        heatC.lineWidth = 1;
+        heatC.strokeStyle = '#000';
+
+        document.getElementById('heatmap-height-line').textContent = [' 1 sec : 20 ms ',' 1 min : 1 sec ',' 5 min : 5 sec ',' 1 hr  : 1 min '][currentHeatmap.zoom];
+        redrawHeatMap();
+    }
+
+    let found = new Uint32Array(0);
+
+    function searchIterative(r) {
+        if (r && (r = prompt('Enter regexp to search:', '')) === null) {
+            return;
+        }
+        searchExecutedCount = 0;
+        searchMax = 0;
+        if (!r) {
+            pattern = undefined;
+            redrawHeatMap();
+            addTask('search', function () {
+                return false;
+            }, function (){});
+            return;
+        }
+        let renderFrom = 0;
+        let heatmap = currentHeatmap.heatmap();
+        let count = heatmap.length;
+        found = new Uint32Array(count);
+        let start = currentHeatmap.startBlock();
+        function renderFunc() {
+            redrawHeatSamples(start + renderFrom, start + searchExecutedCount - 1);
+            renderFrom = searchExecutedCount;
+        }
+        pattern = r ? RegExp(r) : undefined;
+        const matchedMethods = new Set();
+        const methodOut = {};
+        for (let index = methods.data.length / 12; index >= 0; index--) {
+            if (pattern.test(title(index, methodOut))) {
+                matchedMethods.add(index);
+            }
+        }
+
+        let mul = zoomToGroupSize[currentHeatmap.zoom];
+
+        addTask('search', function () {
+            let amount = 0;
+            const from = searchExecutedCount * mul;
+            const to = (searchExecutedCount + 1) * mul;
+            for (let i = from; i < to; i++) {
+                const stacks = currentHeatmap.blocks[i];
+                if (stacks === undefined) {
+                    continue;
+                }
+
+                for (let stack of stacks) {
+                    for (let methodIndex of stack) {
+                        if (matchedMethods.has(methodIndex)) {
+                            amount++;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (searchMax < amount) {
+                renderFrom = 0;
+                searchMax = amount;
+            }
+
+            found[searchExecutedCount] = amount;
+            searchExecutedCount++;
+            if (searchExecutedCount >= count) {
+                renderFunc();
+
+                const matched = render(root, rootLevel);
+                document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+                document.getElementById('match').style.display = r ? 'inherit' : 'none';
+                document.getElementById('produced').style.display = r ? 'none' : 'inherit';
+
+                return false;
+            }
+            return true;
+        }, renderFunc);
+
+    }
+
+    function renderHeatmap() {
+        let dx = heatCanvasContainer.scrollLeft - canvasScrollPadding;
+        heatCanvas.style.transform = 'translate(' + dx + 'px, 0px)';
+
+        const width = Math.floor(heatCanvasContainer.offsetWidth / sq / (devicePixelRatio || 1));
+
+        let z = 0;
+        for (; z < zoomToGroupSize.length; z++) {
+            if (currentHeatmap.blocks.length / (zoomToGroupSize[z] * zoomToHeight[z]) < width) {
+                break;
+            }
+        }
+
+        fillCanvasWithEvents(Math.min(z, currentHeatmap.maxZoom - 1));
+
+        renderTraces(0, currentHeatmap.heatmap().length - 1);
+    }
+
+    heatCanvasContainer.addEventListener('scroll', function() {
+        let dx = Math.floor((heatCanvasContainer.scrollLeft - canvasScrollPadding) * sqScale);
+        let dxPx = dx / sqScale;
+        heatCanvas.style.transform = 'translate(' + dxPx + 'px, 0px)';
+        let delta = Math.abs(dx - prevDx);
+        if (delta >= heatCanvas.width || searchExecutedCount !== 0) {
+            redrawHeatMap();
+        } else {
+            heatC.drawImage(heatCanvas, prevDx - dx, 0);
+            if (prevDx < dx) {
+                let from = heatHeight * Math.floor((prevDx + heatCanvas.width) / sq);
+                let to = heatHeight * Math.ceil((dx + heatCanvas.width) / sq);
+                redrawHeatSamplesImpl(from, to, dx);
+            } else {
+                let from = heatHeight * Math.floor(dx / sq);
+                let to = heatHeight * Math.ceil(prevDx / sq);
+                redrawHeatSamplesImpl(from, to, dx);
+            }
+        }
+        prevDx = dx;
+        cooldownTime = performance.now() + 500;
+    });
+
+    document.getElementById('heatmap-height-line').onclick = function() {
+        fillCanvasWithEvents((currentHeatmap.maxZoom + currentHeatmap.zoom - 1) % (currentHeatmap.maxZoom));
+        highlightStart = highlightEnd = heatDiffStart = heatDiffEnd = heatActiveSample1 = heatActiveSample2 = -1;
+        for (let suffix of ['Selection', 'Diff', 'Active']) {
+            for (let prefix of ['left', 'leftMiddle', 'middle', 'rightMiddle', 'right']) {
+                document.getElementById(prefix + suffix).style.display = 'none';
+            }
+        }
+    }
+
+    function callHighlightRedraw(start, end, suffix) {
+        let left = document.getElementById('left' + suffix);
+        let leftMiddle = document.getElementById('leftMiddle' + suffix);
+        let middle = document.getElementById('middle' + suffix);
+        let rightMiddle = document.getElementById('rightMiddle' + suffix);
+        let right = document.getElementById('right' + suffix);
+
+        let x1 = Math.floor(start / heatHeight);
+        let y1 = start % heatHeight;
+        let x2 = Math.floor(end / heatHeight);
+        let y2 = end % heatHeight;
+
+        let veryStartX = x1 * sqPx;
+        let veryStartY = y1 * sqPx;
+        let veryEndX = x2 * sqPx;
+        let px = 1 / sqScale;
+        let singleElementWidth = sqPx + px;
+
+        let topPadding = canvasTimeHeightPx;
+
+        if (x1 === x2) {
+            left.style.display = 'none';
+            right.style.display = 'none';
+
+            for (let b of [middle, leftMiddle, rightMiddle]) {
+                b.style.left = veryStartX + 'px';
+                b.style.top = topPadding + veryStartY + 'px';
+                b.style.width = singleElementWidth + 'px';
+                b.style.height = (y2 - y1 + 1) * sqPx + px + 'px';
+                b.style.display = 'block';
+            }
+        } else {
+            left.style.left = veryStartX + 'px';
+            left.style.top = topPadding + veryStartY + 'px';
+            left.style.width = singleElementWidth + 'px';
+            left.style.height = (heatHeight - y1) * sqPx + px + 'px';
+            left.style.display = 'block';
+
+            leftMiddle.style.left = veryStartX + 'px';
+            leftMiddle.style.top = topPadding + 'px';
+            leftMiddle.style.width = singleElementWidth + 'px';
+            leftMiddle.style.height = y1 * sqPx + px + 'px';
+            leftMiddle.style.display = 'block';
+
+            rightMiddle.style.left = veryEndX + 'px';
+            rightMiddle.style.top = topPadding + (y2 + 1) * sqPx + 'px';
+            rightMiddle.style.width = sqPx + px + 'px';
+            rightMiddle.style.height = (heatHeight - y2 - 1) * sqPx + px + 'px';
+            rightMiddle.style.display = 'block';
+
+            right.style.left = veryEndX + 'px';
+            right.style.top = topPadding + 'px';
+            right.style.width = sqPx + px + 'px';
+            right.style.height = (y2 + 1) * sqPx + px + 'px';
+            right.style.display = 'block';
+
+            if (x2 - x1 === 1) {
+                middle.style.display = 'none';
+            } else {
+                middle.style.left = veryStartX + sqPx + px + 'px';
+                middle.style.top = topPadding + 'px';
+                middle.style.width = (x2 - x1 - 1) * sqPx - px + 'px';
+                middle.style.height = heatHeight * sqPx + px + 'px';
+                middle.style.display = 'block';
+            }
+        }
+    }
+
+    function callSelectionRedraw(sample, shiftPressed, ctrlPressed) {
+        if (ctrlPressed) {
+            highlightStart = sample;
+            highlightEnd = sample + Math.abs(heatActiveSample1 - heatActiveSample2);
+        } else if (shiftPressed && heatActiveSample1 !== -1) {
+            highlightStart = Math.min(heatActiveSample1, sample);
+            highlightEnd = Math.max(heatActiveSample1, sample);
+        } else {
+            highlightStart = highlightEnd = sample;
+        }
+
+        callHighlightRedraw(highlightStart, highlightEnd, 'Selection');
+
+        const index = sample - currentHeatmap.startBlock();
+        const heatmap = currentHeatmap.heatmap();
+        if (index >= 0 && index < heatmap.length) {
+            const ms = startMs + currentHeatmap.currentTimeBlock() * index;
+            const total =  heatmap[index];
+            const max = currentHeatmap.max();
+            heatCanvas.title = new Date(ms).toLocaleTimeString(undefined, timeOptionsShort) + " " + index;  // FIXME
+            const totalText = "total: " + total + " (" + Math.floor(total / max * 100) + "%)";
+            const searchText = searchExecutedCount > index
+                ? "; match: " + found[index] + " (" + Math.floor(found[index] / Math.max(total, 1) * 100) + "%)"
+                : "";
+            status.textContent = totalText + searchText;
+            status.style.display = 'inline';
+        } else {
+            status.style.display = 'none';
+        }
+    }
+
+    function callActiveRedraw(sample, shiftPressed, ctrlPressed) {
+        if (ctrlPressed) {
+            let minSelected = Math.min(heatActiveSample1, heatActiveSample2);
+            let maxSelected = Math.max(heatActiveSample1, heatActiveSample2);
+
+            heatDiffStart = highlightStart;
+            heatDiffEnd = highlightEnd;
+
+            callHighlightRedraw(highlightStart, highlightEnd, 'Diff');
+            renderDiff(
+                minSelected - currentHeatmap.startBlock(),
+                maxSelected - currentHeatmap.startBlock(),
+                heatDiffStart - currentHeatmap.startBlock(),
+                heatDiffEnd - currentHeatmap.startBlock()
+            );
+        } else {
+            heatDiffStart = -1;
+            heatDiffEnd = -1;
+            if (shiftPressed && heatActiveSample1 !== -1) {
+                heatActiveSample2 = sample;
+            } else {
+                heatActiveSample1 = heatActiveSample2 = sample;
+            }
+
+            let minSelected = Math.min(heatActiveSample1, heatActiveSample2);
+            let maxSelected = Math.max(heatActiveSample1, heatActiveSample2);
+
+            callHighlightRedraw(highlightStart, highlightEnd, 'Diff');
+            callHighlightRedraw(minSelected, maxSelected, 'Active');
+            renderTraces(
+                Math.max(0, minSelected - currentHeatmap.startBlock()),
+                Math.min(currentHeatmap.heatmap().length - 1, maxSelected - currentHeatmap.startBlock())
+            );
+        }
+    }
+
+    window.addEventListener('keydown', function (e) {
+        if (e.key === 'Shift') {
+            callSelectionRedraw(heatLastSample, true, e.ctrlKey);
+        } else if (e.key === 'Control') {
+            callSelectionRedraw(heatLastSample, e.shiftKey, true);
+        }
+    });
+
+    window.addEventListener('keyup', function (e) {
+        if (e.key === 'Shift') {
+            callSelectionRedraw(heatLastSample, false, e.ctrlKey);
+        } else if (e.key === 'Control') {
+            callSelectionRedraw(heatLastSample, e.shiftKey, false);
+        }
+    });
+
+    heatCanvas.onmousemove = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        if (y >= heatHeight) {
+            y = heatHeight - 1;
+        }
+        heatLastSample = x * heatHeight + y;
+        if ((event.buttons & 1) === 1) {
+            callSelectionRedraw(heatLastSample, true, event.ctrlKey);
+        } else {
+            callSelectionRedraw(heatLastSample, event.shiftKey, event.ctrlKey);
+        }
+    }
+
+    heatCanvas.onmouseout = function () {
+        status.style.display = 'none';
+    };
+
+    heatCanvas.onmousedown = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        let sample = x * heatHeight + y;
+
+        callActiveRedraw(sample, event.shiftKey, event.ctrlKey);
+    };
+
+    heatCanvas.onmouseup = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        let sample = x * heatHeight + y;
+
+        callActiveRedraw(sample, true, event.ctrlKey);
+    };
+
+
+
+init();
+// FIXME search(/*highlight:*/);
+</script></body></html>

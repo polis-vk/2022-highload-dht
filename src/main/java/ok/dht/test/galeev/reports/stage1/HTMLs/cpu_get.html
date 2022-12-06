@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 4px 8px 24px; background-color: #ffffff; overflow-y: scroll}
+    h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {margin: 5px 0 5px 0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {overflow: hidden; white-space: nowrap}
+	#match {overflow: hidden; white-space: nowrap; display: none; float: right; text-align: right}
+	#reset {cursor: pointer}
+	#canvas {width: 100%; height: 300px}
+
+    .selectionPart {position: absolute; display: none; pointer-events: none; box-sizing: border-box;}
+    .sel {background-color: #dada0040}
+    .act {background-color: #00da0040}
+    .dif {background-color: #00dada40}
+    .top {border-top: .1px solid #000}
+    .left {border-left: .1px solid #000}
+    .bottom {border-bottom: .1px solid #000}
+    .right {border-right: .1px solid #000}
+
+    #info-tooltip {display: none; position: absolute; top: 100px; right: 32px; width: 204px; border: 1px solid #666666; background: #ffffe0; border-radius: 8px; padding: 4px}
+    #heatmap-height-line, #heatmap-info { text-decoration: #0366d6 dashed underline; cursor: pointer; font-family: monospace}
+    #heatmap-info {cursor: help}
+    #heatmap-info:hover + #info-tooltip {display: block}
+
+    .colortip {width: 100px; box-sizing: border-box; padding: 4px; background: linear-gradient(var(--c1), var(--c2))}
+
+
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+
+
+<div style="display: flex">
+    <div style="width: 20px; margin-right: 2px; float: left; writing-mode: vertical-rl; transform: scale(-1); text-align: center; user-select: none"><pre id="heatmap-height-line"> 1 sec : 20 ms </pre></div>
+
+    <div id='heatmap-canvas-container' style="width: 100%; position: relative" autofocus>
+        <div id='heatmap-canvas-wrapper' style='overflow: hidden; width: 100%'>
+            <canvas id='heatmap-canvas' style='height: 314px'></canvas>
+        </div>
+
+        <div id='middleActive' class='selectionPart top bottom act'><span></span></div>
+        <div id='leftActive' class='selectionPart top left bottom act'><span></span></div>
+        <div id='rightActive' class='selectionPart top right bottom act'><span></span></div>
+        <div id='leftMiddleActive' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleActive' class='selectionPart left'><span></span></div>
+
+        <div id='middleSelection' class='selectionPart top bottom sel'><span></span></div>
+        <div id='leftSelection' class='selectionPart top left bottom sel'><span></span></div>
+        <div id='rightSelection' class='selectionPart top right bottom sel'><span></span></div>
+        <div id='leftMiddleSelection' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleSelection' class='selectionPart left'><span></span></div>
+
+        <div id='middleDiff' class='selectionPart top bottom dif'><span></span></div>
+        <div id='leftDiff' class='selectionPart top left bottom dif'><span></span></div>
+        <div id='rightDiff' class='selectionPart top right bottom dif'><span></span></div>
+        <div id='leftMiddleDiff' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleDiff' class='selectionPart left'><span></span></div>
+    </div>
+
+    <div id="heatmap-info" style="width: 20px; margin-right: 2px; writing-mode: vertical-rl; text-align: center; user-select: none">
+        <pre> Info </pre>
+    </div>
+    <div id="info-tooltip">
+        <div style="float:left">
+            <div style="padding: 4px;">Frame types:</div>
+            <div class="colortip" style="--c1:#b2e1b2;--c2:#c6f5c6">Interpreted</div>
+            <div class="colortip" style="--c1:#50e150;--c2:#6eff6e">JIT-Compiled</div>
+            <div class="colortip" style="--c1:#50cccc;--c2:#6eeaea">Inlined</div>
+            <div class="colortip" style="--c1:#e15a5a;--c2:#ff8282">Native</div>
+            <div class="colortip" style="--c1:#c8c83c;--c2:#e6e646">C++</div>
+            <div class="colortip" style="--c1:#e17d00;--c2:#ff9b00">Kernel</div>
+            <div class="colortip" style="--c1:#cce880;--c2:#e0fc94">C1-Compiled</div>
+        </div>
+        <div style="float:left; margin-left: 4px">
+            <div style="padding: 4px;">Special colors:</div>
+            <div class="colortip" style="--c1:#ee00ee;--c2:#ee00ee">Matches regexp</div>
+            <div class="colortip" style="--c1:#baa551;--c2:#baa551">New frames</div>
+            <div class="colortip" style="--c1:#f0f0c0;--c2:#f0f0c0">Same frames</div>
+            <div class="colortip" style="--c1:#99aaff;--c2:#99aaff">Less frames</div>
+            <div class="colortip" style="--c1:#ffaa99;--c2:#ffaa99">More frames</div>
+        </div>
+        <div style="float:left; margin-top: 4px; width: 100%; border: 1px solid #666666; border-radius: 2px; padding: 2px; box-sizing: border-box;">
+            Shift + Click - Select range<br>
+            Ctrl + Click - Compare<br>
+            Ctrl + F - Search<br>
+        </div>
+    </div>
+</div>
+<div id="executionsHeatmap" style="display:none">BLjXACYmGzIzJyMzNhRdSgSqSe|D?????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????G????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????AxpihxPPHPXHHHPIPHIIHPPRPHPHJHHHHHHPIHHHIJYHHHHIZZHNHHHHHHH@HHHIHIHPHPHHHHHHHHHHPHPHHIHHHHHHIPHPHIHPIHIHHHHHHIHHHHAHHHPHHHHHHHHHPHHHHHHHHIIHHHHHHHPHHHHHHHHHHRHHHHHHHHHJPIHHPIHPHPIHPIHPIHPIHPQHPIHILIHIHPHHPIHPIHPHPPIHPIHIHHHHIX`HPIHPIHHHHHHHPQIHPIHPPIHPIHIYPIHPHPPIHKHIHPPIHQ[J[J[HIHOPA@IPIHPIHPIIHHPIHPHPHPIHPIHIPPHQHPIHIIHIHPIHPHPIHPHPIHIHPIHPIIPHPIHPIHHIHPIHPHPIHPIHIHPIHTHHIHIHPPHPHPIHPIHPIHPHPIHGHHH`PHPIHPHPPHIHPIHPIHPHPHHPIHPILQHPHPIHPIHHPHHIHPIHIHPHPIHIHPPIHIHPIHPHIHIHPHPHPIHHHHHHHHHHHHHHIHPIHPIHIGHHHHHHHHHHHHGHHHHHPHHHHPIHPHPHIHPGOHHHHHIHHPIHXPHPIHPHPHPIHPIHPPIHIHPHHHHIHPHGHHPHHHHHHPHHHHHHIHHHHHHHIHHJHHPIHPIHPHHHHHHHHIHPIHPIHPHPPHPHIHPIHPIHIHPHHHHA@HHOHHHHHHHHHHIHHHHHHHHHHHHHHHHHIHPIHPIHPIHPHIHPHPIHPIHPIHPIHPHPPIHPHPIPIHPPHPIHPIIHIHPPIHPIHIHPHPPIHIHPIHPIHIHPIHIHPHPHGHHHGHHHHHHHHH@HHHHHH@IHIHPIHPHPHPIHIIHPIHPHPPIHPIHPIHPIHPPIHIHPIHIHPIH@HHHHIHPHPPIHPIHPIHPHPPHPIHIHIHIIHPIHPIHPIHPIIHIHHHHHHHGOHIPIHPIHPIIHPIHPIHPIIHH@HHHHHHHHIHHIHPHPIHPGOOHPHHHPPHHPIIHPIPHHI@PHHHHHHHHHHHHHHHHHHHIAHAHHOHHHHHHHHIHIHHPHPHHHHHHHGIHPIHPIHIHHHHHHHHHHPIHIIHPIHIHPPHPPHPHPIHIHIHPIHPPIHPIHPGHHHHHHPHHHHHHH@HHHHHHHPHHPHHHIHHIHHHPHHHHPHIHHPHPHPHPHIHHIHHPHIHIHHHH@HHHHHHHH@HHHHHHHHHHHIHIHPIHIHIHPIHPIIHIHPIHPIHPIHPIHPIHPHIHIHPIHPIHPPHPIHPHPHPHHHHHHHHHHHHHPIHPIHPIHHPIPPIHPHPIHPIHIIHIHPIHIIHPIHIHPIHPPIHPHPIHPJHHHHHHHH@PIIHIIHPHPIHPPHPPHPPKHHPIHPIHPIHPIHHPPIHPIHIIHPHPOIQHPIHPPIIJIHHHHHHHHHHHHHHHHHHHHHHHHGHHHHHHHHHHHHAHHHHHHHHGHJHIHPIHPIIIHPIHPIHHHHHHHHHHHHHHHHHHHHHHHGOPGIHGPHH@HHHIHPPIHIIHPH@IHIHPIHPHPIHPIIHPPIHIHPIHPH???????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????@?????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????@?????????????????G????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????G???????????????????????????@??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????@oq@k{@d|@oq@~y@`}@fmAvuAmgAj{@xsApxA_rAi{@ffAkv@tiAkjA`mArqAwsAgfAc|@i|@r`AmkAnkAzkAhyA}v@jx@|eA}gAaoAyoAmwAy}A}z@gdAvkA~oArq@hr@ms@ou@bv@ey@xy@nz@ecAcjA~kArnAuvA`wA}zAg}Apq@`r@`t@mt@su@jv@pw@rx@|x@zy@q}@`aAgbAuiAyjAakAxkAsmA|mAhpAzpAtqA`rAkrAlsA{sA{wA_xAi|Ar`Bqq@}q@xs@dt@st@ut@~u@ev@aw@ay@yy@~|@l}@u~@o`AkbAwbAncAwcAjdA~dAofAzgAthAaiAoiAokA{lAemAnmAenA|oAsqA|sAetAjwAowAexA|xAiyA{yAqzA`{A_r@or@qr@{r@|r@bs@gs@ks@ss@~s@ct@gt@jt@lt@}t@bu@eu@xu@av@mv@ov@xv@ew@sw@tw@uw@ww@mx@{x@sy@ez@mz@rz@tz@yz@g{@x{@e|@p|@q|@y|@||@b}@h}@m}@o}@w}@q~@s~@y~@j_Aq_Ar_Av_Ax_A_`Ax`A~`AabA}bAmcAqcAucAxcA|cAadA_eAaeAieAteA}eAdfAifAvfA|fAdgArgA`hAdhAfhAohAyhApiAsiA{iAjjAfkAwkAalAjlA_mAcmAgmAlmAqmArmAwmAdnAjnAmnA{nA_oAcpA~pAdqAeqAgqA~qAirAjrAlrAorAtrAxrAyrAmsAvsAysAatAdtAntAqtArtAutAjuAqvAtvAewAkwAswAfxAnxAnyAqyAtyAfzAkzAmzAe{Aw{Ax{Ar|A{|A`}Ax}A~}An~Ac_Bg_Bm_Bj`Btq@uq@vq@wq@xq@yq@zq@{q@|q@~q@jr@kr@lr@mr@nr@sr@tr@vr@wr@xr@yr@zr@as@ds@es@fs@js@ls@os@us@zs@{s@|s@}s@at@et@ft@ht@it@kt@vt@wt@xt@yt@{t@|t@~t@_u@cu@gu@iu@ku@nu@qu@ru@vu@wu@yu@{u@}u@_v@`v@gv@tv@vv@wv@zv@_w@`w@cw@dw@iw@jw@vw@yw@zw@{w@|w@~w@_x@ax@cx@gx@px@qx@sx@tx@wx@yx@cy@dy@gy@hy@iy@qy@vy@wy@|y@}y@`z@bz@cz@dz@gz@iz@kz@pz@vz@wz@xz@zz@{z@|z@~z@_{@`{@b{@c{@e{@f{@l{@n{@p{@t{@`|@g|@j|@k|@l|@m|@n|@o|@r|@s|@t|@u|@v|@w|@x|@z|@{|@}|@d}@e}@f}@g}@i}@j}@k}@n}@p}@r}@s}@v}@{}@~}@_~@`~@a~@b~@c~@d~@e~@f~@g~@h~@i~@j~@k~@z~@~~@b_Al_Am_An_Ao_At_Ay_Az_A{_A|_Ab`Ad`Ae`Af`Ag`Ah`Ai`Aj`Ak`Al`Am`An`Ap`Aq`As`Av`Az`A|`A}`A_aAbaAcaAdaAiaAkaAlaAmaAnaAoaAvaAxaA|aA~aA_bA`bAbbAcbAdbAebAfbAnbAobApbAqbAsbAtbAubAvbAxbAzbA{bA|bA~bA`cAacAbcAccAdcAgcAkcArcAscAtcAycAzcA{cA`dAcdAfdAhdAidAldAodApdAqdArdAtdAvdAwdAxdA{dA}dA`eAceAeeAfeAgeAheApeAreAseAueAveAweAyeAzeAbfAlfAqfArfAsfAtfAufAxfA{fA}fA~fA`gAbgAegAggAhgAigAkgAogAqgAsgAtgA~gA_hAbhAchAhhAjhAqhAvhAwhAxhAzhA{hA}hA~hA_iA`iAbiAdiAeiAfiAhiAjiAkiAliAmiAniAqiAriAviAwiAziA}iA~iA`jAbjAdjAejAijAmjArjA|jA}jAbkAhkAikAjkAkkApkAqkArkAtkAukA`lAdlAflAhlAklAmlAnlAolAplAqlAslAtlAvlAwlAxlAzlA}lA~lAbmAimAkmAtmAymAzmA~mA_nAanAbnAcnAfnAgnAinAknAlnAonAtnAunAvnAwnAxnAznAcoAdoAqoAzoA`pAbpAdpAfpAgpAipAjpAppA|pAfqAhqAyqA|qA}qAcrAerAgrAhrAprArrAvrA|rA~rA_sAbsAdsAgsAisAksAnsAosArsAtsAusA_tAbtAgtAhtAjtAltAptAstAxtA|tA~tAbuApuAquAsuAuuAwuAavAbvAevAjvAlvApvArvAvvAxvA}vAawAfwAgwApwAuwAvwAwwAxwAywAzwA|wA~wA`xAaxAcxAgxAixAkxAqxA~xA`yAbyAeyAjyAlyAsyAvyAwyA}yA`zAbzAczAgzAizAlzApzArzAyzAa{Ab{Ad{Ai{Aj{Al{Ap{Aq{Ar{At{Au{A{{A}{An|Ap|Aq|As|At|Au|Av|Ax|A}|A~|Ad}Af}Ah}Aj}Ap}Ar}As}Au}Az}A|}A`~Aj~Ak~Am~Aq~Av~Aw~Ab_Bj_Bl_Br_Bs_Bw_By_B{_B}_B_`Bb`Bf`Bu`Bw`By`B{`BdaBgaBwaBzaBabBmbBsbB|bBsq@ar@br@cr@dr@er@fr@gr@ir@pr@rr@ur@}r@~r@_s@`s@cs@hs@is@ns@ps@qs@rs@ts@vs@ws@ys@_t@bt@nt@ot@pt@qt@rt@tt@zt@`u@au@du@fu@hu@ju@lu@mu@pu@tu@uu@zu@|u@cv@dv@fv@hv@iv@lv@nv@pv@qv@rv@sv@uv@yv@{v@|v@~v@bw@fw@gw@hw@kw@lw@mw@nw@ow@qw@rw@xw@}w@`x@bx@dx@ex@fx@hx@ix@kx@lx@nx@ox@ux@vx@xx@zx@}x@~x@_y@`y@by@fy@jy@ky@ly@my@ny@oy@py@ry@ty@uy@{y@_z@az@fz@hz@jz@lz@oz@qz@sz@uz@a{@d{@h{@m{@o{@q{@r{@s{@u{@v{@w{@y{@z{@{{@|{@}{@~{@_|@a|@b|@f|@h|@_}@a}@c}@t}@u}@x}@y}@z}@|}@}}@l~@m~@n~@o~@p~@r~@t~@v~@w~@x~@{~@|~@}~@__A`_Aa_Ac_Ad_Ae_Af_Ag_Ah_Ai_Ak_Ap_As_Au_Aw_A}_A~_A``Aa`Ac`At`Au`Aw`Ay`A{`AaaAeaAfaAgaAhaAjaApaAqaAraAsaAtaAuaAwaAyaAzaA{aA}aAhbAibAjbAlbAmbArbAybA_cAfcAhcAicAjcAlcAocApcAvcA}cA~cA_dAbdAddAedAkdAmdAndAsdAudAydAzdA|dAbeAdeAjeAkeAleAmeAneAoeAqeAxeA{eA~eA_fA`fAafAcfAefAhfAjfAkfAmfAnfApfAwfAyfAzfA_gAagAcgAfgAjgAlgAngApgAugAvgAwgAxgAygA{gA|gAahAehAghAihAkhAlhAmhAnhAphArhAshAuhA|hAciAgiAiiAxiAyiA|iA_jAajAfjAgjAhjAljAnjAojApjAqjAsjAtjAujAvjAwjAxjAzjA{jA~jA_kA`kAckAdkAekAgkAlkAskAykA{kA|kA}kA_lAblAclAelAglAilAllArlAulAylA|lAamAdmAhmAjmAmmAomApmAumAvmAxmA{mA}mA`nAhnAnnApnAqnAsnAynA|nA}nA~nA`oAboAeoAfoAgoAhoAioAjoAkoAloAmoAnoAooApoAroAsoAtoAuoAvoAwoAxoA{oA}oA_pAapAepAkpAlpAmpAnpAopAqpArpAspAtpAupAvpAwpAxpAypA{pA}pA_qA`qAaqAbqAcqAiqAjqAkqAlqAmqAnqAoqApqAqqAuqAvqAwqAxqAzqA{qAarAbrAdrAfrAmrAnrAqrAsrAurAwrAzrA{rA}rA`sAasAcsAesAfsAhsAjsApsAqsAssAzsA}sA~sA`tActAftAitAktAmtAotAttAvtAwtAytAztA{tA}tA_uA`uAauAcuAduAeuAfuAguAhuAiuAkuAluAmuAnuAouAruAtuAxuAyuAzuA{uA|uA}uA~uA_vA`vAcvAdvAfvAgvAhvAivAkvAmvAnvAovAsvAwvAyvAzvA{vA|vA~vA_wAbwAcwAdwAhwAiwAlwAnwAqwArwAtwA}wAbxAdxAhxAjxAlxAmxAoxArxAsxAtxAuxAvxAwxAxxAyxAzxA{xA}xA_yAayAcyAdyAfyAgyAkyAmyAoyApyAryAuyAxyAyyAzyA|yA~yA_zAazAdzAezAhzAjzAnzAozAszAtzAuzAvzAwzAxzAzzA{zA|zA~zA_{Ac{Af{Ag{Ah{Ak{Am{An{Ao{As{Av{Ay{Az{A|{A~{A_|A`|Aa|Ab|Ac|Ad|Ae|Af|Ag|Ah|Aj|Ak|Al|Am|Ao|Aw|Ay|Az|A||A_}Aa}Ab}Ac}Ae}Ai}Ak}Al}Am}An}Ao}Aq}At}Av}Aw}A{}A}}A_~Aa~Ab~Ac~Ad~Ae~Af~Ag~Ah~Ai~Al~Ao~Ap~Ar~As~At~Au~Ax~Ay~Az~A{~A|~A}~A~~A__B`_Ba_Bd_Be_Bf_Bh_Bi_Bk_Bn_Bo_Bp_Bq_Bt_Bu_Bv_Bx_Bz_B|_B~_B``Ba`Bc`Bd`Be`Bg`Bh`Bi`Bk`Bl`Bm`Bn`Bo`Bp`Bq`Bs`Bt`Bv`Bx`Bz`B|`B}`B~`B_aB`aBaaBbaBcaBeaBfaBhaBiaBjaBkaBlaBmaBnaBoaBpaBqaBraBsaBtaBuaBvaBxaByaB{aB|aB}aB~aB_bB`bBbbBcbBdbBebBfbBgbBhbBibBjbBkbBlbBnbBobBpbBqbBrbBtbBubBvbBwbBxbBybBzbB{bB}bB~bB_cB`cBacBbcBccBdcBecBfcBgcBhcBicBjcBkcBlcBmcBncBocBpcBqcBrcBscBtcBucBvcBwcBxcBycBzcB{cB|cB}cB~cBksBAAAAAAAAAAAAApCAz@ArHAAAAAAAAAAAAAAAAAAAAAAAAqJsJAAA`AAA`AAAaK}JAA??A?A?A`AA@????A?AA?AAA@AA@@AAAGA?AA@??@A@??AC@???@B@@?@?AAA@@A@@@@?@AA?@AAAAAAAy@A@@AlD@?@??@AA?A}IAA@xDA?A{A?BkM{AAAAA|D@A@?A???B??A@??@@A@AA@A@@@A@A@???AA@A?d@@A@?@@A@??A?A@??A????@A@?]???@?A@@@@AA?@@???A?A?@A?dB]A@@?@@@A@@@@@@C@@@A?@??@@@@A?@?AA@@AAmO@A@A@??@A@A@?A@???]@A?@???A@V@?A@???A@?@@F@@?@@@@@??@@??T@A??A@@?@??@A@@A@??@A?@?@A???@@?@?@?@A@????A@AvDAA@???@?@A???@????@AAuJ@?A?@@@@@?@@?A@????A@A???@?A????@@@?A?@?A???A@AaR@?A@@@?@@AWWA?@?F@??AaAaJ?AY@@@lRA_EVC??@?@@@cAA??A@@@A???@??]??@A@@?K?@@??AB@C@@?A@?@A?A????@??????|M??@@@?wD@A?@_EfAA?A@?@?@@??@@@K@??@]A??@?@A?@??@B@@AAA?G@N{P@@_D@A@@@?@???@A?@@A@@???@D?F?@@A?dB~E@?@?@??@@@@@@A?@NA@AA@?@{SAAAA?@]@?A@hAA?@A?A??A?]?A?uE?AoC?AAgRuEFxD@AuA@bBAy@y@A|CAdB?fHAA@?@?@@@?@@@?@@?@jA??@?@@@@@@kEAA?G@@???@@@?A@??@?@cQ??A@D?@?@A@A@P@@@?@???@J?@?@@?NC~@AgF?A?A?Y?@cFyE@?AD@@???A?@@@W?@_@@B@@??@@?@?@?@??@~@@??@??@A?@?????CA???K@A?@D???@@F?OJ@A?@AA??A@@A??A?@A?uR?@???@?@Q?p@lJ@@?LF@?AbE@@?A@?@??@????@@@@e@@???kK?@?A@?AqFqF??@??N?AgBfAh@A@@??@?@@@???@@@nA?@?@@?@@???@?A?@@@?@????@?@?@CH??@@@@lF?xE??A?@?@?@@?PA@AAA????@??@A@@?@@@A??@????????@@?P??H?@@@e@?@@@??AO@@??A?@?K?F??@uB@@??WvO@?B??@?gBAA_F{AA|DA@??A?@??@?A?A?@?@@@?E?@?@?@Q?@`@?AAV?H@@XE???@?hS?????@?A?@?P@@@??@?@??@?????P?A@@B????A??@?@?AA??hA@mSH?@P@??@@?@?@@@??@AK?S??uQ??A@@@qB?nB?nScA?@?E@@E??@@@@@??_B@@A@@@@?V?@@@zF????D??@@A@??@???@????@?@aAE@@????@@?~F@@@A@@?@????@@@|P@@@@@@??AR?@@?@?@sF?@@mB?@@@@A@?@???dU@B@@?@R@??A@??@?@?@A?@@?@y@A???@?@@?@@??@@@?@????@@???@?@??AA?@?@@SmB?@???@A@??@H@F?A??@@?@@?@W@t@????@@@?@e@????@AdF?@Y?@AH??B?@?A?@?@?A??@@@@?A@@@@C???@??@@@X@@?@@?P?qU?o@oA?@?@R@@?@??@?@oA@?E?????A`@Q???@???@@cF@@cAA@@@?@XS?A????@JA???@hA@???A@?@?@@?@D@@??@S???@@@??@???C??nB@@@@HmA@@??yV??@@???@?@?yB@@@?H@vF??p@?C?@@?yF??V?@??B@AqA@@@@sE@??@@A?A@T@?@@@@@@@????@rB?@?@?AD@AB???????@???JG??@?@@??A@@H@@?@??@@@@?A???@??A@?@?@?@@?A??@@?nFBp@?rF?????@@@?@??@@C???C@@????AA@??W`U@AQ?@@A?@?Q@@I@@@I???@Q@@????@?@@?xB???F?mAqB?~B?A@@K@?@@~B@mB@I??@??E?@@?@@@?RX??@?????@B?A?cE@@GoB@??NwF@@@A@D??FA@?@A@YF@?@??bG@??@?dR@iAF|B@@??E?@A@???cW?@??@??@@?@?@??AREA@???@A??????Z@?@?@??A@@B@@@??@@@??yF????W@?@@??@?HDA@?|U@@I?????@???F@@AD??G??W?@?????@bWH@@xB?@}E??@???@@@???@@cAe@e@???P?@?@?@AAnO?@@??@@s@A???@Q??@@???@?@?@@T@?????@??@@@?????@?IQp@?@@???@@@??kA@@?@hI@tFoADoS?@?A?@?@@@?@@?R?D?hA@??@??@?A@@@`R~FA@??@?I@@??@?Q@??A?A@V@??@?@@?@?@L?@?A@@??@???@A??A?jAA???@???@?@@???@??@??AI@yB@?J??????AA@@H?@?@@@@@?C?@@?@??@@?@@?AK?@J@@s@??A?@?I@??@@@???@@?@@A@@@@@A@??@A????A@rEmA????K?JBGG?@??I?@A????E?@`@@Ab@@??@|BN??@?A@@?@@@@@??J@?@?@@_@@?@?AkE@???BC@E@@?N?@E@@G@^@@???@?@A@@@?@??@???E@?D@?v@@???@@v@nAA@H?@A@@@@?????@lV?????@?qA???@@@@@@@???@@?@??@@@??@?oA???@@??@rB???mW?@??I???????F@E@@??????@A?@??V@A@?A????@?jS@@@?sAK@?gG?@@@A?A@XIE@?lF?@@B??@?@@?@uB@D?B@A@????@?????????X@@??@@??@A?A_B@?@a@yB?@??@AR@?@BiW???@@@@@@???Z?@?`@?~BkA@@?jA?b@??C?F?@?rF@@@????@?@@@b@??A??@?@A?@@?`@b@?@r@F@@?@@??@Z?nA?????@@?@@@@@?@@J?@A@@??Y@@AA?@@@@sGf@??H@?T@??@?A@????@@A?A??S?@AkG??C@?@@???qA????@?@A???@?@?@?@?@@@?@@@AYX?K??Z?@?@@@AD??@??lW@?N??@@??@??uV@?@`@??@D@AA??@A@tG@?A@b@C??@R@?s@@@???@@?@??F@???A??@???A?@Z???@@@ShGsF???????@@?EC?@~@K?@@?XO??T??@???@A?@?@@@@@@AA??@???@??@A@@@???@??@@@@?@@@?@s@O?@@@????Lb@AdT????@??AlA@?A??@pW??qA??I@@????@@?@@??@a@@??@@AOT?@L@@}S@@Z?tRwW????@EC@JA@??@@Y?@@@@??????@@@@?????@??Y?I???pX@@@??I@e@?@}BJ?cGbXA@G@@??BqGkF@?@@@N???v@@rB@@???@??@??@@@??@?@?@@?Z@???@V???C@CA@R?@?@?B?????@@?@@D@??fX?~E_F@@cX??wF???@@?@@A@???@?@@L@?AD?@D???A@@@?@pB@@@D@rOA?@|B~W??@@@@???@???rG@?I?@?@@@?@@h@???@A???lG@xX^?@bG@G@?E@@q@Z@?A@jA@@qR`@@s@R@zF@??uB??@??@?b@@???@???A?A??@@AqBt@@?C?@A@A?@@?iRgX?@?hGAA?@@@?_@?@?@??@?J@K??@?sG??@v@@??I?@?HAE?@@@AcY@?@@?@?@I@@?dY`Y?B?A@@?@???E??DxB@AtG??@?@@B?v@?@H??@?@bY@@@@@@qX@?Q??H@??NjG????@??@?@@?tA?@bV?J?@@@?@?????@??A?@@@@@@@?@A??@@@@?@??pB??@?@S@@???@@eT?@?@@??@?@???@p@??@?wX??J@nAA?@?@?wE@??@@?D?@@@StAP?@@@?????@??A??@?@@?@@@?@?@??@??@|WAh@AAAAAABACADAEAFAGAHAIAJAKALAMANAOAPAQARASATAUAVAWAXAYAZA[A\A]A^A_@A`@Aa@Ab@Ac@Ad@h@ZaH\cH^eH`@Ae@Af@Ag@Ah@Ai@Aj@Ak@Al@Am@An@g@DwGFyGH{GJ}GL_HN`HPx@o@Ap@Aq@Ar@gH[bH]dH_@aCa@bCs@At@i@\hH_@aCu@Av@Aw@eCExGGzGI|GK~GMvAO`CQAx@w@y@hC]sH`@jHf@lHh@dCe@kHg@cCi@jCg@kCe@{Hh@zHf@xAi@|Hh@Az@A{@A|@A}@mH~@yH^iHe@lCi@A_A_Ie@zAe@aIf@mCe@bIg@}Hf@mC_Az@i@`If@xA`AAaAAbAyA_@tHcAAdAAeAAfAAgAwAFnHIvHLfCO`ChAgCiAgI`@Au@AjAAcAj@u@lIcApCkAAlAAmAAnAAoAApAAqAArAAsAAtAj@e@zA_AeI_Aj@a@bCuAAvAiIGuHJpHMxHPx@wAqHq@k@b@AxA{@jAmIyAAyAtCzAA{AA|AA}AyA~AA_BA`BAaBAbBAcBAdBAeBk@fB|AHoHKwHNAgBAhBAiBMuAMjB[IjIMvAgB}AkBAlBAmBAnBAoBApBAqBMrBvCJuIN{IsBAtBAuBAvBAwBAxBAyBAzBsIf@nCe@tIe@cIh@~Hg@dIg@fJh@eJh@gJi@fIg@kC_ArC_Az@{BA|BA}BA~BsCcAA_CA`C}@KzIgB}AaCwCuByCbCAcCAdCk@eCAfCAgCAhCnJiCj@jCAkCMlC{CLfCmCMnCAoC|CpC_AMvAqCAsBjJrC~ANAqCpJtBxCrCvI_BwIaBuCsCAtCAuCAvCAwCAxCAyCAy@l@qCrJuByCwBzCzCA{CA|CA}CA~C[_D}CsBxJtByJuBArCBvB`JxBAzCwJ|C_B~CtJ`BxI`DAaDAbDAcD_KdDzJwBvJ{Cm@}C`KxB{J{C_D~CmJeDn@zC|J}C[fDAgDAhDAiDAjDAkDAlDAmDAnDAoDApDAqDArDAsDAtDl@OiCuD|@iAAvDAwDAxD`D{CK|CBrC}@yDAzDA{DA|DA}DA~DA_EA`E~CaBuCcByIaEAbEoKzDpK|DqK~DAcEAdEAeEAfEAgErK`D~JhEAiEG}CT~CaDgDbKiDdKkDeKmDgKoDhKqDjKjEAkEAlEAmEAnEAoEApEAqEArEAsEAtEAuEAvEAwEAxEAyEAzEA{EA|EA}EA~EB_FwA`Fl@gB}AaFAbFAcFAdFAeFAfFAgFAhFAiFAjFuAkFAlFAmFAnFAoF_ApFAqFArFAsFAtFAuFnDvFAwF\dAeDhDcKjDbDlDfKnDc@pDiKrDAjEwKlEyKnEfDpE{KrE}KtE_LvEaLxEbLzEiD|E`BxFAyF~CzFA{FA|FA}FlKPx@~Fm@_GA`G\_CAaGAbGAcG{@dGAeGAfGAgG{@hGaDiGAjGAkGAlGAmGAnGdDoGApGAqGArGsKaDAhEjDhBAaFeLcFgLeFkDgFjLiFaBBAkFlLmFAsGyAtGAuGdD{DAvGMwG_AxGAyGAzGA{G~A|G}@}GqDeGA~GA_HqLiDtK`HrLoDuKrDuLkExKmEzKoEgDqE|KsE~KuE`LwEhDyEcL{EdL}EAaHAbHAcH\dHAeHAfHzMeHAgHAhHAiHnLjHbBkHrDaFcMdFhLfFiLhFkLjFAlHAmHAkAnImAqCnHpIpAqIrArItAhMyGjM{G}MbFfLdFyDgFfMjFbJg@cC`AAoHsCdG`MpHAqHArH\yAtCyAAzAAsHAtHAuHlMjDbD`HmMpDtLjEvLmEqMpEyLsEtMvE|LyEwM|E`BaHyMcH\vH{MgHAwHMxHAyHvDzHdNcFdMfF_NiFaBlH`NkAbNnAAnHA{HA|HcNzGi@}HA~HA_IA`IAaIAbIAcIAdIAeIAfIuAkAxNnHzN|H|N~H}N`I_ObI`OdIaOfIcOlAoInAyN{H{NtAo@_I~NaI{DcIAgIAhIAiIAjIAkIAlIbOmIAnIfBoIApIAqIfB`IfOcI}DrIAsIAtI`EaI{DuIAvIAwIgBkAdO{HoDQAxIbMyIAzIA{IA|IA}IeB~Id@_J|@`JAaJd@uD|@bJjDcJ~MeFkDdJAeJbABsDlF{CfJhB{IsOgJUhJAiJAjJAkJAlJAmJeCnJAoJApJAqJArJwOp@kIvDcDsJAtJj@uJAvJAwJAxJkNkDA`HlNqDvKkEpMnExLqEsMtE{LwEhDyJAzJA{JA|JeB{GeD}JA~JA_KA`KAaKtNdFfNhF{OkFtDsGcPq@d@~FpDbK_AcKAdKAeKlPeFeMhFAfKdP`HePrDoMlEwLoErMrEzLuEuMxE}L{EcBgKmPfFvNjFlDlFmDhKAiKjEjKjBmDUpDmNkEeEkKaMjGAlKjBBsPgFgNmKAnKAoKApKAqK[rKAsKd@xIAtKvPnDsLqDfPlEoPpEoNtEiPxEiEuKAvK}@wKhExKAyKkOpIxPkGAzKS|CA_GA{KyPhFbAmKzP|KA}KA~KA_L~PoDnMjEnNnEfD`LoEpDwPlElEaLAbLAcLmEiFwNdLgQqD_QmEzDaLhQrDnPmEzDqEhPuErPyErN}ExMbHlBjEfQoEpPsEpNwEvMzE~L}ElQcHwAeLAfLAgLAhLAiLbBaGo@jLAkLAlLAmLAnLAoLApLAqLArLUsLAtLAuLAvLpEjFAmKdQ}KnEwLAxLAyL}CzLAaCwC{Li@|LA}L~A~LiC~FpD{K^_MhNh@dC_Az@`MAaMAbMAcM\dM|O|IAgJ}OiJbEkJcEmJAeMAfMg@yIvCgMAhMAiMAjMAkMAlMmQkEeEoEgDaLAmMAnMAoMApMAqMkBqIAmIk@rMAsMoEtMdABsDuMLiAnKwDAvMAwMm@xMAyMBzMF|CbQbKdAmK_R~KA{MA|MLr@G}MtEaC^_GAbK^xM|I~MA_NeB`NvEkFtDnFn@yBBaN`EbNAcNfBdNAeNxQfNAgNhOiIjOkIfAmIi@hNAiNAjNAkNAlNAmNAnNAoNApNAqNArNUsNAtNAuNAvNAwNeAlElEqEjQvEqNzEqQaHOgJhRjJ~OlJBxNAyNAzNgAbKhEdKA{NA|NA}NA~NOqLg@_OG`OMaOAbOkBmIkBcOd@dOPnDc@hJiBjJmRvDcDvMpR|CAeO\fOq@lFmDsGAgO^}Mq@qLrEnDc@sL}QuLrRnK`FwDoRwM_PoJ`PhOUiOAjOAkOAlO`FmOvEnDc@nOAoOoJpOpBmEiQrEqPvEgS{EcBxFAqOArOAsOr@tO}ErLUtM`DuOAvOwEtBxCaNr@nEgPrEySwEpQ{EuD|DAwOAxOAyOAzOA{OA|OuD}OA~OoLrFpLuFnD_PeRi@hJh@fRe@lCz@oC|BA`PAaPMbPoDcPl@dPAePeFuBkJcC_@oEnQtEaQyEqExF|SfPsBvMlS}CgMpLnBrL|QtLsEvLaT_ArCe@zAgPAhPAiPAjPAkPhT_AiTf@cJf@nC_AjClPjTe@dJf@xA{BiJ`PAmPf@pE`QuEkQzEzEnPwDoPApPAqP{@rPAsPAtPAuPAvPhFvPlTuPiFuPjFvPhFuPmTvPjFuPiFwPqDxPiNyAjNyPAzP~SvLvR{PtSpJaP|PMc@k@}PA~P|E{NiS_QaE`QzQpLfTnDqStLgA{KkSoDAhJiBaQ|AbQAcQAdQAeQAfQAgQAhQoB_G{EyNlAhOuSjOAiQAjQAkQGlQdFnDkFuLtBvBAbCqTcQrTmQAnQeF{Lf@oQApQrDqQArQAsQAtQAuQgEvQnT|NA_QcRPx@uDmKwQpFbC~@dCmAhJiBxQAyQgA`GhBzQw@Bf@`LA{QgF|Q[}QA~QA_RA`ReAaRmFbK}TcCfFwMm@eO~TiJiAmFmLbRaAiKAjKAcRAdRlBsDr@eR@fRwTdQAmQwBmQkAqEfSwE`T|E`BgRAtOAhRaEbIAuIoOwI{EiRO}IwBeQsTgQvBnFAbRaAjRArIAkRAlRAmRxTrQyTtQAnRbAkFsRoRApRwReNxRgNyRjI~DqRo@rRAsRAtRlOuRzRiN{RkN}RmN_SoN`SvRAwRLbJnFnDc@iObFiQoFkQAxRgUnQhUrE_TxEAyRtOp@gC`JxFcI}DhIiOjI~DlIyEnIfABvUkApO|HwUlAgOnHeOtAxFuIkUfIAzRaNlAxU{HvQkLwQmLyQoL{QqLpSoDAsLrSvLFtKgA{RL|RuUsEoQxEiE|E_M}RpFwBzC~RA_S}UtEcTzEzEbHpAjJrUoDAiObFkOwS`SeAaSAbSAcSAdSAeSLfSbU~QcU`R|TQqO|CAgSrQfLsQhLtBxN[hSAiSAjSAkSAlSAmSAnSAoSvBsG_VuEkT{EcBaHuF|C@pSjVvEzS|EsNbHbTeP{FbRAqSaFoKpElHmVwEiU}Ea@uD|@rSAiR`G_Rw@sScG`R|AtSAuSAvSAwSn@xSAySAzSA{ShB|SA}SA~SpVxE~U}E`ViOsUjQuTxRG_Tr@`TAaTrA`OlUfQtThQlArJmF{KrAeO{ByEqEaHwVzEiDbTlAqJbPcTdG|PsVjOvSlOA`SaGiSdVkSfVmShVoSpAlOzBoFuPcRxV{EkVbHi@dTAeTAfTvToD}FtLaF|KeQ~KAwLiAgTt@hTf@iTAjTjBkTAlTAcT`WjTvBhKjEiKeUmTfEnTrA}C}B|EnVcHfGoTApTAqTiMzGA`NtEkB~ImBa@_JuOaJdW}EgGrTAsTt@kJg@tTpToD}FuTAvTkAaLjRnMAwTrVuSOrLa@xI`GxTAyTAzTmE{JA{T{ByJ_ClJeGiQoF|TAgRjUvL|E}T}VsLeA~TA_UA`Uu@aHiAaUzBbUvFyC{FoFAjRmUsIf@cUzBeAfE~JAdUAeUn@fUAgUnWjQtVhUTiU^}C`AfRfGjSeVlSgVnSiVqL{UsLAuThWvLqWbHeWlB_JjULrSa@kUdEmOo@lUAmUoTqLmGtLwBnUdAlHAdLAoUApUsAkQtUqUaVcSxEaJa@~Fm@}MxObFeNeFyOeJgElFtPrUAsUsAqOAtUAuUoBeOjPyItFvUAwUAxUbRyUxWcHnUsQzTuQbAlHnG`Q{WrLgTuLzWiRq@zUsA|ToWtOn@~Rl@{UrWdRg@|Uu@}UA~UsBsJjGmMkR_V{T`VyWmBAjU[aVvVgQiGiKoGnDxSbVAcV}WxRqVp@dEwDsS|C|FdVyUmAqCeVAfVAgVAhVAiVAjVkGtLkXhQzUlLAkVaU{QfUlVcVgLtQmVaGnVAoVApVeXtQoUiFaBfTiXnMA_VfFqVsWkSzVnSuWrL_CrV`XcFuNdJzOiFAsVrXlStWoSgWsLvWvTOBoGtVrGjUsBxDAuVAvVAwVdAkFlBxVAyVdGrJmXq@AiAAwQ_GzV}BbTt@{V_@|VlG_Uu@xF_@}VjWtKhC~VA_WU`WAaWAbWAcWAdWAeWAfWrAxMtAqOsXdFyDdJtXjF~QnKA|K_W{MfWqLmGuTuGnRkP{ToXoVaXtU~V}KnGmUpUmLAfNAgWqGnDnXuLoVhWAiWeGkOuGuQjX~NtBaNAjW}PkWAlWAmWtAnWlXqUG_GA{RhXoWpGpWvXtL_X|CaYlWAqWArWkWzT_@sWiGrUAtWpAxQ_UuWAvW_CwWaWlTpAaQq@xWdXwU|FjN|RlN~RnNAyWaSrNbStNdSvNeScHh@nDc@sNcSzWA{WuFtKu@|WuXmS{VqL_YvT_GbSvGr@{B}WA~WvGiAnRvMyXnK~X}KnE_XA`Xu@gRpGqLzX_W{XaW|XcW}XaXAbX|VeTAcXeYoDw@dXUeXAfXAgXAhXAiX?jX</div>
+<div id="globalStacks" style="display:none"></div>
+<div id="methods" style="display:none">@??A??B?????A??B??B?????A??C??B?????D??E??pS?WC?F??G??@U?wL?H??I??PJ?sC?H??J??@A@sK?H??K??PD??H?L??M??PG?GC?N??M??pA????O??P??@C?CC?Q??R??`B?O@?S??R??`M?cD?T??R??`G?WC?U??V??p??kG?U??W??pH?wF?X??Y??PA?_??X??Y??`??C@?Z??[??PP?GJ?\??]??`??kd?\??^??`A?cE?_??`??@S?g}?a??b??PH????c??d??`B????e??R??????F?A??C??B?????f??g??C?????f??h??C?????f??i??C?????f??j??C?????f??k??C?????f??l??C?????f??m??C?????f??n??C?????f??o??C?????f??p??C?????f??q??C?????f??r??C?????f??s??C?????f??t??C?????f??u??C?????f??v??C?????f??w??C?????f??x??C?????f??y??C?????f??z??C?????f??{??C?????Z??[??UQ?GJ?\??]??a??kd?\??^??aA?cE?_??`??qP?g}?f??|??C?????f??}??C?????f??~??C?????f???@?C?????f??@@?C?????Z??[??eX?[J?A??A@?B?????f??B@?C?????f??C@?C?????f??D@?C?????f??E@?C?????f??F@?C?????f??G@?C?????f??H@?C?????f??I@?C?????f??J@?C?????f??K@?C?????f??L@?C?????f??M@?C?????f??N@?C?????O@?P@?B?????X??Y??eJ?o@?_??`??AS?g}?f??Q@?C?????A??R@?D?????A??S@?D?????A??T@?D?????A??U@?D?????A??V@?D?????A??W@?D?????A??X@?D?????A??Y@?D?????A??Z@?D?????A??[@?D?????f??\@?C?????f??]@?C?????Z??[??UP?GJ?f??^@?C?????f??_@?C?????f??`@?C?????f??a@?C?????f??b@?C?????f??c@?C?????f??d@?C?????f??e@?C?????f??f@?C?????f??g@?C?????f??h@?C?????f??i@?C?????f??j@?C?????f??k@?C?????f??l@?C?????U??W??pG?wF?U??m@?`F?OF?U??n@?AC?oE?f??o@?C?????U??n@?QE?sE?p@?q@?q??GB?p@?q@?q??sC?Z??q@?QA?cE?Z??r@?qA?KF?p@?s@?q@?GB?p@?s@?qA?SC?f??t@?C?????U??m@?qE?OF?\??u@?Q@?WO?\??u@?AF?{_?_??v@?AS?cM?w@?b??QH????x@?d??aB????y@?R??AE?GF?Z??z@?Q??[B?f??{@?C?????f??|@?C?????f??}@?C?????f??~@?C?????f???A?C?????f??@A?C?????U??n@?q@?kE?w@?b??QC????AA?d??aA????BA?CA?Q??[E?f??DA?C?????f??EA?C?????f??FA?C?????f??GA?C?????f??HA?C?????f??IA?C?????f??JA?C?????f??KA?C?????U??W??oH?wF?f??LA?C?????f??MA?C?????f??NA?C?????U??W??qG?wF?_??v@?qP?cM?f??OA?C?????f??PA?C?????f??QA?C?????f??RA?C?????f??SA?C?????f??TA?C?????f??UA?C?????y@?R??aB?CF?y@?VA?qB??D?Z??WA?aE?cT?Z??XA?Q???W?Z??YA?a??CT?N??M??_B????f??ZA?C?????f??[A?C?????f??\A?C?????f??]A?C?????f??^A?C?????f??_A?C?????N??M??`B????H??`A?@W?GN?H??aA?pA?gO?F??bA?@B?WH?F??bA?PG?OI?cA?bA?pE?WQ?dA?bA???????O@?eA?B?????A??fA?D?????A??gA?D?????A??hA?D?????A??iA?D?????A??jA?D?????A??kA?D?????A??lA?D?????Z??[??QP?GJ?a??b??QH????c??d??aB????e??R??AK?GF?Q??R??`I?g@?mA?nA?`??_??mA?nA?`B??@?Z??oA?`B?WQ?Z??pA?`H?kS?Z??qA?pL?OH?rA?sA?EB?SH?rA?tA?Q??CI?f??uA?C?????f??vA?C?????rA?sA?@B?SH?rA?tA?@G?[I?wA?sA?PA??q?wA?xA?p??{r?wA?yA?E??{[?f??zA?C?????f??{A?C?????A??|A?D?????A??}A?D?????A??~A?D?????A???B?D?????A??@B?D?????A??AB?D?????A??BB?D?????A??CB?D?????A??DB?D?????A??EB?D?????A??FB?D?????A??GB?D?????A??HB?D?????A??IB?D?????A??JB?D?????A??KB?D?????A??LB?D?????A??MB?D?????A??NB?D?????A??OB?D?????A??PB?D?????_??v@?q@?SM?H??J??UX?{I?U??n@?p@?kE?\??u@?P@?WO?\??u@?@F?{_?_??v@?@S?cM?w@?b??PH????x@?d??`B????y@?R??PF?KF?Z??QB?P??kU?f??RB?C?????f??SB?C?????TB?UB?C?????TB?VB?C?????f??WB?C?????f??XB?C?????f??YB?C?????T??R??`B?SC?f??ZB?C?????f??[B?C?????f??\B?C?????f??]B?C?????f??^B?C?????f??_B?C?????f??`B?C?????A??aB?D?????A??bB?D?????f??cB?C?????f??dB?C?????f??eB?C?????f??fB?C?????Z??[??AI?gI?Z??XA?AJ?KW?Z??gB?A??KX?f??hB?C?????f??iB?C?????f??jB?C?????f??kB?C?????f??lB?C?????f??mB?C?????f??nB?C?????f??oB?C?????H??`A?PF?oM?pB?qB?`E?cN?rB?sB?`W?KJAtB?uB?uU?SX?D??E??@J?CC?vB?wB?E??kB?mA?nA?PA??@?Z??xB?P??[B?Z??xB?@C?wD?p@?s@?@??GB?f??yB?C?????f??zB?C?????f??{B?C?????Z??oA?E??WQ?f??|B?C?????T??R??pD?SC?}B?~B?Q??KDA?C?@C?qL?o}@AC?BC?aD?wZAU??V??@??kG?Q??R??uH?g@?f??CC?C?????f??DC?C?????dA?bA?@?????A??EC?D?????A??FC?D?????A??GC?D?????f??HC?C?????f??IC?C?????f??JC?C?????f??KC?C?????f??LC?C?????f??MC?C??????C?NC?qB?_|@f??OC?C?????f??PC?C?????f??QC?C?????A??RC?D?????f??SC?C?????f??TC?C?????f??UC?C?????f??VC?C?????f??WC?C?????f??XC?C?????f??YC?C?????f??ZC?C?????f??[C?C?????f??\C?C?????f??]C?C?????f??^C?C?????A??_C?D?????A??`C?D?????f??aC?C?????f??bC?C?????f??cC?C?????f??dC?C?????f??eC?C?????f??fC?C?????f??gC?C?????f??hC?C?????f??iC?C?????f??jC?C?????f??kC?C?????f??lC?C?????f??mC?C?????f??nC?C?????f??oC?C?????f??pC?C?????f??qC?C?????f??rC?C?????f??sC?C?????f??tC?C?????f??uC?C?????f??vC?C?????f??wC?C?????f??xC?C?????f??yC?C?????f??zC?C?????f??{C?C?????Z??[??AG?cI?A??|C?B?????D??E??@M?KC?vB?}C?pA?WG?vB?~C?@??????D?@D?B?????AC?BC?aF?{ZAZ??[??QQ?GJ?_??`??qM?c}?AD?BD?AA?OF?_??`??aA?W}?U??m@?pE?OF?y@?R??PL?GF?rA?CD?`@?s]AS??R??uB??D?O@?DD?B?????A??ED?D?????A??FD?D?????A??GD?D?????A??HD?D?????A??ID?D?????A??JD?D?????H??I??@F?WC?F??KD?@A??G?dA?KD?@??????D?LD?B?????f??MD?B?????e??R??QJ?OF?e??ND?AG?[E?f??OD?C?????f??PD?C?????f??QD?C?????f??RD?C?????A??SD?D?????A??TD?B?????A??B??B?????f??UD?C?????H??aA?`??cO?VD?WD?`V?OJ?XD?YD?`D?sE?ZD?bA?PB?kC?ZD?bA?`q?gD?Z??gB?Q??KX?T??R??p@?SC?[D?\D?PA?SJ?]D?\D?EF?_V@f??^D?C?????A??_D?D?????f??`D?C?????f??aD?C?????f??bD?C?????A??cD?D?????rB?sB?u_?[JAf??dD?C?????A??eD?D?????A??fD?D?????A??gD?D?????A??hD?D?????N??M??@A????pB?iD?u@?CJ?Z??WA?a??WT?A??jD?D?????A??kD?D?????Q??R??UA?O@?[D?\D?@@?SJ?lD?mD?eA?gv@tB?uB?E??_W?Z??gB?AC?KX?A??nD?D?????A??oD?D?????A??pD?D?????A??qD?D?????A??rD?D?????A??sD?D?????A??tD?D?????A??uD?D?????f??vD?C?????H??J??Pf?cJ?H??wD?aL?sL?ZD?KD?AA?SG?ZD?KD?QA?cG?ZD?xD?AD?GI?f??yD?C?????f??zD?C?????f??{D?C?????f??|D?C?????f??}D?C?????f??~D?C?????f???E?C?????O@?@E?B?????AE?@E?B?????A??BE?D?????A??CE?D?????A??DE?D?????A??EE?D?????A??FE?D?????A??GE?D?????A??HE?D?????U??m@?aF?OF?\??u@?a@?w_?f??IE?C?????f??JE?C?????U??V??PF?{G?Z??XA?AF??W?f??KE?C?????f??LE?C?????f??ME?C?????f??NE?C?????f??OE?C?????A??PE?D?????A??QE?D?????O??P??pI?SC?VD?RE?pI?_D?SE?YD?`??sN?TE?YD?`B?sr?TE?UE?@G?OM?VE?WE?Q??C\BA??XE?D?????A??YE?D?????A??ZE?D?????A??[E?D?????A??\E?D?????f??]E?C?????f??^E?C?????A??_E?D?????TB?`E?C?????e??R??aB?CF?e??VA?qB??D?Z??XA?AH??W?D??E??ON?KC?_??v@?qQ?cM?A??aE?D?????A??bE?D?????Z??XA?A@??W?f??cE?C?????f??dE?C?????AC?BC?QN?W[A_??v@?qM?_M?f??eE?C?????f??fE?C?????f??gE?C?????f??hE?C?????f??iE?C?????f??jE?C?????f??kE?C?????f??lE?C?????f??mE?C?????f??nE?C?????f??oE?C?????f??pE?C?????f??qE?C?????f??rE?C?????f??sE?C?????f??tE?C?????O@?uE?B?????A??vE?D?????A??wE?D?????A??xE?D?????A??yE?D?????A??zE?D?????_??v@?q??OM?{E?|E?qE?s~@D??E???M?KC?]D?\D?@F?_V@}E?~E?`@?oNAlD??F?uA?Cj@AC?@F?QB?kXAF??G??E??GL?Z??XA?AB??W?f??AF?C?????f??BF?C?????f??CF?B?????Z??[??QO?CJ?Z??XA?QI?KW?f??DF?C?????f??EF?C?????O@?FF?B?????A??GF?D?????A??HF?D?????A??IF?D?????A??JF?D?????c??d??Q?????A??KF?D?????A??LF?D?????f??MF?C?????A??NF?D?????A??OF?D?????A??PF?D?????A??QF?D?????y@?VA?Q??{C?RF?SF?Q??{K?Z??pA?`@?_S?f??TF?C?????f??UF?C?????f??VF?C?????f??WF?C?????f??XF?C?????Z??oA?@@?WQ?YF?ZF?@?????f??[F?C?????f??\F?C?????f??]F?C?????f??^F?C?????X??Y??@??C@?U??W??qH?wF?X??Y??QA?_??A??_F?D?????f??`F?C?????f??aF?C?????f??bF?C?????f??cF?C?????f??dF?C?????f??eF?C?????f??fF?C?????A??gF?D?????f??hF?C?????f??iF?C?????f??jF?C?????f??kF?C?????f??lF?C?????f??mF?C?????f??nF?C?????f??oF?C?????f??pF?C?????f??qF?C?????f??rF?C?????f??sF?C?????Z??z@?A??[B?f??tF?C?????f??uF?C?????f??vF?C?????lD??F?E??Cj@f??wF?C?????A??xF?D?????L??M??`D?wB?yF?zF?a??CB?{F?R??a??oa?{F?|F?qD?_b?{F?}F?QA?GT?rB?~F?qE?KQAtB?~F?QB?OK?A???G?D?????A??@G?D?????A??AG?D?????Z??XA?qC??W?{F?|F?qN?gb?rB?BG?AJ?Kq@A??CG?D?????A??DG?D?????U??n@?PE?sE?p@?q@?p??GB?p@?q@?p??sC?Z??q@?p??_E?Z??XA?pA??W?O@?EG?B?????a??b??QC????A??FG?D?????A??GG?D?????vB?}C?@??WG?A??HG?D?????f??IG?C?????N??M??AA????pB?iD?a???J?pB?JG?AF??G?rB?KG?AU?cLAA??LG?D?????f??MG?C?????f??NG?C?????f??OG?C?????A??PG?D?????Z??QG?a@?CV?A??RG?D?????O@?SG?B?????{E?|E?A@?g~@f??TG?C?????f??UG?C?????f??VG?C?????f??WG?C?????Z??XA?@H??W?A??XG?D?????A??YG?D?????f??ZG?C?????f??[G?C?????f??\G?C?????f??]G?C?????O@?^G?B?????f??_G?C?????f??`G?C?????A??aG?D?????A??bG?D?????f??cG?C?????Z??gB?Q@?KX?_??`??A??S}?A??dG?D?????y@?R??QJ?OF?y@?ND?Q??{D?A??eG?D?????A??fG?D?????A??gG?D?????A??hG?D?????D??E??`P?OC?iG?~B?@??_G?_??`??q@?W}?D??E??oS?WC?N??M??qA????O??P??AC?CC?Q??R??QA?O@?mA?jG?Q@?_??mA?jG?AB?S@?rB?kG?QD?[n@rB?lG?aA?cr?rB?mG?AE?CN@Z??QG?Q@?CV?D??E??_P?OC?_??`??q??S}?O@?nG?B?????L??M??pB?wB?pB?oG?AC?SF?rB?pG?QI?ShAtB?qG?AD?Co?y@?R??QL?GF?rA?CD?a@?s]ArA?rG?Q@?[^AsG?tG?Q??wC?vB?}C?`E?_G?iG?RE?AJ?kG?iG?uG?AG?{G?Z??XA?AD??W?A??vG?D?????A??wG?D?????A??xG?D?????f??yG?C?????f??zG?C?????f??{G?C?????|G?}G?B?????f??~G?C?????A???H?D?????A??@H?D?????A??AH?D??????D?BH?B?????f??CH?B?????f??DH?C?????VD?WD?`F?kI?Q??R??aB?O@?S??R??aM?cD?T??R??qD?SC?A??EH?D?????A??FH?D?????F??G??pX?KM?A??GH?D?????A??HH?D?????A??IH?D?????pB?JG?aC?{F?rB?JH?QB?GVAtB?JH?AG?SL?O@?KH?B?????A??LH?D?????]D?\D?@??SV@A??MH?D?????A??NH?D?????A??OH?D?????TB?PH?C?????f??QH?C?????A??RH?D?????XD?YD?a??oE?ZD?SH?qA?wA?y@?R??QF?KF?Z??QB?Q??kU?A??TH?D?????Z??YA?A??CT?Z??q@?q??_E?Z??[??ak?CK?f??UH?C?????f??VH?C?????{F?|F?QT?sb?f??WH?C?????f??XH?C?????A??YH?D?????f??ZH?C?????f??[H?C?????A??\H?D?????A??]H?D?????A??^H?D?????A??_H?D?????A??`H?D?????f??aH?C?????TB?bH?C?????U??W??qQ?GG?F??G??@??GL?A??cH?D?????A??dH?D?????A??eH?D?????lD??F?qA?Cj@N??M??aB????A??fH?D?????A??gH?D?????f??hH?C?????A??iH?D?????A??jH?D?????A??kH?D?????A??lH?D?????A??mH?D?????A??nH?D?????f??oH?C?????A??pH?D?????ZD?xD?qO?wI?O??P??qI?SC?VD?RE?Q??OD?qH?RE?A??oA?e??VA?Q??{C?A??rH?D?????f??sH?C?????f??tH?C?????rA?]??A@?W\?rA?uH?Q@??]?sG?tG?A??wC?A??vH?D?????A??wH?D?????A??xH?D?????A??yH?D?????A??zH?D?????A??{H?D?????f??|H?C?????O@?KD?B?????A??}H?D?????A??~H?D?????A???I?D?????A??@I?D?????A??AI?D?????A??BI?D?????A??CI?D?????f??DI?C?????A??EI?D?????A??FI?D?????AD?BD?A??KF?pB?iD?`???J?pB?JG?PP?KG?GI?HI?@??kC?A??II?D?????e??ND?qH?[E?f??JI?C?????GI?HI?`A?oC?rB?JH?q??[SAA??KI?D?????f??LI?C?????A??MI?D?????A??NI?D?????A??OI?D?????f??PI?B?????f??QI?C?????A??RI?D?????A??SI?D?????A??TI?D?????A??UI?D?????A??VI?D?????A??WI?D?????A??XI?D?????A??YI?D?????A??ZI?D?????f??[I?C?????O@?\I?B?????A??]I?D?????A??^I?D?????A??_I?D?????A??`I?D?????A??aI?D?????</div>
+<span style="position:fixed; bottom: 0; right:0; padding: 2px 4px; background-color: #ffffe0; border-top: 1px solid #ffc000; border-left: 1px solid #ffc000; border-top-left-radius: 4px;"><span id="produced">Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a>&nbsp;</span><span id='match' style="display: none">Matched: <span id='matchval'></span>&nbsp;<span id='reset' title='Clear'>&#x274c;</span></span></span>
+
+<h1 id="title">Heatmap, CPU</h1>
+
+<canvas id='canvas'></canvas>
+<div id='hl'><span></span></div>
+
+<span id='status' style="position:fixed; bottom: 0; left:0; padding: 2px 4px; background-color: #ffffe0; border-top: 1px solid #ffc000; border-right: 1px solid #ffc000; border-top-right-radius: 4px; display: none">&nbsp;</span>
+<script>
+	// Copyright 2020 Andrei Pangin
+	// Licensed under the Apache License, Version 2.0.
+	'use strict';
+	let root, rootLevel, px, pattern;
+	let reverse = true;
+	const levels = Array(0);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	let c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	let canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+    const search = typeof searchIterative === 'function' ? searchIterative : searchSimple;
+    const init = typeof renderHeatmap === 'function' ? renderHeatmap : render;
+
+	const palette = [
+		[0xb2e1b2, 20, 20, 20],
+		[0x50e150, 30, 30, 30],
+		[0x50cccc, 30, 30, 30],
+		[0xe15a5a, 30, 40, 40],
+		[0xc8c83c, 30, 30, 10],
+		[0xe17d00, 30, 30,  0],
+		[0xcce880, 20, 20, 20],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(level, left, width, type, title, inln, c1, int) {
+		levels[level].push({left: left, width: width, color: getColor(palette[type]), title: title,
+			details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
+		});
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+    const marked = [];
+
+    function render(newRoot, newLevel, minLevel) {
+        minLevel = minLevel || 0;
+        if (root && minLevel === 0) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+
+		if (minLevel === 0) {
+		    marked.length = 0;
+        }
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+                let match = pattern && pattern.test(f.title) && mark(f);
+                const fw = f.width * px;
+                if (fw < 0.1) {
+                    return;
+                }
+                c.fillStyle = match ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, fw, 15);
+
+				if (fw >= 21) {
+					const chars = Math.floor(fw / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, fw - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, fw, 15);
+				}
+			}
+		}
+
+		for (let h = minLevel; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				let details = f.details || '';
+				canvas.title = f.title + '\n(' + samples(f.width) + details + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f !== root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+                status.style.display = 'inline';
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.textContent = '\xa0';
+        status.style.display = 'none';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = '';
+	}
+
+    window.onkeydown = function() {
+        if (event.ctrlKey && event.keyCode === 70) {
+            event.preventDefault();
+            search(true);
+        } else if (event.keyCode === 27) {
+            search(false);
+        }
+    }
+
+    document.getElementById('reset').onclick = function() {
+        search(false);
+    }
+
+
+
+    class DataBuffer {
+        data;
+        pos = 0;
+        constructor(encodedData) {
+            this.data = encodedData;
+        }
+
+        nextVarInt() {
+            let res = 0;
+            let shift = 0;
+            let b;
+            do {
+                b = this.byteAt(this.pos++);
+                res |= (b & 0x1F) << shift
+                shift += 5;
+            } while (b >= 0x20)
+            return res;
+        }
+
+        byteAt(pos) {
+            return this.data.charCodeAt(pos) - 63;
+        }
+
+        int30(pos) {
+            return (this.byteAt(pos++) << 0)
+                | (this.byteAt(pos++) << 6)
+                | (this.byteAt(pos++) << 12)
+                | (this.byteAt(pos++) << 18)
+                | (this.byteAt(pos) << 24);
+        }
+
+        int36(pos) {
+            return (this.byteAt(pos++) << 0)
+                | (this.byteAt(pos++) << 6)
+                | (this.byteAt(pos++) << 12)
+                | (this.byteAt(pos++) << 18)
+                | (this.byteAt(pos++) << 24)
+                | (this.byteAt(pos++) << 30);
+        }
+
+        varInt(pos) {
+            let res = 0;
+            let shift = 0;
+            let b;
+            do {
+                b = this.byteAt(pos++);
+                res |= (b & 0x1F) << shift
+                shift += 5;
+            } while (b >= 0x20)
+            return res;
+        }
+
+    }
+
+    class HeatmapCollection extends DataBuffer {
+
+        maxZoom;
+        blocks;
+        zoomToCounts;
+        zoomToMaxes;
+        zoom;
+
+        constructor(encodedData) {
+            super(encodedData);
+
+            this.maxZoom = this.nextVarInt();   // fixme
+            this.maxZoom = 3;
+
+            const startMethodsCount = this.nextVarInt();
+            const starts = new Set();
+            for (let i = 0; i < startMethodsCount; i++) {
+                starts.add(this.nextVarInt());
+            }
+
+            const lz = new Lz78Data(this, starts);
+
+            let max = 1;
+
+            let prevByte = -1;
+            const blocksCount = this.nextVarInt();
+            let counts = new Uint32Array(blocksCount);
+            for (let i = 0; i < blocksCount; i++) {
+                let v = 0;
+                let p = 0;
+                let hasMore = false;
+                do {
+                    if (prevByte === -1) {
+                        prevByte = this.byteAt(this.pos++);
+                        hasMore = (prevByte >>> 5) === 1;
+                        v |= ((prevByte >>> 3) & 3) << p;
+                        prevByte &= 7;
+                    } else {
+                        hasMore = (prevByte >>> 2) === 1;
+                        v |= (prevByte & 3) << p;
+                        prevByte = -1;
+                    }
+                    p += 2;
+                } while (hasMore);
+                counts[i] = v;
+                max = Math.max(max, v);
+            }
+
+            this.blocks = lz.decode(counts);
+
+            this.zoomToCounts = new Array(this.maxZoom);
+            this.zoomToMaxes = new Array(this.maxZoom);
+
+            this.zoomToCounts[0] = counts;
+            this.zoomToMaxes[0] = max;
+
+            for (let z = 1; z < zoomToGroupSize.length; z++) {
+                const size = zoomToGroupSize[z] / zoomToGroupSize[z - 1];
+                const nextCounts = new Uint32Array(Math.ceil(counts.length / size));
+                for (let i = 0; i < counts.length; i++) {
+                    const index = (i / size) | 0;
+                    nextCounts[index] += counts[i];
+                    max = Math.max(max, nextCounts[index]);
+                }
+                this.zoomToCounts[z] = counts = nextCounts;
+                this.zoomToMaxes[z] = max;
+            }
+
+            this.data = null;
+        }
+
+        setZoom(zoom) {
+            this.zoom = zoom;
+        }
+
+        heatmap() {
+            return this.zoomToCounts[this.zoom];
+        }
+
+        max() {
+            return this.zoomToMaxes[this.zoom];
+        }
+
+        currentTimeBlock() {
+            // FIXME 20 is hardcoded
+            return 20 * zoomToGroupSize[this.zoom];
+        }
+
+        startBlock() {
+            const blockMs = this.currentTimeBlock();
+            const timeBlockMs = blockMs * heatHeight * 20;
+            return Math.floor(startMs % timeBlockMs / blockMs);
+        }
+
+        count() {
+            return Math.ceil((this.heatmap().length + this.startBlock()) / 20 / heatHeight) * 20 * heatHeight;
+        }
+
+    }
+
+    class LzChunk extends Uint32Array {
+        constructor(size) {
+            super(size);
+        }
+
+        copyWithNext(element) {
+            let result = new LzChunk(this.length + 1);
+            result.set(this);
+            result[this.length] = element;
+            return result;
+        }
+    }
+
+    class Lz78Data {
+        data;
+        starts;
+        lz78;
+
+        tmp = [];
+        prevSubTreeId = -1;
+
+        constructor(data, starts) {
+            this.data = data;
+            this.starts = starts;
+
+            this.lz78 = [new LzChunk(0)];
+        }
+
+        decode(counts) {
+            const synonymsCount = this.data.nextVarInt();
+            const synonyms = new Uint32Array(synonymsCount);
+            for (let i = 0; i < synonymsCount; i++) {
+                synonyms[i] = this.data.nextVarInt();
+            }
+
+            const tailsCount = this.data.nextVarInt();
+            const tails = new Uint32Array(tailsCount);
+            for (let i = 0; i < tailsCount; i++) {
+                const tail = this.data.nextVarInt();
+                tails[i] = (tail < synonyms.length ? synonyms[tail] : tail) - synonymsCount;
+            }
+
+            const result = new Array(counts.length);
+            for (let i = 0; i < counts.length; i++) {
+                result[i] = new Array(counts[i]);
+            }
+
+            let thisChunk = null;
+            let currentTail = 0;
+            const tmp = [];
+            let t = -1;
+            for (let block of result) {
+                for (let i = 0; i < block.length; i++, currentTail++) {
+                    t++;
+                    const tailId = tails[currentTail];
+                    if (tailId < this.lz78.length) {
+                        const tail = this.lz78[tailId];
+                        if (tail.length !== 0 && this.starts.has(tail[0])) {
+                            console.log(t, 'only', tailId);
+                            block[i] = tail;
+                            continue;
+                        }
+                    }
+
+                    if (thisChunk === null) {
+                        const chunkId = this.data.nextVarInt();
+                        const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
+                        const addMethodId = this.data.nextVarInt();
+                        console.log(t, 'chunk', chunkId, addMethodId);
+                        thisChunk = prevChunk.copyWithNext(addMethodId);
+                        this.lz78.push(thisChunk);
+                    }
+
+                    tmp.length = 0;
+                    tmp.push(...thisChunk); // FIXME it is ok to push as is, or even as lz78 index
+
+                    while (true) {
+                        const chunkId = this.data.nextVarInt();
+                        const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
+                        const addMethodId = this.data.nextVarInt();
+                        thisChunk = prevChunk.copyWithNext(addMethodId);
+                        this.lz78.push(thisChunk);
+                        console.log(t, 'chunk', chunkId, addMethodId);
+
+                        if (this.starts.has(thisChunk[0])) {
+                            console.log(t, 'starts', thisChunk[0]);
+                            console.log(t, 'ends', tailId);
+                            const tail = this.lz78[tailId];
+                            tmp.push(...tail);
+                            block[i] = new Uint32Array(tmp);
+                            break;
+                        } else {
+                            tmp.push(...thisChunk);
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+    }
+
+    class Queue {
+        data = new Array(1024);
+        first = 0;
+        afterLast = 0;
+
+        push(e) {
+            let a = this.afterLast;
+            let d = this.data;
+            d[a++] = e;
+            if (a >= this.data.length) {
+                a = 0;
+            }
+            if (a === this.first) {
+                let d2 = new Array(d.length * 2);
+                let i = 0;
+                for (let p = a; p < d.length; p++) {
+                    d2[i++] = d[p];
+                }
+                for (let p = 0; p < a; p++) {
+                    d2[i++] = d[p];
+                }
+                this.data = d2;
+                this.first = 0;
+                this.afterLast = i;
+            } else {
+                this.afterLast = a;
+            }
+        }
+
+        shift() {
+            let i = this.first;
+            let r = this.data[i++];
+            if (i >= this.data.length) {
+                this.first = 0;
+            } else {
+                this.first = i;
+            }
+            return r;
+        }
+
+        size() {
+            let r = this.afterLast - this.first;
+            if (r < 0) {
+                return r + this.data.length;
+            }
+            return r;
+        }
+
+        reset() {
+            this.first = this.afterLast = 0;
+        }
+    }
+
+    function claimHtml(id) {
+        let e = document.getElementById(id);
+        let r = e.innerHTML;
+        e.remove();
+        return r;
+    }
+
+    let sq = 5;
+    let sqPx = sq;
+    let sqScale = 1;
+    const canvasScrollPadding = 200;
+    let canvasTimeHeight = 12;
+    let canvasTimeHeightPx = 12;
+    let ticksPerSecond = 1000000000;
+    let startMs = 1664208877088;
+
+    const zoomToGroupSize = [
+        1,              // 20 ms
+        50,             // 1 s
+        50 * 5,         // 5 s
+        50 * 60         // 1 m
+    ];
+    const zoomToHeight = [50, 60, 60, 60]
+
+    let methods = new DataBuffer(claimHtml("methods"));
+    let executionsHeatmap = new HeatmapCollection(claimHtml("executionsHeatmap"));
+    let cpool = ["all","","unknown","/usr/lib/x86_64-linux-gnu/libc.so.6","one.nio.server.SelectorThread","run","one.nio.net.Session","process","one.nio.http.HttpSession","processRead","processHttpBuffer","handleParsedRequest","one.nio.http.HttpServer","handleRequest","RequestHandler0_handleGet","ok.dht.test.galeev.DemoService","handleGet","ok.dht.test.galeev.dao.DaoMiddleLayer","get","ok.dht.test.galeev.dao.MemorySegmentDao","ok.dht.test.galeev.dao.utils.DBReader","ok.dht.test.galeev.dao.utils.FileDBReader","getEntryByKey","getPosByKey","ok.dht.test.galeev.dao.utils.MemorySegmentComparator","compare","jdk.internal.foreign.AbstractMemorySegmentImpl","mismatch","jdk.incubator.foreign.MemoryAccess","getByte","getByteAtOffset","java.lang.invoke.VarHandleGuards","guard_LJ_I","java.lang.invoke.LambdaForm$MH.0x0000000800ccd800","invoke","java.lang.invoke.LambdaForm$DMH.0x0000000800cccc00","invokeStatic","java.lang.invoke.MemoryAccessVarHandleByteHelper","libjvm.so","thread_native_entry","Thread::call_run","JavaThread::thread_main_inner","CompileBroker::compiler_thread_loop","CompileBroker::invoke_compiler_on_method","C2Compiler::compile_method","Compile::Compile","Compile::Code_Gen","PhaseChaitin::Register_Allocate","PhaseChaitin::Simplify","PhaseIFG::remove_node","ParseGenerator::generate","Parse::Parse","Parse::do_all_blocks","Parse::do_one_block","Parse::do_call","LibraryIntrinsic::generate","LibraryCallKit::inline_unsafe_access","GraphKit::basic_plus_adr","PhaseTransform::intcon","TypeInt::make","PhaseChaitin::Select","PhaseIFG::re_insert","Compile::Optimize","PhaseCCP::do_transform","PhaseCCP::transform","/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2","Parse::do_field_access","Parse::do_get_xxx","GraphKit::make_constant_from_field","Type::make_constant_from_field","Dict::Insert","PredictedCallGenerator::generate","Parse::do_one_bytecode","GraphKit::null_check_oop","GraphKit::null_check_common","PhaseIdealLoop::build_and_optimize","PhaseIdealLoop::Dominators","Arena::grow","ChunkPool::allocate","libc.so.6","pthread_mutex_lock","PhaseIdealLoop::optimize","asm_exc_page_fault","exc_page_fault","do_user_addr_fault","handle_mm_fault","alloc_pages_vma","__alloc_pages_nodemask","get_page_from_freelist","prep_new_page","kernel_init_free_pages","clear_page_rep","PhaseChaitin::build_ifg_physical","IndexSet::IndexSet","PhaseChaitin::stretch_base_pointer_live_ranges","IdealLoopTree::iteration_split","IdealLoopTree::iteration_split_impl","PhaseIdealLoop::do_unswitching","PhaseIdealLoop::create_slow_version_of_loop","PhaseIdealLoop::recompute_dom_depth","Compiler::compile_method","Compilation::Compilation","Compilation::compile_method","Compilation::compile_java_method","Compilation::build_hir","IR::eliminate_null_checks","Optimizer::eliminate_null_checks","Intrinsic::input_values_do","NonSafepointEmitter::emit_non_safepoint","readKeyByPos","readKeyByLink","PhaseLive::compute","jdk.internal.foreign.MappedMemorySegmentImpl","asSlice","asSliceNoCheck","dup","PhaseChaitin::merge_multidefs","getLongAtOffset","guard_LJ_J","java.lang.invoke.LambdaForm$MH.0x0000000800c0c400","java.lang.invoke.LambdaForm$DMH.0x0000000800c0b800","java.lang.invoke.MemoryAccessVarHandleLongHelper","scope","Parse::do_if","GraphKit::uncommon_trap","GraphKit::kill_dead_locals","SafePointNode::set_local","PhaseIdealLoop::split_if_with_blocks","HaltNode::is_CFG","java.lang.invoke.DirectMethodHandle$Holder","jdk.internal.foreign.Utils","filterSegment","Matcher::match","Matcher::xform","Matcher::match_tree","Matcher::Label_Root","State::_sub_Op_CmpN","PhaseRemoveUseless::PhaseRemoveUseless","Unique_Node_List::remove_useless_nodes","PhaseAggressiveCoalesce::insert_copies","PhaseChaitin::post_allocate_copy_removal","PhaseChaitin::elide_copy","Node::add_req","IR::IR","IRScope::IRScope","GraphBuilder::GraphBuilder","GraphBuilder::setup_start_block","BlockBegin::try_merge","ValueStack::ValueStack","resource_allocate_bytes","checkAddress","checkAccess","checkBounds","isSmall","Compilation::emit_lir","LinearScan::do_linear_scan","LinearScan::assign_reg_num","LinearScan::compute_oop_map","IntervalWalker::walk_to","Matcher::find_shared","sendResponse","writeResponse","write","one.nio.net.Session$ArrayQueueItem","one.nio.net.NativeSocket","send","entry_SYSCALL_64_after_hwframe","do_syscall_64","__x64_sys_sendto","__sys_sendto","sock_sendmsg","security_socket_sendmsg","aa_sk_perm","ok.dht.test.galeev.dao.utils.StringByteConverter","MStoV","toByteArray","toArray","copyFrom","jdk.internal.misc.ScopedMemoryAccess","copyMemory","copyMemoryInternal","NullCheckEliminator::iterate_one","NullCheckEliminator::visit","jdk.internal.misc.Unsafe","copyMemoryChecks","checkSize","LinearScan::build_intervals","LinearScan::add_def","tcp_sendmsg","tcp_sendmsg_locked","__tcp_push_pending_frames","tcp_write_xmit","__tcp_transmit_skb","__ip_queue_xmit","ip_finish_output2","__local_bh_enable_ip","do_softirq","do_softirq_own_stack","asm_call_sysvec_on_stack","__softirqentry_text_start","net_rx_action","process_backlog","__netif_receive_skb_one_core","ip_local_deliver_finish","ip_protocol_deliver_rcu","tcp_v4_rcv","tcp_v4_do_rcv","tcp_rcv_established","tcp_send_delayed_ack","unsafeGetBase","OptoRuntime::new_instance_C","InstanceKlass::allocate_instance","libasyncProfiler.so","AllocTracer::trapHandler","Profiler::recordSample","JvmtiEnvBase::get_stack_trace","vframe::java_sender","vframe::sender","Runtime1::counter_overflow","CompilationPolicy::event","CompilationPolicy::method_back_branch_event","CompilationPolicy::compile","CompileBroker::compile_method","CompileBroker::compile_method_base","CompileTask::allocate","tcp_ack","kmem_cache_free","Compilation::install_code","ciEnv::register_method","Dependencies::validate_dependencies","Dependencies::DepStream::check_new_klass_dependency","checkBoundsSmall","PhaseIdealLoop::split_if_with_blocks_pre","PhaseIdealLoop::split_thru_phi","NodeHash::hash_find","PhaseIterGVN::optimize","PhaseIterGVN::transform_old","LoadUBNode::Ideal","MemNode::can_see_stored_value","PhaseCCP::analyze","one.nio.http.Request","getHeader","java.lang.String","regionMatches","java.lang.StringLatin1","regionMatchesCI","one.nio.net.NativeSelector","isOpen","asReadOnly","Method::jmethod_id","ciEnv::ciEnv","ciObjectFactory::get","PhaseChaitin::gather_lrg_masks","java.util.TreeMap$NavigableSubMap$DescendingSubMapKeyIterator","next","java.util.TreeMap$NavigableSubMap$SubMapIterator","prevEntry","java.util.TreeMap","predecessor","RegionNode::Ideal","PhiNode::is_unsafe_data_reference","sock_def_readable","__wake_up_common_lock","_raw_spin_unlock_irqrestore","PhaseIdealLoop::build_loop_late","PhaseIdealLoop::build_loop_late_post_work","PhaseIdealLoop::compute_lca_of_uses","PhaseIdealLoop::get_late_ctrl_with_anti_dep","Compile::find_alias_type","Compile::flatten_alias_type","hasNext","InitializeNode::Opcode","MemAllocator::allocate","ObjAllocator::initialize","do_huge_pmd_anonymous_page","SubNode::Value","PhiNode::Ideal","PhiNode::is_data_loop","RegionNode::is_unreachable_from_root","IdealLoopTree::estimate_peeling","IdealLoopTree::est_loop_clone_sz","IdealLoopTree::est_loop_flow_merge_sz","ProjNode::is_CFG","Compile::can_alias","PhaseChaitin::Split","MachNode::rematerialize","PhiNode::in_RegMask","clear_huge_page","clear_subpage","GangWorker::run","GangWorker::loop","G1EvacuateRegionsBaseTask::work","G1EvacuateRegionsTask::scan_roots","G1RootProcessor::evacuate_roots","G1RootProcessor::process_java_roots","Threads::possibly_parallel_oops_do","JavaThread::oops_do_no_frames","HandleArea::oops_do","G1ParCopyClosure<","JavaThread::oops_do_frames","G1CodeBlobClosure::do_code_blob","nmethod::oops_do_process_weak","G1NmethodProcessor::do_regular_processing","nmethod::oops_do","G1CodeBlobClosure::HeapRegionGatheringOopClosure::do_oop","G1ParScanThreadState::trim_queue_to_threshold","void OopOopIterateBackwardsDispatch<G1ScanEvacuatedObjClosure>::Table::oop_oop_iterate_backwards<InstanceKlass, narrowOop>","G1EvacuateRegionsTask::evacuate_live_objects","G1ParEvacuateFollowersClosure::do_void","G1ParScanThreadState::steal_and_trim_queue","frame::sender","frame::sender_for_interpreter_frame","CodeHeap::find_blob_unsafe","ClassLoaderDataGraph::roots_cld_do","G1CLDScanClosure::do_cld","ClassLoaderData::ChunkedHandleList::oops_do","I2C/C2I adapters","select","epollWait","libonenio.210fea54.so","Java_one_nio_net_NativeSelector_epollWait","java.lang.invoke.IndirectVarHandle","getMethodHandle","getLongUnaligned","epoll_wait","__x64_sys_epoll_wait","do_epoll_wait","ep_scan_ready_list.constprop.0","ep_send_events_proc","ep_item_poll","sock_poll","read","Java_one_nio_net_NativeSocket_read","jni_SetByteArrayRegion","offsetNoVMAlignCheck","TypeFunc::make","TypeTuple::make_domain","TypeOopPtr::make_from_klass_common","Type::hashcons","__netif_receive_skb_core","unknown_Java","os::javaTimeMillis","one.nio.http.Response","toBytes","one.nio.util.ByteArrayBuilder","append","one.nio.util.Utf8","java.util.TreeSet","iterator","java.util.TreeMap$KeySet","SharedRuntime::on_slowpath_allocation_exit","tcp_check_space","JavaThread::last_java_vframe","vframe::new_vframe","compiledVFrame::compiledVFrame","skb_push","AllocTracer::send_allocation_in_new_tlab","asm_exc_int3","exc_int3","do_trap","unhandled_signal","getRequiredParameter","tcp_v4_inbound_md5_hash","tcp_parse_md5sig_option","java.util.TreeMap$NavigableSubMap","navigableKeySet","irqentry_exit_to_user_mode","exit_to_user_mode_prepare","arch_do_signal","get_signal","ip_output","__dev_queue_xmit","validate_xmit_skb","skb_csum_hwoffload_help","MemAllocator::allocate_inside_tlab_slow","parseRequest","isAsciiString","G1BatchedGangTask::work","G1PostEvacuateCollectionSetCleanupTask2::FreeCollectionSetTask::do_work","G1CollectionSet::par_iterate","G1CollectionSet::iterate_part_from","FreeCSetClosure::do_heap_region","CompositeElapsedCounterSource::now","os::elapsed_counter","clock_gettime","vdso","__x64_sys_clock_gettime","posix_get_monotonic_timespec","ktime_get_ts64","read_hpet","copy_siginfo_to_user","_copy_to_user","copy_user_generic_string","WatcherThread::run","PeriodicTask::real_time_tick","Parse::array_store","PhaseGVN::transform_no_reclaim","AddPNode::Ideal","Node::set_req_X","PhaseIdealLoop::build_loop_early","tcp_poll","tcp_stream_memory_free","<init>","java.lang.StringBuilder","java.lang.AbstractStringBuilder","ensureCapacityInternal","java.util.Arrays","copyOf","dev_hard_start_xmit","loopback_xmit","netif_rx","netif_rx_internal","enqueue_to_backlog","PhaseCFG::do_global_code_motion","PhaseCFG::estimate_block_frequency","syscall_enter_from_user_mode","Buffer::putVar64","get_sigframe.constprop.0.isra.0","copy_fpstate_to_sigframe","PhaseChaitin::remove_bound_register_from_interfering_live_ranges","RegMask::smear_to_sets","G1RemSet::scan_heap_roots","G1ScanHRForRegionClosure::scan_heap_roots","G1RemSet::scan_collection_set_regions","G1CollectionSet::iterate_incremental_part_from","G1ScanCollectionSetRegionClosure::do_heap_region","G1CodeRootSet::nmethods_do","VMThread::run","VMThread::inner_execute","VMThread::evaluate_operation","VM_Operation::evaluate","VM_G1CollectForAllocation::doit","G1CollectedHeap::do_collection_pause_at_safepoint","G1CollectedHeap::do_collection_pause_at_safepoint_helper","G1CollectedHeap::post_evacuate_collection_set","G1CollectedHeap::post_evacuate_cleanup_2","WorkGang::run_task","sem_post","__x64_sys_futex","do_futex","futex_wake","wake_up_q","try_to_wake_up","java.lang.invoke.VarHandle","checkExactAccessMode","java.util.TreeMap$DescendingSubMap","keyIterator","absHighest","getLastEntry","PhaseIFG::Compute_Effective_Degree","PhaseIFG::effective_degree","SpinPause","Node_List::push","InstanceKlass::get_jmethod_id","recv","__x64_sys_recvfrom","__sys_recvfrom","sockfd_lookup_light","__fget_light","__x64_sys_rt_sigreturn","set_current_blocked","Compile::identify_useful_nodes","__kfree_skb","kfree","__slab_free","ktime_get","java.util.Objects","requireNonNull","SharedRuntime::resolve_opt_virtual_call_C","SharedRuntime::resolve_helper","SharedRuntime::resolve_sub_helper","SharedRuntime::find_callee_info_helper","opt_virtual_call_Relocation::unpack_data","java.lang.invoke.Invokers$Holder","linkToTargetMethod","constantPoolHandle::~constantPoolHandle","PhaseValues::uncached_makecon","NodeHash::hash_find_insert","MachProjNode::ideal_reg","skb_release_data","ciBytecodeStream::get_method","ciEnv::get_method_by_index_impl","ciEnv::lookup_method","LinkResolver::resolve_static_call_or_null","LinkResolver::resolve_static_call","Parse::create_entry_map","ConNode::make","__wake_up_sync_key","PhaseIterGVN::subsume_node","PhaseIterGVN::remove_globally_dead_node","Node::replace_edge","ConnectionGraph::do_analysis","ConnectionGraph::compute_escape","ConnectionGraph::split_unique_types","ConnectionGraph::find_inst_mem","ConnectionGraph::split_memory_phi","ConnectionGraph::create_split_phi","Node::Ideal","PhaseIdealLoop::partial_peel","VectorSet::set","AccessInternal::PostRuntimeDispatch<G1BarrierSet::AccessBarrier<548964ul, G1BarrierSet>, ","PhaseOutput::Output","PhaseOutput::BuildOopMaps","G1GCParPhaseTimesTracker::~G1GCParPhaseTimesTracker","fput_many","one.nio.http.PathMapper","find","java.util.HashMap","getNode","hash","hashCode","inet6_recvmsg","tcp_recvmsg","skb_copy_datagram_iter","equals","__sk_dst_check","ipv4_dst_check","syscall","schedule_hrtimeout_range_clock","schedule","nf_hook_slow","Compile::copy_node_notes_to","getParameter","startsWith","sk_stream_alloc_skb","compiledVFrame::sender","CompiledMethod::scope_desc_at","ScopeDesc::decode_body","tcp_event_new_data_sent","isSet","tcp_mstamp_refresh","__libc_malloc","frame::real_sender","frame::sender_for_compiled_frame","OopMapSet::update_register_map","OopMapStream::find_next","signal_setup_done","__set_current_blocked","G1CodeRootSet::contains","G1STWRefProcProxyTask::work","RefProcPhase1Task::rp_work","ReferenceProcessor::process_soft_ref_reconsider_work","pthread_mutex_unlock","G1BatchedGangTask::~G1BatchedGangTask","G1DirtyCardQueueSet::merge_bufferlists","__skb_datagram_iter","ip_local_deliver","G1ParScanThreadState::copy_to_survivor_space","tcp_rearm_rto","__fget_files","skb_do_copy_data_nocache","__check_object_size","__virt_addr_valid","one.nio.net.NativeSelector$2","KtoMS","getBytes","encode","encodeUTF8","pthread_cond_timedwait","getPath","substring","newString","getLongUnalignedInternal","jdk.internal.foreign.SharedScope","checkValidState","findNext","tcp_schedule_loss_probe.part.0","rb_first","__inet_lookup_established","check_bounds","ConcurrentGCThread::run","G1ServiceThread::run_service","ld-linux-x86-64.so.2","__tls_get_addr","compiledVFrame::method","mutex_lock","ip_finish_output","__cgroup_bpf_run_filter_skb","Java_one_nio_net_NativeSocket_write","jni_GetByteArrayRegion","RegisterMap::RegisterMap","_cond_resched","rcu_all_qs","posix_get_realtime_timespec","ktime_get_real_ts64","sk_free","indexOf","pthread_mutex_trylock","tcp_rcv_space_adjust","tcp_send_mss","tcp_current_mss","ipv4_mtu","CallTraceStorage::put","ScopeDesc::sender","rcu_read_unlock_strict","length","_copy_to_iter","G1MergeHeapRootsTask::work","G1GCParPhaseTimesTracker::G1GCParPhaseTimesTracker","ThreadLocalAllocBuffer::retire_before_allocation","CollectedHeap::fill_with_dummy_object","simple_copy_to_iter","JavaThread::pd_last_frame","CodeBlob::is_zombie","skb_release_head_state","sock_rfree","__alloc_skb","__kmalloc_node_track_caller","kmalloc_slab","WatcherThread::sleep","Dictionary::lookup","sk_reset_timer","__mod_timer","eth_type_trans","restore_sigcontext","__fpu__restore_sig","RuntimeService::record_safepoint_begin","do_wp_page","do_page_mkwrite","ext4_page_mkwrite?[ext4]","block_page_mkwrite","__block_commit_write.constprop.0.isra.0","mark_buffer_dirty","HeapRegionClaimer::claim_region","tomoyo_socket_sendmsg_permission","java.lang.Object","__put_user_nocheck_4","AccessInternal::PostRuntimeDispatch<G1BarrierSet::AccessBarrier<598116ul, G1BarrierSet>, ","G1CollectedHeap::allocate_new_tlab","getByteInternal","inet6_sendmsg","inet_send_prepare","_copy_from_iter_full","mutex_unlock","skb_clone","tcp_options_write","JvmtiAgentThread::call_start_function","ksys_read","vfs_read","new_sync_read","seq_read_iter","show_stat","get_iowait_time","get_cpu_iowait_time_us","G1EvacPhaseWithTrimTimeTracker::~G1EvacPhaseWithTrimTimeTracker","force_sig","force_sig_info_to_task","one.nio.util.URLEncoder","decode","tcp_ack_tstamp","Monitor::wait_without_safepoint_check","bictcp_cwnd_event","CodeCache::find_blob","__schedule","finish_task_switch","__put_user_nocheck_8","jni_GetEnv","G1CollectedHeap::evacuate_initial_collection_set","futex_wait","futex_wait_queue_me","tcp_data_ready","ip_rcv","ip_rcv_core","fpu__clear","copy_init_fpstate_to_fpregs","kstat_irqs_usr","kstat_irqs","G1ServiceThread::sleep_before_next_cycle","__open","__x64_sys_openat","do_sys_openat2","do_filp_open","path_openat","may_open",];
+
+    let currentHeatmap = executionsHeatmap;
+    let currentHeatmapType = 'executions';
+
+    let heatHeight = 60;
+
+    let heatLastSample = -1;
+    let heatActiveSample1 = -1;
+    let heatActiveSample2 = -1;
+    let heatDiffStart = -1;
+    let heatDiffEnd = -1;
+    let highlightStart = -1;
+    let highlightEnd = -1;
+
+    const titleText = document.getElementById("title").textContent;
+    document.getElementById("title").style.display = 'none';
+    document.title = titleText;
+
+    const heatCanvas = document.getElementById('heatmap-canvas');
+    const heatStatus = document.getElementById('status');
+    const heatCanvasWrapper = document.getElementById('heatmap-canvas-wrapper');
+    const heatCanvasContainer = document.getElementById('heatmap-canvas-container');
+
+    let heatC;
+    let prevDx = -1000000000;
+
+    let searchExecutedCount = 0;
+    let searchMax = 0;
+
+    const timeOptions = {
+        year: '2-digit',
+        month: '2-digit',
+        day: '2-digit',
+        timeZoneName: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 2
+    };
+
+    const timeOptionsShort = {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 2
+    };
+
+    const timeOptionsTiny = {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23',
+        //hour12: false
+    };
+
+    function methodInfo(methodIndex, out) {
+        if (methodIndex === -1) {
+            out.className = '';
+            out.methodName = 'all';
+            out.location = 0;
+            out.type = 3;
+            return;
+        }
+
+        methodIndex--;
+
+        let methodAndClass = methods.int36(methodIndex * 12);
+        let locationAndType = methods.int36(methodIndex * 12 + 6)
+        let className = (methodAndClass & 0x3FFFF) - 1;
+        let methodName = (methodAndClass >>> 18) - 1;
+
+        out.className = cpool[className];
+        out.methodName = cpool[methodName];
+        out.location = locationAndType >>> 4;
+        out.type = locationAndType & 15;
+    }
+
+    function title(methodIndex, out) {
+        methodInfo(methodIndex, out);
+        const codeLine = (out.location & 0xffff);
+        let locationSuffix = codeLine === 0 ? "" : (":" + codeLine);
+
+        if (out.methodName === '') {
+            return out.className + locationSuffix;
+        }
+        if (out.className === '') {
+            return out.methodName + locationSuffix;
+        }
+        if (out.type >= 3 && out.type <= 5) {
+            return out.methodName + locationSuffix;
+        }
+
+        return out.className + "." + out.methodName + locationSuffix;
+    }
+
+    let bgInterval = null;
+    let bgTasks = [];
+    let cooldownTime = 0;
+    let nextTask = 0;
+
+    function addTask(id, iteration, afterFrame) {
+        for (let t of bgTasks) {
+            if (t.id === id) {
+                t.f = iteration;
+                t.a = afterFrame;
+                return;
+            }
+        }
+
+        bgTasks.push({id: id, f: iteration, a: afterFrame});
+        if (bgTasks.length === 1) {
+            bgInterval = setInterval(function() {
+                let start = performance.now();
+                if (start <= cooldownTime) {
+                    return;
+                }
+                let overflow = false;
+                do {
+                    let task = bgTasks[nextTask];
+                    if (task.f()) {
+                        nextTask++;
+                    } else {
+                        bgTasks.splice(nextTask, 1);
+                        if (bgTasks.length === 0) {
+                            clearInterval(bgInterval);
+                            nextTask = 0;
+                            return;
+                        }
+                    }
+
+                    if (nextTask >= bgTasks.length) {
+                        nextTask = 0;
+                        overflow = true;
+                    }
+                } while(performance.now() - start < 8);
+
+                for (let q = 0; q < overflow ? bgTasks.length : nextTask; q++) {
+                    bgTasks[q].a();
+                }
+            })
+        }
+    }
+
+    function prepareFrames(from, to) {
+        let mul = zoomToGroupSize[currentHeatmap.zoom];
+        from *= mul;
+        to = (to + 1) * mul - 1;
+        if (to >= currentHeatmap.blocks.length) {
+            to = currentHeatmap.blocks.length - 1;
+        }
+
+        const frames = new Queue();
+        const root = new Map();
+        root.c = 0;
+        root.m = -1;
+        root.x = 0;
+        const roots = [root];
+        let levelsCount = 1;
+
+        for (let pos = from; pos <= to; pos++) {
+            const block = currentHeatmap.blocks[pos];
+
+            root.c += block.length;
+
+            for (let stack of block) {
+                levelsCount = Math.max(stack.length + 1, levelsCount);
+
+                frames.push(root);
+                frames.push(stack);
+            }
+        }
+
+        return [frames, roots, levelsCount]
+    }
+
+    function nextFrames(frames, level) {
+        frames.push(null);  // end stacks marker
+
+        let nowFrame = null;
+
+        while (true) {
+            const frame = frames.shift();
+            if (frame === null) {   // end stack marker
+                break;
+            }
+
+            const stack = frames.shift();
+            if (level >= stack.length) {
+                continue;
+            }
+
+            const methodId = stack[level];
+            nowFrame = frame.get(methodId);
+            if (nowFrame === undefined) {
+                nowFrame = new Map();
+                nowFrame.m = methodId;
+                nowFrame.c = 0;
+                frame.set(methodId, nowFrame);
+            }
+            nowFrame.c++;
+
+            frames.push(nowFrame);
+            frames.push(stack);
+        }
+    }
+
+    function renderTraces(from, to) {
+        let [frames, roots, levelsCount] = prepareFrames(from, to);
+        levels.length = 0;
+        for (let i = 0; i < levelsCount; i++) {
+            levels.push([]);
+        }
+
+        let currentLevel = 0;
+        let levelToRedraw = 0;
+        let methodInfoOut = {};
+
+        addTask('flame', function () {
+                nextFrames(frames, currentLevel);
+
+                let level = levels[currentLevel];
+                let nextRoots = [];
+                for (let root of roots) {
+                    let x = root.x;
+                    const t = title(root.m, methodInfoOut);
+                    let color = getColor(palette[methodInfoOut.type]);
+                    level.push({left: x, width: root.c, color: color, title: t});
+
+                    let nextFrames = [...root.values()];
+
+                    nextFrames.sort((k1, k2) => k2.c - k1.c);
+                    for (let frame of nextFrames) {
+                        frame.x = x;
+                        x += frame.c;
+                        nextRoots.push(frame);
+                    }
+                }
+                level.sort((k1, k2) => k1.left - k2.left);
+
+                roots = nextRoots;
+                currentLevel++;
+                if (currentLevel < levelsCount) {
+                    return true;
+                }
+                renderWithMatch(levelsCount * 16, levels[0][0], 0);
+                return false;
+            },
+            function () {
+                renderWithMatch(4096, levels[0][0], 0, levelToRedraw);
+                levelToRedraw = currentLevel;
+            });
+    }
+
+    function renderWithMatch(newCanvasHeight, root, level, minLevel) {
+        newCanvasHeight = Math.min(32767, newCanvasHeight);
+        if (canvasHeight !== newCanvasHeight) {
+            canvasHeight = newCanvasHeight;
+            canvas.style.height = canvasHeight + 'px';
+            canvas.height = canvasHeight * (devicePixelRatio || 1);
+            c = canvas.getContext('2d');
+            if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+            c.font = document.body.style.font;
+        }
+        const matched = render(root, level, minLevel);
+        if (pattern === undefined) {
+            document.getElementById('match').style.display = 'none';
+            document.getElementById('produced').style.display = 'inherit';
+        } else {
+            document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+            document.getElementById('match').style.display = 'inline-block';
+            document.getElementById('produced').style.display = 'none';
+        }
+    }
+
+    function renderDiff(from, to, baseFrom, baseTo) {
+        let [frames, roots, levelsCount] = prepareFrames(from, to);
+        let [baseFrames, baseRoots, ] = prepareFrames(baseFrom, baseTo);
+        roots[0].b = baseRoots[0];
+
+        levels.length = 0;
+        for (let i = 0; i < levelsCount; i++) {
+            levels.push([]);
+        }
+        let currentLevel = 0;
+        let levelToRedraw = 0;
+        let methodInfoOut = {};
+
+        let minDiff = 0;
+        let maxDiff = 0;
+
+        addTask('flame', function () {
+                nextFrames(frames, currentLevel);
+                nextFrames(baseFrames, currentLevel);
+                let level = levels[currentLevel];
+
+                for (let root of roots) {
+                    let wasCount = root.b === undefined ? 0 : root.b.c;
+                    if (wasCount !== 0) {
+                        maxDiff = Math.max(maxDiff, root.c - wasCount);
+                        minDiff = Math.min(minDiff, root.c - wasCount)
+                    }
+                }
+
+                let nextRoots = [];
+                for (let root of roots) {
+                    let x = root.x;
+
+                    let wasCount = root.b === undefined ? 0 : root.b.c;
+                    const t = title(root.m, methodInfoOut) + " (" + root.c + "/" + wasCount +")";
+                    let color;
+                    if (wasCount === 0) {
+                        color = "#dac571";
+                    } else if (wasCount >= root.c) {
+                        const ratio = (root.c - wasCount) / minDiff;
+                        color = 'rgb(' + (245 - 90 * ratio) + ',' + (250 - 90 * ratio) + ',' + 255 +')';
+                    } else {
+                        const ratio = (root.c - wasCount) / maxDiff;
+                        color = 'rgb(' + 255 + ',' + (245 - 180 * ratio) + ',' + (240 - 200 * ratio) +')';
+                    }
+                    level.push({left: x, width: root.c, color: color, title: t});
+
+                    let nextFrames = [];
+                    for (let [methodId, frame] of root) {
+                        frame.b = root.b && root.b.get(methodId);
+                        nextFrames.push(frame);
+                    }
+                    nextFrames.sort((k1, k2) => k2.c - k1.c);
+                    for (let frame of nextFrames) {
+                        frame.x = x;
+                        x += frame.c;
+                        nextRoots.push(frame);
+                    }
+                }
+                level.sort((k1, k2) => k1.left - k2.left);
+
+                roots = nextRoots;
+                currentLevel++;
+                if (currentLevel < levelsCount) {
+                    return true;
+                }
+                renderWithMatch(levelsCount * 16, levels[0][0], 0);
+                return false;
+            },
+            function () {
+                renderWithMatch(4096, levels[0][0], 0, levelToRedraw);
+                levelToRedraw = currentLevel;
+            });
+    }
+
+    function redrawHeatSamplesImpl(from, to, dx) {
+        const patternDraw = !!pattern;
+        const startBlock = currentHeatmap.startBlock();
+
+        const max = currentHeatmap.max();
+        const heatmap = currentHeatmap.heatmap();
+
+        for (let index = from; index <= to; index++) {
+            let color;
+            let i = index - startBlock;
+            if (i < 0 || i >= heatmap.length) {
+                color = '#ddd';
+            } else {
+                let count = heatmap[i];
+
+                let useFound = patternDraw && searchExecutedCount > i;
+                let maxValue = useFound ? searchMax : max;
+                let value = useFound ? found[i] : count;
+                let ratio = value / (maxValue || 1);
+
+                if (useFound) {
+                    if (ratio < 0.8) {
+                        let value = Math.round(255 - ratio * 255 / 0.8);
+                        color = 'rgb(' + value + ',' + value + ',255)';
+                    } else {
+                        let value = Math.round(255 - (ratio - 0.8) * 100 / 0.2);
+                        color = 'rgb(0,0,' + value + ')';
+                    }
+                } else {
+                    if (ratio < 0.8) {
+                        let value = Math.round(255 - ratio * 255 / 0.8);
+                        color = 'rgb(255,' + value + ',' + value + ')';
+                    } else {
+                        let value = Math.round(255 - (ratio - 0.8) * 100 / 0.2);
+                        color = 'rgb('+ value + ',0,0)';
+                    }
+                }
+
+            }
+            heatC.fillStyle = color;
+
+            let x = Math.floor(index / heatHeight);
+            let y = index % heatHeight;
+            heatC.fillRect(x * sq - dx, y * sq + canvasTimeHeight, sq, sq);
+        }
+
+        let blocksBetweenMarks = 20;
+
+        let fromBlock = Math.floor(from / blocksBetweenMarks / heatHeight) - 1;
+        let toBlock = Math.ceil(to / blocksBetweenMarks / heatHeight);
+
+        let markPixels = blocksBetweenMarks * sq;
+
+        heatC.fillStyle = '#fff';
+        heatC.fillRect(
+            fromBlock * markPixels - dx,
+            0,
+            (toBlock - fromBlock + 1) * markPixels,
+            canvasTimeHeight
+        );
+
+        heatC.beginPath();
+        heatC.moveTo(fromBlock * markPixels - dx + 0.5, canvasTimeHeight + 0.5);
+        heatC.lineTo(toBlock * markPixels - dx + 0.5, canvasTimeHeight + 0.5);
+        heatC.stroke();
+
+        heatC.fillStyle = '#000';
+
+        let groupSize = heatHeight;
+        let oneBlockMs = currentHeatmap.currentTimeBlock();
+        let oneGroupMs = oneBlockMs * groupSize;
+        let oneMarkMs = oneGroupMs * blocksBetweenMarks;
+        for (let markIndex = fromBlock; markIndex <= toBlock; markIndex++) {
+            let origin = Math.floor(startMs / oneMarkMs) * oneMarkMs;
+            let ms = origin + markIndex * oneMarkMs;
+            let markOffset = markIndex * markPixels - dx;
+
+            let title = new Date(ms).toLocaleTimeString(undefined, timeOptionsTiny);
+
+            let w = heatC.measureText(title).width;
+            let x = markOffset + (markPixels - w) / 2;
+            heatC.fillText(title, x, canvasTimeHeight - 1, markPixels);
+
+            heatC.beginPath();
+            heatC.moveTo(markOffset + 0.5, canvasTimeHeight - 2 * sqScale + 0.5);
+            heatC.lineTo(markOffset + 0.5, canvasTimeHeight + 2 * sqScale + 0.5);
+            heatC.stroke();
+        }
+    }
+
+    function redrawHeatSamples(from, to) {
+        let dx = Math.floor((heatCanvasContainer.scrollLeft - canvasScrollPadding) * sqScale);
+
+        from = Math.max(from, heatHeight * Math.floor(dx / sq));
+        to = Math.min(to, heatHeight * Math.ceil((dx + heatCanvas.width) / sq));
+        redrawHeatSamplesImpl(from, to, dx);
+    }
+
+    function redrawHeatMap() {
+        redrawHeatSamples(0, (1 + currentHeatmap.count() / heatHeight | 0) * heatHeight);
+    }
+
+    function fillCanvasWithEvents(zoom) {
+        searchExecutedCount = 0;
+        searchMax = 0;
+
+        addTask('search', function () {
+            return false;
+        }, function (){});
+
+        currentHeatmap.setZoom(zoom);
+        heatHeight = zoomToHeight[zoom];
+
+        const m = devicePixelRatio || 1;
+        sqScale = m;
+        sqPx = 5;
+        sq = Math.floor(sqPx * m);
+        sqPx = sq / m;
+        canvasTimeHeight = sq * 2 + 2;
+        canvasTimeHeightPx = canvasTimeHeight / m;
+
+        const widthPx = canvasScrollPadding + heatCanvasContainer.offsetWidth + canvasScrollPadding;
+        const heightPx = sqPx * heatHeight + canvasTimeHeightPx;
+
+        const heatWidthPx = Math.max(20, Math.ceil(currentHeatmap.count() / heatHeight)) * sqPx;
+        heatCanvasWrapper.style.width = heatWidthPx + 'px';
+        if (heatCanvasContainer.offsetWidth > heatWidthPx) {
+            heatCanvasContainer.style.overflowX = 'hidden';
+        } else {
+            heatCanvasContainer.style.overflowX = 'scroll';
+        }
+
+        heatCanvas.width = Math.ceil(widthPx * m);
+        heatCanvas.height = Math.ceil(heightPx * m);
+        heatCanvas.style.width = widthPx + 'px';
+        heatCanvas.style.height = heightPx + 'px';
+
+        heatC = heatCanvas.getContext('2d');
+        heatC.font = sq * 2 + 'px Verdana, sans-serif';
+        heatC.lineWidth = 1;
+        heatC.strokeStyle = '#000';
+
+        document.getElementById('heatmap-height-line').textContent = [' 1 sec : 20 ms ',' 1 min : 1 sec ',' 5 min : 5 sec ',' 1 hr  : 1 min '][currentHeatmap.zoom];
+        redrawHeatMap();
+    }
+
+    let found = new Uint32Array(0);
+
+    function searchIterative(r) {
+        if (r && (r = prompt('Enter regexp to search:', '')) === null) {
+            return;
+        }
+        searchExecutedCount = 0;
+        searchMax = 0;
+        if (!r) {
+            pattern = undefined;
+            redrawHeatMap();
+            addTask('search', function () {
+                return false;
+            }, function (){});
+            return;
+        }
+        let renderFrom = 0;
+        let heatmap = currentHeatmap.heatmap();
+        let count = heatmap.length;
+        found = new Uint32Array(count);
+        let start = currentHeatmap.startBlock();
+        function renderFunc() {
+            redrawHeatSamples(start + renderFrom, start + searchExecutedCount - 1);
+            renderFrom = searchExecutedCount;
+        }
+        pattern = r ? RegExp(r) : undefined;
+        const matchedMethods = new Set();
+        const methodOut = {};
+        for (let index = methods.data.length / 12; index >= 0; index--) {
+            if (pattern.test(title(index, methodOut))) {
+                matchedMethods.add(index);
+            }
+        }
+
+        let mul = zoomToGroupSize[currentHeatmap.zoom];
+
+        addTask('search', function () {
+            let amount = 0;
+            const from = searchExecutedCount * mul;
+            const to = (searchExecutedCount + 1) * mul;
+            for (let i = from; i < to; i++) {
+                const stacks = currentHeatmap.blocks[i];
+                if (stacks === undefined) {
+                    continue;
+                }
+
+                for (let stack of stacks) {
+                    for (let methodIndex of stack) {
+                        if (matchedMethods.has(methodIndex)) {
+                            amount++;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (searchMax < amount) {
+                renderFrom = 0;
+                searchMax = amount;
+            }
+
+            found[searchExecutedCount] = amount;
+            searchExecutedCount++;
+            if (searchExecutedCount >= count) {
+                renderFunc();
+
+                const matched = render(root, rootLevel);
+                document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+                document.getElementById('match').style.display = r ? 'inherit' : 'none';
+                document.getElementById('produced').style.display = r ? 'none' : 'inherit';
+
+                return false;
+            }
+            return true;
+        }, renderFunc);
+
+    }
+
+    function renderHeatmap() {
+        let dx = heatCanvasContainer.scrollLeft - canvasScrollPadding;
+        heatCanvas.style.transform = 'translate(' + dx + 'px, 0px)';
+
+        const width = Math.floor(heatCanvasContainer.offsetWidth / sq / (devicePixelRatio || 1));
+
+        let z = 0;
+        for (; z < zoomToGroupSize.length; z++) {
+            if (currentHeatmap.blocks.length / (zoomToGroupSize[z] * zoomToHeight[z]) < width) {
+                break;
+            }
+        }
+
+        fillCanvasWithEvents(Math.min(z, currentHeatmap.maxZoom - 1));
+
+        renderTraces(0, currentHeatmap.heatmap().length - 1);
+    }
+
+    heatCanvasContainer.addEventListener('scroll', function() {
+        let dx = Math.floor((heatCanvasContainer.scrollLeft - canvasScrollPadding) * sqScale);
+        let dxPx = dx / sqScale;
+        heatCanvas.style.transform = 'translate(' + dxPx + 'px, 0px)';
+        let delta = Math.abs(dx - prevDx);
+        if (delta >= heatCanvas.width || searchExecutedCount !== 0) {
+            redrawHeatMap();
+        } else {
+            heatC.drawImage(heatCanvas, prevDx - dx, 0);
+            if (prevDx < dx) {
+                let from = heatHeight * Math.floor((prevDx + heatCanvas.width) / sq);
+                let to = heatHeight * Math.ceil((dx + heatCanvas.width) / sq);
+                redrawHeatSamplesImpl(from, to, dx);
+            } else {
+                let from = heatHeight * Math.floor(dx / sq);
+                let to = heatHeight * Math.ceil(prevDx / sq);
+                redrawHeatSamplesImpl(from, to, dx);
+            }
+        }
+        prevDx = dx;
+        cooldownTime = performance.now() + 500;
+    });
+
+    document.getElementById('heatmap-height-line').onclick = function() {
+        fillCanvasWithEvents((currentHeatmap.maxZoom + currentHeatmap.zoom - 1) % (currentHeatmap.maxZoom));
+        highlightStart = highlightEnd = heatDiffStart = heatDiffEnd = heatActiveSample1 = heatActiveSample2 = -1;
+        for (let suffix of ['Selection', 'Diff', 'Active']) {
+            for (let prefix of ['left', 'leftMiddle', 'middle', 'rightMiddle', 'right']) {
+                document.getElementById(prefix + suffix).style.display = 'none';
+            }
+        }
+    }
+
+    function callHighlightRedraw(start, end, suffix) {
+        let left = document.getElementById('left' + suffix);
+        let leftMiddle = document.getElementById('leftMiddle' + suffix);
+        let middle = document.getElementById('middle' + suffix);
+        let rightMiddle = document.getElementById('rightMiddle' + suffix);
+        let right = document.getElementById('right' + suffix);
+
+        let x1 = Math.floor(start / heatHeight);
+        let y1 = start % heatHeight;
+        let x2 = Math.floor(end / heatHeight);
+        let y2 = end % heatHeight;
+
+        let veryStartX = x1 * sqPx;
+        let veryStartY = y1 * sqPx;
+        let veryEndX = x2 * sqPx;
+        let px = 1 / sqScale;
+        let singleElementWidth = sqPx + px;
+
+        let topPadding = canvasTimeHeightPx;
+
+        if (x1 === x2) {
+            left.style.display = 'none';
+            right.style.display = 'none';
+
+            for (let b of [middle, leftMiddle, rightMiddle]) {
+                b.style.left = veryStartX + 'px';
+                b.style.top = topPadding + veryStartY + 'px';
+                b.style.width = singleElementWidth + 'px';
+                b.style.height = (y2 - y1 + 1) * sqPx + px + 'px';
+                b.style.display = 'block';
+            }
+        } else {
+            left.style.left = veryStartX + 'px';
+            left.style.top = topPadding + veryStartY + 'px';
+            left.style.width = singleElementWidth + 'px';
+            left.style.height = (heatHeight - y1) * sqPx + px + 'px';
+            left.style.display = 'block';
+
+            leftMiddle.style.left = veryStartX + 'px';
+            leftMiddle.style.top = topPadding + 'px';
+            leftMiddle.style.width = singleElementWidth + 'px';
+            leftMiddle.style.height = y1 * sqPx + px + 'px';
+            leftMiddle.style.display = 'block';
+
+            rightMiddle.style.left = veryEndX + 'px';
+            rightMiddle.style.top = topPadding + (y2 + 1) * sqPx + 'px';
+            rightMiddle.style.width = sqPx + px + 'px';
+            rightMiddle.style.height = (heatHeight - y2 - 1) * sqPx + px + 'px';
+            rightMiddle.style.display = 'block';
+
+            right.style.left = veryEndX + 'px';
+            right.style.top = topPadding + 'px';
+            right.style.width = sqPx + px + 'px';
+            right.style.height = (y2 + 1) * sqPx + px + 'px';
+            right.style.display = 'block';
+
+            if (x2 - x1 === 1) {
+                middle.style.display = 'none';
+            } else {
+                middle.style.left = veryStartX + sqPx + px + 'px';
+                middle.style.top = topPadding + 'px';
+                middle.style.width = (x2 - x1 - 1) * sqPx - px + 'px';
+                middle.style.height = heatHeight * sqPx + px + 'px';
+                middle.style.display = 'block';
+            }
+        }
+    }
+
+    function callSelectionRedraw(sample, shiftPressed, ctrlPressed) {
+        if (ctrlPressed) {
+            highlightStart = sample;
+            highlightEnd = sample + Math.abs(heatActiveSample1 - heatActiveSample2);
+        } else if (shiftPressed && heatActiveSample1 !== -1) {
+            highlightStart = Math.min(heatActiveSample1, sample);
+            highlightEnd = Math.max(heatActiveSample1, sample);
+        } else {
+            highlightStart = highlightEnd = sample;
+        }
+
+        callHighlightRedraw(highlightStart, highlightEnd, 'Selection');
+
+        const index = sample - currentHeatmap.startBlock();
+        const heatmap = currentHeatmap.heatmap();
+        if (index >= 0 && index < heatmap.length) {
+            const ms = startMs + currentHeatmap.currentTimeBlock() * index;
+            const total =  heatmap[index];
+            const max = currentHeatmap.max();
+            heatCanvas.title = new Date(ms).toLocaleTimeString(undefined, timeOptionsShort) + " " + index;  // FIXME
+            const totalText = "total: " + total + " (" + Math.floor(total / max * 100) + "%)";
+            const searchText = searchExecutedCount > index
+                ? "; match: " + found[index] + " (" + Math.floor(found[index] / Math.max(total, 1) * 100) + "%)"
+                : "";
+            status.textContent = totalText + searchText;
+            status.style.display = 'inline';
+        } else {
+            status.style.display = 'none';
+        }
+    }
+
+    function callActiveRedraw(sample, shiftPressed, ctrlPressed) {
+        if (ctrlPressed) {
+            let minSelected = Math.min(heatActiveSample1, heatActiveSample2);
+            let maxSelected = Math.max(heatActiveSample1, heatActiveSample2);
+
+            heatDiffStart = highlightStart;
+            heatDiffEnd = highlightEnd;
+
+            callHighlightRedraw(highlightStart, highlightEnd, 'Diff');
+            renderDiff(
+                minSelected - currentHeatmap.startBlock(),
+                maxSelected - currentHeatmap.startBlock(),
+                heatDiffStart - currentHeatmap.startBlock(),
+                heatDiffEnd - currentHeatmap.startBlock()
+            );
+        } else {
+            heatDiffStart = -1;
+            heatDiffEnd = -1;
+            if (shiftPressed && heatActiveSample1 !== -1) {
+                heatActiveSample2 = sample;
+            } else {
+                heatActiveSample1 = heatActiveSample2 = sample;
+            }
+
+            let minSelected = Math.min(heatActiveSample1, heatActiveSample2);
+            let maxSelected = Math.max(heatActiveSample1, heatActiveSample2);
+
+            callHighlightRedraw(highlightStart, highlightEnd, 'Diff');
+            callHighlightRedraw(minSelected, maxSelected, 'Active');
+            renderTraces(
+                Math.max(0, minSelected - currentHeatmap.startBlock()),
+                Math.min(currentHeatmap.heatmap().length - 1, maxSelected - currentHeatmap.startBlock())
+            );
+        }
+    }
+
+    window.addEventListener('keydown', function (e) {
+        if (e.key === 'Shift') {
+            callSelectionRedraw(heatLastSample, true, e.ctrlKey);
+        } else if (e.key === 'Control') {
+            callSelectionRedraw(heatLastSample, e.shiftKey, true);
+        }
+    });
+
+    window.addEventListener('keyup', function (e) {
+        if (e.key === 'Shift') {
+            callSelectionRedraw(heatLastSample, false, e.ctrlKey);
+        } else if (e.key === 'Control') {
+            callSelectionRedraw(heatLastSample, e.shiftKey, false);
+        }
+    });
+
+    heatCanvas.onmousemove = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        if (y >= heatHeight) {
+            y = heatHeight - 1;
+        }
+        heatLastSample = x * heatHeight + y;
+        if ((event.buttons & 1) === 1) {
+            callSelectionRedraw(heatLastSample, true, event.ctrlKey);
+        } else {
+            callSelectionRedraw(heatLastSample, event.shiftKey, event.ctrlKey);
+        }
+    }
+
+    heatCanvas.onmouseout = function () {
+        status.style.display = 'none';
+    };
+
+    heatCanvas.onmousedown = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        let sample = x * heatHeight + y;
+
+        callActiveRedraw(sample, event.shiftKey, event.ctrlKey);
+    };
+
+    heatCanvas.onmouseup = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        let sample = x * heatHeight + y;
+
+        callActiveRedraw(sample, true, event.ctrlKey);
+    };
+
+
+
+init();
+// FIXME search(/*highlight:*/);
+</script></body></html>
