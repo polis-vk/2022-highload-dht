@@ -79,7 +79,6 @@ public class TransferService {
 
             HttpResponse<String> response;
             try {
-                System.out.println("trans id=" + id);
                 response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             } catch (IOException | InterruptedException e) {
                 circle.clear();

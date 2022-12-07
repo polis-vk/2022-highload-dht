@@ -157,7 +157,6 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
                 String path = request.getPath();
                 if ("/addnode".equals(path)) {
-                    System.out.println(new String(request.getBody(), StandardCharsets.UTF_8));
                     handleAddShardRequest(request, session);
                     return;
                 }
@@ -175,8 +174,6 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
                     return;
                 }
-
-                System.out.println(request.getMethodName() + " id=" + id + ", shard=" + consistentHashingManager.getShardByKey(id).getUrl());
 
                 if (transferService.isInTransfer(id)) {
                     session.sendResponse(emptyResponse(Response.GATEWAY_TIMEOUT));
@@ -283,7 +280,6 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
         Shard shard = consistentHashingManager.getShardByKey(id);
 
-        System.out.println(shard.getUrl());
         final int startIndex = clusters.indexOf(shard.getUrl());
 
         for (int reqIndex = 0; reqIndex < from; reqIndex++) {
