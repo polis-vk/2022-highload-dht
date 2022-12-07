@@ -1,5 +1,8 @@
 package ok.dht.test.kuleshov;
 
+import ok.dht.test.kuleshov.sharding.ConsistentHashingManager;
+import ok.dht.test.kuleshov.sharding.HashRange;
+import ok.dht.test.kuleshov.sharding.Shard;
 import ok.dht.test.kuleshov.utils.RequestsUtils;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -7,7 +10,6 @@ import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Socket;
 import one.nio.server.RejectedSessionException;
-import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,15 +18,15 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.NavigableSet;
-import java.util.TreeSet;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -48,28 +50,59 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
     private final int defaultAck;
     private final String selfUrl;
     private ExecutorService workerExecutorService;
-    private final NavigableSet<Integer> treeSet = new TreeSet<>();
+    private final ConsistentHashingManager consistentHashingManager;
+    private final TransferService transferService = new TransferService();
     private final List<String> clusters;
-    private final Map<Integer, Integer> hashToClusterIndex = new ConcurrentHashMap<>();
-    private HttpClient httpClient;
+    private HttpClient httpClient = HttpClient.newHttpClient();
     private final Logger log = LoggerFactory.getLogger(CoolAsyncHttpServer.class);
 
-    public CoolAsyncHttpServer(HttpServerConfig config, Service service, Object... routers) throws IOException {
+    public CoolAsyncHttpServer(HttpServerConfig config, boolean isAddedNode, Service service, Object... routers) throws IOException {
         super(config, service, routers);
 
         selfUrl = service.getConfig().selfUrl();
         clusters = service.getConfig().clusterUrls();
         clusters.sort(Comparator.naturalOrder());
+        consistentHashingManager = new ConsistentHashingManager();
+        for (String shard : clusters) {
+            if (isAddedNode && shard.equals(selfUrl)) {
+                continue;
+            }
+            consistentHashingManager.addNode(shard);
+        }
 
-        int startRangeSize = Integer.MAX_VALUE / clusters.size();
-        int cur = startRangeSize;
+        if (isAddedNode) {
+            consistentHashingManager.addNode(selfUrl);
+        }
+
+        for (String shard : clusters) {
+            if (isAddedNode && shard.equals(selfUrl)) {
+                continue;
+            }
+            consistentHashingManager.addNode(shard);
+        }
+
         defaultFrom = clusters.size();
         defaultAck = defaultFrom / 2 + 1;
 
-        for (int i = 0; i < clusters.size(); i++) {
-            treeSet.add(cur);
-            hashToClusterIndex.put(cur, i);
-            cur += startRangeSize;
+        if (isAddedNode) {
+            for (String shard : clusters) {
+                if (!Objects.equals(shard, selfUrl)) {
+                    sendAddNode(shard);
+                }
+            }
+        }
+    }
+
+    private void sendAddNode(String url) {
+        HttpRequest request = HttpRequest.newBuilder().PUT(HttpRequest.BodyPublishers.ofString(selfUrl)).uri(URI.create(url + "/addnode")).timeout(Duration.ofSeconds(2)).build();
+        HttpResponse<String> response;
+        try {
+            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (IOException | InterruptedException e) {
+            throw new IllegalStateException("error sending add node url: " + url + ", error: " + e);
+        }
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException("error response add node url: " + url + ", error: " + response.statusCode());
         }
     }
 
@@ -97,6 +130,20 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
         super.start();
     }
 
+    private void handleAddShardRequest(Request request, HttpSession session) throws IOException {
+        String url = new String(request.getBody(), StandardCharsets.UTF_8);
+
+        Map<Shard, Set<HashRange>> map = consistentHashingManager.addNode(url);
+        Set<HashRange> hashRangeSet = map.get(new Shard(selfUrl));
+
+        clusters.add(url);
+        clusters.sort(Comparator.naturalOrder());
+
+        session.sendResponse(new Response(Response.OK, Response.EMPTY));
+
+        transferService.transfer(new Shard(url), hashRangeSet, service.getAll());
+    }
+
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         workerExecutorService.execute(() -> {
@@ -109,6 +156,12 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                 }
 
                 String path = request.getPath();
+                if ("/addnode".equals(path)) {
+                    System.out.println(new String(request.getBody(), StandardCharsets.UTF_8));
+                    handleAddShardRequest(request, session);
+                    return;
+                }
+
                 if ("/v0/entities".equals(path)
                 ) {
                     handleRangeRequest(request, session);
@@ -123,6 +176,14 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                     return;
                 }
 
+                System.out.println(request.getMethodName() + " id=" + id + ", shard=" + consistentHashingManager.getShardByKey(id).getUrl());
+
+                if (transferService.isInTransfer(id)) {
+                    session.sendResponse(emptyResponse(Response.GATEWAY_TIMEOUT));
+
+                    return;
+                }
+
                 switch (path) {
                     case "/v0/entity" -> handleRequest(id, request, session);
                     case "/master/v0/entity" -> {
@@ -132,7 +193,7 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                     default -> session.sendResponse(emptyResponse(Response.BAD_REQUEST));
                 }
             } catch (Exception e) {
-                log.error(ERROR_RESPONSE_SENDING + e.getCause());
+                log.error(ERROR_RESPONSE_SENDING + e);
                 try {
                     session.sendResponse(emptyResponse(Response.BAD_REQUEST));
                 } catch (IOException exception) {
@@ -220,7 +281,10 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
 
         boolean isSelf = false;
 
-        final int startIndex = hashToClusterIndex.get(getVirtualNodeHash(id));
+        Shard shard = consistentHashingManager.getShardByKey(id);
+
+        System.out.println(shard.getUrl());
+        final int startIndex = clusters.indexOf(shard.getUrl());
 
         for (int reqIndex = 0; reqIndex < from; reqIndex++) {
             String slaveUrl = clusters.get((startIndex + reqIndex) % clusters.size());
@@ -258,18 +322,6 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                 .header(TIMESTAMP_HEADER, String.valueOf(timestamp))
                 .uri(URI.create(url + "/master" + request.getURI()))
                 .build();
-    }
-
-    private Integer getVirtualNodeHash(String id) {
-        int hash = Hash.murmur3(id);
-
-        Integer next = treeSet.ceiling(hash);
-
-        if (next != null) {
-            return next;
-        }
-
-        return treeSet.ceiling(Integer.MIN_VALUE);
     }
 
     private static void terminateExecutor(ExecutorService executorService) {

@@ -37,7 +37,17 @@ public class Service implements ok.dht.Service {
     public CompletableFuture<?> start() throws IOException {
         Config daoConfig = new Config(config.workingDir(), DEFAULT_DAO_FLUSH_THRESHOLD);
         memorySegmentDao = new MemorySegmentDao(daoConfig);
-        server = new CoolAsyncHttpServer(createConfigFromPort(config.selfPort()), this);
+        server = new CoolAsyncHttpServer(createConfigFromPort(config.selfPort()), false, this);
+        isStarted = true;
+        server.start();
+
+        return CompletableFuture.completedFuture(null);
+    }
+
+    public CompletableFuture<?> startAdded() throws IOException {
+        Config daoConfig = new Config(config.workingDir(), DEFAULT_DAO_FLUSH_THRESHOLD);
+        memorySegmentDao = new MemorySegmentDao(daoConfig);
+        server = new CoolAsyncHttpServer(createConfigFromPort(config.selfPort()), true, this);
         isStarted = true;
         server.start();
 
@@ -78,6 +88,10 @@ public class Service implements ok.dht.Service {
                 MemorySegment.ofArray(Utf8.toBytes(start)),
                 end != null ? MemorySegment.ofArray(Utf8.toBytes(end)) : null
         );
+    }
+
+    public Iterator<Entry<MemorySegment>> getAll() throws IOException {
+        return memorySegmentDao.all();
     }
 
     public Response handleGet(String id) {

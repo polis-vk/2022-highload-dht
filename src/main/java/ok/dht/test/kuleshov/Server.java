@@ -23,7 +23,8 @@ public final class Server {
     }
 
     public static void main(String[] args) {
-        String url = "http://localhost:" + args[0];
+        String isAdded = args[0];
+        String url = "http://localhost:" + args[1];
 
         Path tmpDirectory;
         try {
@@ -34,15 +35,19 @@ public final class Server {
         }
 
         ServiceConfig cfg = new ServiceConfig(
-                Integer.parseInt(args[0]),
+                Integer.parseInt(args[1]),
                 url,
-                Stream.of(args).map(port -> "http://localhost:" + port).collect(Collectors.toList()),
+                Stream.of(args).skip(1).map(port -> "http://localhost:" + port).collect(Collectors.toList()),
                 tmpDirectory
         );
         Service service = new Service(cfg);
         CompletableFuture<?> completableFuture;
         try {
-            completableFuture = service.start();
+            if (isAdded.equals("--add")) {
+                completableFuture = service.startAdded();
+            } else {
+                completableFuture = service.start();
+            }
         } catch (IOException e) {
             log.error("Error starting service: " + e.getMessage());
             return;

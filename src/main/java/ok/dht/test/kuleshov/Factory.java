@@ -4,7 +4,7 @@ import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 
-@ServiceFactory(stage = 6, week = 1)
+@ServiceFactory(stage = 7, week = 2)
 public class Factory implements ServiceFactory.Factory {
     @Override
     public Service create(ServiceConfig config) {
