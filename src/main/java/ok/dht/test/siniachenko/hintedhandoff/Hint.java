@@ -5,5 +5,6 @@ public class Hint {
     public byte[] value;
 
     public Hint() {
+        // just for code climate
     }
 }

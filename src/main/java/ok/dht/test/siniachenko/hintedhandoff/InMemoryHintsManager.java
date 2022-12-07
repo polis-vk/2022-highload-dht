@@ -2,8 +2,6 @@ package ok.dht.test.siniachenko.hintedhandoff;
 
 import ok.dht.test.siniachenko.range.ChunkedTransferEncoder;
 import ok.dht.test.siniachenko.range.EntityChunkStreamQueueItem;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.HashMap;

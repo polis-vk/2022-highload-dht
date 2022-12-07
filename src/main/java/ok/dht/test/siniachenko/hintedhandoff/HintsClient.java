@@ -50,19 +50,7 @@ public class HintsClient {
                     InputStream body = response.body();
                     ByteBuffer byteBuffer = ByteBuffer.allocate(BUFFER_CAPACITY);
                     try {
-                        while (true) {
-                            int read = body.read(byteBuffer.array(), byteBuffer.arrayOffset(), byteBuffer.remaining());
-                            if (read < 0) {
-                                if (byteBuffer.position() > 0) {
-                                    processHintInBuffer(byteBuffer);
-                                }
-                                break;
-                            }
-                            byteBuffer.position(byteBuffer.position() + read);
-                            if (!byteBuffer.hasRemaining()) {
-                                processHintInBuffer(byteBuffer);
-                            }
-                        }
+                        processBody(body, byteBuffer);
                     } catch (IOException e) {
                         LOG.error("IO exception receiving hints from " + replicaUrl, e);
                     } catch (RuntimeException e) {
@@ -76,6 +64,22 @@ public class HintsClient {
                 LOG.error("Timeout or Error receiving hints from " + replicaUrl);
                 return null;
             }, executorService);
+    }
+
+    private void processBody(InputStream body, ByteBuffer byteBuffer) throws IOException {
+        while (true) {
+            int read = body.read(byteBuffer.array(), byteBuffer.arrayOffset(), byteBuffer.remaining());
+            if (read < 0) {
+                if (byteBuffer.position() > 0) {
+                    processHintInBuffer(byteBuffer);
+                }
+                break;
+            }
+            byteBuffer.position(byteBuffer.position() + read);
+            if (!byteBuffer.hasRemaining()) {
+                processHintInBuffer(byteBuffer);
+            }
+        }
     }
 
     private void processHintInBuffer(ByteBuffer byteBuffer) {
