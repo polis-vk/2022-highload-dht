@@ -25,7 +25,7 @@ public class RangeService {
             end
         );
         return chunkedTransferEncoder.encodeEntityChunkStream(
-            inRangeIterator
+            inRangeIterator, false, false
         );
     }
 }

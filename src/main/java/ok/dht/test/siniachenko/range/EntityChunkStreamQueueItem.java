@@ -18,13 +18,17 @@ public class EntityChunkStreamQueueItem extends Session.QueueItem {
     );
 
     private final Iterator<Map.Entry<byte[], byte[]>> entityIterator;
+    private final boolean separatorAfterValue;
+    private final boolean valueWithMeta;
     private ByteBuffer tempChunkByteBuffer;
 
     public EntityChunkStreamQueueItem(
         Iterator<Map.Entry<byte[], byte[]>> entityIterator,
-        byte[] metaData
+        boolean separatorAfterValue, boolean valueWithMeta, byte[] metaData
     ) {
         this.entityIterator = entityIterator;
+        this.separatorAfterValue = separatorAfterValue;
+        this.valueWithMeta = valueWithMeta;
         tempChunkByteBuffer = ByteBuffer.wrap(metaData);
     }
 
@@ -59,15 +63,26 @@ public class EntityChunkStreamQueueItem extends Session.QueueItem {
     private byte[] getEntityChunk(Map.Entry<byte[], byte[]> entity) {
         ByteArrayBuilder chunkBuilder = new ByteArrayBuilder();
         byte[] key = entity.getKey();
-        byte[] value = Utils.readValueFromBytes(entity.getValue());
+        byte[] value;
+        if (valueWithMeta) {
+            value = entity.getValue();
+        } else {
+            value = Utils.readValueFromBytes(entity.getValue());
+        }
         int chunkLength = key.length + 1 + value.length;
+        if (separatorAfterValue) {
+            chunkLength++;
+        }
         chunkBuilder.append(Integer.toHexString(chunkLength))
             .append('\r')
             .append('\n')
             .append(key)
             .append('\n')
-            .append(value)//
-            .append('\r')
+            .append(value);
+        if (separatorAfterValue) {
+            chunkBuilder.append('\n');
+        }
+        chunkBuilder.append('\r')
             .append('\n');
         return chunkBuilder.toBytes();
     }

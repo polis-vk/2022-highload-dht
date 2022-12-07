@@ -122,6 +122,9 @@ public class TycoonHttpServer extends HttpServer {
         } else {
             execute(() -> {
                     String replicaUrl = request.getHeader(REPLICA_URL_HEADER);
+                    if (replicaUrl != null) {
+                        replicaUrl = replicaUrl.substring(2);
+                    }
                     if (replicaUrl == null) {
                         sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY), session);
                         return;

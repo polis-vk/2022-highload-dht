@@ -173,7 +173,9 @@ public class ReplicatedRequestExecutor {
     private void handleReplicaFailure(
         String replicaUrl, HintsManager hintsManager, CompletableFuture<byte[][]> resultFuture
     ) {
-        addHint(replicaUrl, hintsManager);
+        if (request.getBody() != null && request.getBody().length > 0) {
+            addHint(replicaUrl, hintsManager);
+        }
         addFailure(resultFuture);
     }
 
