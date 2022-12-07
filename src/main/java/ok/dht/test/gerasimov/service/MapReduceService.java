@@ -2,6 +2,7 @@ package ok.dht.test.gerasimov.service;
 
 import ok.dht.test.gerasimov.client.CircuitBreakerClient;
 import ok.dht.test.gerasimov.exception.MapReduceServiceException;
+import ok.dht.test.gerasimov.mapreduce.MapReduceClassLoader;
 import ok.dht.test.gerasimov.mapreduce.MapReduceQuery;
 import ok.dht.test.gerasimov.sharding.ConsistentHash;
 import ok.dht.test.gerasimov.sharding.Shard;
@@ -50,7 +51,9 @@ public class MapReduceService implements HandleService {
             List<byte[]> results = new ArrayList<>();
 
             for (Shard shard : shards) {
-                if (shard.getPort() != port) {
+                if (shard.getPort() == port) {
+                    results.add(mapReduceQuery.map(dao));
+                } else {
                     results.add(
                             client.circuitBreaker(
                                             createHttpRequest(shard, request, mapReduceQuery.getClass().getName()),
@@ -59,8 +62,6 @@ public class MapReduceService implements HandleService {
                                     .join()
                                     .body()
                     );
-                } else {
-                    results.add(mapReduceQuery.map(dao));
                 }
             }
 
@@ -124,11 +125,5 @@ public class MapReduceService implements HandleService {
                         )
                 )
                 .build();
-    }
-}
-
-class MapReduceClassLoader extends ClassLoader {
-    public Class<?> defineClass(String name, byte[] bytes) {
-        return defineClass(name, bytes, 0, bytes.length);
     }
 }
