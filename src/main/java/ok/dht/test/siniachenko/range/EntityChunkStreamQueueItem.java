@@ -71,7 +71,7 @@ public class EntityChunkStreamQueueItem extends Session.QueueItem {
         }
         int chunkLength = key.length + 1 + value.length;
         if (separatorAfterValue) {
-            chunkLength++;
+            chunkLength += 10;
         }
         chunkBuilder.append(Integer.toHexString(chunkLength))
             .append('\r')
@@ -80,7 +80,16 @@ public class EntityChunkStreamQueueItem extends Session.QueueItem {
             .append('\n')
             .append(value);
         if (separatorAfterValue) {
-            chunkBuilder.append('\n');
+            chunkBuilder.append('\n')
+                .append('\n')
+                .append('\n')
+                .append('\n')
+                .append('\n')
+                .append('\n')
+                .append('\n')
+                .append('\n')
+                .append('\n')
+                .append('\n');
         }
         chunkBuilder.append('\r')
             .append('\n');

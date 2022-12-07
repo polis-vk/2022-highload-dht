@@ -83,6 +83,7 @@ public class HintsClient {
 
     private void processHintInBuffer(ByteBuffer byteBuffer) {
         Hint hint = readHint(byteBuffer);
+        System.out.println("HINT");
         byte[] storedValue = levelDb.get(hint.getKey());
         if (
             storedValue == null
@@ -102,21 +103,28 @@ public class HintsClient {
         int keyLength = 0;
         byte[] value;
         boolean keyRead = false;
-        for (int i = 0; i < byteBuffer.capacity(); i++) {
-            if (array[i] == '\n') {
-                if (keyRead) {
-                    value = new byte[i - keyLength - 1];
-                    System.arraycopy(array, keyLength + 1, value, 0, value.length);
-                    return new Hint(key, value);
-                } else {
+        for (int i = 9; i < byteBuffer.capacity(); i++) {
+                if (keyRead && isSeparator(array, i)) {
+                        value = new byte[i - keyLength - 10];
+                        System.arraycopy(array, keyLength + 1, value, 0, value.length);
+                        return new Hint(key, value);
+                } else if (!keyRead && array[i] == '\n') {
                     keyLength = i;
                     key = new byte[keyLength];
                     System.arraycopy(array, 0, key, 0, key.length);
                     keyRead = true;
                 }
-            }
         }
         // TODO: handle
         return null;
+    }
+
+    private static boolean isSeparator(byte[] array, int index) {
+        for (int i = index - 9; i <= index; i++) {
+            if (array[i] != '\n') {
+                return false;
+            }
+        }
+        return true;
     }
 }
