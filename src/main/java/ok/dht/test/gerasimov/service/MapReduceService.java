@@ -18,9 +18,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-/**
- * @author Michael Gerasimov
- */
 public class MapReduceService implements HandleService {
     private static final Set<Integer> ALLOWED_METHODS = Set.of(Request.METHOD_POST);
     private static final String ENDPOINT = "/v0/map-reduce";
@@ -101,8 +98,12 @@ public class MapReduceService implements HandleService {
             return (MapReduceQuery) mapReduceQueryClass.getDeclaredConstructor().newInstance();
         } catch (IOException e) {
             throw new MapReduceServiceException("Can not send response", e);
-        } catch (InvocationTargetException | InstantiationException | IllegalAccessException |
-                 NoSuchMethodException e) {
+        } catch (
+                InvocationTargetException
+                | InstantiationException
+                | IllegalAccessException
+                | NoSuchMethodException e
+        ) {
             throw new MapReduceServiceException("Can not load map reduce query", e);
         }
     }
@@ -116,7 +117,11 @@ public class MapReduceService implements HandleService {
                 .uri(uri)
                 .header(SLAVE_HEADER, request.getHeader(SLAVE_HEADER))
                 .POST(
-                        HttpRequest.BodyPublishers.ofByteArray(request.getBody() == null ? new byte[0] : request.getBody())
+                        HttpRequest.BodyPublishers.ofByteArray(
+                                request.getBody() == null
+                                        ? new byte[0]
+                                        : request.getBody()
+                        )
                 )
                 .build();
     }
