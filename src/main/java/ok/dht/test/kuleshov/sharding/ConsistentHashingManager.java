@@ -64,7 +64,6 @@ public class ConsistentHashingManager {
             }
         }
 
-        System.out.println(new ArrayList<>(circle));
         return result;
     }
 
