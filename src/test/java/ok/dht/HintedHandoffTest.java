@@ -42,7 +42,6 @@ class HintedHandoffTest extends TestBase {
         nodes.get(0).stop();
 
         String key = randomId();
-        System.out.println("KEY is " + key);
         byte[] value = randomValue();
         for (int i = 0; i < value.length; i++) {
             if (value[i] == (byte) '\n') {
@@ -51,7 +50,6 @@ class HintedHandoffTest extends TestBase {
         }
         nodes.get(1).upsert(key, value, 1, 2);
 
-        System.out.println("HEREEEEEEEE");
         nodes.get(0).start();
         nodes.get(1).stop();
         HttpResponse<byte[]> response = nodes.get(0).get(key, 1, 2);
