@@ -188,7 +188,9 @@ public class ReplicatedRequestExecutor {
 
     private void addHint(String replicaUrl, HintsManager hintsManager) {
         if (hint == null) {
-            hint = new Hint(Utf8.toBytes(id), request.getBody());
+            hint = new Hint();
+            hint.key = Utf8.toBytes(id);
+            hint.value = request.getBody();
         }
         hintsManager.addHintForReplica(replicaUrl, hint);
     }

@@ -3,7 +3,6 @@ package ok.dht.test.siniachenko.hintedhandoff;
 import ok.dht.ServiceConfig;
 import ok.dht.test.siniachenko.TycoonHttpServer;
 import ok.dht.test.siniachenko.Utils;
-import one.nio.util.Utf8;
 import org.iq80.leveldb.DB;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,12 +48,10 @@ public class HintsClient {
                 countDownLatch.countDown();
                 if (response.statusCode() == 200) {
                     InputStream body = response.body();
-                    // TODO choose size
                     ByteBuffer byteBuffer = ByteBuffer.allocate(BUFFER_CAPACITY);
                     try {
-                        int read;
                         while (true) {
-                            read = body.read(byteBuffer.array(), byteBuffer.arrayOffset(), byteBuffer.remaining());
+                            int read = body.read(byteBuffer.array(), byteBuffer.arrayOffset(), byteBuffer.remaining());
                             if (read < 0) {
                                 if (byteBuffer.position() > 0) {
                                     processHintInBuffer(byteBuffer);
@@ -83,37 +80,38 @@ public class HintsClient {
 
     private void processHintInBuffer(ByteBuffer byteBuffer) {
         Hint hint = readHint(byteBuffer);
-        System.out.println("HINT");
-        byte[] storedValue = levelDb.get(hint.getKey());
+        if (hint == null) {
+            throw new RuntimeException("cannot parse hint from stream");
+        }
+        byte[] storedValue = levelDb.get(hint.key);
         if (
             storedValue == null
                 || Utils.readTimeMillisFromBytes(storedValue)
-                < Utils.readTimeMillisFromBytes(hint.getValue())
+                < Utils.readTimeMillisFromBytes(hint.value)
         ) {
-            levelDb.put(hint.getKey(), hint.getValue());
+            levelDb.put(hint.key, hint.value);
         }
-        int hintLength = hint.getKey().length + hint.getValue().length + 2;
+        int hintLength = hint.key.length + hint.value.length + 2;
         System.arraycopy(byteBuffer.array(), hintLength, byteBuffer.array(), 0, byteBuffer.position() - hintLength);
         byteBuffer.position(byteBuffer.position() - hintLength);
     }
 
     private static Hint readHint(ByteBuffer byteBuffer) {
         byte[] array = byteBuffer.array();
-        byte[] key = null;
+        Hint hint = new Hint();
         int keyLength = 0;
-        byte[] value;
         boolean keyRead = false;
         for (int i = 9; i < byteBuffer.capacity(); i++) {
-                if (keyRead && isSeparator(array, i)) {
-                        value = new byte[i - keyLength - 10];
-                        System.arraycopy(array, keyLength + 1, value, 0, value.length);
-                        return new Hint(key, value);
-                } else if (!keyRead && array[i] == '\n') {
-                    keyLength = i;
-                    key = new byte[keyLength];
-                    System.arraycopy(array, 0, key, 0, key.length);
-                    keyRead = true;
-                }
+            if (keyRead && isSeparator(array, i)) {
+                hint.value = new byte[i - keyLength - 10];
+                System.arraycopy(array, keyLength + 1, hint.value, 0, hint.value.length);
+                return hint;
+            } else if (!keyRead && array[i] == '\n') {
+                keyLength = i;
+                hint.key = new byte[keyLength];
+                System.arraycopy(array, 0, hint.key, 0, hint.key.length);
+                keyRead = true;
+            }
         }
         // TODO: handle
         return null;

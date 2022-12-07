@@ -17,7 +17,12 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.http.HttpClient;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class TycoonService implements ok.dht.Service {
     private static final Logger LOG = LoggerFactory.getLogger(TycoonService.class);
@@ -67,6 +72,7 @@ public class TycoonService implements ok.dht.Service {
         try {
             fetchHintsFromAllReplicas(hintsClient);
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new IOException(e);
         }
 
@@ -114,7 +120,11 @@ public class TycoonService implements ok.dht.Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 7, week = 1, bonuses = "SingleNodeTest#respectFileFolder,HintedHandoffTest#oneFailedReplicaOneKey")
+    @ServiceFactory(
+        stage = 7,
+        week = 1,
+        bonuses = "SingleNodeTest#respectFileFolder,HintedHandoffTest#oneFailedReplicaOneKey"
+    )
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public ok.dht.Service create(ServiceConfig config) {

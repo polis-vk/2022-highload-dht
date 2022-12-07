@@ -11,8 +11,6 @@ import java.util.Iterator;
 import java.util.Map;
 
 public class InMemoryHintsManager implements HintsManager {
-    private static final Logger LOG = LoggerFactory.getLogger(InMemoryHintsManager.class);
-
     private final ChunkedTransferEncoder chunkedTransferEncoder;
     private final Map<String, Map<byte[], byte[]>> replicaUrlToHints;
 
@@ -24,17 +22,17 @@ public class InMemoryHintsManager implements HintsManager {
     @Override
     public void addHintForReplica(String replicaUrl, Hint hint) {
         Map<byte[], byte[]> hints = replicaUrlToHints.computeIfAbsent(replicaUrl, r -> new HashMap<>());
-        hints.put(hint.getKey(), hint.getValue());
+        hints.put(hint.key, hint.value);
     }
 
     @Override
     public EntityChunkStreamQueueItem getReplicaHintsStream(String replicaUrl) {
         Iterator<Map.Entry<byte[], byte[]>> replicaHintsIterator;
         Map<byte[], byte[]> hints = replicaUrlToHints.get(replicaUrl);
-        if (hints != null) {
-            replicaHintsIterator = hints.entrySet().iterator();
-        } else {
+        if (hints == null) {
             replicaHintsIterator = Collections.emptyIterator();
+        } else {
+            replicaHintsIterator = hints.entrySet().iterator();
         }
         return chunkedTransferEncoder.encodeEntityChunkStream(
             replicaHintsIterator, true, true
