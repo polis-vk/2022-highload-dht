@@ -4,7 +4,6 @@ import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.mikhaylov.internal.InternalHttpClient;
-import ok.dht.test.mikhaylov.internal.JavaHttpClient;
 import ok.dht.test.mikhaylov.internal.OneNioHttpClient;
 import ok.dht.test.mikhaylov.resolver.ConsistentHashingResolver;
 import ok.dht.test.mikhaylov.resolver.ShardResolver;
@@ -19,7 +18,6 @@ import org.rocksdb.RocksDBException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
@@ -196,5 +194,4 @@ public class MyService implements Service {
             return new MyService(config, resolver);
         }
     }
-
 }
