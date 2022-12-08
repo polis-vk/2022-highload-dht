@@ -1,6 +1,7 @@
 package ok.dht.test.kazakov.service.http;
 
 import ok.dht.Service;
+import ok.dht.test.kazakov.service.ExceptionUtils;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -11,12 +12,14 @@ import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
 import one.nio.server.SelectorThread;
+import one.nio.util.Utf8;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -25,7 +28,7 @@ public class DaoHttpServer extends HttpServer {
     private static final Logger LOG = LoggerFactory.getLogger(DaoHttpServer.class);
 
     // package-private in one-nio, so copy-pasted here
-    private static final String[] METHODS = {
+    public static final List<String> METHODS = List.of(
             "",
             "GET",
             "POST",
@@ -36,10 +39,10 @@ public class DaoHttpServer extends HttpServer {
             "TRACE",
             "CONNECT",
             "PATCH"
-    };
+    );
 
     // as one-nio does not define it
-    private static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
+    public static final String TOO_MANY_REQUESTS = "429 Too Many Requests";
 
     private final PathMapper pathMapper;
 
@@ -66,10 +69,10 @@ public class DaoHttpServer extends HttpServer {
         this.unsupportedMethodRequestHandler = new UnsupportedMethodRequestHandler();
     }
 
-    public void addRequestHandler(@Nonnull final String path,
-                                  final int method,
+    public void addRequestHandlers(@Nonnull final String path,
+                                  final int[] methods,
                                   @Nonnull final RequestHandler requestHandler) {
-        pathMapper.add(path, new int[]{method}, new AsynchronousRequestHandler(requestHandler));
+        pathMapper.add(path, methods, new AsynchronousRequestHandler(requestHandler));
         pathMapper.add(path, null, unsupportedMethodRequestHandler);
     }
 
@@ -77,7 +80,7 @@ public class DaoHttpServer extends HttpServer {
     public void handleRequest(@Nonnull final Request request, @Nonnull final HttpSession session) throws IOException {
         final String path = request.getPath();
         final int method = request.getMethod();
-        LOG.trace("{} {}", METHODS[method], path);
+        LOG.debug("{} {}", METHODS.get(method), request.getURI());
 
         final RequestHandler handler = pathMapper.find(path, method);
         if (handler != null) {
@@ -96,18 +99,23 @@ public class DaoHttpServer extends HttpServer {
 
     @Override
     public synchronized void stop() {
-        super.stop();
+        Exception stopException = ExceptionUtils.tryExecute(null, super::stop);
 
         // closing all connections
         for (final SelectorThread selector : selectors) {
             for (final Session session : selector.selector) {
-                session.close();
+                stopException = ExceptionUtils.tryExecute(stopException, session::close);
             }
+        }
+
+        if (stopException != null) {
+            LOG.error("Exception caught during DaoHttpServer.stop()", stopException);
+            throw new RuntimeException(stopException);
         }
     }
 
     @SuppressWarnings("FutureReturnValueIgnored")
-    private void stopService(@Nullable final Throwable suppressedException) {
+    public void stopService(@Nullable final Throwable suppressedException) {
         try {
             // do not wait for stop, because it might run on handlerExecutorService
             // and will be blocked by this thread
@@ -150,9 +158,9 @@ public class DaoHttpServer extends HttpServer {
             try {
                 handlerExecutorService.execute(requestHandler);
             } catch (final RejectedExecutionException rejectedExecutionException) {
-                LOG.trace("Rejected execution of {} {} ({})",
-                        METHODS[request.getMethod()],
-                        request.getPath(),
+                LOG.debug("Rejected execution of {} {} ({})",
+                        METHODS.get(request.getMethod()),
+                        request.getURI(),
                         rejectedExecutionException.getMessage());
                 requestHandler.rejectRequest();
             }
@@ -161,6 +169,7 @@ public class DaoHttpServer extends HttpServer {
 
     public final class SynchronousRequestHandler implements Runnable {
 
+        private static final byte[] REJECTED_RESPONSE_BODY = Utf8.toBytes("Server is busy. Please, retry later.");
         private final RequestHandler wrappedHandler;
         private final HttpSession session;
         private final Request request;
@@ -177,6 +186,12 @@ public class DaoHttpServer extends HttpServer {
         public void run() {
             try {
                 wrappedHandler.handleRequest(request, session);
+            } catch (final RejectedExecutionException rejectedExecutionException) {
+                LOG.debug("Rejected execution of {} {}",
+                        METHODS.get(request.getMethod()),
+                        request.getURI(),
+                        rejectedExecutionException);
+                rejectRequest();
             } catch (final Exception handleRequestException) {
                 LOG.error("Fatal error on request handling", handleRequestException);
                 stopService(handleRequestException);
@@ -185,10 +200,9 @@ public class DaoHttpServer extends HttpServer {
 
         public void rejectRequest() {
             try {
-                session.sendError(TOO_MANY_REQUESTS, "Server is busy. Please, retry later.");
+                session.sendResponse(new Response(TOO_MANY_REQUESTS, REJECTED_RESPONSE_BODY));
             } catch (final IOException sendErrorException) {
-                LOG.error("Fatal on 'Too Many Requests' response", sendErrorException);
-                stopService(sendErrorException);
+                LOG.error("Could not send 'Too Many Requests' response", sendErrorException);
             }
         }
     }
