@@ -1,18 +1,21 @@
 package ok.dht.test.kuleshov;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.kuleshov.sharding.ClusterConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public final class Server {
     private static final String TMP_DIRECTORY_PREFIX = "server";
@@ -23,8 +26,29 @@ public final class Server {
     }
 
     public static void main(String[] args) {
-        String isAdded = args[0];
-        String url = "http://localhost:" + args[1];
+        Map<String, List<String>> options = new HashMap<>();
+
+        if (args.length == 0) {
+            throw new IllegalArgumentException("arguments is empty");
+        }
+
+        if (args[0].charAt(0) == '-') {
+            throw new IllegalArgumentException("arguments parameters should start with -");
+        }
+
+        String last = "";
+        for (String arg : args) {
+            if (arg.charAt(0) == '-') {
+                options.put(arg, new ArrayList<>());
+                last = arg;
+            } else {
+                options.get(last).add(arg);
+            }
+        }
+
+        int localPort = Integer.parseInt(options.get("-p").get(0));
+        boolean isAdded = options.containsKey("-a");
+        String url = "http://localhost:" + localPort;
 
         Path tmpDirectory;
         try {
@@ -34,17 +58,25 @@ public final class Server {
             return;
         }
 
+        ClusterConfig clusterConfig = new ClusterConfig();
+
+        clusterConfig.urlToHash = Map.of(
+                "http://localhost:19234", new ArrayList<>()
+        );
+
         ServiceConfig cfg = new ServiceConfig(
-                Integer.parseInt(args[1]),
+                localPort,
                 url,
-                Stream.of(args).skip(1).map(port -> "http://localhost:" + port).collect(Collectors.toList()),
+                clusterConfig.urlToHash.keySet().stream().toList(),
                 tmpDirectory
         );
         Service service = new Service(cfg);
         CompletableFuture<?> completableFuture;
+
         try {
-            if (isAdded.equals("--add")) {
-                completableFuture = service.startAdded();
+            if (isAdded) {
+
+                completableFuture = service.startAdded(clusterConfig);
             } else {
                 completableFuture = service.start();
             }

@@ -44,9 +44,9 @@ public class HashRange {
 
     @Override
     public String toString() {
-        return "HashRange{" +
-                "leftBorder=" + leftBorder +
-                ", rightBorder=" + rightBorder +
-                '}';
+        return "HashRange{"
+                + "leftBorder=" + leftBorder
+                + ", rightBorder=" + rightBorder
+                + '}';
     }
 }

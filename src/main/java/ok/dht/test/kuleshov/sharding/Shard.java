@@ -28,8 +28,8 @@ public class Shard {
 
     @Override
     public String toString() {
-        return "Shard{" +
-                "url='" + url + '\'' +
-                '}';
+        return "Shard{"
+                + "url='" + url + '\''
+                + '}';
     }
 }

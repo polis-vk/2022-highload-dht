@@ -39,9 +39,6 @@ public class CircleRange implements Comparable<CircleRange> {
 
     @Override
     public String toString() {
-        return "CircleRange{" +
-                "shard=" + shard +
-                ", hashRange=" + hashRange +
-                '}';
+        return "{" + hashRange.getLeftBorder() + " " + shard.getUrl() + " " + hashRange.getRightBorder() + '}';
     }
 }
