@@ -9,7 +9,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 public final class Db {
-    private static RocksDB rocksDB;
 
     static {
         RocksDB.loadLibrary();
@@ -18,26 +17,25 @@ public final class Db {
     private Db() {
     }
 
-    public static void open(Path workingDir) throws DbException {
+    public static RocksDB open(Path workingDir) throws DbException {
         try {
             var dbPath = workingDir.resolve("rocksdb");
             Files.createDirectories(dbPath);
-            rocksDB = RocksDB.open(dbPath.toAbsolutePath().normalize().toString());
+            return RocksDB.open(dbPath.toAbsolutePath().normalize().toString());
         } catch (IOException | RocksDBException e) {
             throw new DbException(e);
         }
     }
 
-    public static void close() throws DbException {
+    public static void close(RocksDB rocksDB) throws DbException {
         try {
             rocksDB.closeE();
-            rocksDB = null;
         } catch (RocksDBException e) {
             throw new DbException(e);
         }
     }
 
-    public static byte[] get(String key) throws DbException {
+    public static byte[] get(RocksDB rocksDB, String key) throws DbException {
         try {
             return rocksDB.get(Utf8.toBytes(key));
         } catch (RocksDBException e) {
@@ -45,7 +43,7 @@ public final class Db {
         }
     }
 
-    public static void put(String key, byte[] value) throws DbException {
+    public static void put(RocksDB rocksDB, String key, byte[] value) throws DbException {
         try {
             rocksDB.put(Utf8.toBytes(key), value);
         } catch (RocksDBException e) {
@@ -53,7 +51,7 @@ public final class Db {
         }
     }
 
-    public static void delete(String key) throws DbException {
+    public static void delete(RocksDB rocksDB, String key) throws DbException {
         try {
             rocksDB.delete(Utf8.toBytes(key));
         } catch (RocksDBException e) {
