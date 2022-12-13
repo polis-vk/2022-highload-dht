@@ -1,6 +1,7 @@
 package ok.dht.test.armenakyan.sharding.hashing;
 
 import ok.dht.test.armenakyan.sharding.model.Shard;
+import one.nio.util.ByteArrayBuilder;
 import one.nio.util.Utf8;
 
 import java.nio.ByteBuffer;
@@ -60,10 +61,15 @@ public class ConsistentHashing implements Hashing {
     private VShard[] generateVirtualShards(Shard shard) {
         VShard[] virtualShards = new VShard[VIRTUAL_SHARD_COUNT];
 
-        ByteBuffer shardKeyBytes = ByteBuffer.wrap(Utf8.toBytes(shard.url()));
+        byte[] urlBytes = Utf8.toBytes(shard.url());
+        ByteBuffer shardKeyBytes = ByteBuffer
+                .allocate(urlBytes.length + 4)
+                .put(urlBytes);
 
-        for (byte tail = 0; tail < VIRTUAL_SHARD_COUNT; tail++) {
-            shardKeyBytes.put(tail);
+        for (int tail = 0; tail < VIRTUAL_SHARD_COUNT; tail++) {
+            shardKeyBytes.putInt(tail);
+            shardKeyBytes.position(shardKeyBytes.position() - 4);
+
             int hash = keyHasher.hash(shardKeyBytes.array());
 
             virtualShards[tail] = new VShard(shard, hash);
