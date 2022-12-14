@@ -128,11 +128,30 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
         try {
             response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         } catch (IOException | InterruptedException e) {
-            throw new IllegalStateException("error sending add node url: " + url + ", error: " + e);
+            throw new IllegalStateException("error sending add node url: " + url, e);
         }
         if (response.statusCode() != 200) {
             throw new IllegalStateException(
                     "error response add node url: " + url + ", error: " + response.statusCode()
+            );
+        }
+    }
+
+    private void sendDeleteNode(String url) throws IOException {
+        HttpRequest request = HttpRequest.newBuilder()
+                .PUT(HttpRequest.BodyPublishers.ofString(Json.toJson(new ShardAddBody(selfUrl, new ArrayList<>()))))
+                .uri(URI.create(url + "/v0/deletenode"))
+                .timeout(Duration.ofSeconds(2))
+                .build();
+        HttpResponse<String> response;
+        try {
+            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (IOException | InterruptedException e) {
+            throw new IllegalStateException("error sending delete node url: " + url, e);
+        }
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException(
+                    "error response delete node url: " + url + ", error: " + response.statusCode()
             );
         }
     }
@@ -193,22 +212,51 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
         session.sendResponse(new Response(Response.OK, Response.EMPTY));
 
         if (hashRangeSet != null) {
-            transferSenderService.setTransfer(hashRangeSet);
+            transferSenderService.setTransfer(Map.of(new Shard(shardAddBody.getUrl()), hashRangeSet));
             isBlocked = false;
-            transferSenderService.startTransfer(new Shard(shardAddBody.getUrl()), service.getAll());
+            transferSenderService.startTransfer(service.getAll());
         }
         isBlocked = false;
     }
 
-    private void handleGetCircle(HttpSession session) throws IOException {
-        String jsonCircle;
-        try {
-            jsonCircle = Json.toJson(consistentHashService.getCircle());
-        } catch (IOException e) {
-            throw new IllegalStateException("Error creating json from circle");
+    private void handleMainDeleteShardRequest(HttpSession session) throws IOException {
+        isBlocked = true;
+        Map<Shard, Set<HashRange>> map = consistentHashService.removeShard(new Shard(selfUrl));
+
+        session.sendResponse(new Response(Response.OK, Response.EMPTY));
+
+        for (Shard shard : map.keySet()) {
+            sendDeleteNode(shard.getUrl());
         }
-        Response response = new Response(Response.OK, jsonCircle.getBytes(StandardCharsets.UTF_8));
-        session.sendResponse(response);
+
+        transferSenderService.setTransfer(map);
+        isBlocked = false;
+        transferSenderService.startTransfer(service.getAll());
+    }
+
+    private void handleDeleteShardRequest(Request request, HttpSession session) throws IOException {
+        String body = new String(request.getBody(), StandardCharsets.UTF_8);
+
+        System.out.println(selfUrl);
+
+        ShardAddBody shardAddBody;
+        try {
+            shardAddBody = Json.fromJson(body, ShardAddBody.class);
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(e);
+        }
+
+        isBlocked = true;
+        Map<Shard, Set<HashRange>> map = consistentHashService.removeShard(new Shard(shardAddBody.getUrl()));
+        Shard selfShard = new Shard(selfUrl);
+        Set<HashRange> hashRangeSet = map.get(selfShard);
+
+        session.sendResponse(new Response(Response.OK, Response.EMPTY));
+
+        if (hashRangeSet != null) {
+            transferReceiverService.receiveTransfer(Map.of(selfShard, hashRangeSet));
+        }
+        isBlocked = false;
     }
 
     @Override
@@ -229,6 +277,16 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                 String path = request.getPath();
                 if ("/v0/addnode".equals(path)) {
                     handleAddShardRequest(request, session);
+                    return;
+                }
+
+                if ("/v0/deletenode".equals(path)) {
+                    handleDeleteShardRequest(request, session);
+                    return;
+                }
+
+                if ("/v0/maindeletenode".equals(path)) {
+                    handleMainDeleteShardRequest(session);
                     return;
                 }
 
@@ -273,7 +331,6 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                         Response resp = service.handle(method, id, request, getTimestampHeader(request));
                         session.sendResponse(resp);
                     }
-                    case "/v0/circle" -> handleGetCircle(session);
                     default -> session.sendResponse(emptyResponse(Response.BAD_REQUEST));
                 }
             } catch (Exception e) {

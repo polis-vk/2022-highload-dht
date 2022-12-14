@@ -14,32 +14,42 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public class TransferSenderService extends TransferService {
     private final String selfUrl;
+    private final List<Shard> shards = new ArrayList<>();
     private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final Map<HashRange, Shard> hashRangeShardMap = new HashMap<>();
     private final Logger log = LoggerFactory.getLogger(TransferSenderService.class);
 
     public TransferSenderService(String selfUrl) {
         this.selfUrl = selfUrl;
     }
 
-    public void setTransfer(Set<HashRange> hashRangeSet) {
+    public void setTransfer(Map<Shard, Set<HashRange>> shardSetMap) {
         if (isTransferring) {
             throw new IllegalStateException("Transfer is started");
         }
         isTransferring = true;
-        hashRanges.addAll(hashRangeSet);
 
-        for (HashRange hashRange : hashRanges) {
-            circle.add(hashRange.getLeftBorder());
-            circle.add(hashRange.getRightBorder());
+        shards.addAll(shardSetMap.keySet());
+
+        for (Map.Entry<Shard, Set<HashRange>> entry : shardSetMap.entrySet()) {
+            hashRanges.addAll(entry.getValue());
+            for (HashRange hashRange : entry.getValue()) {
+                hashRangeShardMap.put(hashRange, entry.getKey());
+                circle.add(hashRange.getLeftBorder());
+                circle.add(hashRange.getRightBorder());
+            }
         }
     }
 
-    public void startTransfer(Shard shard, Iterator<Entry<MemorySegment>> entryIterator) throws IOException {
+    public void startTransfer(Iterator<Entry<MemorySegment>> entryIterator) throws IOException {
         log.info("Start transfer");
         while (entryIterator.hasNext()) {
             Entry<MemorySegment> entry = entryIterator.next();
@@ -47,18 +57,19 @@ public class TransferSenderService extends TransferService {
             String id = new String(entry.key().toByteArray(), StandardCharsets.UTF_8);
 
             if (isInTransfer(id)) {
-                sendTransfer(shard, id, entry.value().toByteArray());
+                sendTransfer(id, entry.value().toByteArray());
             }
         }
 
         clear();
 
-        sendTransferEnd(shard);
+        sendTransferEnd();
 
         log.info("End transfer");
     }
 
-    private void sendTransfer(Shard shard, String key, byte[] value) {
+    private void sendTransfer(String key, byte[] value) {
+        Shard shard = hashRangeShardMap.get(getHashRange(key));
         HttpResponse<String> response;
         try {
             response = httpClient.send(
@@ -76,19 +87,23 @@ public class TransferSenderService extends TransferService {
         }
     }
 
-    private void sendTransferEnd(Shard shard) {
-        HttpResponse<String> response;
-        try {
-            response = httpClient.send(
-                    createTransferEndRequest(shard),
-                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
-            );
-        } catch (IOException | InterruptedException e) {
-            throw new IllegalStateException("error end transferring error", e);
-        }
+    private void sendTransferEnd() {
+        for (Shard shard : shards) {
+            HttpResponse<String> response;
+            try {
+                response = httpClient.send(
+                        createTransferEndRequest(shard),
+                        HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+                );
+            } catch (IOException | InterruptedException e) {
+                throw new IllegalStateException("error end transferring error", e);
+            }
 
-        if (response.statusCode() != 200) {
-            throw new IllegalStateException("error response end transferring status code: " + response.statusCode());
+            if (response.statusCode() != 200) {
+                throw new IllegalStateException(
+                        "error response end transferring status code: " + response.statusCode()
+                );
+            }
         }
     }
 
@@ -113,5 +128,12 @@ public class TransferSenderService extends TransferService {
                 .timeout(Duration.ofSeconds(2))
                 .uri(URI.create(shard.getUrl() + "/v0/transfer/entity?id=" + key + "&from=1&ack=1"))
                 .build();
+    }
+
+    @Override
+    public void clear() {
+        super.clear();
+        hashRanges.clear();
+        shards.clear();
     }
 }

@@ -40,10 +40,6 @@ public class ConsistentHashService {
         return shards;
     }
 
-    public List<CircleRange> getCircle() {
-        return new ArrayList<>(circle);
-    }
-
     public Map<Shard, Set<HashRange>> addShard(ShardAddBody shardAddBody, int vnodes) {
         if (shardAddBody.getHashes() == null || shardAddBody.getHashes().isEmpty()) {
             return addShard(new Shard(shardAddBody.getUrl()), vnodes);
