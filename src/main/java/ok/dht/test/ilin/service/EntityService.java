@@ -3,28 +3,30 @@ package ok.dht.test.ilin.service;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import ok.dht.test.ilin.model.Entity;
-import ok.dht.test.ilin.repository.EntityRepository;
-import ok.dht.test.ilin.repository.impl.RocksDBEntityRepositoryImpl;
+import ok.dht.test.ilin.config.ExpandableHttpServerConfig;
+import ok.dht.test.ilin.servers.ExpandableHttpServer;
 import one.nio.http.HttpServer;
-import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
-import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
+import org.rocksdb.Options;
+import org.rocksdb.RocksDB;
+import org.rocksdb.RocksDBException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Arrays;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 
 public class EntityService implements Service {
     private final ServiceConfig config;
     private HttpServer server;
-    private EntityRepository entityRepository;
+    private RocksDB rocksDB;
+    private final Logger logger = LoggerFactory.getLogger(EntityService.class);
 
     public EntityService(ServiceConfig config) {
         this.config = config;
@@ -32,16 +34,24 @@ public class EntityService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
+        RocksDB.loadLibrary();
+        final Options options = new Options();
+        options.setCreateIfMissing(true);
+        try {
+            this.rocksDB = RocksDB.open(options, config.workingDir().toString());
+        } catch (RocksDBException ex) {
+            logger.error("Error initializing RocksDB");
+            throw new IOException(ex);
+        }
         server = new ExpandableHttpServer(createConfigFromPort(config.selfPort()));
-        server.start();
         server.addRequestHandlers(this);
-        entityRepository = new RocksDBEntityRepositoryImpl(config);
+        server.start();
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        entityRepository.close();
+        rocksDB.close();
         server.stop();
         return CompletableFuture.completedFuture(null);
     }
@@ -52,14 +62,16 @@ public class EntityService implements Service {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        Entity entity = entityRepository.get(id);
-        if (entity == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
+        try {
+            byte[] result = rocksDB.get(id.getBytes(StandardCharsets.UTF_8));
+            if (result == null) {
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
+            }
+            return new Response(Response.OK, result);
+        } catch (RocksDBException e) {
+            logger.error("Error get entry in RocksDB");
         }
-        return new Response(
-            Response.OK,
-            entity.value()
-        );
+        return new Response(Response.NOT_FOUND, Response.EMPTY);
     }
 
     @Path("/v0/entity")
@@ -69,7 +81,11 @@ public class EntityService implements Service {
         if (id.isEmpty() || body == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        entityRepository.upsert(new Entity(id, body));
+        try {
+            rocksDB.put(id.getBytes(StandardCharsets.UTF_8), body);
+        } catch (RocksDBException e) {
+            logger.error("Error saving entry in RocksDB");
+        }
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
@@ -79,37 +95,25 @@ public class EntityService implements Service {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
-        entityRepository.delete(id);
+        try {
+            rocksDB.delete(id.getBytes(StandardCharsets.UTF_8));
+        } catch (RocksDBException e) {
+            logger.error("Error delete entry in RocksDB");
+        }
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    private static HttpServerConfig createConfigFromPort(int port) {
-        HttpServerConfig httpConfig = new HttpServerConfig();
+    private static ExpandableHttpServerConfig createConfigFromPort(int port) {
+        ExpandableHttpServerConfig httpConfig = new ExpandableHttpServerConfig();
         AcceptorConfig acceptor = new AcceptorConfig();
         acceptor.port = port;
         acceptor.reusePort = true;
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+        httpConfig.selectors = 2;
         return httpConfig;
     }
 
-    public static class ExpandableHttpServer extends HttpServer {
-        public ExpandableHttpServer(HttpServerConfig config, Object... routers) throws IOException {
-            super(config, routers);
-        }
-
-        @Override
-        public void handleDefault(Request request, HttpSession session) throws IOException {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-        }
-
-        @Override
-        public synchronized void stop() {
-            Arrays.stream(selectors).forEach(it -> it.selector.forEach(Session::close));
-            super.stop();
-        }
-    }
-
-    @ServiceFactory(stage = 1, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
