@@ -83,6 +83,7 @@ public final class RangeRequestHandler {
         private static final int WRITE_BUFFER_CAPACITY = WRITE_BUFFER_LIMIT + LAST_CHUNK_BYTES.length;
         private final Iterator<BaseEntry<String>> entriesIterator;
         private ByteBuffer byteBuffer = ByteBuffer.allocate(WRITE_BUFFER_CAPACITY);
+        private volatile EntryChunk peekedEntryChunk;
 
         private RangeChunkedQueueItem(Response response, Iterator<BaseEntry<String>> entriesIterator) {
             this.entriesIterator = entriesIterator;
@@ -97,20 +98,20 @@ public final class RangeRequestHandler {
 
         @Override
         public int write(Socket socket) throws IOException {
+            if (peekedEntryChunk != null) {
+                return writeAgain(socket);
+            }
             while (entriesIterator.hasNext()) {
                 BaseEntry<String> entry = entriesIterator.next();
                 EntryChunk entryChunk = new EntryChunk(entry);
                 if (byteBuffer.remaining() < entryChunk.sizeForBuffer) {
                     byteBuffer.flip();
                     final int written = socket.write(byteBuffer);
-                    if (entryChunk.sizeForBuffer > byteBuffer.limit()) {
-                        byteBuffer = ByteBuffer.allocate(entryChunk.sizeForBuffer + LAST_CHUNK_BYTES.length);
-                        byteBuffer.limit(entryChunk.sizeForBuffer);
+                    if (byteBuffer.position() == byteBuffer.limit()) {
+                        cleansingPut(entryChunk);
                     } else {
-                        byteBuffer.rewind();
-                        byteBuffer.limit(WRITE_BUFFER_LIMIT);
+                        peekedEntryChunk = entryChunk;
                     }
-                    entryChunk.putInBuffer(byteBuffer);
                     return written;
                 }
                 entryChunk.putInBuffer(byteBuffer);
@@ -121,6 +122,28 @@ public final class RangeRequestHandler {
             int written = socket.write(byteBuffer);
             byteBuffer.clear();
             return written;
+        }
+
+        private int writeAgain(Socket socket) throws IOException {
+            byteBuffer.flip();
+            int written = socket.write(byteBuffer);
+            if (byteBuffer.position() == byteBuffer.limit()) {
+                cleansingPut(peekedEntryChunk);
+                peekedEntryChunk = null;
+            }
+            return written;
+        }
+
+        // Put even entryChunk sizeInBuffer more than buffer size, so bigger buffer allocated, else just rewind current
+        private void cleansingPut(EntryChunk entryChunk) {
+            if (entryChunk.sizeForBuffer > byteBuffer.limit()) {
+                byteBuffer = ByteBuffer.allocate(entryChunk.sizeForBuffer + LAST_CHUNK_BYTES.length);
+                byteBuffer.limit(entryChunk.sizeForBuffer);
+            } else {
+                byteBuffer.rewind();
+                byteBuffer.limit(WRITE_BUFFER_LIMIT);
+            }
+            entryChunk.putInBuffer(byteBuffer);
         }
     }
 
