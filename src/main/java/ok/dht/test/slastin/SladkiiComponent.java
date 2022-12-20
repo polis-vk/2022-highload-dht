@@ -62,7 +62,7 @@ public class SladkiiComponent implements Closeable {
         }
     }
 
-    private static byte[] toBytes(String value) {
+    static byte[] toBytes(String value) {
         return value.getBytes(StandardCharsets.UTF_8);
     }
 
