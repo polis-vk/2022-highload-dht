@@ -125,7 +125,6 @@ public final class RangeRequestHandler {
         }
 
         private int writeAgain(Socket socket) throws IOException {
-            byteBuffer.flip();
             int written = socket.write(byteBuffer);
             if (byteBuffer.position() == byteBuffer.limit()) {
                 cleansingPut(peekedEntryChunk);
