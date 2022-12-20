@@ -115,6 +115,7 @@ class Storage implements Closeable {
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
                 offset += writeRecord(nextSSTable, offset, entry.key());
+                offset += writeTimestamp(nextSSTable, offset, entry.timestamp());
                 offset += writeRecord(nextSSTable, offset, entry.value());
 
                 index++;
@@ -132,14 +133,19 @@ class Storage implements Closeable {
 
     private static long getSize(Entry entry) {
         if (entry.value() == null) {
-            return Long.BYTES + entry.key().byteSize() + Long.BYTES;
+            return Long.BYTES + entry.key().byteSize() + Long.BYTES + Long.BYTES;
         } else {
-            return Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
+            return Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES + Long.BYTES;
         }
     }
 
     public static long getSizeOnDisk(Entry entry) {
         return getSize(entry) + INDEX_RECORD_SIZE;
+    }
+
+    private static long writeTimestamp(MemorySegment nextSSTable, long offset, long timestamp) {
+        MemoryAccess.setLongAtOffset(nextSSTable, offset, timestamp);
+        return Long.BYTES;
     }
 
     private static long writeRecord(MemorySegment nextSSTable, long offset, MemorySegment record) {
@@ -237,12 +243,15 @@ class Storage implements Closeable {
         try {
             long offset = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + keyIndex * INDEX_RECORD_SIZE);
             long keySize = MemoryAccess.getLongAtOffset(sstable, offset);
-            long valueOffset = offset + Long.BYTES + keySize;
-            long valueSize = MemoryAccess.getLongAtOffset(sstable, valueOffset);
+            long fullValueOffset = offset + Long.BYTES + keySize; // timestamp/size/data
+            long timestamp = MemoryAccess.getLongAtOffset(sstable, fullValueOffset);
+            long sizeValueOffset = fullValueOffset + Long.BYTES;
+            long valueSize = MemoryAccess.getLongAtOffset(sstable, sizeValueOffset);
+            long dataValueOffset = sizeValueOffset + Long.BYTES;
             return new Entry(
                     sstable.asSlice(offset + Long.BYTES, keySize),
-                    valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize)
-            );
+                    valueSize == -1 ? null : sstable.asSlice(dataValueOffset, valueSize),
+                    timestamp);
         } catch (IllegalStateException e) {
             throw checkForClose(e);
         }
