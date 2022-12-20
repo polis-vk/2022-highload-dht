@@ -11,12 +11,10 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.Collection;
+import java.util.Iterator;
 
-public final class StorageController {
-
-    private static final Cleaner CLEANER = Cleaner.create(r ->
+final class StorageUtils {
+    static final Cleaner CLEANER = Cleaner.create(r ->
             new Thread("Storage-Cleaner") {
                 @Override
                 public synchronized void start() {
@@ -31,54 +29,21 @@ public final class StorageController {
             });
 
     private static final long VERSION = 0;
-    public static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
-    public static final int INDEX_RECORD_SIZE = Long.BYTES;
-
-    private static final String FILE_NAME = "data";
-    private static final String FILE_EXT = ".dat";
-    private static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
+    static final int INDEX_HEADER_SIZE = Long.BYTES * 3;
+    static final int INDEX_RECORD_SIZE = Long.BYTES;
+    static final String FILE_NAME = "data";
+    static final String FILE_EXT = ".dat";
+    static final String COMPACTED_FILE = FILE_NAME + "_compacted_" + FILE_EXT;
     private static final String FILE_EXT_TMP = ".tmp";
 
-    private StorageController() {
+    private StorageUtils() {
     }
 
-    public static Storage load(DaoConfig daoConfig) throws IOException {
-        Path basePath = daoConfig.basePath();
-        Path compactedFile = daoConfig.basePath().resolve(COMPACTED_FILE);
-        if (Files.exists(compactedFile)) {
-            finishCompact(daoConfig, compactedFile);
-        }
-
-        ArrayList<MemorySegment> sstables = new ArrayList<>();
-        ResourceScope scope = ResourceScope.newSharedScope(CLEANER);
-
-        for (int i = 0; ; i++) {
-            Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
-            if (Files.exists(nextFile)) {
-                sstables.add(mapForRead(scope, nextFile));
-            } else {
-                break;
-            }
-        }
-
-        boolean hasTombstones = !sstables.isEmpty() && MemoryAccess.getLongAtOffset(sstables.get(0), 16) == 1;
-        return new Storage(scope, sstables, hasTombstones);
-    }
-
-    // it is supposed that entries can not be changed externally during this method call
-    public static void save(
-            DaoConfig daoConfig,
-            Storage previousState,
-            Collection<Entry<MemorySegment>> entries) throws IOException {
-        int nextSSTableIndex = previousState.getSstables().size();
-        Path sstablePath = daoConfig.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
-        save(entries, sstablePath);
-    }
-
-    private static void save(
-            Iterable<Entry<MemorySegment>> entries,
+    static void save(
+            Data entries,
             Path sstablePath
     ) throws IOException {
+
         Path sstableTmpPath = sstablePath.resolveSibling(sstablePath.getFileName().toString() + FILE_EXT_TMP);
 
         Files.deleteIfExists(sstableTmpPath);
@@ -88,7 +53,9 @@ public final class StorageController {
             long size = 0;
             long entriesCount = 0;
             boolean hasTombstone = false;
-            for (Entry<MemorySegment> entry : entries) {
+            Iterator<Entry<MemorySegment>> iterator = entries.iterator();
+            while (iterator.hasNext()) {
+                Entry<MemorySegment> entry = iterator.next();
                 size += getSize(entry);
                 if (entry.isTombstone()) {
                     hasTombstone = true;
@@ -108,10 +75,13 @@ public final class StorageController {
 
             long index = 0;
             long offset = dataStart;
-            for (Entry<MemorySegment> entry : entries) {
+            iterator = entries.iterator();
+            while (iterator.hasNext()) {
+                Entry<MemorySegment> entry = iterator.next();
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
                 offset += writeRecord(nextSSTable, offset, entry.key());
+                offset += writeTimestamp(nextSSTable, offset, entry.timestamp());
                 offset += writeRecord(nextSSTable, offset, entry.value());
 
                 index++;
@@ -129,9 +99,9 @@ public final class StorageController {
 
     private static long getSize(Entry<MemorySegment> entry) {
         if (entry.value() == null) {
-            return Long.BYTES + entry.key().byteSize() + Long.BYTES;
+            return Long.BYTES + entry.key().byteSize() + Long.BYTES + Long.BYTES;
         } else {
-            return Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
+            return Long.BYTES + entry.value().byteSize() + Long.BYTES + entry.key().byteSize() + Long.BYTES;
         }
     }
 
@@ -150,20 +120,25 @@ public final class StorageController {
         return Long.BYTES + recordSize;
     }
 
+    private static long writeTimestamp(MemorySegment nextSSTable, long offset, long timestamp) {
+        MemoryAccess.setLongAtOffset(nextSSTable, offset, timestamp);
+        return Long.BYTES;
+    }
+
     @SuppressWarnings("DuplicateThrows")
-    private static MemorySegment mapForRead(ResourceScope scope, Path file) throws NoSuchFileException, IOException {
+    static MemorySegment mapForRead(ResourceScope scope, Path file) throws NoSuchFileException, IOException {
         long size = Files.size(file);
 
         return MemorySegment.mapFile(file, 0, size, FileChannel.MapMode.READ_ONLY, scope);
     }
 
-    public static void compact(DaoConfig daoConfig, Iterable<Entry<MemorySegment>> data) throws IOException {
+    public static void compact(DaoConfig daoConfig, Data data) throws IOException {
         Path compactedFile = daoConfig.basePath().resolve(COMPACTED_FILE);
         save(data, compactedFile);
         finishCompact(daoConfig, compactedFile);
     }
 
-    private static void finishCompact(DaoConfig daoConfig, Path compactedFile) throws IOException {
+    static void finishCompact(DaoConfig daoConfig, Path compactedFile) throws IOException {
         for (int i = 0; ; i++) {
             Path nextFile = daoConfig.basePath().resolve(FILE_NAME + i + FILE_EXT);
             if (!Files.deleteIfExists(nextFile)) {
@@ -171,7 +146,11 @@ public final class StorageController {
             }
         }
 
-        Path targetFile = daoConfig.basePath().resolve(FILE_NAME + 0 + FILE_EXT);
-        Files.move(compactedFile, targetFile, StandardCopyOption.ATOMIC_MOVE);
+        Path basePath = daoConfig.basePath();
+        Files.move(compactedFile, basePath.resolve(FILE_NAME + 0 + FILE_EXT), StandardCopyOption.ATOMIC_MOVE);
+    }
+
+    public interface Data {
+        Iterator<Entry<MemorySegment>> iterator() throws IOException;
     }
 }
