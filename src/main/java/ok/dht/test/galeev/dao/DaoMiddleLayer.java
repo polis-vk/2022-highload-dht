@@ -5,7 +5,9 @@ import ok.dht.test.galeev.dao.entry.BaseEntry;
 import ok.dht.test.galeev.dao.entry.Entry;
 import ok.dht.test.galeev.dao.utils.DaoConfig;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
+import java.util.Iterator;
 
 public class DaoMiddleLayer<K, V> {
     private final MemorySegmentDao dao;
@@ -14,6 +16,10 @@ public class DaoMiddleLayer<K, V> {
     public DaoMiddleLayer(DaoConfig daoConfig, MSConverter<K, V> converter) throws IOException {
         dao = new MemorySegmentDao(daoConfig);
         this.converter = converter;
+    }
+
+    public MiddleLayerRangeIterator get(K from, @Nullable K to) {
+        return new MiddleLayerRangeIterator(dao.get(converter.getMSFromKey(from), converter.getMSFromKey(to)));
     }
 
     public Entry<K, V> get(K k) {
@@ -44,5 +50,23 @@ public class DaoMiddleLayer<K, V> {
 
     public void stop() throws IOException {
         dao.close();
+    }
+
+    private class MiddleLayerRangeIterator implements Iterator<Entry<K, V>> {
+        private final Iterator<Entry<MemorySegment, MemorySegment>> delegate;
+
+        public MiddleLayerRangeIterator(Iterator<Entry<MemorySegment, MemorySegment>> delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public boolean hasNext() {
+            return delegate.hasNext();
+        }
+
+        @Override
+        public Entry<K, V> next() {
+            return converter.entryMStoEntry(delegate.next());
+        }
     }
 }
