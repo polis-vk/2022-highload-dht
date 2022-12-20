@@ -8,6 +8,8 @@ import one.nio.http.Request;
 import one.nio.http.RequestHandler;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
@@ -40,6 +42,11 @@ public class CustomHttpServer extends HttpServer {
     }
 
     @SuppressWarnings("RedundantThrows")
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new UniversalHttpSession(socket, this);
+    }
+
     @Override
     public synchronized void stop() {
         for (SelectorThread thread : selectors) {

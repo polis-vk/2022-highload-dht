@@ -16,17 +16,19 @@ import java.util.List;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.function.ToIntFunction;
 
 public class RandevouzHashingRouter {
-    public static final int FAILED_REQUESTS_THRESHOLD = 10;
+    public static final int FAILED_REQUESTS_THRESHOLD = 50;
     public static final int FAILED_REQUESTS_WINDOW_MS = 100;
     public static final int ILLNESS_PERIOD_MS = 100;
 
     private final List<Node> nodes;
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final HttpClient httpClient;
 
-    public RandevouzHashingRouter(List<String> clusterUrls) {
+    public RandevouzHashingRouter(List<String> clusterUrls, Executor executor) {
+        this.httpClient = HttpClient.newBuilder().executor(executor).build();
         this.nodes = new ArrayList<>(clusterUrls.size());
         for (String url : clusterUrls) {
             nodes.add(new Node(url));
@@ -68,12 +70,12 @@ public class RandevouzHashingRouter {
         return requestBuilder.build();
     }
 
-    class Node {
+    public class Node {
         final String url;
         private final Deque<Long> failedRequestsTimings = new ArrayDeque<>(FAILED_REQUESTS_THRESHOLD);
         private volatile long illnessStartTime = -1;
 
-        public Node(String url) {
+        private Node(String url) {
             this.url = url;
         }
 
@@ -96,11 +98,11 @@ public class RandevouzHashingRouter {
 
         synchronized void managePossibleIllness() {
             long time = System.currentTimeMillis();
-            if (failedRequestsTimings.size() < FAILED_REQUESTS_THRESHOLD) { //need lock in these 2 lines
+            if (failedRequestsTimings.size() < FAILED_REQUESTS_THRESHOLD) {
                 failedRequestsTimings.add(time);
                 return;
             }
-            if (time - failedRequestsTimings.peek() > FAILED_REQUESTS_WINDOW_MS) {
+            if (time - failedRequestsTimings.peek() < FAILED_REQUESTS_WINDOW_MS) {
                 illnessStartTime = time;
                 return;
             }
