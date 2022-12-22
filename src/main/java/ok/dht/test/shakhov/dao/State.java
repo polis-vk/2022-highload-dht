@@ -1,13 +1,13 @@
 package ok.dht.test.shakhov.dao;
 
-public class State {
+class State {
     final DaoConfig daoConfig;
     final Memory memory;
     final Memory flushing;
     final Storage storage;
     final boolean closed;
 
-    public State(DaoConfig daoConfig, Memory memory, Memory flushing, Storage storage) {
+    State(DaoConfig daoConfig, Memory memory, Memory flushing, Storage storage) {
         this.daoConfig = daoConfig;
         this.memory = memory;
         this.flushing = flushing;
@@ -15,7 +15,7 @@ public class State {
         this.closed = false;
     }
 
-    public State(DaoConfig daoConfig, Storage storage, boolean closed) {
+    State(DaoConfig daoConfig, Storage storage, boolean closed) {
         this.daoConfig = daoConfig;
         this.memory = Memory.EMPTY;
         this.flushing = Memory.EMPTY;
@@ -23,7 +23,7 @@ public class State {
         this.closed = closed;
     }
 
-    public static State newState(DaoConfig daoConfig, Storage storage) {
+    static State newState(DaoConfig daoConfig, Storage storage) {
         return new State(
                 daoConfig,
                 new Memory(daoConfig.flushThresholdBytes()),

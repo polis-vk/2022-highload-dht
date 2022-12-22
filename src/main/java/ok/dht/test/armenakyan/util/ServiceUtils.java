@@ -4,6 +4,9 @@ import one.nio.http.HttpServerConfig;
 import one.nio.server.AcceptorConfig;
 
 public final class ServiceUtils {
+    public static final String TIMESTAMP_HEADER = "Coordinator-Timestamp";
+    public static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
+    
     private ServiceUtils() {
         // utility class
     }
