@@ -21,17 +21,25 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 
 public class ServiceImpl implements Service {
 
     private static final Logger LOG = LoggerFactory.getLogger(ServiceImpl.class);
+    private static final int MAXIMUM_POOL_SIZE = Runtime.getRuntime().availableProcessors();
+    private static final int CORE_POOL_SIZE = Math.max(1, MAXIMUM_POOL_SIZE / 4);
 
     private final ServiceConfig config;
     private HttpServer server;
 
     private DB dao;
+
+    private ExecutorService requestHandlerPool;
 
     public ServiceImpl(ServiceConfig config) {
         this.config = config;
@@ -44,7 +52,33 @@ public class ServiceImpl implements Service {
 
         this.dao = factory.open(config.workingDir().toFile(), options);
 
+        this.requestHandlerPool = new ThreadPoolExecutor(
+                CORE_POOL_SIZE,
+                MAXIMUM_POOL_SIZE,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new LinkedBlockingStack<>()
+        );
+
+        // TODO Extract this after Stage 1 is merged
         server = new HttpServer(createConfigFromPort(config.selfPort())) {
+
+            @Override
+            public void handleRequest(Request request, HttpSession session) throws IOException {
+                try {
+                    requestHandlerPool.submit(() -> {
+                        try {
+                            super.handleRequest(request, session);
+                        } catch (IOException e) {
+                            LOG.error("IO Exception occurred while processing request: " + e.getMessage(), e);
+                        }
+                    });
+                } catch (RejectedExecutionException e) {
+                    LOG.warn("Request rejected", e);
+                    session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                }
+            }
+
             @Override
             public void handleDefault(Request request, HttpSession session) throws IOException {
                 Response response = new Response(Response.BAD_REQUEST, Response.EMPTY);
@@ -68,6 +102,8 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> stop() {
         server.stop();
+        Utils.shutdownAndAwaitTermination(requestHandlerPool);
+
         return CompletableFuture.completedFuture(null);
     }
 
@@ -128,7 +164,7 @@ public class ServiceImpl implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 1, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
+    @ServiceFactory(stage = 2, week = 1, bonuses = {"SingleNodeTest#respectFileFolder"})
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
