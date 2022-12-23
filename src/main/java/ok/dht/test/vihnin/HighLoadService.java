@@ -6,11 +6,13 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.vihnin.database.DataBase;
 import ok.dht.test.vihnin.database.DataBaseRocksDBImpl;
 import one.nio.http.HttpServer;
+import one.nio.http.HttpServerConfig;
 import one.nio.http.Param;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.RequestMethod;
 import one.nio.http.Response;
+import one.nio.server.AcceptorConfig;
 import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
@@ -22,6 +24,7 @@ import static ok.dht.test.vihnin.ServiceUtils.emptyResponse;
 public class HighLoadService implements Service {
     private final ServiceConfig config;
     private HttpServer server;
+
     private DataBase<String, byte[]> storage;
 
     public HighLoadService(ServiceConfig config) {
@@ -42,7 +45,7 @@ public class HighLoadService implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         storage = getDataStorage(this.config);
-        server = new ParallelHttpServer(config);
+        server = new ParallelHttpServer(createConfigFromPort(config.selfPort()));
         server.start();
         server.addRequestHandlers(this);
         return CompletableFuture.completedFuture(null);
@@ -97,7 +100,16 @@ public class HighLoadService implements Service {
         return emptyResponse(Response.ACCEPTED);
     }
 
-    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    private static HttpServerConfig createConfigFromPort(int port) {
+        HttpServerConfig httpConfig = new HttpServerConfig();
+        AcceptorConfig acceptor = new AcceptorConfig();
+        acceptor.port = port;
+        acceptor.reusePort = true;
+        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+        return httpConfig;
+    }
+
+    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
