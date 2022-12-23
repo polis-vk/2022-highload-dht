@@ -8,7 +8,6 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutorService;
@@ -58,7 +57,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, BaseEntry<MemorySegm
         Iterator<BaseEntry<MemorySegment>> flushingMemoryIterator = getMemoryIterator(from, to, true, tmpState);
         Iterator<BaseEntry<MemorySegment>> iterator = tmpState.storage.iterate(from, to);
 
-        Iterator<BaseEntry<MemorySegment>> mergeIterator = MergeIterator.of(
+        return MergeIterator.of(
                 List.of(
                         new IndexedPeekIterator<>(0, memoryIterator),
                         new IndexedPeekIterator<>(1, flushingMemoryIterator),
@@ -66,26 +65,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, BaseEntry<MemorySegm
                 ),
                 EntryKeyComparator.INSTANCE
         );
-
-        IndexedPeekIterator<BaseEntry<MemorySegment>> delegate = new IndexedPeekIterator<>(0, mergeIterator);
-
-        return new Iterator<>() {
-            @Override
-            public boolean hasNext() {
-                while (delegate.hasNext() && delegate.peek().value() == null) {
-                    delegate.next();
-                }
-                return delegate.hasNext();
-            }
-
-            @Override
-            public BaseEntry<MemorySegment> next() {
-                if (!hasNext()) {
-                    throw new NoSuchElementException("...");
-                }
-                return delegate.next();
-            }
-        };
     }
 
     private Iterator<BaseEntry<MemorySegment>> getMemoryIterator(MemorySegment from, MemorySegment to,
@@ -123,7 +102,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, BaseEntry<MemorySegm
 
         State tmpState = getStateUnderWriteLock();
 
-        long entrySize = Long.BYTES + entry.key().byteSize() + Long.BYTES
+        long entrySize = Long.BYTES + entry.key().byteSize() + Long.BYTES + Long.BYTES
                 + (entry.value() == null ? 0 : entry.key().byteSize());
 
         if (tmpState.memorySize.get() + entrySize > config.flushThresholdBytes()) {
