@@ -24,9 +24,7 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        if (server != null) {
-            server.close();
-        }
+        server.close();
         return CompletableFuture.completedFuture(null);
     }
 

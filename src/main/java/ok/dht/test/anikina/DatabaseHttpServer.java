@@ -21,6 +21,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -29,6 +30,7 @@ public class DatabaseHttpServer extends HttpServer {
 
     private static final int THREADS_MIN = 2;
     private static final int THREAD_MAX = 3;
+    private static final int KEEP_ALIVE_TIME_MS = 10;
     private static final int MAX_QUEUE_SIZE = 128;
     private static final int TERMINATION_TIMEOUT_MS = 800;
 
@@ -36,7 +38,7 @@ public class DatabaseHttpServer extends HttpServer {
             new ThreadPoolExecutor(
                     THREADS_MIN,
                     THREAD_MAX,
-                    0,
+                    KEEP_ALIVE_TIME_MS,
                     TimeUnit.MILLISECONDS,
                     new LinkedBlockingQueue<>(MAX_QUEUE_SIZE),
                     new ThreadPoolExecutor.AbortPolicy()
@@ -64,29 +66,33 @@ public class DatabaseHttpServer extends HttpServer {
     }
 
     @Override
-    public void handleRequest(Request request, final HttpSession session) {
-        executorService.execute(() -> {
-            try {
-                String key = request.getParameter("id=");
-                if (!request.getPath().equals("/v0/entity") || key == null || key.isEmpty()) {
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                    return;
-                }
+    public void handleRequest(Request request, final HttpSession session) throws IOException {
+        try {
+            executorService.execute(() -> {
+                try {
+                    String key = request.getParameter("id=");
+                    if (!request.getPath().equals("/v0/entity") || key == null || key.isEmpty()) {
+                        session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+                        return;
+                    }
 
-                String shard = consistentHashing.getShardByKey(key);
-                Response response;
-                if (shard.equals(selfUrl)) {
-                    response = requestHandler.handle(key, request);
-                } else {
-                    response = proxyRequest(shard, request);
+                    String shard = consistentHashing.getShardByKey(key);
+                    Response response;
+                    if (shard.equals(selfUrl)) {
+                        response = requestHandler.handle(key, request);
+                    } else {
+                        response = proxyRequest(shard, request);
+                    }
+                    session.sendResponse(response);
+                } catch (IOException e) {
+                    if (log.isDebugEnabled()) {
+                        log.debug(e.getMessage());
+                    }
                 }
-                session.sendResponse(response);
-            } catch (IOException e) {
-                if (log.isDebugEnabled()) {
-                    log.debug(e.getMessage());
-                }
-            }
-        });
+            });
+        } catch (RejectedExecutionException e) {
+            session.sendResponse(new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+        }
     }
 
     @Override
@@ -102,8 +108,6 @@ public class DatabaseHttpServer extends HttpServer {
     }
 
     public void close() throws IOException {
-        stop();
-
         executorService.shutdown();
         try {
             if (!executorService.awaitTermination(TERMINATION_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
@@ -111,8 +115,10 @@ public class DatabaseHttpServer extends HttpServer {
             }
         } catch (InterruptedException e) {
             executorService.shutdownNow();
+            Thread.currentThread().interrupt();
         }
 
+        stop();
         requestHandler.close();
     }
 
