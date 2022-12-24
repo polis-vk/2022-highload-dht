@@ -90,9 +90,9 @@ final class Storage implements Closeable {
                 entriesList.add(entry);
 
                 if (entry.value() == null) {
-                    size += Long.BYTES + entry.key().byteSize() + Long.BYTES;
+                    size += Long.BYTES + entry.key().byteSize() + Long.BYTES + Long.BYTES;
                 } else {
-                    size += Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
+                    size += Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES + Long.BYTES;
                 }
 
                 entriesCount++;
@@ -114,6 +114,8 @@ final class Storage implements Closeable {
                 MemoryAccess.setLongAtOffset(nextSSTable, INDEX_HEADER_SIZE + index * INDEX_RECORD_SIZE, offset);
 
                 offset += writeRecord(nextSSTable, offset, entry.key());
+                MemoryAccess.setLongAtOffset(nextSSTable, offset, entry.timestamp());
+                offset += Long.BYTES;
                 offset += writeRecord(nextSSTable, offset, entry.value());
 
                 index++;
@@ -213,12 +215,13 @@ final class Storage implements Closeable {
     private BaseEntry<MemorySegment> entryAt(MemorySegment sstable, long keyIndex) {
         long offset = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + keyIndex * INDEX_RECORD_SIZE);
         long keySize = MemoryAccess.getLongAtOffset(sstable, offset);
-        long valueOffset = offset + Long.BYTES + keySize;
+        long valueOffset = offset + Long.BYTES + keySize + Long.BYTES;
         long valueSize = MemoryAccess.getLongAtOffset(sstable, valueOffset);
 
         return new BaseEntry<>(
                 sstable.asSlice(offset + Long.BYTES, keySize),
-                valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize)
+                valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize),
+                MemoryAccess.getLongAtOffset(sstable, offset + Long.BYTES + keySize)
         );
     }
 

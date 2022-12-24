@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 4px 8px 24px; background-color: #ffffff; overflow-y: scroll}
+    h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {margin: 5px 0 5px 0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {overflow: hidden; white-space: nowrap}
+	#match {overflow: hidden; white-space: nowrap; display: none; float: right; text-align: right}
+	#reset {cursor: pointer}
+	#canvas {width: 100%; height: 300px}
+
+    .selectionPart {position: absolute; display: none; pointer-events: none; box-sizing: border-box;}
+    .sel {background-color: #dada0040}
+    .act {background-color: #00da0040}
+    .dif {background-color: #00dada40}
+    .top {border-top: .1px solid #000}
+    .left {border-left: .1px solid #000}
+    .bottom {border-bottom: .1px solid #000}
+    .right {border-right: .1px solid #000}
+
+    #info-tooltip {display: none; position: absolute; top: 100px; right: 32px; width: 204px; border: 1px solid #666666; background: #ffffe0; border-radius: 8px; padding: 4px}
+    #heatmap-height-line, #heatmap-info { text-decoration: #0366d6 dashed underline; cursor: pointer; font-family: monospace}
+    #heatmap-info {cursor: help}
+    #heatmap-info:hover + #info-tooltip {display: block}
+
+    .colortip {width: 100px; box-sizing: border-box; padding: 4px; background: linear-gradient(var(--c1), var(--c2))}
+
+
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+
+
+<div style="display: flex">
+    <div style="width: 20px; margin-right: 2px; float: left; writing-mode: vertical-rl; transform: scale(-1); text-align: center; user-select: none"><pre id="heatmap-height-line"> 1 sec : 20 ms </pre></div>
+
+    <div id='heatmap-canvas-container' style="width: 100%; position: relative" autofocus>
+        <div id='heatmap-canvas-wrapper' style='overflow: hidden; width: 100%'>
+            <canvas id='heatmap-canvas' style='height: 314px'></canvas>
+        </div>
+
+        <div id='middleActive' class='selectionPart top bottom act'><span></span></div>
+        <div id='leftActive' class='selectionPart top left bottom act'><span></span></div>
+        <div id='rightActive' class='selectionPart top right bottom act'><span></span></div>
+        <div id='leftMiddleActive' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleActive' class='selectionPart left'><span></span></div>
+
+        <div id='middleSelection' class='selectionPart top bottom sel'><span></span></div>
+        <div id='leftSelection' class='selectionPart top left bottom sel'><span></span></div>
+        <div id='rightSelection' class='selectionPart top right bottom sel'><span></span></div>
+        <div id='leftMiddleSelection' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleSelection' class='selectionPart left'><span></span></div>
+
+        <div id='middleDiff' class='selectionPart top bottom dif'><span></span></div>
+        <div id='leftDiff' class='selectionPart top left bottom dif'><span></span></div>
+        <div id='rightDiff' class='selectionPart top right bottom dif'><span></span></div>
+        <div id='leftMiddleDiff' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleDiff' class='selectionPart left'><span></span></div>
+    </div>
+
+    <div id="heatmap-info" style="width: 20px; margin-right: 2px; writing-mode: vertical-rl; text-align: center; user-select: none">
+        <pre> Info </pre>
+    </div>
+    <div id="info-tooltip">
+        <div style="float:left">
+            <div style="padding: 4px;">Frame types:</div>
+            <div class="colortip" style="--c1:#b2e1b2;--c2:#c6f5c6">Interpreted</div>
+            <div class="colortip" style="--c1:#50e150;--c2:#6eff6e">JIT-Compiled</div>
+            <div class="colortip" style="--c1:#50cccc;--c2:#6eeaea">Inlined</div>
+            <div class="colortip" style="--c1:#e15a5a;--c2:#ff8282">Native</div>
+            <div class="colortip" style="--c1:#c8c83c;--c2:#e6e646">C++</div>
+            <div class="colortip" style="--c1:#e17d00;--c2:#ff9b00">Kernel</div>
+            <div class="colortip" style="--c1:#cce880;--c2:#e0fc94">C1-Compiled</div>
+        </div>
+        <div style="float:left; margin-left: 4px">
+            <div style="padding: 4px;">Special colors:</div>
+            <div class="colortip" style="--c1:#ee00ee;--c2:#ee00ee">Matches regexp</div>
+            <div class="colortip" style="--c1:#baa551;--c2:#baa551">New frames</div>
+            <div class="colortip" style="--c1:#f0f0c0;--c2:#f0f0c0">Same frames</div>
+            <div class="colortip" style="--c1:#99aaff;--c2:#99aaff">Less frames</div>
+            <div class="colortip" style="--c1:#ffaa99;--c2:#ffaa99">More frames</div>
+        </div>
+        <div style="float:left; margin-top: 4px; width: 100%; border: 1px solid #666666; border-radius: 2px; padding: 2px; box-sizing: border-box;">
+            Shift + Click - Select range<br>
+            Ctrl + Click - Compare<br>
+            Ctrl + F - Search<br>
+        </div>
+    </div>
+</div>
+<div id="executionsHeatmap" style="display:none">BTrl@AWvA|BrDnEwIcJcLeMqOuOmQlUr[}]|^li@ij@pk@}|AK[USTSTSUUUUTSVVTUTSU\TTULUS]STLLS\VVKU\KST^LLS^SS[SSUMVMUTSUJyyiqiaxpZpqyqqqbqappaqx`iajhaSMVT[KRji`appbaqjQxbpqiypahhhhL[MNLSKTTT[MKLSMULSNT\SVTKUSVTS]Wyqaq]KVVMLSVLNNLY[JxxijjrxxbpyiaELUURbr``qbaiXhxabhqiqqrhjqxahbipaprVT^VTSVT[MSKUKUTNUSTKSMKPqbpqrhqaipbiaaDTTUTLVRqqqrphqqybaS]S[]NVT[ULV^LTSSNS[VSTKT\SK^VVK]US\\MT^MK^K^TTM\UK^K\]S[\M^S]^L[K^S^VT[Rjqyyiyapybjpaqbhjqapqprb`pyiybrhjjq`yq`yb`bUNMSZ`bixraD[U\NSSSTMUUKMYyxxbaqapyqbapaxiixbiabraappqabVL\S^MUS\NTMUULRUSTMSSRiaihhrhqyU]S]USULLS^VL\S[VVK\SUSSKVTUS]L[SUVMKS^Wbpiiaypyyiajqhyyixqxaq\M[SSUSK^TLKLUMSUMULKUMLZiqjppyrjqpirpi]STTLK^TVQrhy`bair`yijpyhaxaqqpqyjhajjpaqqrpa]]KTSTKVUUMMKS]^NVNNT]UUSTMS[^UMUT[]USKTU[^UT\S^SSUMUUVUS\L^UVSKST]TKVS]\NT^S[LS]UUMT^SVUMUS]NSU]NSK\MUUNVSZiqaxj`xqqb^MTTNVKVTLVSKSSURab`p[^USUVUKULTUVTUNNTTULKRhixaqxj`byxapMULJyxr[VLVNSTMNMLLTNSQiq`iyqaahpxapixibqyyhybyia`qayihp`qbhyibyj`yhxyij^NUTVK[L\\SUUKK[S^TLK^NMMVKYqhqpZhqqxyppiqy`aa`qihbai\LVTNNUNSTSVVTVJxyyx`apaaqaa[UTVSULWqhib\UKTTTRaaxh`qhpqaabphpxyah`piaiipphbiaiippi`qpibixihiyxppabaxxaya`xjaqpiiTVNMMUMSTUUNUSVRx`iiqi\STLTM\KRbbaxhqjparrbCVSSSS[KUMS]PxxyxpbTNVLLVTNTSTUTNMSVVVTSSNNT^RESRiFLUUVLIppxpqbbpyipaa`iqhxipjphay^MNMRiqbzhhr\SS]TYxbiVSUKVKMTSVNSUSW`aaLSRbxqpqbh`yyqxpbiaa`yaphqqFPbapipqqpqK^UU[SUKTT[\VNS\MKSUSS[TNNUSNKUSVRaahpqiahjyhqxpi`aqbyyhipayyqxq`qi`jaxyqjiaaxyii[STUPqr`pqqaaqahqyxphxqi\\[UNVMVSVSMMSVKNLKUSUVSUKU]LS]MLVVK]T[^Ihaqahxhqixiapxxaaiax`bxyia`yaqhypyijiVSVKMK]\TUVLSVTYhqaaihxayxjyDVKS^MT\VKVHxayqiiUMKTTSSVL\SLT]TKSSS^SSMVTUUUS[K]LS^KNL\KRyyiaiyjbapyaq`qbybpqxppaqhxy`hypbpixhphapahijxhbihyih`iqiaria`ayhqihaaaiqyi`iyyxpaayqhrrijpbpjpypiqipaiqbqybhqjabU[\SUU\MLT^S[S^Xbrha`qra`ya`yyjDVVVSZqbxi`iiaipayqjSMMT^TSUUMUSYqbazxi^TUVSLLVTTNK[L][L]Raaabaq`aqarpqppbhyxypayrCNUSSNM[KSZxqqxphapi\K[]L\[\S^UVMVT[\^\NJGFMTLLU]LRyaapipiqbqhiqbihqqaba\SUJaayyya`iiqii`iqxypz^SKVNSVMS\UKSMMTTSKTVMLUKS\UVNKSP`iq^TUMR]NLNKRpapaibapxaaqihxyyxi^MKVRaypaayxapiaypiiqihi`aibhayqxxipyVSLVVRqhayaay``ij`xx^NNUMKLUSSUUJqbiibhxxiqipiypaqqqhaq`qxqyr^S\UTTMK\TJaxiiyaphpiqx\[S^TTVKS]SVSTTMTTRbiqiipbaay`apxbajhqaaiyipybah`qphiahixbx`ipaiaihxiqpxpyqihaiii`ihaq`bqai^KMUKRxyyaahqibhayq`yyxa\V\MTVJ`xayh`ibS[K\TSVL]KYqqii\]TLVNLTMTLTVNVTVLL[SURayiij`h^L\K^TQaqaiiiyahqyhxqjaqihbabpqqaii`MTVLNNNUSUMVNNU]T^NKUVK\]MSVS\KTMUQbyiyaibhbxyxippiba`iapbpix`ipxaqpi`qxqiahaab\VLVNKVNVSL\VKTTNRqqqpapaqyhh`bqjqbbi\VTUMK\NSTNMP[NKVVUIYbiaa[SSNKUNMVTSSS]MMKVM[VUMLVSRajqbhxab`aqjya\LST]UQqqbyr`ppiqqzpyaSSTZqabqihabqabapaqaaqyaiqyhjyq`pxaxyyppyiyixyhqqiaxiyjjqiiipaaapyqyhybiqaUUVMSVRaapa\\[\VLS[Jqaxiy`iaxi`ppaaqpiqaipihaqhb[Rqjppapahjiqhqqxiia`aqhyaxyxhxbp`ijjjhxhx`hqpabhaihabapqiTUNSIyxbxiarpax`UUS]KUT\VJiqjiqxpbaaqqb]KUK]KUULTNUTNSVTLSUNNUVLKULTSTM]PaFMSLNNULUMTSMS^LUVUMLSS[LTVSKTMUS\\TLVVUKRbyqpqix\UMVUT]KMUVKTKVTNT[OhqxaST[]VL[VSSSLMLTUSMUUQqhxpyabhiqjC\L^SRyaa`iTVLTUVKUKUVLTSUTJyqihqphjiapxxpiyb``aqaiiaxyyhqx`ba`ypbijqaipixiix\[[UKSSNLSVXqaaqqi`qxbqx`qahapqixh`aaxphQP~|A_lBtrB}mB}tB~|AvkB`jBtuBrsBkrB{mBx}B_jB~tBhxBzkBcxBmtBdlBefCu~B|tBjrBv_CvdCreBiuB{rBvvBpfBosBwhBpiCsyBxiBc{BmuCq|BjuBjlCd{BfuBd~BurBizBe{Bw|BpbCk_BkuBfyBc~BhwBcbCvjCnhBriCkpCzvBapCueBbuB`wBs|BkdChjCfvBbeCucBgmBg~BmbCsmCq_DyeB{pBjsBhyBxzBa`CrmCxnBhqBjxBuyBzdCngCyhCkkCgpCoqCaqDthBxoB`~Bm`CehComCzsC_|CwkBcvBsvBa{Bv{Bh}Bt~BicCidC`_Dy`DfbBimBnvBixB``CffCggCzmCitCo{Ct`B~`BrhBqkBsqBasB|sBjzBm_CjaCseCmfCtfCmjCakCglCaoCdpCpqCvtCpvCk|Ce~CraDvgBihBaqBkvB`{Bl|B{|Br}Bl~BueC_fCafCaiCiiCsjC|kClmC{mClqCbsCusCxsCuuCqvCuwCbyC_{Cf{CwaBkcBwjBdnBysBluBewBwzBk|Bv}B__C`bCjeC`fCigCphC~hCsiCkjCfkCgkC`oCtpCcsC{sC}vChwCkyC|yCq}C|~Co_Dx}AdeBmgB{gBnmBcuBlzBp|Bj}Bn}Bj~Bh_CdaCeaCrbCldC|dCzfCtjChlCgmCmnCvoCnrCwrC|rCgsCtuC|uCswC|zCa{Cq{Cs{Cg|Ci~CybDycDugDhmDf~Ai`BabBciBqnBtpBmqBxqBytBdxBzxB~yBh|Bn|Bs}Bn~Br~By~Bc_Ci_Cn_Cc`Co`Cx`CbbCmcCcdCmdCgeCyeCkfCqfC{fChiCkiCliCcjCijCpjC}jChkCllCmlC_mCkmCdnCjpCcqCuqCdrC_sC_uCwvCawCe{Co|Ca_Dk`D~`D`aDvaDkdD~eDviDmoDh_Bs`BjbBlcB{cBsfByfBilBklBymBgtBltBoyBfzBhzB{zBf|Bg|Be}Bq}Be~Bj_Cu_Cb`Cg`Cz`C}`CaaCfaC_bCdbC|cCgdCndCodCceCpfCxfClgCbhCohCthCwhCjiCgjC{jCilCnlCgnCtnCboCcpCrpCdqCfqCkqCvqCerCpuCnwC_xCaxCnxCoxCeyCfyC`|Cp~Cl`DgbD}bDodDbfDwhDjiDjjDflDfoD|oD~oDwpDuqDkvDgaBzcB|cBceBmeB_fBgfBsiBdjB}jBenB|nBloByoBypB}pBzqBwsBhtBzuB}uB~wBbxB|xBbyBqyB|yB`zBgzBx{Br|Bi}Bk~Bv~Bz~B}~Be_Cf_Ct_C{_Cq`C`aClbCobC`cCccCtcC{dCdeCoeCbfCcfCofCdgCogC|gC_hCqhCshCtiCwiC|iCejCfjCojCrjC`kCbkCikClkCklCtlCnmCtmC|mCrnCdoCloCmoCzoC~oC_pChpCspCvpC`qCmqCtqCbrC|sCruCvuC_vCixCmxCvxCzxC|xC_yCdyCoyC{yCb{Cj{Cq|Cr|Cs|C`}Cm}Ct}C|}C~_Dg`Dx`DkcDxcDzcD|cD_dDmdDcfDrfD~fDsgDfhDzhD_iDliDgjDujDckDllDbmDinDyoDntDttDhuDm}Aq}Au}A|}Aw_Ba`BeaBmaBpaBccBhcB`dB_eBkfBmfBufBwfBcgBlgBpgBqgBfhB}hBgiBjiBwiB|iB}iBxjBlkBpkBrkB`lBflBhlBamBvmBsnBvnBznBjoBmoBqoB_pBfpBipBvpBkqBlqBwqBmsB~sBdtBitBntBauBquBuuB~uB`vBavBhvBjvBlvBpvBrvBtvBuvB_wBlwB|wBrxBtxBxxB_yBayBiyBxyBczBdzBuzBzzB~zBj{Br{B{{B|{B}{B_|B`|Be|Bi|Bg}Bk}Bf~Bh~Bb_Cd_Ck_Cp_Cr_Cv`C|`C~`C_aCiaCuaCabCnbCybC_cCrcCscCzcC}cCrdCudC`eCneCpeCveC|eC}eCrfCvfC|fC`gCegChgCfhCfiCuiC~iC`jCbjCxjCjkCskCvkC`lCalCrlCemChmCumCymCcnCfnCinCxnCioCnoCooCqoC{oC}oCppCbqCnqCsqCwqCxqCcrCfrClrCsrC}rCdsCesChsCysCbtCjtCytChuCbvCmvCsvCzvCbwCdwCewCgwCjwCtwC`xCdxCtxCyxC{xC}xCcyCsyCxyC`zCdzCyzCm{Cv{Cb|Cu|C{|Ch}Ck}Cw}C`~Cb~Cc~Ch~Cj~Cb_De_Df_Dp_Dr_Ds_Dt_D{_Da`Dc`De`Df`Dh`DeaDkaDqaDuaDzaD{aD~aDtbD`cDbcDicDtcDvcD~cDudDwdD_eD`eDaeDheDqeDveD}eDlfDsfDyfDzfD_gDfgDggD|gDahDlhDyhDgiDziD}jDbkDkkDmkDdmDanDjnDynD~nD`oDkoDloDtoDuoDvoDxoD_pDnpDdqDfqDyqDqrDpsDytD}uDmvDiwD~wD_}Aa}Ab}Ac}Ad}Ao}Ap}Ar}As}At}Av}Az}A{}A}}A~}A_~A`~Aa~Al~An~Ap~Ax~Az~A|~A~~A`_Bb_Bd_Bf_Bi_Bj_Bc`Bd`Be`Bf`Bg`Bk`Bl`Bm`Bn`Bo`Bp`Bq`Bu`Bx`By`Bz`B`aBaaBbaBcaBdaBfaBhaBiaBjaBkaBlaBnaBoaBraByaBzaB{aB`bBcbBdbBhbBmbBqbBsbBtbBubBvbB|bB_cB`cBacBbcBdcBecBfcBgcBicBjcBncBocBpcBqcBrcBscBtcBxcBycB_dBadBcdBddBedBfdBgdBhdBidBjdBldBmdBpdBsdBvdBxdBzdB|dBaeBfeBheBjeBkeBneBpeBweBxeBzeB|eB}eB~eBdfBxfB|fB}fBegBfgBggBhgBigBjgBkgBogBxgBygB|gB}gB~gB`hBahBchBphB{hB|hB_iB`iBaiBliBmiBqiBriBuiBviBziB{iBsjBujBvjBzjB{jB|jB~jB`kBikBnkBokBykB{kB}kB~kBblBclBglBmlBnlBplBslBylB{lB|lB}lB_mBdmBjmBumBxmBjnBmnBunB}nB`oBhoBpoBwoBzoB{oB|oB}oB~oB`pBapBbpBcpBdpBepBgpBhpBjpBkpBlpBspBzpB|pB`qBeqBfqBgqBjqBpqBuqBvqByqB|qB~qBcrBdrBfrBprBqrBsrB|rBesBksBlsBqsBssBusBxsBzsB{sBbtBctBetBftBktBptBwtBztB{tB_uBduBguBnuBpuBruBsuBwuBxuB|uB_vBdvBevBivBmvBqvBwvB|vB}vBbwBgwBjwBkwBnwBowBpwBrwBswBuwBvwBwwBxwBywBzwBfxBgxBnxBpxBvxByxB~xB`yBcyBdyBjyBkyBmyBpyBzyB{yB}yBbzBezBozBpzBrzBszBtzB|zB}zB_{Bh{Bm{Bp{Bq{Bs{Bt{B~{Ba|Bb|Bd|Bt|Bv|By|B||B~|B`}Ba}Bb}Bc}Bd}Bf}Bm}Bp}By}B{}B_~Bm~Bp~Bq~Bx~B{~B`_Ca_Cq_Cw_Cy_Cz_C_`Ce`Ch`Cj`Ck`Cl`Cn`Cr`Ct`Cu`Cw`C{`CcaCgaCkaCmaCoaCqaCsaCtaCvaCwaCxaCzaC}aChbCjbCkbCqbCsbCtbCubCvbCxbCzbC{bC}bC~bCecCgcCjcCkcCncCqcCucCxcC{cC~cC`dCadCddCfdCjdCqdCsdCwdCydC~dCaeCeeCheCkeCteC{eChfCjfCsfCyfC~fC_gCagCbgCcgCkgCpgCrgCsgCtgC{gC~gCahCdhChhCjhCkhClhCmhCnhCuhC}hC`iCbiCciCgiCoiCviCxiCziC{iC}iCajCujCzjCckCekCukCxkC~kCblCclCdlCelColCqlCulCxlCylCzlC{lC|lC}lC~lCamCbmCdmCfmCjmCmmCwmC~mC_nCanCenCknClnCnnConCqnCvnCznC|nC~nCfoCkoCpoCroCtoCwoCxoC`pCbpCepCipCmpCopCupCwpCypCzpC{pC~pC_qChqCjqCgrCirCkrCrrCurCvrCxrCzrC`sCasCrsCvsC_tCatCctCetCgtChtCktCptCrtCstCwtCxtCztC{tCbuCduCluCnuCouCsuCwuCyuCzuCcvCdvCevCgvCjvCkvCtvCuvC{vC~vC_wC`wCfwCkwCmwCvwCwwCxwCzwCbxCcxCkxCpxCrxCuxCwxCxxC`yCayCgyCiyCmyCpyCvyC}yCazCczCfzCizCzzC}zC~zCd{Cg{Cr{Ct{Cx{C~{Cf|Ci|Cj|Cl|Ct|Cw|C_}Cc}Cd}Cf}Cl}Cn}Cp}Cr}C}}C~}C_~Ca~Cd~Cf~Cg~Ck~Cn~Cq~Cs~Cu~Cv~Cw~Cy~Cz~C{~C}~Cd_Di_Dj_Dk_Dm_Dv_Dx_Dy_D|_D}_D_`Db`Di`Dj`Dn`Do`Dp`Dr`Du`Dz`D{`D}`D_aDaaDcaDdaDfaDpaDsaDxaDabDbbDcbDdbDebDfbDhbDibDlbDpbDrbDsbDvbDwbDxbDzbD_cDgcDocDqcDucD}cDcdDedDfdDgdDidDjdDqdDtdDvdD{dDbeDdeDfeDieDkeDmeDteDzeD{eDafDefDmfDofDtfDwfD{fD|fD}fDdgDegDigDjgDkgDmgDngDqgDrgDtgDwgDxgDzgD{gD~gDchDehDghDohDphDshD}hD~hDbiDdiDeiDiiDmiDniDpiDriDtiDuiD{iD}iD~iDajDbjDfjDhjDljDnjDojDpjDqjDrjDsjDtjDvjDxjDyjDzjD{jD|jD~jD_kD`kDakDdkDfkDhkDikDokDqkDskDukDwkDzkD{kD|kD~kD_lDblDdlDhlDilDjlDklDnlDolDrlDtlDulDvlDwlDylDzlD~lD_mDamDfmDimDnmDpmD`nDbnDcnDdnDenDfnDknDmnDpnDqnD{nD_oDaoDqoDapDgpDmpDopDqpDxpD}pD~pD_qDeqDiqDlqDvqD~qDdrDfrDhrDirDjrDorDzrD~rDasDbsDdsDqsDzsD{sD|sD_tD`tDbtDetDgtDltDotDvtDxtDztD|tD_uDduDjuDnuDsuDtuDyuD|uDhvDzvDmwDowDzwDcxDcyDvyDzyD|yD~yD`}Ae}Af}Ag}Ah}Ai}Aj}Ak}Al}An}Aw}Ay}Ab~Ac~Ad~Ae~Ag~Ah~Ai~Aj~Ak~Am~Ao~Aq~Ar~As~At~Au~Av~Aw~Ay~A{~A}~A__Ba_Bc_Be_Bg_Bl_Bm_Bn_Bo_Bp_Bq_Br_Bs_Bt_Bu_Bv_Bx_By_Bz_B{_B|_B}_B~_B_`B``Bb`Bh`Bj`Br`Bv`Bw`B{`B|`B}`B_aBqaBsaBtaBuaBvaBxaB|aB}aB~aB_bBbbBebBgbBibBkbBlbBnbBobBpbBrbBwbBxbBybBzbB{bB}bB~bBmcBvcBwcB}cB~cBbdBkdBndBodBqdBrdBtdBudBwdBydB{dB}dB~dB`eBbeBeeBgeBieBleBoeBqeBseBteBveB{eB`fBafBbfBcfBefBffBhfBifBjfBlfBnfBofBqfBrfBtfBvfBzfB{fB~fB_gB`gBagBbgBdgBngBrgBsgBtgBugBwgBzgB_hBbhBdhBehBghBhhBjhBkhBlhBmhBohBqhBshBuhBvhBxhByhBzhB~hBbiBdiBeiBfiBhiBiiBkiBniBoiBpiBtiByiB~iBajBbjBcjBejBfjBgjBhjBijBjjBkjBljBmjBnjBojBpjBqjBrjBtjByjB_kBakBbkBckBdkBekBfkBgkBhkBjkBkkBmkBskBtkBukBxkB|kBalBelBjlBllBolBqlBrlBtlBulBvlBwlBxlBzlB~lB`mBbmBcmBemBfmBhmBkmBlmBmmBomBpmBqmBrmBsmBtmBwmBzmB|mB~mB_nB`nBanBbnBcnBfnBgnBhnBinBknBlnBnnBonBpnBrnBtnBwnBynB{nB~nB_oBaoBboBcoBdoBeoBfoBgoBioBkoBnoBooBroBsoBtoBuoBvoBmpBnpBopBppBqpBrpBupBwpBxpB~pB_qBbqBcqBdqBiqBnqBoqBqqBrqBtqB{qB}qB_rB`rBarBbrBerBgrBhrBirBlrBmrBnrBorBrrBvrBwrBxrByrBzrB}rB~rB_sB`sBbsBcsBdsBfsBgsBhsBisBnsBpsBtsBvsB}sB_tB`tBatBjtBotBqtBrtBstBttButBvtBxtB`uBeuBhuBmuBouBvuByuB{uBbvBgvBovBxvByvB{vB~vBawBcwBdwBfwBiwBmwBqwBtwB{wB}wB_xB`xBaxBexBkxBlxBmxBoxBqxBsxBuxBwxB{xB}xBeyBgyBlyBnyBryBtyBvyBwyByyB_zBazBkzBmzBnzBqzBvzByzBb{Bf{Bg{Bi{Bk{Bl{Bn{Bo{Bu{Bw{By{Bz{Bc|Bj|Bm|Bo|Bu|Bx|Bz|B}|B_}Bl}Bo}Bt}Bu}Bw}Bz}B|}B}}B~}Ba~Bb~Bi~Bo~Bs~Bw~B|~B~~Bg_Cl_Co_Cs_Cx_C|_C}_C~_Cd`Cf`Ci`Cp`Cs`Cy`CbaChaClaCnaCpaCraCyaC{aC|aC~aCebCfbCgbCibCwbC|bCacCbcCdcCfcChcClcCocCpcCvcCwcCycC_dCbdCedChdCpdCtdCxdC}dC_eCfeCieCleCmeCqeCreCweCxeCzeC~eCdfCgfCifClfCnfCufCwfC}fCfgCjgCmgCqgCugCvgCwgCxgCygCzgC}gC`hCchCghCihCrhCvhCxhCzhC{hC|hC_iCdiCeiCmiCniCqiCyiC_jCdjCjjCljCnjCqjCwjCyjC|jC~jC_kCdkCmkCnkCokCpkCqkCrkCtkCwkCykCzkC{kC}kC_lCflCplCslCvlCwlC`mCcmCimCpmCqmCvmCxmC}mC`nCbnChnCjnCpnCsnCunCwnCynC{nC}nC_oCcoCeoCgoChoCjoCsoCuoCyoC|oCfpClpCnpCqpCxpC|pC}pCaqCeqCgqCiqCqqCrqCyqCzqC{qC|qC}qC~qC_rC`rCarChrCjrCmrCorCprCqrCtrCyrC{rC~rCfsCisCjsCksClsCmsCnsCosCpsCqsCssCtsCwsC}sC~sC`tCdtCftCltCmtCntCotCqtCttCutC|tC}tC~tC`uCauCcuCeuCfuCguCiuCjuCkuCquCxuC{uC}uC~uC`vCavCfvChvCivClvCnvCovCrvCvvCxvCyvC|vCcwCiwClwCowCpwCqwCrwCywC{wC|wC}wC~wCexCfxCgxChxCjxClxCqxCsxC~xChyCjyClyCnyCqyCryCtyCuyCwyCyyCzyC~yC_zCbzCezCgzChzCjzCkzClzCmzCnzCozCpzCqzCrzCszCtzCuzCvzCwzCxzC{zC`{Cc{Ch{Ci{Ck{Cl{Cn{Cp{Cu{Cw{Cy{Cz{C{{C|{C}{Ca|Cc|Cd|Ce|Ch|Cm|Cn|Cp|Cv|Cx|Cy|Cz|C||C}|C~|Ca}Cb}Ce}Cg}Ci}Cj}Co}Cs}Cu}Cv}Cx}Cy}Cz}C{}Cl~Cm~Co~Cr~Ct~Cx~C~~C__Dc_Dg_Dh_Dl_Dn_Du_Dw_Dz_D``Dd`Dm`Dq`Ds`Dt`Dv`Dw`D|`DbaDgaDhaDiaDjaDlaDmaDnaDoaDtaDwaDyaD|aD}aD_bD`bDjbDkbDmbDnbDobDqbDubD{bD|bD~bDacDccDdcDecDfcDhcDjcDlcDmcDncDpcDrcDscDwcD{cD`dDadDbdDddDhdDldDndDpdDrdDsdDxdDydDzdD|dD}dD~dDceDeeDgeDjeDleDneDoeDpeDreDseDueDweDxeDyeD|eD_fD`fDdfDffDgfDhfDifDjfDkfDnfDpfDqfDufDvfDxfD`gDagDbgDcgDhgDlgDogDpgDvgDygD}gD_hD`hDbhDdhDhhDihDjhDkhDmhDnhDqhDrhDthDuhDvhDxhD{hD|hD`iDaiDciDfiDhiDkiDoiDqiDsiDwiDxiDyiD|iD_jD`jDcjDdjDejDijDkjDmjDwjDekDgkDjkDlkDnkDpkDrkDtkDvkDxkDykD}kD`lDalDclDelDglDmlDplDqlDslDxlD{lD|lD}lD`mDcmDemDgmDjmDkmDlmDmmDomDqmDrmDsmDtmDumDvmDwmDxmDymDzmD{mD|mD}mD~mD_nDgnDhnDlnDnnDonDrnDsnDtnDunDvnDwnDxnDznD|nD}nDboDcoDdoDeoDgoDhoDioDjoDnoDooDpoDroDsoDwoDzoD{oD}oD`pDbpDcpDdpDepDfpDhpDipDjpDkpDlpDppDrpDspDtpDupDvpDypDzpD{pD|pD`qDbqDcqDgqDhqDjqDkqDmqDnqDoqDpqDqqDrqDsqDtqDwqDxqDzqD{qD|qD}qD_rD`rDarDbrDcrDerDgrDkrDlrDmrDnrDprDrrDsrDtrDurDvrDwrDxrDyrD{rD|rD}rD_sD`sDcsDesDfsDgsDhsDisDjsDksDlsDmsDnsDosDrsDssDtsDusDvsDwsDxsDysD}sD~sDatDctDdtDftDhtDitDjtDktDmtDptDqtDrtDstDutDwtD{tD}tD~tD`uDauDbuDcuDeuDfuDguDiuDkuDluDmuDouDpuDquDruDuuDvuDwuDxuDzuD{uD~uD_vD`vDavDbvDcvDdvDevDfvDgvDivDjvDlvDnvDovDpvDqvDrvDsvDtvDuvDvvDwvDxvDyvD{vD|vD}vD~vD_wD`wDawDbwDcwDdwDewDfwDgwDhwDjwDkwDlwDnwDpwDqwDrwDswDtwDuwDvwDwwDxwDywD{wD|wD}wD_xD`xDaxDbxDdxDexDfxDgxDhxDixDjxDkxDlxDmxDnxDoxDpxDqxDrxDsxDtxDuxDvxDwxDxxDyxDzxD{xD|xD}xD~xD_yD`yDayDbyDdyDeyDfyDgyDhyDiyDjyDkyDlyDmyDnyDoyDpyDqyDryDsyDtyDuyDwyDxyDyyD{yD}yD_zD`zDazDbzDczDdzDezDfzDgzDhzDizDjzDkzDlzDmzDnzDozDpzDqzDrzDszDtzDuzDvzDwzDxzDyzDzzD{zD|zDwjWCCCCuHCuHCCCCCCCCCCCmDCyHCCCCCClKlKCCCCkKCCCiACCCCCCiACCCCCyHCiKCCCCCCCCCyHCCCCCCmDCCCCkKCCEiACCv]Cm\kKCCpP|HCmDCCCCCCCClKCCCCCEkP?CCCCCC??DuPCAoDCC?C?ClPiADCACC?dPCCCAACDCbP?KCEEDCCCNn^?AmDCApECoDkPACDCDCCC?AAACCACCCCCCCCC?nDDCCCdPCQHIACCC?CAmDECACwP|P?EEClPCp\?q^xKAzFCuPC@CAmDDoDCN@?D?tPDQ?@pPCCD?DCA@@?CxBwKD?ICDvO@DIDDCCCxBC@@C@G@CmD?CCP@@@CCC?CBB?iABEG@EBBH@CyKBnDGiACGBBC?GHC@@{FGDCxBCCBG??HGCBH@?@BECHE@@@FCB@@@@@HCCB@?FB?CFU@BGH@@@@ECxBC???BGHDNHAA^BF@CIFAC?@FFaQ@?CBBi`@GFB?HBCIC?EBHIH?By@CBC@FBGE?CAA@GCD@?@ELE@{FFGEH??FCIE@CCGDECBCC@@@BBYBG?CFBBFGDCFNCFICC?C@GHHD?@CCAD@BFG@?ba@ADPz_@CIB?CG??ECFH@?BCFrCBB?GC@GF?GF@FB}@CBCFCBCCBBCFC@CCCB?FC??@DAA@CBCKB?@CB?BHAF@@HBC?k_@DxBIAC?FGEF?bQC?@GEECICCCB@?BFBuK?C@GCC@?CG@CCBBG@EBCH@FBB?@CBCBC@?LD??CDA@~QKBF?@BFG?@GFDHC?CBCBIBAA?C@CDI?ECB?DIIC?BCEG@B@CCF@@C??@KF?GD?aRCg@BFG??CBC?B?_b@{FG??eIbQID?xBPm_@?{FAGAAD@CBBBC?@~QCHCtC@?@CC@@BBIKAHAD@?GECD[DDACFFGm@@@AGB@DAAiA@DCg@B@@D?AAAA?EBB?@D|HBCBB?FG@AEABDC?CElACDIwC@@F?D?ACBAG?BCB?HBBCCEBB}F?@CEBF@?G|FC?@BCdBCC@@ACBECB@FB@CCGFEp@?@FBC@??HEHHH@CJ]?CLP?FB?NFG??@@CBBG?@IFCG@?DoBACBCGC?BCC@CAQAJGCFC?k@?FAAAGFCFG@ICdGIEFSEe@BBI@GCaL|FN?BI@@@BACC???sEFFB??AICG?zF@@@CA@MA?BBDA}@FuCGBF?JCCG@MCA??@AAECA?@AAGAABI?CFG@GFEBAiQ@AAA??DAAADNBBG?CDCA[@?oEI@?@@AGAAEXGDCBCCvQ?AAAAG?CBBIC??@CSCD?C@J}QG???GFFCEICA@?BAGCE?@EQAACEAAAABAA?@@BBBAA?CEAEGCDDDABBGHH@?MAIGDBG?@?AAAADAEGD?DFFDCI?CIAA@?BB??Gp@EC@@GVIDACC?EG?FF@|FDAAA?@?aLDCDD?GBBF@UBCOEBIM@?HHHHHCCCE?CGF@b`@BCF??FBC?BB?@LD@G@EIQICBG@@GFH@IFBECFCCFBCClACB@F`@?CBGF?JGE@@??LAADH?HHHHA?AMAjLIFdA?ABB@IIC@@C@J?CBC?@@CFGEGB@FdADg@IIk@IF@?NFEk@FF?@BGEvCIDB@?EEBD@BGBCD??EDADA??GAAAE?BGAAA@CAACA?@?BGFHH????FDA?CCAAAA?UAADLACCDBB@????A??F@BAr@ADCD@?xRIBKIm@G?@??DAAAdSBn@NXF?lRdGFC?EBFeIAABG@DD[I@?LADPDCBC?uKF@xB?A?A@CCACA?@BFBBC@??AQDA@CBC?@CB???CFF@m@CC??Ad@AAACGBAAvc@IBDF?BGGDC?`@CHzFAC?B@?CB?B@@jRA@CB?@@CAAiBBBcIKAA@?CAChBXDESEP?ADEC?CAGD@?Eud@?FDAH?b@KEAAAGDF@DEA`S@?EEA?C?KCuRHJJCyE?DF@@?DK@@GEEP@??@EGA????DAA?E[?@IDBGCFD@C?HEC@?FGFCiGCFGAA??GCE?@@BAnADBB?CC@BB?@@DABB@?CDDEB@wEAEAD@@zL??AAAgLG?CEBE@EBBDI@@ABRFC@BAAAA?CIAAA@@@DA?@AAAAkB?AEB@BzCBEA???FEB?CBBCU@EMtCDABDXK?DLECgStE@?]FDD?gSFB@BkABmGFQrRHH@FGF@?CCBBCGK?AA@B???AAGAA?BBBAADBTF@EDBBDBACA@AAHAB?AGAADBDEB???AGBAAAGAhID@?LI}B??@@C?G@@@GAB?D?AD?AA[v@DAAAHHHHeB?GCC???vLAAAAqEBFHHH?AAVA???RG@?HHHHA@??DGCEDAEAA@DrRAAAUBDD?DCFFCDD?????AAAGCBAAAA@AAhIA@G?AAAA???AA?A?D???AGAAA??G?AAAAAAG@BhKEAKCkAAAAAABAtEqACDAdGAATAn@ABACAAAADBLDD|c@@DAAAAGA@KCDAAAA~ABABCAAr@AAABAAAACAAAADDADACAAAABAAAA@ABAAA????AABAAAAOAACAGAADCAANAABDAAAQCAAHCAHAHHHA@HHHHH@AABAA?AACAA?zD@AAAACA@?n@AAAAiAAABAAAADAde@EABDA?AKAIA@AHHHH?WAAAADAAGAA??AAGA@@AAG?CABAAACEAACBGEBC?AADDA@@EGAED?ADIAA@@?AHHHH??@?tEACBr@?@HHHHA???EZAAA???DAAA@@b@D?AA?D??@BDEt@pc@AL?DDAA??@DAA@ABA[A?AAGAC??QAAA@@ADB???DDAMA?AXABGAA}@BC@??HHHHA@DEBBC??GAAAA@@v@IEAD???BLI@GEjI?B?DA?LDmI?@CAHHH@BGAA??@CAABAGAA?EAAHHHEHHH?@EGBAA@?AAAABGABAAAODI@@AIDA?QDAA@ADBD?BrDDAACAAB\B??CAAAA@A_AIAHCAAAAGAAAADAAAAdc@CAAA@?qLyEAAAA@??GAAA?KAAAABAAqAA?UADAAAGBCAAABAAAAAADAAAABtE@AAGAABGAAAAMDAACAAAD_@AA@CAAAA@W@?AABAA@??AAGAA?GAAAA@@GAAA@AAABA?WAk@ACA?GAAEA?HHHHH@?HHHHHfe@AAHHAAAAAHHHHHHHAAHH??{CAAAG@DAABA@AAAGBAACAB?@AAAAG?@CAAAA?AABA?CBAAAC?A~BIBAAAt@BI?AAOAD@?@ApQADG@?AAD_@A??DAABA@AAAGBGAAA??DADAAHr@AIH?MACADHBAHH@HHHHH?AAEHA??BAEWAAAABAAAHH?ADAAD@??AAAGtEAGAAD???Aj@AAAEAD??HABAA?@AAEAHHHEHHHHHHCBAAAAAD_@AA@DAAAI?DEBBN@??AFAAA?AABAAAABAA??AAAAHHFABAAAAAAAG?AAAAB?NABAAAUOAAAAAAAC??@nGACAACABAAK@@?{AADAABEAAABAZAAb@@Ai@AA?dAAAAAAAnLCC?AABAA?@AABAA@AAIAB?@AG@@@HHHHA@CGAAAAAAAB?AAAGGHHAHH??HEHHH??BCAAC_@DAA??@A[EAAAi@AA??BAAD@AAADn@HHHHA|@AAAA@ADDAADAA@LDDBA??ADAX?OAAAA??HABAdG?@ADEGA?GAAA@AEAGA?CHAAHH??HAHHA@{DAAKD@t@AAAXAAABCAAEHAHHB@AADAENL@?AEDAAUEBADCCFCAC@CAA??@BEGr@Cb@EEGA?JGFvAcLEDC?ABAAA@BBJb@CJBB@GBC@@C@HI@?AGHHH@CCG@??HHHAC@?F?@BF??DFGD?AAECB@DABF?mf@wDBxEHHGDDB@?EEBD????BCSG?C@AGu@DA@@rd@|@GEA??@FECfI@@IDyIDD?@BBCA@GE??FDAGHHCHaf@APCB?CFOAD??@EGCDAJ@XEgc@?IQC@@@HCAA?BBBB@AOHHH@BFB@CC??A`GDAACCIHBEC@EBC@AEeBG@???ADAA?n@IHHAHJ@{@CFrB@CBFC?B??EBBAD?RtSRS??AAAHH??@HHBEA@k@CA?AA?KBeI@NFYG@B@?MCDA?eI@DADA@?NCBBB??GAAAA?@EBB??BrICEA@KEG?BCG@?FDf@E@IEiQJHHAI@?FCxBBCMD?EFBEB??GEF?FUGC@@GEBE?NACDE@?@SGA?BK@d@p@XAC?EKCA@FBEA?VA@@BBHHHW?EYHGF?U@AFGH?@CB@FBof@@?NJ^HBu@CeAItBCy@?DB?If@C@FBCG??FG?AA@FCAH@JoIG??@BBBIC@B??DCDDA?WBAAAA?BC`ACBBAd@?AAIDAN@If@dGA??BCFH?@DIBAA?????AAAFA?FAAAA?ABD??FIDFI@BBBHNB@@W??DIA@BAZFDU?AAK?FABB??DADCBGAAA??DFJzDCBFBCW?HH@HHH?@B@BGAABH?BA_@A?@?ICI_Af@J`AGKB@?AAKIC?BI@B?@PDDA@@?kBEAH@JFG@?@?{f@AAhBn@?Ek@jB@?uGI@BFLFGDDM?BA@FbSBFEB?CHAHG@??ADAAD??t@}AD@?KBAEAC??P_@D@????AHADA??HHAAH?@CEDAAIAf@DABABAC?AA{@EB@@CC@yK?@B@?ArAG`@A?Jz`@DAA@ACs@@lM@AAC_@A?EALAP?AIKA?@QCACDBD??GEDD?EAGAA?@HHHAA@GEA?@BBAAB??HHGHH??DDIA?EGCD??AE}Eb@AAMBD?ABBFDBD@DcJBA@@DDAA??AGD?@DGr@BB???NIDA@LDDD@cLDGgCLErCDC@FwEuABBhe@??AA???AAB@AABAAAD??GF@@HHH?HH?@?Ek@AD@SQA@BADE@QAAADCG@CBAAA?NHHAHA@CoMAI?HIHHH?CE|@HH??DDAAALIA@?LDDDyDU@BBBBB?????AAFA??AAAAwD@??D?D@??DDDDABAAAA?C@AAAAC??AAAAo\C@CMDDA?BLD??{CHHHHA?HAAHHEAADAIABE?LDACDAAA???BAAAA?@CG@?HHHAH@ABDAA?@AAAD@GBBAAAAD~E?EAAA}@NAACxDIE`EA@??HEHHH?AAG`@AN?@DDoMA@@ELD?VCAA?AADACADI@?EDBMA@C]fCADI?DEEADBDD?EAk@?@GBAAD?Ak@AAA@?LAIKBECAB?HBHHH?]??AID@@@YODTBG@LIS??EDDA?@IAA\?A?N?@AAGAF@@AKGAADBDBFGEE?DEBAKbCQEAJFFsL?BB?AAAADEAA??AAGDE@BMC?FBBB@BFBB?BH@@B~GBO?JCCLCJFCB@FHME{G?gf@pMnG@CG?CFFtB?AABGECJDBC@FFGE@FEEKA@BG@B?@eBj@BSBB@BIEB@DDC@BB@@EEDwA???{DAAA@BGDBC@EBBIvA@@FGECJ@FsB?C@GHHH@?Ry@BG?IAHAH?@]C{SB?Dz@BGE@?Kp@F?zGDDACA@?ECrLAF@@?vAvCDB@XABHE?DGBBB?@t@F@??AGEb@?GFC@IRB@HGHAH???C??AAB?@ROF??CnLNw@AGE@hCA??@AGEAMDA@W?AAAGBCQI?IEAABGF?ZB{G~ABIECS\BBCeC?FDDA@?AvADB@?Fz@B@AbA?AABAdAed@CF??@FBCAB@CUHBHBA@@?GAAAA?@qMAE@AECA@BIOEHC@GF@TABBG@@FFHGDEB@JECBAKg@AAJEEdBhR?AAAsDkA?@?DAAAGAAABAABA?AHAHC?????AAAG??BCAAG@?IDBEYHC?DB@FEBB?IAHHH@BABM@C??GABACEFB?JG?@?j@BHEHN?CIjADFm@FC@MI?@BAAAA?QEAAAAtBAA@GADAA??DAAA?CcTGX??LDA@@??AEADE?@vb@E@??ABAEAUC@f@AAAC?AXAGSAJCCC@?}EDvIED@CBAhIA@AABdSACBDACA@EFCOF?DI@A@ELBD??@GAAAJ??Foc@BB@?ha@CEC{G?@DAA@A?DI@?yEAAA@@@?GEEB?BKEBG@DBBI@FG@JECF@LDCFC?DAFDA?XDLP@BGDF?FF?DImAV??GBED@Aqd@AA?NDCF@}QB@@aC?DIB@??RHFHH@@?CAAAAAAABA?C?AAA_@?uTAAAA????GAAAE?AHCHH?ABAi@ABABAB@zGAAAAG?xEB?@dBC~@?GAAAAAnAAAzGBCAAA@@AAAAB@ADBD?EAAABDAA@EAAGAGAABAABAAA???ACAAA_A]AHH@AIAA?GAAA?IAHAA@AAGAA@yDDAAA?OAAEA?AEEAdAHAHHHCEDAAA?DADAABAAA?AIDAABADA@AAnMAA???DAAA@@?uQBAAaFDAd@AEDEDA?@DADDIDAA_NHHMHEHHH??@AAAGDAhCDAAOAAAC@AAGAD?@tTAAAA?AAAf@@A?BAADADAGAWAA~AGA?EkBAD?DAAA@?CAAAA?AAAAB?LA?CDAAG?AHvABA~c@CBE?A?AAABD@}S`HHH?@@AAABA@@?DAEAA??DAAA?iBFH@HAHAHHHAHAeAHHAHHAHHAHHHHAHAHHH@ABAHHBABD?BTAAAAABAA@NABABAAAGu@E?@AGAEA@BAABAtIA~BAA?HIHHH@eADAACIADAAAAOA?@AArAAADIA@CsDDB@Aj@@??}@AAAA?@DwQID?eCBZAAA@b@|@MDA@ADLAEIADA^AE@@MC@DBAAAAACAA@@?DGE?ADBAAA?f@CAA?@@IMIAAUKDBA?@DCAA@AECA@tA?AAAA@E?DAAAKAAA?DA?AA@ABGAA?AEEAA?HfAxA??BBBAFIBsRmGDre@AAACDADA??AVA@CAAACpGDDDDBDCAtCAAbEAA?AA}@ADADBA??AAGAA??DAAA?AACDA@FGDE@rb@FAMH@aD?COFHHFBB`GH@?DEyRGHHHDA@DEII@FCB?BHFGH@?LFADD@BBDA@CAAAADADAA?EGBCE?B??AAAA?ABAAA?CG?AAAA?AAABABAAAA?BBAAA@@BG@@}@AAA?EDACB?D}C@L?@IFD@E|GAICDDAIDBEGA?@DEg@B@?EDDAiCETDA?DAAAgC?cIDFI?tQAA@?@^BCBADEG?IBG@@HGHEqAAA@HHHHH?@@@BuEt@ED@BBBFO?@GEBuB@?CBEEC@AAXtE?@DDBB?@CBBGBBCE@HE_AAHBDIEDRFA??@@HeAFH@Gw@DBIE@@F|e@VfTA??EDFA?@@\EcMyI@B?@IBA@CBhB@@BEEGnf@?f@CA?@L@BAAAG?bE?BfA?C?@@GEH?DGz@B?fHMED@GBE?UEEIDBzGICCJ?rCBCFDBA?@xI?@BGCDLFxFC@FGCvDGN?BG@?BCFD?GD@DVC?BxC}G@BBB?@@FGB_ACC@eDR??XCFLBGF?CHHHAA?ArBAE@DCA?DDA?DA@FFY@?@cDGFDDIEECDG@?@FaF?BIk@A?CHn@E?BEEvh@D??F??W?DBCAB?VD?Fy`@BA@@FRBB?Fy@@Dng@BI?h@BGXFHHH?@DLD??BGE?RRBZfGCGBA@?EFDD@y@BEt@?EjLFGBB@BGAA@CBBBGCDBEADDAAHHEHB@@AAAGA@CF@_@Pzg@B?B??AAAA?DnJEH@BcACNCIF?BvBF@BB@@LD@BLAABAG?@FyAJ?EGsIS?BFH`@EBN@CXEfAC@@BDDA?HHG@iJ@ECC?@DGED?F?IA?D@eFBC@CwEFzCFF@FCD@@FO@eAFG?G??@NSZcI??BCb@BF?CB@@@@BW?@DCA@???VPAA@?KAA_@D?nAEIAI??G?AAAAALP?NB?AAAD@iBvL?AAA?UD?A@BBG?@BK?GB@@DCGW@FACAJEI@BBIB@J_@PR@B@TBZCAELP?r@?@IzBc@G?O@BH@_@DP?DFABAMFHA@@J?HG@FBaHG?@?@IVAAZH?iCG@DAuMcFG?@EBLD?HF{E@ELqBC@FF?DDEA@@DT@@DADAAFAi@B@HAMAH?@BFC@w@G??{@@AvAAACkTDDn@?HQIHG@BGJ@TB@TIMQ@n@FBECL@@JFCF@@ECFC@ABBGA???@?BAAG@?CDQIAC@DVA`N@BDDA@@iBG??CABGE@`CIF??IBEeF??BDI@AIBEC?BHCG@MEc@B@C@DB]?DACbAIeC?IBG?EOEAH?eGFCG?tIBF?@NCaCIAG@BCB@BEId@uCHne@BF@?BGEBIG?@BGdC?HAGHH@@B?w@OCBCF|C@NB@Rn@@FBCvAHE@gAbAIfCCIADBJ@CBFE}B@O_NAA@?GED?@AADA@?IBG?~FKG?BLEP?@BBEB@DD_JFA?CFi@C@BAAAg@??EIBBG?@HBSC@EEB@JwDCG?@AIDB?nBCBB@dFBnBNiAG??HHAHA?@GT??@F?@Fg@S@HBHtBB?C?Kz@BcC?@G@F?wKBBL?BEDA|g@uEBbAEA?ADhCDN?EdBE?@HBHHC?B?BG?FGB?@BQAE?BBHHC?GFB@JHIHEA??ua@GH`L@@@EEEG@@BKCE@?BB`B?BGC@BzMB@XHS?GAFHE@BBCij@G?BBG?gABOCCMDAE@r@CAGB~AFBG@FGR@?nh@IEDI@DBBB@?JmJG?HHAHG@@u@BbEFBW@F?@bNCFA@@BBSAgABBXBGFHEI?BGD@@J?bLB?IMFC?FGFACGmGEDMI@D]QAA??@{RADGB@@BG?@CiFDB?@GCBJDei@GB??NVI?BFFBF?BF@iMcCCB@BvA?BOE?@FBDBjCFDB_@?FvAFHBFFMAAA?vEGFB?@GBEEKAAALC?JBIEB@ECB?{CB[D@CEA?@IBBG?B]@??BAAAA?FmJBDIF@@BBBIAxI@?OEE@PAV??@BEDGF_ACBGD??E@B?CCKEBECpGGBgF??AABH@PAB@@?B?DI@@_BEGE?@pA@XCGyC@CB?ErAPAA@FB@??FE_EHaD?J`@GF@?CAFDA~@?CKoA@@FFCE@@@BBBCH|GAACFzBBDB@FBRDAKACwh@B@IFBBG@?oUAHHHHoJBBBE@G@BBz@JkJ@CLP?DFAELPE?HrAAHH@FrJn@E?F?FB@GBF@GD?@DBFFD?DDAC?wEGS?@CCnDDE`BEsA?C_@@@~AcC?Eu@A@JCG@@G@LD@aEFGDEGE?@?AAACB@?XG??AADA@Gz@F?@kJBBBBcAEHIHN@FCvKCBBKODC~i@F?UuAbAEkBDCBCD@@EBBU@GEHaBl@HFAHC@?A{SAABCtUGea@E`B@ECAgL??@BACAK?DQAA@FFGrC?@kMIFDF??KIIXACDBL@@?HASHHCFC@@?FEC`A@}@@?BApDA???GAAAA??GB?DIjBB@BACGBFBG?CB?IBBBF?LPhc@CBCBgRGF@`E?MFHHBeBGD?@C`B@FF@F?GUBCJBERaLBJCn@C@iD@B@jDBDGEC@BGBFH@BG?GBF@ICA}AFDTE?BGC?AGDD?`AEALP@SGBDhN?GHSE`J@G@IB@F?GEDC?t`@wEIBDAFGFH@FBHA?GB@JqI@BBCFG?DGFBhHHHC?@MIBD@KDG?JCaC@EJBG@?nADAjACAA?EAD@?CC@B?PAmQIhC@CFBpA@AEaUBEej@`@Eg@GB@BBHF?EGFJ@?RHHFqA?BELP?BAB?m@}TFACDABF@JCRC?@F@?G@BCFxI?@BF?BAD???QIC?@BF?U@zCC@?@BB?@MAC??EDIDE@ABIG?BByh@?@ODC?BB?hBBA@?CFFGCFpAEA?EBiGC??IEIBGJIEBGK?CBBG?FBBRBB?EAOBU@jIxSFBH@@@??GcDC??@`@FIDx@E|ABM?@@iFSCDAkd@@GFDDI@FG?BBaJIHIC?ADB@BBSvAUJEDy@DEeFEG@?GF@@FvI?E?FG?B??HHAHH@MDxAxAG@FFGS@@G@?aBsGA@@bBLDFEn@@FF?LBCE@eAFO??AGADABG?dBnBFFBSWJe@C@AVEJFyAB?~MAnGGB?G@II|Db@AEBE?@AGD?@yCGHw@DDAAE@?y@BGC?eFhB?t@HE@_Aw@GBH@?C?@XhIAB??vGG?FIGBD?CP|@FB@CFRB@BLDPFKEqUA?@@EIDfCB?@{BhCA@?BBrC_E@CF?BFaJ~LBO@LCjB@@G?@Ah@CaB?EBiD@`DFBG?DBAA@BBkDbF?@BCEF@@xT@FvC@@FGBEIBE?_@EP?CnDBJFoAGF?`JGFCBBmNF@IDBB?@FACD??@?AAAA?CCy@G??@A?AAGFAG?@Br@EFvJ@VFAI@?Fa@fk@bE@J?nGRC@@BCIWBC?_@F@@EG@?E`CF@AAQ?AA@DA@BAABA???BAA_@?DDAAfA@EGD@@AP?@?EBEE?@@AAvBD?@?DADG?qSAEGAkFC{TDwK??@HHBHB?GFFGEF|D@?EFBBjHIbDvDH@?Bk@HH?BJFB?J}CBFeGbBBF@C@B`T??DvIBDCUEkAAnj@BGEaj@NCBQID`BZBFD???BB?@BBI^E???ABOD@?u@BK?@?FBB?@SGn@@FG?QAA?CgJ[DBcN?@F{ABEB?BBI@??AVAADEAhEAoB?@AE???IHHHHLPQA@GF?@IHFxd@H?LDO@JBBBBG@BLD}A?LDDDA@GD?O_BCBH@DBBA?NE{@B?FBGD??nDFG^?@CCE@@_Fi@x@?FCgBKCB??BvB@ABIxI??EAEIWEI`C@KFEB@?CG?p@Akh@BGE?BHHCAFB?ai@~AGBH?`k@CBG?DEBBG|BFFG@@HHAyCBsJ@g@HCIHFAEBhRBFCIC@BB???HHDHA?LID?JFG@GC??IlBBCBAaEeAG??je@HQHA?kN{AGEE?DBAAA@@@D[@KABjFB|D@CGBSHlCzSF@BaDGB@@??DBBD@}@DDkC??LADAJKyC@jDeBEEB?@OADE?FmNE@@AAGAD?CC@gMBB?DA@BI~AGCk@CGBDuGxA@?FB?@pj@BI?NIQhEFEEI|DBAAABAABA~A?@AA_BCB?FdAcCD?@FBB?@IACBB?x@BCGE@U?GF@@CGCB@@?@AACDI?CFqUhJG?@BAD@@B?@?zCBFGD?BBIJBLjA@@?GD@GF?uB?FBIB@BCFG@B?CIEeA?B?@DDIIA?BB@@B?@BDAbDDJ??FEG?BGFFS@@EED@@AE}A?FzBIEHEA???bUDI@`AG?}@FFBJFBIlB?iHmNiA@GBF|@G?@BDAA?@BCCek@FFBF}C?TDcJA?BAAAA?@GF?DAA?A@@?DA???ABGAA@N?AAAAsh@@?ICFGAAAA@CAOD`H@@@IABBG@AV@BEGD???G@GhJFJ@sEB@C???Gb@WIbVvDB@PzBAwL@b@ZDD??ADeAAgFNr_@C@IIe@B?NjLFGZF?N?BBLwBJ@`@BG?DEDAc@EGEBR@@FAfAE?@AcAy@??@?`BEAaE@BKJBi@BBG?RsLRBBAg@L?tC]???fh@?CG@?OAMADGFCb@@BBID@@@EFDEaJ~A@AGEAA@?@eBGCBx@@BB?BID@}@FB?@LADAD?HIik@qSdCG?@?EjADzSD?GB?U?@EzBjCGBiA??qNKBBEF@CBN?@BBK??BB?@oEB?BG@EdCKA?DnUCui@BBEATE@GF@@?gBIBBCyK[GF?FI`F@JFoAK??@iEAwB@EEGF?ABABH?IDBBfF?]F??@IAVAC@FT??ADAACjEBBB?@EAGD?GBD@dE?VADE?n@??xCB?@BFGI@?DBE|GFBCB?@FIRjE{@GDuG?BF@?@B`FfEHXuJDDB?Cc@AEG?@pJD_E@@GDgG@B^?DIBGE@??BG@?AkFB?NAVA??EwCC@?VpGDN?gVLD@@}CPEs@I?B`@QA@U?@BuAG@AAEG?GE?@IP?G@EbA???BBLlF?@GDDxN@EEB@?ME}R@?@bHIB@BAG??BGcEwB@MII??EEDIBxM@DDC??@IBGBJ?RBG@@BBIG@EID?DDDBD@aB?DACE??AGHEH??@Hz@F@@BBDnAA@LDdFBABGEaF@?DmSCAD@hAB?NBr@GD?@cDEEDI@@?[DD@@BCBE@@YECECcAA~CD?mMEG@@BI`EHAJ?BB?@@DDAA?KCHDH??DEIs@BFC?BJ@HFEACBFFoCGFE@BgBCuQBHF@BkE@@aBEGCB?Bj@?HKiBhg@??HEHI[@@BBB?zDCC@FGHFBGHE@YFBG@@JOHHE@HAAAH@NFO?@EkFsGB?EFX??@DAIF@\BBkH?FB@?BBDE?GCrS@@?BfHBDA??@Sd@~IGEEBAGEqNC@?CxQIBB@~A?g@Ee@fAD?CHA@?H@?GFUIBEG?`BBDE??CBE@@YG?@F_T@@tAGJ@vJBdR?DD??AA?IAEEG??MAAI?CIAH?PfDIB?QIDr@zEDB|GDCBkIhH?@A?BHEI??@]KI?EFB@eEGCC??BGJCF@@SHG@GaEFFNBBEHB?@BLXDBB{EBfF@xLBBcRhL@C@uMGE@JCLD??@gAkCC?CXDEB@GCmBBEEM?hEFB@FTB?EGFC?AKHHG?Gge@qBFDjECEGE@EBCEM@IDI@FaDGkCCGFBBG@@HCEc@@CZaBNC@H`FEE?JGBIrCnDG?ABG|LJ@yAJJiBHFH@@BBFBB?N@EBGHHeEMAYcUDG@BKTD@?BhDIDJ@FiG@HAHAH@?GAAAA?@BAAG?EEAf@JtNFF?U?IEoIw@F?@??BA?AD@?ABhAD?CCKF@GHEHI?WAn@kNUrL_MBHaCH?U@BKD?@m@@?@HQhLEA?@~EEMy@A`D@IEEuA~EW[E??lBDPApFBFBB@mAsNN?@IILE?@BBAG?@JiEBFHHBFGF@@?DXABgUhABDU@?GHuDBDC@?EDvCGFEGDdEADABF??DBaCG@?i@DFD@c@BLJEFBVPs@AEIBBG?IBEBBJBDn@@FGEE?JFbAHc@zJ?C@FFB?@BTF[W@gAFB@ZBEx@@B?FGgEwACh@CABbIC??DADD_AJ?G?BCHAA@J@AiEPDEF?F~IPN@FEc@BBGFEE@BCB@BIlGrDK?DBEB@MIHKB@bVKB@@B?yVIGBD@ABA@D{TBCD@BBBZ@@EG??[D@@mIOB?BrD[RiBCF_@E}@jMBIBC@OeD??dAiHBHH???CGHHC?@?@EIKF@BBCCF?C@L?FCBB?aF?@CGBB?}ALPmC@@bECcEeCFGa@@GBB?CEBTEDFBD?@e@B@?aC[EHH?@@@BDG|@U~@?FBG?@@?B@DEdFEqAIAA?@@@@RQIL@BBbHB@?F|CBN@FS?CEZKD?@EFI^@FG@BF@?D`GAADE}GF?QdDDC?@HfH?N@HIEfG@GEF@BB?BBBFR?DAEAL@CBBB@?FLI?}l@@DMAA??DDAI@BBGx@@CABg@tTB@?@FaBRA@M@lBPAB@CDDLAA????GBEHnHBB@@?CABAB?n@HFB@I??FCG@Da@EB@@BRFD}B@FB@DAA??BEKb@F@?FGiI@?ADDA?gCBEF@BGCRbLNBBGjMBCFB@FDIW@GHEHE?????KBR@B?FG?{JADEF{i@?CCqBB??@HIAAI?FDIFBB@?BF???BAG?EBEBAOEEC@MI@@?DbCAlH@EDmCJ?CGWkC@HH@F@@GFED|B@GB@@BnJBW?wACBlB@II??uA}@B??E_AAHHJBoA?IFGB?GE??@hCDDAD?@EGEcACIBBK@FEBOS@~C@A?@@rGrB?Ja@DfABB?FABGHx@BCBFG|l@|LCBB??OD??AAABG?@BGDMAEIBF@FBB?B?ig@?@vElIBG?CAADd@@J?FBC@?IFADD?@?LAAE@F@??BkBHH?FIEB@DAGhEBeBBG?WxDMD@iD?AEAC?FEFG@BBwN??zCMQBBGC@FFwLBG?@RG@@HEAHA@BBIDEiJBFErB@G@B\wB?DADAA@Dk@AA?rMFdCFt@?@?ID@AAEHA?BG?`DIAA@?G@PBB\BDGDCtBF??|NBCBE@pNz@F@BGD@DB?DAvEBB??IEEBF?@A?@?DAAAA@@E\EGEfDY?_FBd@?GD@@FF@EGB@?@ExDG@@DIEE??BBBi@H@BBI@HIHIB?@FHHAE??aHBAA@BGHH@zCu^G`J?BSGjDGFF@@E`CEI?@F?tJGE@?FxNBD@nQ@@gNCJRBfSJ@ICFBJFBBG?@BBB@ADAEmQWAqFKASFG?BDL?_BKEC@FL@DGEDFkE?NeHBEAHHH@_@P?JsLG?ABFZ@DlVmC]@BiCM@?BnAHHA@?jHIBIGBF?EBE?LP@J@FvLfCC@KBEDBJGF?HEAACDACB@r@AAxA??FmB@BBHFH??BAADA?hA?DA?ABS_@_BtBBBE?jDF??MAh@qEN}@FRY@@@FB?EBHB@HBHHAgEJ@GaEF@?@B~KG??MwCbN@BBCCDBEJRhAH@Hli@FC?HFGH@@EKjCEE?@DG??@BF}A?DLCBF_E{EF@IE[?EIEI{AGEFDGFE??HKyIEDwA?DAIAA?ED}UAACAxAlFBEPf@?@@I|TBdC@@CB|@G@@F?@AAED?MpLEBI?IHBBCGB@DKA|@@yIFB@?E[?CT@IBBG@@??fAADAC?h@BtBDDAA@ECE@GD?@BBAGE?IBE??@BDG@?BQA?AEAG@DDB@BnSGD?EG?GE?wA?XGD?CGBF@@BCpADW?AATDE?@BACB??DVEpGC@HKSCwB@?hHGAAAU@AZAD?`@BFQA@BBqTD@EDIBBEI?LDI?@DAAABkMFG?HAAHA?DIB@@BBB?DI@DAFIFHAB@jDuADBG??AABjFC?@GBHlFJ@fm@BBFFB@?BAAAA@@?@Bl@BFbEHCCI?j@F@GFJ?CB??FF@?bUBIC@LDiV@@@CFCEBFFBG@@CGEEFrBECH@?BO@}G@N@@@fHFBiA?@GBE?JECHB@@BCDD??CFBG@Tp@@@G??VAJ@FBBBpLIDC@xLJ@C@CCNkg@CGEAB`T?O?@@B@vBmCA@?lCKFHJ?BhA?`@SGCCnDELfCp@F`C@FBCB{CEd@f@BI@C?BBAE@|CB@@HfNJoAFmBB@?D\ADA?@BEgJ?Fu@A@@ABA?EGEEEBG?kH??GAEAF??g@A?EAAgND~DBnA?@DA@?LA?lCDAI@@FAHAH@BL@BF~A??GDD??@}ADADFJ@?iHGHr@?@@AaEFAJ?t@HEH`@@`A@J@GEHH^@?FBCGDD?B_@DdFHHHA@BCBEBCGFGF?@@FpTE?EEB@@FBBM?hHsC@?FBBBM?CxU|@n@D?@FB?BCG@@EGE`D@KFGFDCTBEOC@BiA_WB}JBRBC@BGEEC@@dHy@@BJ@@DDFiC?FBB?@B@@EGFbH|L?IBBCFiN@rGyA@@GAF?EABFA@AFFFsDGzT@FEFHDDCqJ@FHB@jHB?ADCL?D@AA?cOJjBGEC@F@nCAIAAD@CACG?AACB?}JoF?DADAAN?J?IMA???FBDG??@?FCBGAC?GFFB@?IIXAB??FBDi@@EFDG?@DABAA@j`@DFBI?BDIEgF@@HHHHA@HAHHH@BF`@CG?EABBb@EDAAAlH?FFFuCDAIW??@?VAADL?`AD@@F[HH@IEHHHFO@EAEGA@?HBHDAqk@oANNAqAAAj@EEBCC`OAB??CALAA??nAAA?FQAA?@ABAAG?AGB?EGAEAiJBAAAA@IAcHABAAAA?gCwRDACAPAAA@@CAAdDD???@AAlVAEIDA?????BAAGD??HAHEH@?BCCAC??DADF?CAAAABDEEG@GBD??@HHHAHnCDAAA@cDDDA@@bAAAA@?B?A_BDA?@API?CAAEcM?ELA?DAAA@BBAAA{C?EEBAA@?_@DAAAGEAD@EEAAeT?@`@AAG?@BG?AAA???sGAAA@?EDB???LBBA@???DDAAB?EBIDN?ADiFAA@C?EfGD???@BtABBAIGB??BADAA?Z?AADsJL|D@?DDDAA@?sk@ADAA??CBHFG??ID?AAAnIEDD?oClN???EG?FA?@B?AAGA@@GE??AAOBD@vU`BsEwV@AVA?HHHAA?ACGB???AAEAA?@@?BAAAA@@G|A{@A@@BFG??IAGXEBCEG?FDF?W?fU_@ADbj@?CEvK@@AAABD?@?@BMA@AAGFB?@IQDI?@CAAF@@BE|@GB@I{VB?LEBP@ABB~EJdDEAApHBF?JFun@G@BOoM?B@@uBcFBB@@BAiB?DAG?AAAAGtD@GFmWJiAyg@??@Ad@AD@CDG@FJGHF?@B`B?BGED???FA?FDeEyACGABFELP@@rCIBCN?CMDA?@BBAD?M?AFA?jFGHAHCBAI]E??CADA?CB@?BcHlWIDg@JJABBGF@@BCHHHFH?b@EDBE?XBGoC@BBCgEIEBD?ItKbFB?@@@ABG@tINhN~AA?GEAHA?HHHSH?BBAAA@@?AAgo@DA??LDAAAC?@DABEI?|DcF@AAA?TBFACBID@zDC??A|CB|J??_n@K}VJm@?ACBGCB@?DBIkB@CGE@@DEEAF??FG@iEqJI@@BnCuA@@iHHHqAD@BEDAcN@JBDADDFBbBBG@DAA??IVB@ABDGFG?cOJFqo@c@C@?FiDA@@IA??AAGAA?pV?nABA@?eTFAH??IAA?DD@@Kl@@BETEE?@IE?AB@?EAMAb@@fAcD@mTB?IDBCDMD?`AG?fB`FIA?BBvGBhWFI??AkBApm@A@@tJGR??BE?DBA@BDAB?gGABG@?GF@D[BA?GF??DBGE?KIE@MI?ABGB@?EEB|TA?@?EEBBm@WFBh@B@?DBADB@CF@BGFHA?BL?DL??IBDA?EDAAF?@JcNG@?L@DAA@BICEG@EDDAEBEGF??DBEtK?AApNID@sDFGC?BI?@uJEB@HHAHA??FGD`n@@@?BFBDD?GFI?xJFB?J?FGHH@@GqBiN?gVEBI?CEG?}NBRjH@GDCBB@AGA???DAA?@b@?BAzVM?GFS@CBBABEI@JaUBBG?CCHIHFBG@K@?BGF@@LDA?`l@hSBT?Fz@a@??EGDB@@BEFABAFM?BEB?GBF?FGE?|@CB?SB?hVGJI]A@EDBBJF@@fBDABvOWBB@BGCoTCBs@|H??@jJyJfSzF@@BCC@GEGD@@CCGFC?@}NCFBC@@HAAAC??LEFjO?eHDBlk@C?DIED@CADEAACBCCBBDEDC@EGFwW@EDCEB|HHFBzF@xQBIFmSzj@GEC@IHBGEC@iWAsF@BGDBsFEEA}@_BsFIADBC??jDvCKsF@AhADAAC@ILDFpq@?FGAFtC?DABdUAC@YBjf@AsF?AA`b@AAC@@B?AAAjO?DLBCuD@sEFZCEGDC?ADACpVB?CIGuf@?IIBki@@d@QF@FEHHA@BC?@XtJAj@?EHFAA???AAAAG@DFrNEG@?cAB?@BGD@FB?@FbMB@@IEDBFFB?iD@CC?@BAAEjo@G?@za@GJL?AAeFAGJCFW@lBIjUD?BG@AHAAA??BG?@hh@BADC?mBADG??DDCE?AmAAAA?sJBGwV@FBBD`@IE@AFAAeVRS?dEkS_FED{RfFGEHAA?HEGEHFHHAB?EBE@KBEB?@@hLIDFFFGCEGB?AkAEDc@??LE@?GF@?HAHAA?ECESGDBfW?MfGIBEGN?FDA@DIAE{q@HBB@AL@GBBFG_@DE@?BQE@@C@DBIAEeAy@@?`KBy@L@BBEB@tAB}CD?kC@jCvCG?LDDA??CFFB@@??GAAA@?@F?H|JA\gCF`OCaOBBBk@?@BG?DIc@wA??BDA???DECeGFGDEAI`KAMDBFCBBEEtSBjE?fCI[?NjDBiWCG@l@G@_BGD?EL@@HHHHA?GFEC}EsCFGE@?HHHAH?@@PADBA@BGUbO_j@Axo@AGJ?FB?`JBF@@@Fg@LKP@BB@FGE?@CIDB@@sVEuA@EEGB@@GFEr@B?@F@IVP????LP@ADVFA?JHGEE@QAS@?EBG@rF`AFcDpA?@?G?CBA?IBdJ@JOECG?@`IPkE@EHBE?EGcRH?CEFlC@|IE`KBBl@B@BBpJ@CBA?BEG@OY??BBIQ@FmARGwLE@nCCGEQ@IBBAB@@hMC@|`@B|JlGCHGHHEOF?bOzBFz@B@BECGE@@BBB?IHcJ?@GFs@PAVFD@?@@GFE@uGIAABB??CDaBBBBCAaCD??@BGDE@IgCGFD@EGFE?AIA??fIDBE@@B@@bDDDI??vBAAN?@FBuBDDD@?rAAwAuC@CBD?FHBAH@@F@@@DL@DIDC@FB{DFC?BR@@EiFBJDBpl@@CF?AAIBuB@BNJFCEG?J?@`DBS_@@@BBED?@}BB@IFA@BBBxG@?hClB@?@ImAlB@zLGEBEeh@BEDCEIfM?@HGiHE?F_XG??Bx@BFBC@YG???EHHHH?DBEG?h@yEAD?@FIEB@@F@ADjWB?EI~E@MA@KvQE`HA?HICB??MEXbC@IQAEBLC?@xGDBvGEHE?J@tL@BD?@BVA?G@BxMFCGIBFBFDGF@AEG???HAEH?BB@@?lBHxCCM@?E@G??BLFP?@ADDAEIID@@Bld@CETBCLDBBdMGB?@@IEEG??@LEDDBpAD?@Di@EBGF@?dBGEDB??GFeADA?AAhBjAF?PBDD?kCEIDB???GRF@?B?zCGHHH?FFBFIbAQA?EABG@c@aHGvC@mB_AQ?uDIBB??BBM?HHHHA?v@FB?EGJ?BBxEBBO???DAF??E??EGF@??FbAAA@IMqJACIBC@AwCc@@BRu@D@?{MgAaD|@FLiFP??CcIEG@?B_OxCBG?NAiMEL@@SwANAAHGB@AEvEBA?h@B?@@@AAHAJyA@@FBB?}WMHAuABoJ[FH}A?@EBBGD@?BBrH_FO|q@LFS?aOCi@FF?CEDd@@FsA?F[IAA@@rMF?B?hSB@DMADdKBC???DAFA|WADD@@WAKBAI~JBGBFEEB??MAAjH?w@GBbH@tAB?@F@sA?I?FDV@BG@?FGA@U?w@KAADoUJFa@@BDVrNDF?AL?@kJHcEFGYF@BBGE?CGaWFOE?bNAID@aVIHAF@BFB??BBL?@FB??C?@AAMACvUB?GDED@u@?GHBEG@F~VGD@@BBB@?B@IcTBBB?GEA?@F?@BpJFBBBBP@ABMIADBF`HD?@\iBBBB?@kV??BBRHGBD@@`CASA??@LQ?@HcJGEH?dXHfMA@I}RF@RoNJByAkBAjm@R?TBC@em@nJFG@PI?@HIDAgk@@@AM??CBG?AGEHH{NJEEEC??kA?BB@J?IhAEHHWmB?sVBO@JBG@CBEJJBExJ?DGCF}p@FsHB@@FKbFE?@Hd@HDJ_AiEE??t@HF@BFAP?@B??zI`KB|j@@VDA@dDAA@rAA?@c@IQED@EBA?LDzJEBBI@BEKE?cOBAAD@MHIA@??}IbDAB@?BEfD`X^@jUG@CBEG??BmOBf@@qAEDBB??qn@EdDDEIhB@VAPAC@AEEB?iMADB?@FO?@aCDA??EI~G?@ABtAD@?DDbXA?@BEEEyM@FB??uCBI?@@G@CEGBBbBIB@?B@t@@@rJBB@BGE?BKAD@@?GE@HFG@@BAkm@B@BDGE@FB??Fq@B?uCFhB@JfAFDGjCJEbADDA@N@FF?JtNBJKBB@?ADPA@tCE??@BdKmBsM?@DAAACm@?FAf@D@?HHBFkHL?FDGaHg@@BA~CDF@?AEACJFoAEB?EBAB??@R@nU@?EHBHGC@?BBEfO?@@HHHHA@@FAim@D@?Eml@DB?kDG@@iCBFBG?BBGyR?eEn@??QQAAA{NkCFBJuBBGEDTB@HBB?FEGcD@BDBz@?@BFGFiUEDA@?@OR?GED?GEBBDBEg@IIa@??@BGB?gUBIBGEIaF@DeDCMzn@?IDEB?@BGD?IpF?@GBEB?@HB@JFDG@tAFBEG?EDBBE@BBGEH?@IDBIFG??hEHkB|MEE@?BbLEA??DAF?BGcKJBb@yAG?@F@?DfN@B?@g@BhAfHB?@BEG?@BAAHHFFDA@nABF_m@?HHEBH@@BcXBC?FBEG@BF@?ABHBA@lREoB?ETD?FCGABJG?Cr@BnOkDISB???AFAZ@?G}T@f@mC?@jCDBE@@@CGD?CBGErWHuGHAD@@|JCB@~@DAGEE?{CCBBBBB@FGCF@@BG??BgMB@?FkEB?@ZHCwj@GJeXCS@@BO@QEFAUE}BgB@ByEoN?BGBF?mBmWB?BBHuVBFBFGFH@@tGB`LO??kNGDCKEH?@BC@yDFB@F`@GH@@bMkB?JC?yDfE?AKBwm@Jhm@G@JCFBN@mJB@?BIH?@on@?G?@@DVxAD?CiDGzA?r@AI@BF??ye@EHBgN@@@\FBE@KIBE?B??@B?@kADB@G@@IEBG@?BIBG?iCeOBmC?RGE?`EIAHc@oF@BB?_o@FGF@BBGEJ??@HBFH?NeOfAH@@FC@BEGHH@@O?BGF@pFiDpTB?EFBB`EDDEEBBF@?@FG??@HHHHH@f@u@`f@A@gAIPV@?BF@J@nAz@RCCVAfd@xA@GF?@??MIS@CBO@BCG@?FBBFF]EJFoA~@@B?q@iBB@lHBFvEBEXG??GE{D?BBFHBN@BG@hA_BqF@FB@FFCBFInB?BbBGD@FFBrH@@gWEfCGH@@eEG?BkAC@AKI?B@JrGGFE@@BqBF?AVP?EAFBB?BF@?DGDgB@w@DAA?@HHHHH@@`@GD?@vBTEcFfAIfFFBIHnk@??BGer@kDGE@?BGEDL?@k@E??AAHHG??@_E?C@FECE@BBG@C`AIBEGL@P@j@EEDzD?GNfMqe@DBB`CMDqWx@}JEEAD@??E~JEBCw@DAEB@AMFvM?GFHD@?KLA?@]_N?E`o@Ih@rm@RC?F@BdDw@@FG?@KB@bEnC@BFEG@@CABGB?Gvi@E@@eEBBBBBB@WlI^B@AEG?BFT@mGfKEGEED?BJHCeAHH@AFFEK@FGBJdF}AFFBB@@AGE@@AB`E?DAE@DG@d@DIbCD@pACDE@BB@@VDAEbCBEIIH?@@~GBjJIB?@EQMFJ?@FBShDJ?DdDDCB?GeAF?HBfDBG@??FHIABFB@@F@@@t@EE}E@GHil@HHHA?@F@@FbDHA_A@?EFGDBmGBBBto@CECzC@FI@iB{J@CS?FEAmA?FG@EGqB@ck@BvG?@GFpJFF@b@|N?[@BG{Ih@Ncr@@HZH@FtAG@FHEG?@AQAAApFoE?FG@@@EDBlF?DIDEB??DEmAf@@oCEQmAJFH`@BG??@GCnC?@F@CxCvIB?cKs@?~GFB?qLEDB?@A|n@IDB??GBHF@hBtn@@ByAGFJ@@BEHHHDEBGuBNBBGjCsWBB@~n@B@KeD~BD@@BGAAE?ITEwNI^???Fnb@BiN?{WvC|FDIEAqh@dOEGc@wB?@?AbDAHeV@F}@@F?sMFFGDJFFBtg@EI?{Fn@?Fj@@??EAGB?lAF?G@K~KAA??EFHHH@@FF|CBtl@?KGE?@FB?IPAANsr@@LA?UGFH?JOBRiV@G\TBGB@@~JBF?@@GB?vJBK?BBDCB@@F?HAcEO{CGED@AB_HB?@@EGD??fKHIxAAc@?FAhC~I@@LDPDAEDA?BBCB~K?EADA?HtGAH?g@G@DSB?@@LP@BBOE@@GCEH@?ACKBG?@GEB`AsAG?BEIBE@FBB?FHI@@@IB@IPVA@hNIAA???Bg@EG@x@B@LeDMC??@jFX_BB@JEFC?@AAuAG?}a@G`NoF@?OEF@?@FqFgX@@BB??FFAaELD@nAF~I@DIEEJ@GF_A?rAGA@sH@BfA@_EGBD@?CKG@CFB?FEIB?MAHC@FgFEBBB?uCXEAEsG?B@EVAD@UEEG?KHz@BH?@GE?Dl@DEBdKBBGJ@gLO@HAEAI@CBgRe@B?lCEG?G@BBBB??jMLB@e@@EBd@FF@BDGENJ?CBzUw@???xBBar@B??ErMHFCQEc@?Ca@GAAAgE?FFvMB?BMHDFL??DAEAvA?~LCG{M?CF@@HABH?@FF@FFBJErB@FIDBIC@BFBR?@?jFFBB@?@Gu@D?BBHIlo@?XIPDqL@ICA@@?BHGHDEACEFJ?@RsNqr@?@HAHFH@@vDBBFCB?rBJkWdXBIDBIx@?MCA?@@kRGD?@tAK@BFB??FBEB@B??@GEHH@?ExCDxDBBBB@rn@SBB]w@GEFfF@If@A@?HHHE_A?[BAKIAE?ZaBH@EBEFgOj@FDWBIHMA??BGDB@gMBEBC?@DSBsDC?fGxSBGDD?@B[?@ClG^@Eu@DIABHHH?QF@@rDBGBEBBBBBi@@F?@zIF|GmMzJdJFoAC@_FBB?JBFAEd@@@GECq@EjB?BDEG@hABG?@IBG?@CG@?@jBFGiJkD?AHIAA?zDEIAA@@RDEB@@CBBF@IBBC@@FG?FBBDLP@BBG?qAAHxAA@FhW@@wAFOFKeHA@GFE@kCGADAIB@?@AAXA@@FFG@?KF?HGHH|C@FgX?GFH@?GEB@DBEBCDG?|AbAIJ@CBHH@FzIE??xDEGIBBG@J?EDEEEbBBEmABFAE@@IDGVAA@IGz@E?@@zBGDCOEgGHE?~NC?BEDGBlNFD?BhU?BSI@BGDoIEqBGh@@`CBD@JG?`AFkB??B@mOAAJFYCJ[IDc@oHF@@DFB?@lBCAc@???u@c@L?EKBD@@GH?N??A}BA?NiCAFqA@@EABBBGD@G?nJFFF?@wB@FFRB?@TBBBE`@I??vJGE?FDB??HH}UIAFBC@DGD@?|IzAbBBC?BBIQhEFHE?CLE??b@GCET@Bz@CFJWHFGAFB?HAHAA|VOHE@CBB@Ik@A@BFECG??ECvMCkD@qWGB?l@ECfCBB@CGNBBG@eBHAHB??By@BGpH@FBG@HFA`O{C@@EEfA?@PTBKD@@G@?FCBBE@?HAB??BAFBA@JBKDF@@Bxg@BG??FEIErCmAB@BpBFFBgE?Ezr@ICfKcDDIDA?Dzm@IA?DMEu@?s@BwD|VKE@BB@DEGD_OGBFF??@FBIpBE??EF`A@@@@kDBD}Au@yUD@Jl@GD@@B@FFp@AIB?jJHIF?~r@OqJ?x@Hp@AIrFUFFj@B@KJNG@IPE@DMF@rJzAf@?@eGDIA?CsDOF?HBC?@IBB[A@@AaHG@?L}o@EuT@F@CIBBB??BDIDDBGDD?ExCC?GD?@FBG@cn@BBBtCnOFwACyA@IiCRCh@EG?AfNB?sDGESBFoT@BBFGEB@@B?@dDAA@BEBEF?FHu@JBGEHFAHWBHIH@J`@B@IA?HAHoBDAH?BGBI@AGT?BGg@J@BFF@@B???AyEAA?DIFICBAAA`G@BBFFK@ZDJpr@F??CGANDA?xMHFHHB@@?FBLjA@B?HHHH@IFnAA?NBC@BCG@@kXBGE@F?BGE?BxU?@FrFGEoFAAA]\?EDG@kJ?@BGro@?~@DGDIBGBGlI@?_@P?@jNG@pH@BGED??fs@LDB|BGFFj@@CIVPHHHAH@@IID\BBFCGB~F?@IIbAA@EDeGE@}GF@@EBBE?x@ADDM?VPA@?@BBBAX??GHE@eAFBG?ji@IjRPc@????FDA@ABBAAJtABqZy@@@@BADAAJoABTL@GFyMFDAD???O@FBsME@@B?eFFGEA@?@EAAtQ?@@BADA@FLDDAD@@GEFF@B??FbBD?BHBH@FFDBJABHH@ARBAC???APls@?EA?BAAEB`m@O@ACABA@wBlHCDAAAJ?GF@Bp@FnABlH@DAABCBFmIG@@xq@aDxEADTBjBBGHoO{NABtIAA??BG@@ABEPI?@@BAGAD?FDBBAC?HGHHHDBFE?J?EjJDEDAL@BDDgFFCB@@CG@~JBG??ABBrLE?EHIz@HzLGRMAAD??EBTB?@FCCBBoA?@BBFB@EAEEB@FSC?HIH~CH@@MIAFVAA@Lq@EP@BF_TFBw@C??EDDDA?FB_@P?tBgBB??BDEi@@@?@dUGBG?do@@Vc@??CBBBE?@@FFGcj@H@IADDAN@@f@Ad@HQ@AGiCAA@FyVB?DBBBJNiGG|MF@AFDD@KIF@@jIBFE??GHHFBFABB@?ZHHEE@@@MI@tKaDGE@@AFHH?JBG??ADBaDB@EQINJBAG?JDBIDkE??EAEGJ@b@BFG@?oCbAAEQf@A@@nNGCR?LFgJ@r@BeW@B?FB@CCF?@FN@FBwDBDDgFFGE?CHHAH???GD???BFi@CFaCFB??@BFB??BB~k@I@BCEBED^c@A}C?ABBAA?AA?BBQDA?@FGAlCjj@hABAO@BvT@BBGFlCwN@AAAkADfDAABB??MItf@@?@GDHqB??BAEAIHHHHHA@@IBE?GBBJaWoAJ@KBD@CAABBG@FBqAA@mXBGEGHHHho@JGAeAE@@DICDD?@|BkADD@??AEAGU@@B{DR@FG@@BBD{@B??DEpA?HFF?BIHHBgCGBri@?BBAHHHH@@nNkRGB@@?EODDC??@?FCbDA@E_B@AF_@PBDBG?F@qFIDA?wAEB`DGmB??BGJwACtNGoo@yo@BI@?BABHI@@HBACmB}VhXHC?HGEfE@JEQFE?IFBqBB@?eW@?ABDIBBIG@IEGEH?KBdMUJBB@GpFNIH@@oFDB_A?BFIFC]DA@@kDBEIoj@BnC@?G?@BBEG@WB@BIBoH?GEDEDlCmCBrJBFFfCJ@vA?`ADD{Db@?pAED@@F?sm@SHAF???AHaNEHgCYB@?IE~CHH@DADDI?NHHBHHnCCBBCG@?HBHB@@BBdCO?@BcHHCgBGS?fOH?@OE?EDIB?eKBE??FS@}S?BEMMH`AGzAHBbJ~LUBDZ@@Fg@GBnBBuE?DICECFGDEDB@FGkFEHIFlB?FdJa@B?DIBEE@@CGjEkCpOGEI^hMqNwABG@QA}IG?BGFFBsH@FBEG?@@G?oBAA?Fj@BGDJG@?GcF?@DI}G@EGBcEgOor@@Bg@G?SFPLoJ@BgAB??JFCG@@CAxA@@SBgO?gs@GDJ@_E_h@fX@@EFKGFe@@GEFvH@@LE@CFGoCBIAAB??{r@u@\@{BBc@mCkVCBB@KAbm@@FuAExJ@?BGBE|@ICG@MI[D??yMFEDA@@GfW?C`XBT?B?CF?BEOHH{GCqFG?JHd@EHI???EhBE@Bi@@|Ch@?@tGBKFoJEABH@@C@DIBTFJBBBgKGGAif@vo@G@F@@BnGGD@??Ft@cEBx@?GEE@FBBpFEEB@hDABvAD??LPD@WGEF@AGDA@?@fUEj@?GEE?@GAfDLDBGE@@BBGB??@LPx@EEG@DDB@DCE??d@ABB[A@E`HIEhABEK@qOEhCIJG@aNACALPjE@hKDDIEvKMFeNDBGE@?DFDIF@@XBBG@JEpNBJsB?FLw@pL@??FB?GEz@BFG??FGEEEGFBHgW?}JBi@BBBBCG?BEEF@IBO?@@BhVCA?BMbCH_B{J?XDAG?@BeKDDA?@@tJgGB@??DGDpW@FI\A?ERE?fOmh@~@BBBmI?@B?XGE?EFFdO?OBBJfI?@@?BEBHF?DBEFDIDXBDEG?BEATG~@@nQBB`N@IiXB~V?Bk@@?@FtBGEDG?HBHI@?EEB@@hX?@oHKD@JAzAnX]@@F_HCB@?AQI@cCjN@@AGESnO?GBBD??uSGcKB@??EGDD|CB@@EDBB_@CFBK@KIG@ArA??x@~MDIBB?_F~NH@gGDBBw@yU?@N@jCBW@B@gABM@@AFDID??KBE?@DAAAA@OsH@eX@@BBdFFHH@uBPI@JRMSA???HBBHB@NBBGEC@MC?@BBXBN?pAEBdEB@sH@sN@?BDCAAhEA`S@@FEGE@vEBG?FAGF@@AHHHH@?BF`ED@?@BBHHEBBB_@gl@@TAAA@@FCBG@??BEBGJIEoHBBIBoX@@O@Jd@E?GE?BFB@DEDD@?}IgJaBD@aVkWK@NADPDD@EDCBeBDDAc@@?DBC?EwQI@BBGHH?BiFbOCzAB?@@BEG?@BBDI?IDjAEBIDGD?Fcg@B@GFABhAxDG?@@BCE@`LuEB@De@BE?AFGEcm@@BBTGE?RgKzAG@FG?EMA?U@BL@?Be@BjIBBGFD}h@@kFcXGF@@BDDhA@?HFFA?@kMAC?GFGF?@WABBiEE??CBGD?@HHHHHoCkj@??BGE?AEhMAA??LDPBFFrj@@?BrHEG??ZBdMCFFC?aOIBBEB`AAB[@DBbHlFCzAB?cUGEHHH@@FGD@AAsACB?EHx@dJqO?F?BF@HHAHA@Ju@BgAB@?@I{BDATAGEA?BFGF?EDBG?@DAFDAx@t@AvBAzT@@?OCAA@~GBFcAB?RGB?@?BF??DDF?JDE???BAA?A??EBI@BDDDAW????Afr@DeKG@??AEDAB@??@ELBDDJfDyA@@FB@?JGB@BF_OGC?@BIB}@Fr@@FFL?vBI{WJGBFuB~@dHFRBCG@Ets@F?`D@?EDrAAhGx@@FF@`GTBDDE@HEHH?@BG@??qFB@?GHN@MeHA?FGBB@@BF?rF@EHGEE?@IGa@mMH?BGA@?DAF?@IBBB@uVGzABbD}CD@?xLAuAAA?AMfExAHGEz@@OF@DcA`B?}CDpGHBBAO?Gms@E@@FpOFL@HAHBHBFtAGB@@?HHHHHWF?@HIwCFA?@BBKEbB^IjXTmXBIB@IFBB@GF?FCFhU@fBBB?b@?FEvBJfXr@G?@BFa@qI???BAiX{DfKCLzAC@?oHAAG@@@@EGF?@?@HIAAE?@FMDrF@@BBG@uBL@@FYEG@BEBE??aNHHHA?HItAeHBFBGA@sAGCm@xJ@BdOVA??@@CGB?@DIMW{JxEFGaJ??eDFBTBd@bAE?BFfAF@EG@@F?aBMmC???|AHAjAAAA??GEF@dHFE~CIA?BwDBAAAG@i@TkF@qEFFBG?JbMGkE@@FBBC?FI?@BqOE`CE@Gog@D@?@jAExA@BIFG@@?DEDFFJC?RBS|NfIGF@?f@IAAH@@FJ@BBGD??GB@IYCGERJ?vGHi@JyAG?C~Fq@G@FGIr@AIG@?EEABnq@@BpXB@F?HE?@GFB@EqB_MBD?BEHE?@@ks@t@{A}IcKqs@@?uCAhB{PbB?OJgAnM@~WoOI}N@?BBE?Z@DAED@v@@FzACGBBB?FGD@Dc@D?@DLED@@BDEGD?@yDADB?BBBBBvn@hDEBBG?|WIpX?GD???F?@@@SEB@CBdCGD?b@`BEDFLD?@K~DdH}Wcs@dAEDCHGkH@IAOB??@HF{EHHEBFG?@JGu@J|MOB@B@I`@B?BDCF??B@Tr@sEFG@IBG?FIBF|DsJ@SB@BG@@HEBEA@BgKGzAfo@DIIC??FiEE??@KF@t@gEnMBF@DDBDD@BFEI??sj@gEEGF@FFG@@qIFHDD@EnXBBD?BEGBFjCF?lFFBDEE@BIlNBFF?BG?Np@G@?BDDFEFBhD?@IVPCOFB}q@???DrHGEE???@BIPsR\VPA@GE?GoF@DEGE@@EjXEHmO@jWBCH?IBBG~D@FB?xm@`FHI?FBrWBEBE??FVAP?@hDGDE@@UDEFEEHABCIf@?FGD@A@YBdKmB?CwELP@GDD?G??BEG?rBH?BFEBFFs@G@`@BGEA@FRB?AEBH[aFB?WGgAD?@WGF@t@F@ErNHEG??EIGJNn@?ItGH~W?JB_AG@@dB?@GE@?F?@BeDHAFAEG@jNCBB?AGBdEBFG??BBDB@GeKE?JGDI@GE@@FBFB?@G{UD?EDBEeBEBzVB?@`r@BE@BBGiDLPYB?UJFyA@IF`BFN?FKJG~EBR`@B?SoOGHD@@uMHBDH@pWBBtG??FG?G_Xwr@@GBE@cMBB_AHBrB@ym@HEB?NBtABCB~M??EKE@JREG@@BFJ?s@EB_HW@DFA@@?lI@??BBABG@Bus@G@@GD@AqMgK@Hes@B@@iUID[??DIDFIcHS@FoI@@EQI@?kA`D@aBjr@GBD?GF@i@w@BEFGF@?DAqMAA??@FBB@TEGFgCxs@BkAEH?oC@`AGBI?KB?@CFB{VBf@EDFGEEF@i@@BBcFps@lC?BRBB?@DADzJIvB?IDAA?BCBJ@GD?@BKEEEC@IAEI?HAHAH@?_@DFD?J@CZJ?DE@nCRFBRBNNKBEB??BBG@BGcEH@FyDfEE@?Z??@Bns@NBBB?@EDAnn@@?@Gwn@Jt@fBFJGqHHmo@@eB?FGHHEBpOB?jFKDA?GDD?DFK@BB?GB?@bBBBFqI?@AAEL??U?GB@?GFCH?Fys@DN@FS@EIBB?FHBf@eCfDGF@xNEBID@`s@@JjBC@@hDJFBB@|@GEEIQsI_U@?FHHHFG@?AEDAD}r@?dE?FeNuJDG?BCErFUEDuJA@EbByDCDBzA?sWGE@BSG@BcH@@kXBIEtBzq@FORsA@FOBHDAKD@BBFB?BHG@EGEFFBDDA?DFABBB?@BdCK@@HAAHHKK~NBC??C@K?@FBJFnr@J@Ft@@FpQBMI@Iu@BtWBI?EKBsC@FkHBmg@@?BHEh@HBeDjD@Bl@B@@OrH??BDKB@Ds@BE@DBE??@BDvTG@@?EBoXF?hH?@@BBHHH?JoA@@G_HC@FBBis@lr@vs@@?@ODDCCCtCCCCCoDCCCCACBCCCDCECFCGCHCICJCKCLCMCNqXBrXDtXFCOCPCQCRCSCTCUCVCWCXCYCZC[C\C]C^C_@C`@Ca@Cb@Cc@Cd@lEX|XZuO\_Y^aY`@Ce@Cf@Cg@Ch@Ci@Cj@Ck@Cl@Cm@Cn@Co@Cp@Cq@tFr@Cs@Ct@Cu@Cv@Cw@Cx@Cy@Cz@C{@C|@C}@C~@C_AC`ACaACbAuHbAnYbAtFY}X[~X]`Y_@bYe@cYg@dYi@eYk@CcACdACeACfACgAfYs@gYu@hYw@iYy@jY{@kY}@lY_AmYaAoYbArOCsXEuXOsOQyXStOhACiACjAo@ZuOkAClACmACnACoACpACqACrACsACtACuACvACwACxACyACzAC{AC|AC}AC~A|YwAC_BC`BCaBCbBCcBCdBCeBCfBCgBChBCiBCjBCkBClBCmBCnBkZoByB_B`ZaBbZcBCpBCqBCrBCsByBxA}YzA_ZtBCuBCvBCwBCxBCyBCzBC{BC|BC}BC~BC_CC`CuF[CkAuYmACaCwODvXOqYRzXTChAtYbCCcClDyA~YdCCeCCfCCgCChCCiCCjCCkCClCCmCzO`BaZbBCnCCoCCpCCqCCrCCsCCtCCuCCvCCwCCxCCyCCzCC{C{ZaBmZdBxOfBhKhBgZjBiZlByOnBlZ|CC}CxHbBcZdBf[gBfZiBhZkBjZmBC~CcAcBdZeBeZgBm[jBi[mBwHEpYPxXRuZ_DC`DCaDCbDCcDCdDCeDCfDCgDv[dDx[fDy[cDw[hDCiDCjDp[FwXPCkDClDCmDCnDCoDCpDCqDCrDCsDCtDvF}BrZ_CCuDCvDCwDcAnC|ZpC~ZrC{OxDjKdBxOyDg[iBn[lByOzDyH{Dc\eBCyDd\jB}OzDf\yDg\kBiKzDXgBo[kBiK~CC|DC}D|[OsOkD}[~DC_EC`Ej\Pq[SsYiACbCCaE~O~BsZbECcEn\_Ca\vDlDdEjKeEmKkDk\fECgEChECiE{@hBh[kBh\|D_PlDC~DCfE`PjECkEClEzH~DaP_ECmECnE{HoEaPgECpECqECrECsEtFtECuECvECwECxECyECzEC{EC|EC}EvZzAnZuBpZ~EC_FC`FCaFCbFCcFCdFnE{ACtBoZvBC~EePeFCfFCgFChFmKQrYT{XiFCjFCkF{H_EClFCmFq\fE`PnFCoFzHmD~[oDCpFCqFCrFo@sFCtFCuFCvF\iBe\mBzBjB}O~Ci\}D{AkBmKwFCxFCyFCzFC{FmEoC}ZqC_[sC`[uCb[wC|O|FgPgECjEbP}FC~FqC_GC`GCaGqCbGCcGCdG~\Rr[`Dt[bDz[eDCeGCfGcPuEr\wEt\yEv\{Ex\}E^lBj[nBCoBC|Cl[{CyBgGChGa@mBK~CjPiGCjGCkGqClGCmGnKnGCoGCpGCqGCrGCsGqCtGCuGCvGCwGCxGCyGCzGpCtBz\~EeP`FoEgF}\}DhPpCb\sCf]vCc[xCd[zCiP`GC{GqK|Gi]StO_Ds[aDu[cD{[}GC~GC_HC`HqK{GnKuDCaH\bHnPqCe]tCa[vCt]yCe[{CE|Dw]T_]jFCcHCdH{B}DqCnDwFhEgP_Ex]aHoKvEs\xEu\zEw\|ENwDoPrC{OtCy]wC|OyCKeHCfHCgHsPhHCiHCjHnPkHrPsCs]wC`^zCpKlHCmH{HfEl\lFCnHCoHCpHqCqHCrHCsHCtHnB\CuHCvHCwHCxHCyH}HtC_^xCu]{CoPzHC{HjK|HC}HC~HKnBk[}CKzDqPhAC_IC`ICaId^gECbICcI{HdICeICfICgIwFhI|]wEl]zE~]}EvPxE}]{EoB~CC{DI{DqPUCiF`]iICjICkIClIcBmIjPcGCnIoDoICpICqIj^uCg]xCl^iACrIp^sICsICtIcBoD_\uIcB{GCvICwIyBxICyIdAnBn]|Cp]uBy\_FfPfF|\hFqKzIC{IcB|IC}IpE~IC~IC_JC`JCaJCbJ~HyEm]|ECcJCdJ^eJxHfJCgJChJCiJcBjJCkJpEhIClJCmJCnJpEjE^oJCpJzHqJCrJCsJCtJCuJCvJCqJx^sJz^uJ}PqJ}^tJ{^vJ|^rJy^tJa_@qJ`_@uJ}PvJ~PsJ~^vJCwJCxJj]yJCzJc^mHxF{Jt^zEo^vCz]zCyFwCb^{CwF|JC}Jg_@{E{B~JC_KC`KxPaKCbKCcKCdKqCeKCfKh]gKChKwFjEcBiKQfHsPgHChHtPjKCkKClKoDmKcBnKzHoKCpKzPdJnBkAtZnAxYpAzYrACqKvHuA\rKxFpDCsKmEtKCuKCvKCwKCxKCyKcBzK|P{KyPvB{\_FsKgFxF}IxK}IoD|Kh_@|EE{DxKsK_P}KC~KC_LC`LCaLCbLCcLU}EpAoBo]}Cm^dLCeLrKfLpEgLj@|Ca]lFe^hLCiLCjLCkLqAgHa^iHaQkKl_@lE`QxC{]lFClLpKmLCnLZ}ClEoLCpLCqLCrL}BgHn_@iH|_@yCkA{CyBsLCtLv_@~Eq]fFr^}DyBuLKvLCwLjA_K^xLrKdGv@yLCzLC{LC|LC}LC~LC_MuH`MCaMCbMCcMCdMCeMyBfMpDwLd`@`Kv@gMChMCiMwOjMCkMClMCmMCnMCoMCpMk`@qMCrMCsMCtM_`@zCT{C`IuAa`@_FfPuMj@vM{AwM~HxMCyMCzMn`@`Fr]hFtF{Mh@fFYgFe@hFvF|MC}MC~MC_Nv@`NCaNCbNCcNp@}D|BlAvYnAp_@qA{YqK}_@qLkQmAwYoAyYqAv`@tAr`@aNCdNCeNe@fNyBgNKhNYiNQiHhPjNCkNClNCmNfQ`MYnNCoNCpNj@qNCrNnEsNu`@rAcQtA{@tNjAuNKvN]hH{KnA}`@qKvHwNp@~JCxNrQoAw`@rAsQyNi_@`KKzNcB{NC|Nx_@}NC~NK_OChNc`@uAY`OCaO_a@pAq_@qKKbOpDcOs^dO~`@oA`a@qKvHeOCfOmEgOChOCiOCjOCkOClOCmOCnOCoO\pOCqOcArOCsOCtOCuOa@vO[iHxHwOCxOCyOCzOOiH{@{OrDhNmP|OC}OC~OcA_PC`PCaPCbPCcPCdPaAePCfPCgPChPCiPCjPe@kPClPoKmPCnPCoPCpPCqPYrPe@sPfa@pAda@tACtPsCoNCuPq@vPCwPCxPxa@qA|KpOca@qA|KuA^yPC}NCzPq@{P\|PC}Ps@~PC_QC`Q}FxOpa@zOCaQCbQpCcQ}FdQ{PeQCfQo@gQjQdNChQCiQCjQCkQlElQrAwL`@bHOjKCmQCnQlQbNCoQvPnQ~OpQCqQCrQCsQCtQCuQCvQCwQ^xQ|AyQrEzQEqLpC|AzZ{QsK|Q_I}QzKdMCbHY~QC{PU_RT`RlAaRCbRCcR|a@rAcQdRzQfPta@eRiPfRCgRlb@gRChR{a@rAsQuAdIhCC{QsKnNqQvPsA_QCiRpCjRCkRlDlRCmR_LnRpDoRCpRCqRsCrRqDsR}HtRCuRCvRCwRrEcN{AxR]bHlQdNab@iQo@yR_CpL|AzR_RyOqa@aQkb@qKMjKdBwLmb@qKyF{RC|RC}R~@tACdRfR{Qpb@oNy@wNaGzO~a@bQia@hOja@jOla@lOna@~RC_SC`SC|QdRcMgQaSCbSpBcSfB{PmReNoKdSCeSI|D~BfSCgS|FsMm`@hSOjHxb@aQCiSCjSlEkSClSm@uAyb@iOka@kOma@mOoa@oOCmSCnSUoS\tNCpSUqSKrSpBvM\gSEsS{@iBIsSdQrLa@tSKzRKvOCuScb@qQCvSCwSCxSCySrEzSKgAs@aO~H{SC|SC}Sq@wPY~SmRhQ`RjQbGiSC_TsAqMCqMac@tMChSh@`OvF`TnEdCva@pPCaTCbTzBwMh@gF_GcTCdT]eTqRqLCfTCgTChTv@iTCjT\}NvDqMdLuAqDkTClTCmTCnTcAoTCpTCqTCrTCsTk@kK]iHy@uNbc@jOzb@mOC~RCtT\uT}FvTCwTCxTCyTCzTC{ToReSmE|TC}TE~JpC~TC_UC`UCaUCbUCcUra@`Psa@dUCeU~_@qLCfU{@eJEgUpDhUo@iUtDjUCkUyQiJClUZmUOrSmc@lTnc@nTd@rS{@|P`@nUvRoUic@iQaRpUCqUCrUnKbECsUCtUCuUCvUCwUCxUEyUaGzUmE{UC|UqD}Ue`@~LfQ~U]gSaI}NMkK~B_Vj@`VkGaPCdUnIqLs@aViLbVCcVCdVCqSa@eV]gHm@yNCwNrBlKm@hKqEyMiGkOcc@~R|b@`S~b@bMCfVi@bHoRuRtb@wR~HgVChVCiVCjVdLdRdAkVC_VuKlVmd@lO{b@_S}b@|QgImVsd@hVtd@nVYoVCpVoLpTCqVCrVcAsVCtVCuVCvVCwVCxVk@rSad@sUbd@uU|RyVCzVC{Vhd@_Mg`@aM_C|VrE}V{K~VwZfCyZhCob@`FoE_W|@uSsIdUnIpL_SvRcGvSfc@xSwCjHv@`WEaWdAbWsEtA{AxL}HcWCdWjGeWCfWCgWKhWCyUuIwSl@pOlAiWe@gAlDjWkLjSo@kWClWCmWCnWrEoWQpWd@kK[jKKqWiRpRq@rWoBsSKsWCtWiIrM|d@tUcd@vUdd@xUq@nUwd@iVcGuWCvWCwWhGfTuRhTpRqLuLmOqc@xWCyWyFzWo`@{WC|WC}WC~WC_XYaOa@`XbIqLuDlSbe@eU{c@rLoGuAjS~Rod@|QgIaXCbXaIcXlLoP|QaTYdXCnU_CnQ_GfQ{EeXCuTbChTmApJfBgAkGfXCgXrIrMl`@tMbIpL{LqLzd@tVChXC`Mh`@bMjb@aSnRiXCjXCkXClXCmXCnXpBrNxDsMWxSq@gAlAoX|ApXCqXrStMe@~JcGrQeb@tQgb@vQCrXwHsXCtXCuXCvXCwXCxXCyXzIsM}KzXC{XC|XtDeWeS}XjA~X{LpLdQfUC_YnLzPpIkU\}PqGhVC`YCaYCbYCcYCdYZeY{@gSiIfYiSvWCgY\nUIqLuEgSkc@hSyd@qTeShYkAiYtFkOnd@jYCkYaIlY]uTv@mYKcOpBnY_JrTze@sQfb@uQbRwQaIoYhQpYQqY`IdRtDrYKuSaGsYCtY^pW~BpJfLuA`@{N`@}P`MfWpAuYhf@rMse@hS|AqXme@uU|RwUaAkNoQmNEhUCvYv@tFb]wYCxYCyYj@}CQeHvRjTa@zDa@zN\jBaGzYzQ{YC|Y|IqLxR_Y}EqLC}YpBgA_d@jQbb@~YyG|YxG}N}D}Xe@_Zgd@|UqD`ZsB_Svd@aZo@bZqGyMCcZzEzMCdZ}FeZ{AyPYfZq@gZqD}Mq`@hZsb@uR\oY[jHrIfYeCfUToSNiZh@oVyPjZCkZClZCmZCnZqCoZ|ApZnEqZw^rJb_@uJd_@qJ_QvJ~PrZCsZwPtZeRgPCuZCvZpEnFNwZyS`Spd@}QpSbSCiXwe@kX}LgAlExZ|ApJEcObAlKk@uTKfHg@oSYnUpCyZCzZga@tA~RwNv@{ZwCgAvSuFCwYwSnV{@|Z_e@eCxZgChb@`FoE|QgI}ZC~ZkIrMi@nYbJ{Woe@}WlS_XhQ_[aSxVl@aO~e@tMrGpPC`[Ca[{B~X\b[\rM~DfUZgAuFc[Cd[sBxWq@pNd@gAvFe[Cf[_DuZlg@wVjGg[zDySxCuSpAqNlDh[rGi[Cj[Ck[lLeCeg@hCae@fF\l[_Dm[[bHqGn[Co[eMvYCp[wIq[mLqPCr[aTaT_Gs[cC}NKt[KbW_Ru[ee@fWCv[Cw[v^kEuIx[Cy[Cz[C{[C|[^}NzGpU`d@rU{AlB`FhSKhUv@}[pf@vUCyVC~[C_\dAzR~S|QgI{Naa@`\{AoJfBaOhTbMC}QzKaXCa\Cb\Cc\|ElWie@d\KeVsg@fC`e@{Qib@bMjTcMCaXkTb\Ce\b@oSaMf\dAuYuAhSgBtIlGpJ~D}YzPg\Ch\`c@}DeJo[kL_TdCbHyLi\gAuPbf@`Ycf@bYef@dYcGj\Ck\qEl\tMwUk@gAa@m\h@~Q_JfWCn\Co\Cp\lf@tQ{e@wQjBiW_DhP{QjPoSuV{d@wVbSq\wCr\eJs\rEt\YkPjSu\_GcPCv\Cw\ub@|R]b[}Dx\Zy\oAyW}ApSzMz\C{\uSsMhGgTqTtMl@bR}c@mTm@eObG|\wH}\C~\C_]C`]Ca]Cb]Cc]Cd]tRdTwIdWfBpO^e]k@lKuIf]Cg]ih@aYdf@cYff@{TwGh]a@nB~BcO}g@~YCi]Cj]zEk]aAl]Cm]Cn]OkKiSo]oLp]Cq]uh@bYjh@{TwDzPKr]Ct[\pSlDs]Ct]w@{NxTt[`Mu]tMv]Kw]lM_YK|DvFx]CpQdb@vSCx[Cy]Cz]C{]C|]~g@_\te@aM_IcM_c@bSMgAoh@uQbRrXC}]KoRfTp[o@~]KaWbg@wYwSyYrc@wTsc@yTuc@{TjAxN_M{X_f@gB`Q_^C`^Ca^C`RqAb^_i@vQ~FlPCc^IgAzEcZKd^ci@`^di@qSug@oP|QqPyTe^o_@f^~TrXvf@g^dBdRbCgTlc@ySfRh^Ci^uFj^{BuNwf@~MCk^rDhUnBl^Cm^Cn^Co^Cp^Cq^bTr^Cs^Ct^Cu^{h@cYIaWaT`[_Cv^`Uw^pIx^QgHfJv[bTf[bJcZsA`Qdg@fCdh@`Fp`@}DmJcRaAy^nEz^C{^C|^qg@j[C}^`I~^aA__@ti@gCfg@fF|f@cMC`_@wi@hCdT|Qpe@a\ah@c\wTm]xh@{TQa_@`\b_@Cc_@o@d_@v@e_@Cf_@o@g_@wb@`Fgg@bMwMaXlJ}RuLh_@Ci_@qGj_@WhKlLk_@m@l_@_LnPvg@dKv@m_@KsSgDn_@Ci\|IfUy@xNsAiRa@o_@yCfTp@wN^pXid@cVjd@_R|Ep_@q@q_@l@cRcGr_@Cs_@CiZ}Bt_@jBpOpM_Yzi@{Qw_@hFrTu_@Cv_@Cw_@~R_KgTy[{g@{[xGcXhGx_@ph@iPdIy_@Yz_@Z{_@hj@v_@nB|_@C}_@C~_@C_`@_UhTqGl\|i@n]si@o\eL``@ce@wRlj@{TtDa`@dBoRqb@qRs@{Ngi@a^eLb`@fBnUe@{Bhi@pPwa@dK~CzP~TwQ~@gAcCc`@CoYq@d`@~DrLQb^qi@a[yGe`@uFf`@jAwNv@g`@}Kh`@Ci`@Cj`@Ck`@eC}Yni@m^oi@l`@mLaTbFwNhFm`@Cn`@Co`@ch@gCxi@gFsTfO`i@xTtc@zTsIbPyQv\Cp`@j@q`@mj@rVf^uHg^wHi^r`@f`@_MyLs`@kQt`@fj@`F}KsOCu`@Iv`@yf@sJf_@vJe_@tJc_@rJ|SvJ}j@uJ__@rJ|SqJzf@qJ_QeGk]w`@pKx`@CmLCy`@yj@vHh^xHCr`@Kz`@{LhKdI}AC{`@|@xR`j@oPii@dKrP|`@sUcTdHhS|Bm^vj@oPiL|Sak@}SY_WlD}`@lA~`@o@_a@pU}NsBu\C`a@cLaNs`@aa@o@ba@QeJv@ca@sCpOwUbNxPda@rg@ea@h@dXrUy_@sBfa@Cga@Cha@Cia@Cja@j@nYoNzPbGbQwUdNh@nNhGrL_Dka@s@z_@fJla@a@zR{Kma@Cna@Coa@Cpa@eNySlJqa@Cra@aGsa@o@ta@~@z_@Kua@gBiRoBaWdj@dVoGl_@Cva@EwNuL~Rp@uNyFwa@_HsMo@xa@|Eya@Cza@qj@qPp@{a@~CcXd@uTOv`@nFna@hk@pa@rUhCdTgFnNn^Cl`@mL|a@]}a@m@va@sByWiT}QpSgAErSQ~a@gD_b@oQ`b@{`@_M~d@bM`h@ab@_g@lX}Dbb@Ccb@Cdb@zR_K{j@fFyi@dMCaSnRab@Ceb@Cfb@Cgb@Chb@eQ_[lUw_@rAoR|Ul`@wg@bTgDf_@fBib@jg@|WkS~WCjb@vNgF_Dkb@pBuTbk@mRp@~^Km\Cua@jGrYxj@yTs_@uKt_@lb@Cmb@Cnb@Cob@{k@oPpk@{Qgj@}DdIpb@ke@qRWySwIqb@Crb@o@sb@bGtb@vN|Q_IfVmUqSpi@dYaMgYwJhQ`Rub@al@zTKvb@{UtM{@zRkl@{ThJlV^zRvSaNx`@eN`g@zZag@uAp@wb@}k@hFsA{N~@_Zrh@v\Q}Nq@aVe@xb@CpO]e]bFz`@fVbMwMdMvk@bSdVyb@Czb@_CtL|E{b@yCrLok@oa@}i@fFuk@aSve@jXxe@lX}e@tXC|b@C}b@C~b@{IqXwc@_Uxc@aUwRcUjEpPnl@}Dfl@`FmH_c@C`c@Cac@zl@fFwJeNkf@sT|k@}WlSbc@}DgWEgA_Lcc@Cyb@zRwNrAhUsf@p[Cdc@tL_VwGtYYxb@dA_VlMySjBpVkUec@m@dRwByY^fSnH|QqEn[Cfc@ll@pAya@uAdNk[sScPCgc@Chc@th@g]`MiOCic@nTvWrl@wNyJ|QfB{B~D_Yol@w\eCrLZrNvNnNqQaVq@jc@vVv\Ckc@fJhYnFlc@bl@vKClb@cl@nb@el@{TqVyb@Cmc@Cnc@Coc@}Ba_@gHk^dm@qA|Kl_@l@mVv@pc@~j@{`@nHgFlA{NfLdRle@tWmEqc@Crc@tRsc@aAtc@jVbNCuc@xGoYwGvc@~l@~WCbc@yNwc@s@qMmAbHyCgTmFuc@hFxc@yGyc@q@zc@s@_QhDySgh@{c@bIhKYgA_C|c@uI}c@kk@_R]uSfi@c^a@r]jGa`@nI~c@eQzLrf@_M_I`Mue@cMlTa\yl@`Uyc@bUzc@fFvDrMgm@bMwMz_@kEhSlJ_d@jG}Tl@`d@{l@`c@lJad@Cbd@mV}QzK}ZnFcd@qH}Q}f@iX~Ub\Cdd@tVbMjTed@mVfd@yTrVp@gd@sUcPmPhd@jl@iQCub@oGyNpBzRjVdNl@id@bn@cMlTab@Cjd@Ckd@Cld@yk@wVCmd@Cnd@aAod@yGpd@uUtOgDoUfEgTbCx_@|Bqd@rDwLtk@lNC`b@uNbA~h@bM_Wrd@yCx_@}Msd@a@eHpDwNeLtd@hl@{TZiYnTk\sCvPzh@q]Cud@Cvd@Cwd@Cxd@qVrb@OgAdWdMnVbHfFySeJfc@Cyd@}EfUzN_Xl@zd@wH{d@C|d@xl@~b@_J}d@bFrSY~d@|B_e@sBtT~@dRnF`e@zE{W}Hae@Cbe@Cce@Cde@cS`M}MvVmHpa@lm@oNCgZyJgFe@iNcWmc@Cee@Cfe@nm@lb@om@ob@mFcNoVzb@~@ge@gn@eNzMhe@wB{TmHie@um@hFdn@}QwJje@oShX{m@`Mbo@cMgQbS~f@jXCke@oBrSh@uM{IuSnFle@`W}ZKtSyN|a@eUi\pCme@Cne@Coe@{B~^sl@{T_Dpe@~BuT~m@aUlEqe@o@re@fJ}Xqf@lNln@`M|m@dMkLse@mk@dKnBte@o@ue@kn@hTnSgXjk@ra@pRfTtDve@rVpJq@rRCd`@yn@hFql@pOpHfc@yNqPgDwe@Y_ZpIxe@Mye@`WcMCmVxVzb@a@rS}n@mb@dl@ob@}DhYaAze@C{e@C|e@e@pOio@bU^_VsS}e@rTnT{IxRpn@aSul@kX}Lb\|h@t]so@nb@mm@w\cViW_KdMnVab@_V~e@^yQqH_f@eEtP{o@aSC`f@`Vhb@qRfT_C`FrOaf@Cbf@Ccf@Cdf@Cef@Cff@Cgf@Chf@Cif@Cjf@_p@bf@`p@df@bp@ff@dp@hf@fp@jf@Ckf@Clf@Cmf@uWnf@Cof@Cpf@Cqf@Crf@Csf@xn@wVp@tf@gp@cf@ap@ef@cp@gf@ep@if@iOuf@Cvf@EoRrp@df@hp@gf@tp@jf@Cuf@wWkKcCoYxWef@sp@hf@jp@uf@vp@lKwp@ff@ip@if@iOkf@lp@mf@mp@of@op@qf@vWzRfn@wNyp@gf@up@wf@Zye@~p@hf@xp@vf@_q@if@iOxf@`q@jf@kp@lf@uWmf@Cnf@np@pf@pp@rf@aKkf@zp@mf@bq@of@|p@rf@jOyf@Czf@kOlf@aq@nf@cq@qf@vWsf@Cyf@gq@mf@{p@pf@dq@sf@jq@{f@C{f@aKwf@C|f@`U}f@kq@mf@eq@pf@lq@yf@aKuf@\lYlOvf@yWkKoq@nf@hq@rf@yWjHqq@of@fq@sf@mq@{f@sFgAlOjHrq@pf@kO|f@sq@qf@iq@zf@lOuTtq@rf@kO~f@l@_g@aK`g@Cag@Cbg@Ccg@Cdg@xWeg@ec@fg@Cgg@Chg@y_@bLtWbSCab@_Vfb@Cig@Yjg@oVmc@qm@oc@aAkg@lAwP[v`@zElg@oBzRlW|WeC_YzUva@dEmg@uN`Mmn@cM}m@b\mTng@eM_Kh@fZKwLhO`f@`Vog@lGlVuFpg@oWdMgB`QoLqg@~@rg@dAoBq@pOnEsg@an@ac@nHnN}Dtg@eJug@bh@mWCvg@bKwg@_CxSmFaa@l@xg@cWzb@rk@cMhn@jXvl@dd@}Dyg@mHzg@C{g@C|g@dBhUqp@xVmAyQe@hKfEx_@jn@xVC}g@tD~g@lA_h@xE`h@po@dKYoNqDah@_K}ZtVaZtMyV}d@{VcSbA~q@dM|o@eb@xk@gb@pDdRbKbh@{Qch@a@dh@_Geh@vDb[rVlVsCnUdW}ZCq_@``@t]l@~`@sGpJ_DeR_l@ua@_k@pPwl@|b@sn@fh@I~^lArWxf@vRir@wR_r@aS~o@hb@ao@}D_K{NiIsMhF{^Yc`@Oye@iTfVhOeb@C~e@Cgh@pg@vZtH}Z_CkOgDhh@kIsMen@ub@_Sih@m@~^Y~PyF|VyLnV~@yNwGjh@{EpJd@lKyq@nc@qHfd@}AnUbKkh@hTaZuEbHnWvPCaRyGlh@uDmh@a@gA~Fc^wo@cUgArd@e@gU{n@ee@tm@rA~S`OC~Pjc@qMpInh@ur@qKpBbHkUjPsAoh@aAph@uo@|e@cVpVtH`_@nHdXCc`@rr@fF|Aqh@rIsMmFoQyBrh@tHdMdr@fb@wq@sh@vr@tAbJth@Cuh@{MxUcCnUvm@aa@UwZdL~^lAid@lAxPIcOqDvh@gDwh@YiWbKxh@e@yUaAyh@Czh@qHfVoGfOaA{h@Ce^pC|h@C}h@C~h@|E_i@q@aRxr@aSwk@eb@mr@gh@s@`i@wJai@Cbi@Cci@Cdi@eUs`@dVrb@_KaXzWjd@in@ld@Cei@hJ}Jbr@fi@no@}DzNgi@eOySaAhi@l@~S{BxNhr@qP~BgSoGdRCii@kIfYgr@~Zl@oXhObSm@rg@uq@ab@vq@ig@kGji@gTki@yr@uACli@jQbNCmi@`@rK|A}a@pHni@zk@pRsBoi@zNbc@aApi@mi@i^aMwWgHhZlAaOm@pO{GdZsTqi@mU`RsBri@|Esi@iLti@mApZas@bi@bs@di@aAui@oCii@mF}V`@pOzo@ob@m@wNtr@fe@pUlYdN{`@uDvi@mHwi@o@xi@hs@yi@e@tf@wTzi@C{i@}M|i@aSmd@C}i@hF~i@o@_j@bWdPyS`j@rAdRtH{NrQyb@Caj@Cbj@Ccj@Cdj@wIej@Cfj@lUgj@cPv^Khj@Cij@eRjj@fL~^aXwNcA}LtU`Mbi@|Xos@lNuNkj@Clj@Cmj@gAq_@bGnj@lh@v[rs@{TEvYm@_ZIrS{@e]lXab@js@oj@Cpj@lXiX~UmXxHqj@Crj@tLpJnWrWdk@j[j_@dK|Bsj@|Utj@am@zb@gHuj@kGvj@|r@zh@nFwj@kGxj@bXq\aX_KfVaZp@pOhFyj@kr@bSeo@kX}LmXCzj@C{j@eMwNtj@i`@uj@eRgD|j@o@}j@aA~j@C_k@uD`k@yJ~QCak@mFbk@uUck@^mBoW}ZCrd@gH_Nco@lNss@wVCdk@o@ek@Cfk@bWiJdN}^a@sWgBgk@zOhk@v@ik@vViJpMySk^jk@s@~d@ws@yb@_s@bSds@kd@iRkk@gHlk@xVmc@hFmk@_Dnk@ko@mNwGok@tHaXzWab@Cpk@Cqk@Crk@Csk@zs@qk@Ctk@Cuk@Cvk@Cwk@Cxk@{s@tk@|s@vk@}s@yk@b@zk@C{k@C|k@C}k@C~k@c]_l@d]`l@Cal@Cbl@Ccl@Cdl@Cel@{_@fl@wFiErKnICgl@Chl@Cil@cBjl@cBkl@Cll@Cml@xFnl@u_@ol@Cpl@Cql@?rl@</div>
+<div id="globalStacks" style="display:none"></div>
+<div id="methods" style="display:none">@??A??B?????B??C??B?????B??D??B?????E??F??C?????E??G??C?????E??H??C?????E??I??C?????E??J??C?????E??K??C?????E??L??C?????M??N??B?????M??O??C?????M??P??C?????M??Q??C?????M??R??C?????E??S??C?????E??T??C?????E??U??C?????E??V??C?????E??W??C?????E??X??C?????E??Y??C?????E??Z??C?????[??\??pS?WC?]??^??@U?wL?_??`??PJ?sC?_??a??@A@sK?_??b??PD??H?c??d??p@?cA?e??f??`H?[e?g??f??Pe?_BCg??h??pF?oECg??i??`B?_vBg??j??@@?{vBg??k??pQ?wmBg??l??pl?CqBm??n??oG?_E?g??j??`s?OyBo??p??pg?oE?o??q??`??KM?o??q??pf?gL?o??q??PC?cM?o??r??`Q@[O?s??t??pF?gD@s??u??@H?sB@e??u??@?????E??v??B?????E??w??C?????E??x??C?????E??y??C?????_??`??`H?_C?_??z??@G?kE?]??{??@A?[E?]??|??`J?CE?}??|??@@?OB?~??|??pD??F??@?@@?P??GO?A@?B@?@H?_B@A@?C@?@j?_A@D@?E@?@?????F@?G@?@A?SWAH@?I@?`K?gG?J@?I@?`??SV?H@?K@?@?????L@?M@?B?????E??N@?B?????A??O@?B?????s??u??P??kA@P@?Q@?P???n?R@?Q@?@?????E??S@?B?????T@?U@?B?????E??V@?C?????E??W@?C?????E??X@?C?????c??d??@B?cA?Y@?Z@?PN?sS@[@?\@?P@?[@?]@?^@?`H?WT?_@?`@?P@?w]?a@?b@?@B??~?a@?c@?`F?Ke?d@?e@?@A?CJ?f@?e@???????E??g@?C?????h@?i@?B?????j@?\??pA?Cs?k@?\??P@?kf?Y@?l@?`E?GE@Y@?m@?pc?WA@[@?n@?@@?gB?]@?o@?`D?S]?p@?q@?`d?Ge@a@?r@?`^??i?s@?t@?O??GN?Y@?l@?@V??F@u@?\??@B????c??v@?p??kA?w@?d??PG?GC?x@?d??@B????y@?z@?@G?wE?{@?|@?PB?oq?{@?|@???????}@?~@?B?????}@??A?C?????}@?@A?C?????}@?AA?C?????}@?BA?C?????}@?CA?C?????}@?DA?C?????}@?EA?C?????}@?FA?C?????y@?z@?PE?wE?GA?HA?@B?_K?GA?IA?@A?KD?GA?IA?eq?gD?p@?q@?PY?[d@JA?KA?@G?gUBJA?LA?`D?[WBMA?NA?P??g^?MA?OA?@A?W^?j@?PA?@?????E??QA?B?????E??RA?C?????[??\??@M?KC?SA?TA?@A?cE?UA?TA?P@?GH?UA?VA?`I?CG?WA?XA?OP?WF?]@?^@??G?OT?E??YA?C?????E??ZA?C?????]@?o@?`@?C]?_@?[A?@@?GS?\A?[A?PA?cH?a@?r@?pB?gy?a@?r@?pU@kk?d@?]A?`@?GL?d@?^A?@A?{G?f@?_A?P@?GPAf@?`A???????E??aA?C?????x@?d??pB????_??bA?@W?GN?_??cA?pA?gO?]??IA?@B?WH?]??IA?PG?OI?dA?IA?pE?WQ?}??IA?`D?[D?A@?IA?pH?O`?eA?IA?@A?SB?eA?IA?@a?CE?eA?fA?@`?OG?gA?IA?@@?wB?hA?iA?@?????h@?IA?B?????}@?jA?C?????}@?kA?C?????}@?lA?C?????E??mA?C?????E??nA?C?????E??oA?C?????E??pA?C?????E??qA?C?????E??rA?C?????E??sA?C?????E??tA?C?????E??uA?C?????E??vA?C?????E??wA?C?????E??xA?C?????E??yA?C?????E??zA?C?????E??{A?C?????E??|A?C?????E??}A?C?????E??~A?C?????E???B?C?????[??\??`P?OC?@B?AB?P??[H?@B?AB????CI?WA?XA?pW?gF?BB?CB???????h@?DB?B?????}??IA?_D?[D?{@?|@?@?????}@?EB?C?????h@?FB?B?????GB?HB?C?????h@?IB?B?????E??JB?C?????E??KB?C?????E??LB?C?????E??MB?C?????WA?XA?pr?kG?WA?NB?_d?OM?Y@?m@????k?@y@?z@??G?wE?E??OB?C?????E??PB?C?????E??QB?C?????E??RB?C?????E??SB?C?????E??TB?C?????E??UB?C?????E??VB?C?????[??\???M?KC?E??WB?C?????E??XB?C?????E??YB?C?????E??ZB?C?????E??[B?C?????_??`??@F?WC?]??\B?@A??G?}??\B?`D?CF?A@?\B?@Z?CY?eA?\B?@A?KO?eA?\B?@U?_Q?eA?]B?@`?gS?gA?\B?@@?{A?gA?^B?@?????h@?\B?B?????MA?NA?p@?g^?d@?]A?P@?ST?f@?]A?@?????d@?_B?pC?_R?f@?`B?p??oLAf@?aB?@?????E??bB?C?????f@?]A???????M??cB?C?????E??dB?C?????E??eB?C?????E??fB?C?????E??gB?C?????E??hB?C?????E??iB?C?????E??jB?C?????E??kB?C?????E??lB?C?????E??mB?C?????E??nB?C?????E??oB?C?????_??a??Pf?cJ?_??pB?`L?sL?GA?\B?@A?SG?GA?\B?UA?cG?E??qB?C?????E??rB?C?????E??sB?C?????E??tB?C?????E??uB?C?????gA?IA????wB?E??vB?C?????E??wB?C?????E??xB?C?????E??yB?C?????E??zB?C?????E??{B?C?????E??|B?C?????E??}B?C?????E??~B?C?????E???C?C?????Y@?l@?p_?cF@k@?`@????[h?E??@C?C?????E??AC?C?????E??BC?C?????E??CC?C?????E??DC?C?????WA?XA?`l?_G?UA?EC?P@?gE?FC?EC?P??_N?~??GC?@@??L?HC?GC?P??{MAj@?GC?eA?kM?E??IC?C?????E??JC?C?????E??KC?C?????E??LC?C?????E??MC?C?????E??NC?C?????E??OC?C?????E??PC?C?????E??QC?C?????E??RC?C?????E??SC?C?????E??TC?C?????E??UC?C?????BB?CB?@?????VC?WC?B?????E??XC?C?????E??YC?C?????}@?ZC?C?????}@?[C?C?????}@?\C?C?????}@?]C?C?????}@?^C?C?????}@?_C?C?????]??IA?U??WH?E??`C?C?????E??aC?C?????E??bC?C?????E??cC?C?????E??dC?C?????E??eC?C?????E??fC?C?????E??gC?C?????E??hC?C?????iC?jC?p@????kC?lC?P?????o??mC?@B?__?f@?mC?@?????E??nC?C?????]??IA?eH?SI?dA?oC?Q??CQ?y@?z@?@J?{E?pC?qC?eJ?_D?rC?sC?qC?S[?E??tC?C?????E??uC?C?????E??vC?C?????E??wC?C?????E??xC?C?????E??yC?C?????E??zC?C?????E??{C?C?????E??|C?C?????E??}C?C?????E??~C?C?????E???D?C?????E??@D?C?????E??AD?C?????E??BD?C?????E??CD?C?????E??DD?C?????E??ED?C?????E??FD?C?????E??GD?C?????E??HD?C?????E??ID?C?????E??JD?C?????E??KD?C?????[??\??_P?OC?Y@?l@?pG?KE@k@?[A?E??Sh?E??LD?C?????E??MD?C?????E??ND?C?????E??OD?C?????E??PD?C?????E??QD?C?????E??RD?C?????E??SD?C?????E??TD?C?????[??\??@J?CC?SA?UD?E??KB?VD?WD?C?????w@?d??pB?wB?XD?YD?@C?SF?ZD?[D?PI?ShA\D?]D?q@?Co?E??^D?C?????E??_D?C?????E??`D?C?????E??aD?C?????E??bD?C?????}@?cD?C?????GB?dD?C?????E??eD?C?????E??fD?C?????E??gD?C?????E??hD?C?????E??iD?C?????E??jD?C?????E??kD?C?????E??lD?C?????E??mD?C?????E??nD?C?????E??oD?C?????E??pD?C?????VC?qD?B?????B??rD?B?????B??sD?B?????h@?tD?B?????k@?[A?`??Sh?a@?r@?@??cy?k@?t@?q??_g?a@?uD?QA?oa?E??vD?C?????E??wD?C?????E??xD?C?????E??yD?C?????E??zD?C?????}@?{D?C?????}@?|D?C?????VC?}D?B?????E??~D?C?????E???E?C?????E??@E?C?????E??AE?C?????f@?e@?@?????E??BE?C?????E??CE?C?????_??bA?pD?gM?DE?EE?@@?SL?FE?GE?`??SE?FE?HE?uE?_D?IE?JE?a@?_K?KE?LE?QA?oE?E??ME?C?????E??NE?C?????E??OE?C?????E??PE?C?????E??QE?C?????E??RE?C?????E??SE?C?????TE?UE?B?????h@?VE?B?????[??\??ON?KC?E??WE?C?????E??XE?C?????E??YE?C?????E??ZE?C?????E??[E?C?????E??\E?C?????E??]E?C?????E??^E?C?????E??_E?C?????E??`E?C?????E??aE?C?????]??^??pX?KM?E??bE?C?????cE?dE?B?????cE?eE?B?????Y@?l@?`I?_E@A??fE?B?????Y@?l@??V??F@}@?gE?C?????GB?hE?C?????}@?iE?C?????_??pB?@T?wL?XD?qC?`K?SD?ZD?jE?p??[SAZD?jE?P??GVAE??kE?C?????E??lE?C?????E??mE?C?????VC?nE?B?????M??oE?C?????M??pE?C?????E??qE?C?????E??rE?C?????[??\??oS?WC?Y@?l@??X?CF@_??pB?AT?wL?XD?qC?Q???D?R@?qC?A??oA?E??sE?C?????E??tE?C?????E??uE?C?????E??vE?C?????E??wE?C?????E??xE?C?????E??yE?C?????E??zE?C?????TE?{E?B?????TE?|E?B?????TE?}E?B?????M??~E?C?????}@??F?C?????}@?@F?C?????eA?\B?qP?SQ?AF?BF?AE?_M?CF?DF?Ae?kI?_??`??qE?WC?SA?TA?@N?KF?SA?EF?pF?{G?FF?AB?Q??Od@GF?HF?QA?ob@_??pB?aL?sL?GA?\B?AA?SG?GA?\B?QA?cG?GA?IF?q??CI?GA?\B?aC?gG?GA?JF?Q??sJ?B??KF?B?????Y@?l@?_I?_E@}@?LF?C?????E??MF?C?????_??cA?`??cO?pC?HA?PV?OJ?E??NF?C?????E??OF?C?????M??PF?C?????E??QF?B?????E??RF?C?????}@?SF?C?????}@?TF?C?????]@?o@?PG?_]?E??UF?B?????B??VF?B?????}@?WF?C?????B??XF?B?????B??YF?B?????E??ZF?C?????}@?[F?C?????E??\F?C?????E??]F?C?????TE?^F?B?????TE?_F?B?????}@?`F?C?????E??aF?C?????E??bF?C?????}@?cF?C?????GB?dF?C?????E??eF?C?????E??fF?C?????E??gF?C?????_??bA?pI?wM?ZD?hF?PG?ky@ZD?iF?`W?KJA\D?jF?@Q?CX?E??kF?C?????E??lF?C?????E??mF?C?????E??nF?C?????E??oF?C?????E??pF?C?????[??\??eT?cC?x@?d??AB????y@?z@?AJ?{E?pC?qC?aJ?_D?[??\??uQ?OC?}@?qF?C?????w@?d??`D?wB?rF?I@?a??CB?sF?DF?a??oa?sF?tF?qD?_b?VD?uF?C?????k@?`@?`??[h?a@?b@?`??{}?k@?vF?@???h?x@?d??AA????XD?wF?a???J?XD?xF?aN?GG?ZD?[D?a@?SfAZD?[D?QI?ShA\D?]D?Q??wn?pC?HA?`V?OJ?yF?zF?aD?sE?GA?IA?QB?kC?GA?IA?QF?kD?ZD?{F?AB?_]@\D?{F?QD?GB?E??|F?C?????E??}F?C?????}??\B?aD?CF?A@?\B?QA?CX?_@?[A?A@?GS?\A?[A?Q??_H?s@?~F?q@?CM?E???G?C?????E??@G?C?????E??AG?C?????E??BG?C?????E??CG?C?????E??DG?C?????E??EG?C?????}@?FG?C?????TE?GG?B?????E??HG?C?????E??IG?B?????E??JG?C?????E??KG?C?????E??LG?C?????VC?MG?B?????sF?NG?QA?GT?ZD?OG?AE?KQAp@?q@?A??_c@rF?I@?aD?[B?XD?YD?AC?SF?ZD?[D?Q??{gA_??a??@o?oJ?GA?JF?QC?wJ?PG?QG?qA?sb?f@?QG?QA??q?f@?RG?QC?Cs?]??^??qX?KM?A??SG?B?????eA?\B?@??KO?GA?IF?QV?OJ?UA?TA?Q@?GH?UA?VA?aI?CG?WA?XA?QP?WF?UA?TG?Q@?KE?FC?TG?qD?cM?~??GC?A@??L?HC?GC?Q??{MAj@?GC?QB?oM?GB?UG?C?????}@?VG?C?????GA?IF?qY?SJ?d@?]A?`B?KL?M??WG?C?????E??XG?C?????E??YG?C?????ZG?[G?B?????ZG?\G?B?????E??]G?C?????E??^G?C?????E??_G?C?????B??`G?B?????GA?IA?aq?gD?E??aG?C?????E??bG?C?????E??cG?C?????E??dG?C?????p@?q@?AE?kc@p@?eG?QI?S]@Y@?m@?@B?C@@Y@?fG?a??kX?A@?\B?qf?oY?GB?gG?C?????B??hG?B?????h@?iG?B?????E??jG?C?????SA?EF?@S?[H?}??IA?qC?[D?kG?lG?AA?_X?mG?qC?AB?wC?kG?qC?QH?CQ?}@?nG?C?????_??a??pr??K?}@?oG?B?????eA?IA?pY?oD?kG?|@?AX?C~?kG?pG?QO?GC@E??qG?C?????E??rG?C?????M??sG?C?????E??tG?C?????E??uG?C?????}@?vG?C?????}??\B?qC?CF?kG?lG?A??_X?GB?wG?C?????VD?xG?C?????TE?yG?B?????ZD?OG?qE?KQA\D?OG?QB?OK?]??^??AU?wL?_??`??QJ?sC?E??zG?C?????E??{G?C?????ZG?|G?B?????E??}G?C?????ZG?~G?B?????}@??H?C?????GB?@H?C?????}@?AH?C?????}@?BH?C?????WA?XA?qr?kG?WA?NB?A??_K?E??CH?C?????h@?DH?B?????GA?IF?AW?OJ?eA?\B?AU?_Q?eA?]B?AT?SS?eA?EH?Q@?S\?E??FH?C?????\D?OG?AC?OK?SA?TA?@??_E?s@?~F?qB?GM?GH?HH?a??gC?ZD?[D?AA??hAZD?IH?Q??_^C}@?JH?C?????cE?KH?B?????h@?LH?B?????h@?MH?B?????_??pB?aH?oL?GA?NH?A@?wN?SA?EF?pB?{G?OH?PH?A@?CU?QH?PH?q@?wI?RH?PH?A??[|?x@?d??qB????_??bA?qI?wM?ZD?hF?QG?ky@ZD?iF?aR?CJAZD?SH?q??oZCE??TH?B?????VC?UH?B?????rF?I@?`??CB?sF?DF?`??oa?sF?tF?pD?_b?sF?NG?PA?GT?ZD?OG?@E?KQAA??VH?B?????_??bA?PF?oM?XD?WH?@B?_N?p@?q@?QY?[d@JA?KA?AG?gUBJA?LA?aD?[WBMA?NA?q@?g^?d@?]A?Q@?ST?f@?]A?A?????ZD?[D?q??SfAZD?XH?a@?O[@cE?YH?B?????B??ZH?B?????GB?[H?C?????_??a??@??kH?XD?WH?pH?gN?XD?\H?AL?CT?[??\??PN?KC?}@?]H?C?????E??^H?C?????GA?NH?aB?{N?f@?RG?QA??s?f@?_H?qB?Kc?f@?`H?aA?{a?WA?NB?`d?OM?UA?aH?PY?KR?QH?HE?@A?sL?sF?|@?PA?Ge?sF?bH?@??Gf?sF?cH?A??su@B??dH?B?????sF?tF?a\??c?_??bA?PH?sM?A??eH?B?????SA?EF?pE?{G?E??fH?C?????GB?gH?C?????}@?hH?C?????E??iH?C?????eA?]B?A`?gS?gA?\B?A@?{A?gA?^B?A?????}@?jH?C?????h@?kH?B?????eA?\B?pP?SQ?AF?BF?@E?_M?CF?DF?@e?kI?A??lH?B?????}@?mH?C?????VC?nH?B?????E??oH?C?????A??pH?B?????E??qH?B?????E??rH?C?????ZD?hF?aF?ky@ZD?XH?A@?O[@x@?d??@A????XD?wF?`???J?XD?xF?PP?KG?sH?tH?`A?oC?ZD?jE?q??[SAZD?jE?QB?GVAsF?bH?@M?Sf?uH?cH?PC?KO?uH?vH?p@?CM?eA?IA?@??kC?GA?IF?AD?GI?]@?^@?pE?GT?E??wH?C?????_??pB?AB?gL?B??xH?B?????}@?yH?C?????}??IA?aD?[D?A@?IA?aU?o`?XD?WH?`E?cN?ZD?iF?aW?KJA\D?jF?aB?gW?}@?zH?C?????E??{H?C?????Y@?m@?aj?sA@_??a??Px?GK?_??|H?Q??kF?}H?~H?q??Gp?}H?~H?a{?Ki?GA?IF?qA?GI?TE??I?B?????}@?@I?C?????E??AI?C?????GB?BI?C?????B??CI?B?????WA?XA?qN?OF?UA?DI?AM?cO?EI?FI?q@?kV?E??GI?C?????E??HI?C?????eA?IA?pW?cD?CF?DF?af?oI?II?JI?a??cC?II?JI?a??gS?kG?JI?a??c^@KI?JI?qL?OV?}@?LI?C?????E??MI?C?????E??NI?C?????TE?OI?B?????E??PI?C?????}@?QI?C?????XD?xF?AF??G?ZD?NH?a@?wKAXD?xF?@A?wF?E??RI?C?????E??SI?C?????E??TI?C?????E??UI?C?????E??VI?C?????E??WI?C?????E??XI?C?????}@?YI?C?????}@?ZI?C?????j@?GC?aA?kM?E??[I?C?????E??\I?C?????E??]I?C?????E??^I?C?????E??_I?C?????E??`I?C?????E??aI?C?????y@?z@?AG?wE?{@?|@?QB?oq?{@?|@?A?????\D?jF?qE?kW?B??bI?B?????h@?cI?B?????CF?DF?`f?oI?II?JI?`??cC?II?JI?`??gS?kG?JI?`??c^@KI?JI?pJ?KV?}@?dI?C?????TE?eI?B?????EI?FI?aG??W?\D?jF?QC?gW?}@?fI?C?????E??gI?C?????E??hI?C?????TE?iI?B?????_??pB?QA?cL?}@?jI?C?????TE?kI?B?????XD?qC?aH?KD?}@?lI?C?????XD?WH?@??[N?sF?tF?qN?gb?ZD?mI?qA?Kq@}@?nI?C?????B??oI?B?????GA?\B?`C?gG?GA?JF?P??sJ?A??pI?B?????sF?tF?QT?sb?yF?zF?a??oE?GA?XH?QE??B?h@?qI?B?????f@?_H?q??{b?E??rI?C?????SA?EF?`L?CH?h@?sI?B?????_??a??p{?KK?CF?DF?A_?WI?II?tI?Q??cC?rF?I@?AC?[B?VC?uI?B?????E??vI?C?????GF?HF?AN??c@ZG?wI?B?????JA?LA?PB?[WBMA?OA?pA?W^?E??xI?C?????E??yI?C?????E??zI?C?????E??{I?C?????GB?|I?C?????]@?o@?eD?S]?E??}I?C?????E??~I?C?????E???J?C?????GA?IA?AN?sD?PG?@J?q@?sM?ZG?AJ?B?????]??^??A@?GL?p@?q@?@E?kc@p@?eG?`N?_]@_??pB?qM?wL?VD?BJ?C?????E??CJ?C?????E??DJ?C?????XD?qC?aK?SD?s@?~F?QD?OM?GH?EJ?A??OD?TE?FJ?B?????_??b??QD??H?c??d??A??cA?SA?TA?P??_E?SA?GJ?@??wF?XD?WH?PK?sN?Y@?m@?Ah?_A@\A?[A?QA?cH?a@?r@?a??cy?s@?t@?QC?KN?}@?HJ?C?????GA?IA?qI?oD?AF?BF?qB?[M?IJ?DF?AC?SI?B??JJ?B?????A@?IA?QA?s_?[??\??PX?KC?ZD?[D?QC?ChA}@?KJ?C?????sF?DF?q@?oa?\D?jF?QL?{W?LJ?MJ?aC?kH?WA?NB?ad?OM?UA?aH?AO?oQ?QH?NJ?Q@?sK?sF?OJ?a??Gd?sF?tF?QM?cb?_??pB?QC?gL?uH?cH?QC?KO?uH?vH?q@?CM?E??PJ?C?????E??QJ?C?????E??RJ?C?????E??SJ?C?????}H?~H?ah?Wh?E??TJ?C?????EI?FI?qD?sV?SA?UD?A@?KB?FC?UD?A@?WH?A??UJ?B?????WA?XA?Aq?gG?UA?DI?aO?cO?AF?BF?aC?[M?GB?VJ?C?????\D?jF?qN??X?LJ?MJ?A@?_H?LJ?WJ?q@?gC?\D?jE?AG?SL?}@?XJ?C?????IJ?DF?QD?WI?GA?IF?aS?{I?E??YJ?C?????\D?]D?AC?Co?ZJ?[J?aM?{mB\D?jF?QD?gW?}@?\J?C?????]J?^J?aE?OZ?_J?`J?a??wU?ZD?OG?aM?kQAE??aJ?C?????E??bJ?C?????E??cJ?C?????E??dJ?C?????E??eJ?C?????E??fJ?C?????E??gJ?C?????h@?hJ?B?????VD?iJ?B?????WA?NB?qK?WL?BB?jJ?A??KD?ZD?mI?a??wp@f@?kJ?qB?Ga?f@?lJ?A??c^?CF?DF?AI?GH?pC?HA?`P?GJ?yF?zF?P@?gD?yF?zF?@C?{D?UA?DI?qK?[O?_??bA?qD?gM?DE?EE?A@?SL?}@?mJ?C?????Y@?m@?a@?w?@nJ?DF?Q??gD?ZD?iF?qE?gIAsF?bH?pM?Sf?}@?oJ?C?????SA?TA?AA?cE?UA?aH?QY?KR?QH?HE?AA?sL?sF?|@?QA?Ge?sF?bH?AM?Sf?A??pJ?B?????_??a??pY??J?eA?fA?A`?OG?gA?IA?A@?wB?hA?iA?A?????}@?qJ?C?????E??rJ?C?????}@?sJ?C?????ZD?XH?Q??O[@E??tJ?C?????XD?uJ?Q??wP?d@?]A?qC?OL?d@?^A?AA?{G?_??b??PC??H?GF?HF?AV?Cc@c??d??AB?cA?Y@?Z@?QN?sS@[@?\@?Q@?[@?]@?^@?AG?OT?]@?vJ?aN?sL?p@?wJ?AE?G[@SA?GJ?@@?wF?xJ?CB?AK?[W?xJ?yJ?qA?OQ?KE?zJ?q??GC?]??\B?@???G?xJ?CB?q@?KW?XD?\H?aG??T?pC?HA?`L?wI?]@?o@?`A?O]?]@?{J?PG??O?[??\??`a?CD?s@?t@?AD?KN?B??|J?B?????pC?HA?@??cI?E??}J?C?????}@?~J?B?????@B?AB?Q??[H?@B?AB?qB?CI?_??a??@Y??J?_??pB?`H?oL?GA?NH?QE?wN?_??a??p\?GJ?E???K?C?????E??@K?C?????AF?BF?qJ?CN?_@?[A?A??GS?E??AK?C?????_??pB?@U?cL?GA?NH?PE?wN?}@?BK?C?????_??|H?qL?_G?E??CK?C?????WA?XA?qW?gF?BB?CB?A?????}@?DK?C?????RH?PH?AA?[|?FF?qC?q@?Gd@GF?qC?AQ?Cb@h@?EK?B?????a@?r@?@??wf?E??FK?C?????}@?GK?C?????c??d??q@?cA?iC?jC?q@????kC?lC?aD????u@?qC?AC????p@?eG?QG?K]@XD?WH?P??[N?p@?eG?A@?w\@E??HK?C?????E??IK?C?????GA?XH?AM?wA?_??b??@??{G?_??pB?`D?kL?y@?z@?QE?wE?GA?HA?AB?_K?GA?IA?AA?KD?GA?IA?Q??[D?]@?^@?qE?GT?]@?{J?pO?WO?p@?wJ?QA??[@\A?JK?q@?gJ?ZJ?[J?qK?{mB}@?KK?C?????E??LK?C?????A??MK?B?????A??NK?B?????pC?qC?qI?_D?}@?OK?C?????E??PK?C?????E??QK?C?????E??RK?C?????}@?SK?C?????s@?t@?aA?GN?dA?IA?@??WQ?Y@?m@?AB?C@@E??TK?C?????_??a??PX?{I?E??UK?C?????GA?IF?a@?GI?_??a??@g?cJ?_??pB?PE?kL?k@?[A?a??Sh?k@?t@?QB?cg?E??VK?C?????E??WK?C?????E??XK?C?????E??YK?C?????E??ZK?C?????GA?IA?aL?sD?\D?jF?aI?oW?]@?^@?@G?OT?]@?vJ?`N?sL?p@?wJ?aF?K[@p@?[K?AB?kY@kG?pG?a[?wC@\K?QG?AB?SH?sF?tF?A_?Cc?_??a??`Z??J?B??]K?B?????E??^K?C?????eA?IA?pQ?SD?_??a??`p?oJ?_??|H?QT?gG?XD?_K?a??GQ?E??`K?C?????s@?~F?A???M?}@?aK?C?????}@?bK?C?????GA?NH?P@?wN?E??cK?C?????E??dK?C?????\D?jF?AS?OX?eK?fK?Q@?OKILJ?fK?aC?wG?E??gK?C?????E??hK?C?????E??iK?C?????E??jK?C?????E??kK?C?????KI?JI?aB??V?GA?IA?aH?oD?FE?HE?@R?oD?lK?mK?`@??G?KE?nK?pK?oK?oK?pK?@???N?a@?r@?@I??h?A@?IA?Ai?Ga?_@?`@?Q??w]?_??a??Pb?WJ?ZD?OG?Q??CQAf@?QG?QF?Wq?}@?qK?C?????E??rK?C?????E??sK?C?????_@?`@?Q@?w]?a@?b@?QA??~?_??|H?@R?cG?E??tK?C?????E??uK?C?????E??vK?C?????p@?[K?QE?sY@wK?xK?aA?O\?f@?yK?aC?oHBKI?JI?qJ?KV?A@?\B?AI@GZ?h@?zK?B?????\D?{F?QE?GB?IJ?DF?a@?KI?\D?]D?AD?Co?ZD?qC?a@?[ZC\D?jF?PJ?sW?E??{K?C?????ZJ?[J?qL??nB]@?vJ?P??KL?a@?b@?a??{}?\A?vF?Q??sI?a@?|K?Q??O`?_??pB?@??cL?_??bA?@??SM?A??}K?B?????ZD?IH?a@?_^CpC?HA?pG?gI?GA?IF?QF?SI?ZD?mI?AJ?Kq@s@?~F?QE?OM?]@?{J?pD?wN?GA?XH?aF??B?E??~K?C?????FC?UD?Q??WH?d@?_B?@??WR?WA?NB?aJ?WL?ZD?SH?q@?oZCkG?pG?QI??C@E???L?C?????kG?pG?QW?{C@KI?@L?Q??kn?]@?vJ?@??KL?E??AL?C?????E??BL?C?????M??CL?C?????E??DL?C?????k@?`@?a??[h?E??EL?C?????E??FL?C?????E??GL?C?????E??HL?C?????ZD?jE?Q??GVAZD?IL?q@?O[CpC?HA?pH?sI?GA?XH?qM?wA?Y@?Z@?QE?_S@E??JL?C?????sH?tH?@??kC?p@?eG?AJ?W]@FE?GE?a??SE?FE?HE?AR?oD?lK?mK?a@??G?KE?nK?q??gK?IJ?KL?Q??wN?E??LL?C?????E??ML?C?????E??NL?C?????ZD?iF?AO?{IAE??OL?C?????Y@?Z@?aO?sS@]@?vJ?@D?WL?}??IA?pC?[D?kG?lG?@A?_X?mG?qC?@B?wC?kG?qC?PH?CQ?k@?vF?q@?Ch?a@?PL?a??s`?E??QL?C?????]J?^J?Q@?GZ?p@?[K?AD?oY@GA?JF?AC?wJ?E??RL?C?????]@?vJ?@K?oL?p@?q@?aC?gc@MA?qC?Q??o]?wK?qC?Q??W[?GA?IA?aE?kD?]??^??A??GL?_??a??Pc?_J?\D?OG?qC?OK?c??d??@??cA?_??a??PC@{I?XD?WH?PA?_N?GA?NH?QB?{N?XD?\H?QC?{S?}@?SL?C?????pC?HA?@Y?OJ?yF?zF?a??[F?yF?TL?Q@?wI?ZD?[D?AE?OhAE??UL?C?????M??VL?C?????E??WL?C?????}@?XL?C?????}@?YL?C?????}@?ZL?C?????}@?[L?C?????}@?\L?C?????}@?]L?C?????}@?^L?C?????}@?_L?C?????}@?`L?C?????}@?aL?C?????}@?bL?C?????}@?cL?C?????}@?dL?C?????}@?eL?C?????}@?fL?C?????}@?gL?C?????}@?hL?C?????}@?iL?C?????}@?jL?C?????E??kL?C?????}@?lL?C?????}@?mL?C?????}@?nL?C?????}@?oL?C?????}@?pL?C?????}@?qL?C?????}@?rL?C?????GB?sL?C?????xJ?CB?QD?KW?}@?tL?C?????E??uL?C?????}@?vL?C?????}@?wL?C?????}@?xL?C?????}@?yL?C?????h@?zL?B?????}@?{L?C?????}@?|L?C?????}@?}L?C?????}@?~L?C?????E???M?C?????E??@M?C?????pC?HA?@U?OJ?CF?DF?qI?KH?E??AM?C?????E??BM?C?????E??CM?C?????_??b??`O?WH?_??bA?QH?sM?E??DM?C?????]@?o@?pB?O]?\D?jF?aG?kW?IJ?DF?qA?OI?}H?~H?Ar?kh?}H?~H?ql?gh?E??EM?C?????\D?jF?QJ?sW?p@?[K?aH?wY@a@?FM?AF?[c?a@?GM?QA?Gb?\D?jE?aA?wK?XD?WH?@D?cN?E??HM?C?????@B?IM?AA?oH?SA?EF?@A?sG?}H?~H?aZ?_g?\D?{F?q@?{A?}@?JM?C?????ZD?[D?AF?ShAh@?KM?B?????E??LM?C?????GA?NH?AF?KO?mG?qC?A??wC?ZD?mI?qJ?Kq@}H?~H?aV?Og?GA?XH?q??sA?_??`??qF?WC?XD?\H?AB?{S?VC?MM?B?????pC?HA?P\?WJ?}@?NM?C?????Y@?l@?pJ?_E@E??OM?C?????CF?DF?q`?[I?CF?AB?A??sF?SA?EF?@??sG?GA?NH?Q@?wN?}H?~H?aw?{h?pC?HA?`N?CJ?yF?qC?a@?GA?pC?HA?pE?kI?p@?q@?aI?wc@p@?PM?AC?[^@a@?QM?QD?Kd?_??|H?QU?kG?E??RM?C?????GA?JF?aE??K?SM?TM?AD????UM?lC?AA????o??mC?AB?__?B??VM?B?????a@?FM?AI?cc?KI?JI?aD??V?pC?HA?@D?kI?B??WM?B?????XD?xF?aC?{F?UA?aH?A??KQ?_??a??@o?oJ?GA?IF?QS?{I?IJ?DF?A??GI?E??XM?C?????pC?HA?`E?kI?E??YM?C?????E??ZM?C?????_??|H?pL?_G?eA?]B?q]?gS?pC?HA?`F?kI?_??`??aL?{C?p@?[K?aG?wY@_??a??@i?gJ?E??[M?C?????yF?zF?Q@?gD?yF?zF?AC?{D?sH?tH?p??kC?ZD?IL?aA?O[C]@?{J?@B?oN?_??a??@`?KJ?E??\M?C?????a@?b@?AB??~?a@?c@?aF?Ke?d@?e@?AA?CJ?f@?e@?A?????A@?IA?qH?O`?eA?IA?AA?SB?GF?qC?qO?Cb@}@?]M?C?????[??\??p`?{C?GA?IA?qA?kC?E??^M?C?????E??_M?C?????E??`M?C?????ZD?OG?qL?_QAE??aM?C?????E??bM?C?????w@?d??`??oB?w@?cM?A@?cF?Y@?Z@?AC?[S@]@?^@?aH?WT?GF?HF?aU?Cc@XD?xF?aI?GG?]@?vJ?PE?[L?XD?xF?AA?wF?]@?{J?@??cN?E??dM?C?????E??eM?C?????GA?NH?qC?wN?_??a??Pl?kJ?pC?HA?pW?OJ?yF?zF?aD?_F?_??`??QE?WC?E??fM?C?????GA?IF?qF?WI?pC?qC?QK?_D?ZD?jE?AA?GVA_??a??pj?kJ?XD?gM?Q??{M?E??hM?C?????u@?\??QA????_??pB?PC?gL?pC?qC?@L?cD?B??iM?B?????GF?HF?qT?Cc@]@?{J?@N?SO?GA?IA?qD?gD?ZD?mI?QG?Cq@A??jM?B?????E??kM?C?????E??lM?C?????E??mM?C?????E??nM?C?????E??oM?C?????E??pM?C?????E??qM?C?????E??rM?C?????E??sM?C?????E??tM?B?????E??uM?C?????E??vM?C?????E??wM?C?????E??xM?C?????E??yM?C?????E??zM?C?????cE?{M?B?????cE?|M?B?????cE?}M?B?????cE?~M?B?????cE??N?B?????E??@N?C?????E??AN?C?????E??BN?C?????E??CN?C?????E??DN?C?????E??EN?C?????E??FN?C?????E??GN?C?????E??HN?C?????E??IN?C?????E??JN?C?????E??KN?C?????</div>
+<span style="position:fixed; bottom: 0; right:0; padding: 2px 4px; background-color: #ffffe0; border-top: 1px solid #ffc000; border-left: 1px solid #ffc000; border-top-left-radius: 4px;"><span id="produced">Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a>&nbsp;</span><span id='match' style="display: none">Matched: <span id='matchval'></span>&nbsp;<span id='reset' title='Clear'>&#x274c;</span></span></span>
+
+<h1 id="title">Heatmap, CPU</h1>
+
+<canvas id='canvas'></canvas>
+<div id='hl'><span></span></div>
+
+<span id='status' style="position:fixed; bottom: 0; left:0; padding: 2px 4px; background-color: #ffffe0; border-top: 1px solid #ffc000; border-right: 1px solid #ffc000; border-top-right-radius: 4px; display: none">&nbsp;</span>
+<script>
+	// Copyright 2020 Andrei Pangin
+	// Licensed under the Apache License, Version 2.0.
+	'use strict';
+	let root, rootLevel, px, pattern;
+	let reverse = true;
+	const levels = Array(0);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	let c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	let canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+    const search = typeof searchIterative === 'function' ? searchIterative : searchSimple;
+    const init = typeof renderHeatmap === 'function' ? renderHeatmap : render;
+
+	const palette = [
+		[0xb2e1b2, 20, 20, 20],
+		[0x50e150, 30, 30, 30],
+		[0x50cccc, 30, 30, 30],
+		[0xe15a5a, 30, 40, 40],
+		[0xc8c83c, 30, 30, 10],
+		[0xe17d00, 30, 30,  0],
+		[0xcce880, 20, 20, 20],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(level, left, width, type, title, inln, c1, int) {
+		levels[level].push({left: left, width: width, color: getColor(palette[type]), title: title,
+			details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
+		});
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+    const marked = [];
+
+    function render(newRoot, newLevel, minLevel) {
+        minLevel = minLevel || 0;
+        if (root && minLevel === 0) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+
+		if (minLevel === 0) {
+		    marked.length = 0;
+        }
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+                let match = pattern && pattern.test(f.title) && mark(f);
+                const fw = f.width * px;
+                if (fw < 0.1) {
+                    return;
+                }
+                c.fillStyle = match ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, fw, 15);
+
+				if (fw >= 21) {
+					const chars = Math.floor(fw / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, fw - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, fw, 15);
+				}
+			}
+		}
+
+		for (let h = minLevel; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				let details = f.details || '';
+				canvas.title = f.title + '\n(' + samples(f.width) + details + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f !== root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+                status.style.display = 'inline';
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.textContent = '\xa0';
+        status.style.display = 'none';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = '';
+	}
+
+    window.onkeydown = function() {
+        if (event.ctrlKey && event.keyCode === 70) {
+            event.preventDefault();
+            search(true);
+        } else if (event.keyCode === 27) {
+            search(false);
+        }
+    }
+
+    document.getElementById('reset').onclick = function() {
+        search(false);
+    }
+
+
+
+    class DataBuffer {
+        data;
+        pos = 0;
+        constructor(encodedData) {
+            this.data = encodedData;
+        }
+
+        nextVarInt() {
+            let res = 0;
+            let shift = 0;
+            let b;
+            do {
+                b = this.byteAt(this.pos++);
+                res |= (b & 0x1F) << shift
+                shift += 5;
+            } while (b >= 0x20)
+            return res;
+        }
+
+        byteAt(pos) {
+            return this.data.charCodeAt(pos) - 63;
+        }
+
+        int30(pos) {
+            return (this.byteAt(pos++) << 0)
+                | (this.byteAt(pos++) << 6)
+                | (this.byteAt(pos++) << 12)
+                | (this.byteAt(pos++) << 18)
+                | (this.byteAt(pos) << 24);
+        }
+
+        int36(pos) {
+            return (this.byteAt(pos++) << 0)
+                | (this.byteAt(pos++) << 6)
+                | (this.byteAt(pos++) << 12)
+                | (this.byteAt(pos++) << 18)
+                | (this.byteAt(pos++) << 24)
+                | (this.byteAt(pos++) << 30);
+        }
+
+        varInt(pos) {
+            let res = 0;
+            let shift = 0;
+            let b;
+            do {
+                b = this.byteAt(pos++);
+                res |= (b & 0x1F) << shift
+                shift += 5;
+            } while (b >= 0x20)
+            return res;
+        }
+
+    }
+
+    class HeatmapCollection extends DataBuffer {
+
+        maxZoom;
+        blocks;
+        zoomToCounts;
+        zoomToMaxes;
+        zoom;
+
+        constructor(encodedData) {
+            super(encodedData);
+
+            this.maxZoom = this.nextVarInt();   // fixme
+            this.maxZoom = 3;
+
+            const startMethodsCount = this.nextVarInt();
+            const starts = new Set();
+            for (let i = 0; i < startMethodsCount; i++) {
+                starts.add(this.nextVarInt());
+            }
+
+            const lz = new Lz78Data(this, starts);
+
+            let max = 1;
+
+            let prevByte = -1;
+            const blocksCount = this.nextVarInt();
+            let counts = new Uint32Array(blocksCount);
+            for (let i = 0; i < blocksCount; i++) {
+                let v = 0;
+                let p = 0;
+                let hasMore = false;
+                do {
+                    if (prevByte === -1) {
+                        prevByte = this.byteAt(this.pos++);
+                        hasMore = (prevByte >>> 5) === 1;
+                        v |= ((prevByte >>> 3) & 3) << p;
+                        prevByte &= 7;
+                    } else {
+                        hasMore = (prevByte >>> 2) === 1;
+                        v |= (prevByte & 3) << p;
+                        prevByte = -1;
+                    }
+                    p += 2;
+                } while (hasMore);
+                counts[i] = v;
+                max = Math.max(max, v);
+            }
+
+            this.blocks = lz.decode(counts);
+
+            this.zoomToCounts = new Array(this.maxZoom);
+            this.zoomToMaxes = new Array(this.maxZoom);
+
+            this.zoomToCounts[0] = counts;
+            this.zoomToMaxes[0] = max;
+
+            for (let z = 1; z < zoomToGroupSize.length; z++) {
+                const size = zoomToGroupSize[z] / zoomToGroupSize[z - 1];
+                const nextCounts = new Uint32Array(Math.ceil(counts.length / size));
+                for (let i = 0; i < counts.length; i++) {
+                    const index = (i / size) | 0;
+                    nextCounts[index] += counts[i];
+                    max = Math.max(max, nextCounts[index]);
+                }
+                this.zoomToCounts[z] = counts = nextCounts;
+                this.zoomToMaxes[z] = max;
+            }
+
+            this.data = null;
+        }
+
+        setZoom(zoom) {
+            this.zoom = zoom;
+        }
+
+        heatmap() {
+            return this.zoomToCounts[this.zoom];
+        }
+
+        max() {
+            return this.zoomToMaxes[this.zoom];
+        }
+
+        currentTimeBlock() {
+            // FIXME 20 is hardcoded
+            return 20 * zoomToGroupSize[this.zoom];
+        }
+
+        startBlock() {
+            const blockMs = this.currentTimeBlock();
+            const timeBlockMs = blockMs * heatHeight * 20;
+            return Math.floor(startMs % timeBlockMs / blockMs);
+        }
+
+        count() {
+            return Math.ceil((this.heatmap().length + this.startBlock()) / 20 / heatHeight) * 20 * heatHeight;
+        }
+
+    }
+
+    class LzChunk extends Uint32Array {
+        constructor(size) {
+            super(size);
+        }
+
+        copyWithNext(element) {
+            let result = new LzChunk(this.length + 1);
+            result.set(this);
+            result[this.length] = element;
+            return result;
+        }
+    }
+
+    class Lz78Data {
+        data;
+        starts;
+        lz78;
+
+        tmp = [];
+        prevSubTreeId = -1;
+
+        constructor(data, starts) {
+            this.data = data;
+            this.starts = starts;
+
+            this.lz78 = [new LzChunk(0)];
+        }
+
+        decode(counts) {
+            const synonymsCount = this.data.nextVarInt();
+            const synonyms = new Uint32Array(synonymsCount);
+            for (let i = 0; i < synonymsCount; i++) {
+                synonyms[i] = this.data.nextVarInt();
+            }
+
+            const tailsCount = this.data.nextVarInt();
+            const tails = new Uint32Array(tailsCount);
+            for (let i = 0; i < tailsCount; i++) {
+                const tail = this.data.nextVarInt();
+                tails[i] = (tail < synonyms.length ? synonyms[tail] : tail) - synonymsCount;
+            }
+
+            const result = new Array(counts.length);
+            for (let i = 0; i < counts.length; i++) {
+                result[i] = new Array(counts[i]);
+            }
+
+            let thisChunk = null;
+            let currentTail = 0;
+            const tmp = [];
+            let t = -1;
+            for (let block of result) {
+                for (let i = 0; i < block.length; i++, currentTail++) {
+                    t++;
+                    const tailId = tails[currentTail];
+                    if (tailId < this.lz78.length) {
+                        const tail = this.lz78[tailId];
+                        if (tail.length !== 0 && this.starts.has(tail[0])) {
+                            console.log(t, 'only', tailId);
+                            block[i] = tail;
+                            continue;
+                        }
+                    }
+
+                    if (thisChunk === null) {
+                        const chunkId = this.data.nextVarInt();
+                        const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
+                        const addMethodId = this.data.nextVarInt();
+                        console.log(t, 'chunk', chunkId, addMethodId);
+                        thisChunk = prevChunk.copyWithNext(addMethodId);
+                        this.lz78.push(thisChunk);
+                    }
+
+                    tmp.length = 0;
+                    tmp.push(...thisChunk); // FIXME it is ok to push as is, or even as lz78 index
+
+                    while (true) {
+                        const chunkId = this.data.nextVarInt();
+                        const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
+                        const addMethodId = this.data.nextVarInt();
+                        thisChunk = prevChunk.copyWithNext(addMethodId);
+                        this.lz78.push(thisChunk);
+                        console.log(t, 'chunk', chunkId, addMethodId);
+
+                        if (this.starts.has(thisChunk[0])) {
+                            console.log(t, 'starts', thisChunk[0]);
+                            console.log(t, 'ends', tailId);
+                            const tail = this.lz78[tailId];
+                            tmp.push(...tail);
+                            block[i] = new Uint32Array(tmp);
+                            break;
+                        } else {
+                            tmp.push(...thisChunk);
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+    }
+
+    class Queue {
+        data = new Array(1024);
+        first = 0;
+        afterLast = 0;
+
+        push(e) {
+            let a = this.afterLast;
+            let d = this.data;
+            d[a++] = e;
+            if (a >= this.data.length) {
+                a = 0;
+            }
+            if (a === this.first) {
+                let d2 = new Array(d.length * 2);
+                let i = 0;
+                for (let p = a; p < d.length; p++) {
+                    d2[i++] = d[p];
+                }
+                for (let p = 0; p < a; p++) {
+                    d2[i++] = d[p];
+                }
+                this.data = d2;
+                this.first = 0;
+                this.afterLast = i;
+            } else {
+                this.afterLast = a;
+            }
+        }
+
+        shift() {
+            let i = this.first;
+            let r = this.data[i++];
+            if (i >= this.data.length) {
+                this.first = 0;
+            } else {
+                this.first = i;
+            }
+            return r;
+        }
+
+        size() {
+            let r = this.afterLast - this.first;
+            if (r < 0) {
+                return r + this.data.length;
+            }
+            return r;
+        }
+
+        reset() {
+            this.first = this.afterLast = 0;
+        }
+    }
+
+    function claimHtml(id) {
+        let e = document.getElementById(id);
+        let r = e.innerHTML;
+        e.remove();
+        return r;
+    }
+
+    let sq = 5;
+    let sqPx = sq;
+    let sqScale = 1;
+    const canvasScrollPadding = 200;
+    let canvasTimeHeight = 12;
+    let canvasTimeHeightPx = 12;
+    let ticksPerSecond = 2591978270;
+    let startMs = 1664868582350;
+
+    const zoomToGroupSize = [
+        1,              // 20 ms
+        50,             // 1 s
+        50 * 5,         // 5 s
+        50 * 60         // 1 m
+    ];
+    const zoomToHeight = [50, 60, 60, 60]
+
+    let methods = new DataBuffer(claimHtml("methods"));
+    let executionsHeatmap = new HeatmapCollection(claimHtml("executionsHeatmap"));
+    let cpool = ["all","","libsystem_pthread.dylib","thread_start","_pthread_start","libjvm.dylib","thread_native_entry","Thread::call_run","JavaThread::run","JavaThread::thread_main_inner","attach_listener_thread_entry","load_agent","JvmtiExport::load_agent_library","libasyncProfiler.so","Agent_OnAttach","Profiler::runInternal","Profiler::start","AllocTracer::start","AllocTracer::check","CompileBroker::compiler_thread_loop","CompileBroker::invoke_compiler_on_method","Compiler::compile_method","Compilation::Compilation","Compilation::compile_method","Compilation::compile_java_method","Compilation::emit_code_body","CodeSection::initialize_shared_locs","one.nio.server.SelectorThread","run","one.nio.net.Session","process","one.nio.http.HttpSession","processRead","processHttpBuffer","handleParsedRequest","ok.dht.test.ushkov.RocksDBHttpServer","handleRequest","java.lang.invoke.MethodHandleNatives","linkMethodHandleConstant","java.lang.invoke.MethodHandles$Lookup","getDirectMethodForConstant","getDirectMethodNoSecurityManager","getDirectMethodCommon","checkMethod","checkAccess","sun.invoke.util.VerifyAccess","isMemberAccessible","java.lang.invoke.DirectMethodHandle","make","preparedLambdaForm","makePreparedLambdaForm","java.lang.invoke.MemberName$Factory","resolveOrFail","resolve","MHN_resolve_Mem","MethodHandles::resolve_MemberName","LinkResolver::resolve_static_call","LinkResolver::linktime_resolve_static_method","handleSocketClosed","scheduleClose","close","one.nio.net.JavaSocket","java.nio.channels.spi.AbstractInterruptibleChannel","java.nio.channels.spi.AbstractSelectableChannel","implCloseChannel","sun.nio.ch.SocketChannelImpl","implCloseSelectableChannel","implCloseNonBlockingMode","sun.nio.ch.Net","shutdown","java.lang.ClassLoader","findNative","jdk.internal.loader.NativeLibraries","find","jdk.internal.loader.NativeLibraries$NativeLibraryImpl","findEntry0","libjava.dylib","Java_jdk_internal_loader_NativeLibraries_findEntry0","JVM_FindLibraryEntry","unknown","java.lang.invoke.MemberName","clone","java.lang.Object","JVM_Clone","libdyld.dylib","tlv_get_addr","Compilation::emit_lir","LinearScan::do_linear_scan","LinearScan::number_instructions","java.util.concurrent.ThreadPoolExecutor","execute","ok.dht.test.ushkov.queue.LinkedBlockingStack","offer","java.util.concurrent.LinkedBlockingDeque","offerFirst","java.util.concurrent.locks.ReentrantLock","unlock","java.util.concurrent.locks.AbstractQueuedSynchronizer","release","signalNext","java.util.concurrent.locks.LockSupport","unpark","jdk.internal.misc.Unsafe","Unsafe_Unpark","libsystem_kernel.dylib","__psynch_cvsignal","java.lang.Thread","java.util.concurrent.ThreadPoolExecutor$Worker","runWorker","getTask","take","takeFirst","java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject","await","acquire","java.util.concurrent.locks.ReentrantLock$NonfairSync","tryAcquire","ok.dht.test.ushkov.RocksDBHttpServer$$Lambda$69.0x0000000800cc8cf0","lambda$handleRequest$0","one.nio.http.HttpServer","RequestHandler1_entityPut","ok.dht.test.ushkov.RocksDBService","entityPut","org.rocksdb.RocksDB","put","librocksdbjni10819322084221648613.jnilib","Java_org_rocksdb_RocksDB_put__J_3BII_3BII","rocksdb_put_helper","rocksdb::CompactedDBImpl::Open","rocksdb::DBImpl::Put","rocksdb::DB::Put","rocksdb::DBImpl::Write","rocksdb::DBImpl::WriteImpl","rocksdb::DBImpl::WriteToWAL","rocksdb::log::Writer::AddRecord","one.nio.util.Utf8","toBytes","write","java.util.concurrent.ForkJoinPool","managedBlock","unmanagedBlock","java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode","block","isReleasable","currentThread","JVM_CurrentThread","JavaThread::threadObj","one.nio.net.JavaSelector","select","sun.nio.ch.SelectorImpl","lockAndDoSelect","sun.nio.ch.KQueueSelectorImpl","doSelect","LinearScan::build_intervals","CounterOverflowStub::visit","lock","java.util.concurrent.locks.ReentrantLock$Sync","park","setBlocker","putReferenceOpaque","putReferenceVolatile","Unsafe_PutReferenceVolatile","sendResponse","writeResponse","one.nio.net.Session$ArrayQueueItem","sun.nio.ch.IOUtil","writeFromNativeBuffer","sun.nio.ch.SocketDispatcher","sun.nio.ch.FileDispatcherImpl","write0","rocksdb::WritableFileWriter::Flush","rocksdb::WritableFileWriter::WriteBuffered","rocksdb::WriteThread::AwaitState","Compilation::build_hir","IR::IR","IRScope::IRScope","GraphBuilder::GraphBuilder","GraphBuilder::iterate_all_blocks","GraphBuilder::iterate_bytecodes_for_block","GraphBuilder::invoke","GraphBuilder::try_inline","GraphBuilder::try_inline_full","GraphBuilder::access_field","GraphBuilder::make_constant","ciArray::is_array","C2Compiler::compile_method","Compile::Compile","Compile::Code_Gen","PhaseChaitin::Register_Allocate","PhaseChaitin::build_ifg_physical","PhaseChaitin::interfere_with_live","IndexSetIterator::advance_and_next","one.nio.net.JavaSelector$1","next","sun.nio.ch.KQueue","poll","kevent","rocksdb::WriteThread::CompleteParallelMemTableWriter","swtch_pri","libc++.1.dylib","std::__1::condition_variable::wait","__psynch_cvwait","Compile::Optimize","PhaseIterGVN::optimize","Unique_Node_List::pop","LinearScan::add_use","processEvents","PhaseIdealLoop::optimize","PhaseIdealLoop::build_and_optimize","PhaseIdealLoop::build_loop_early","ProjNode::pinned","PhaseIdealLoop::build_loop_late","PhaseIdealLoop::build_loop_late_post_work","PhaseIdealLoop::idom","ProjNode::proj_type","Compile::optimize_loops","PhaseIdealLoop::eliminate_useless_predicates","PhaseIdealLoop::collect_potentially_useful_predicates","PhaseIdealLoop::get_skeleton_predicates","MultiNode::proj_out","read","readIntoNativeBuffer","read0","getBlocker","getReferenceOpaque","getReferenceVolatile","AccessInternal::PostRuntimeDispatch<G1BarrierSet::AccessBarrier<402470ull, G1BarrierSet>, ","LockTracer::UnsafeParkHook","Unsafe_Park","Parker::park","LIR_Assembler::emit_code","LIR_Assembler::emit_lir_list","LIR_Assembler::emit_op0","PhaseIterGVN::transform_old","IfNode::search_identical","GrowableArrayWithAllocator<long, GrowableArray<long> >::at_grow","GrowableArrayWithAllocator<long, GrowableArray<long> >::grow","PhaseChaitin::add_input_to_liveout","PhaseChaitin::raise_pressure","RegMask::is_UP","parseRequest","CompilationLog::log_compile","CompileTask::print","CompileTask::print_impl","outputStream::print","outputStream::do_vsnprintf","PhaseIdealLoop::get_late_ctrl_with_anti_dep","MergeMemNode::Opcode","PhaseCFG::do_global_code_motion","PhaseCFG::global_code_motion","PhaseCFG::schedule_local","Matcher::match","Matcher::xform","Node::add_out","ciBytecodeStream::get_method","ciEnv::get_method_by_index_impl","Matcher::find_shared","Matcher::pd_clone_node","ConINode::Opcode","PhaseOutput::fill_buffer","loadPNode::emit","end","java.nio.channels.spi.AbstractSelector","blockedOn","java.lang.System$2","PhaseOutput::install","PhaseOutput::install_code","ciEnv::register_method","ciEnv::validate_compile_task_dependencies","Dependencies::validate_dependencies","Dependencies::DepStream::check_dependency","Dependencies::DepStream::check_new_klass_dependency","PhaseChaitin::gather_lrg_masks","PhaseCFG::call_catch_cleanup","ciInstanceKlass::java_mirror","ciKlass::java_mirror","ciObjectFactory::get","ciObjectFactory::create_new_object","libsystem_platform.dylib","_platform_memmove$VARIANT$Haswell","LIR_Assembler::emit_op1","LIR_Assembler::move_op","rocksdb::WriteBatchInternal::InsertInto","rocksdb::WriteBatchInternal::Iterate","rocksdb::WriteBatchInternal::UpdateProtectionInfo","rocksdb::MemTable::Add","rocksdb::SkipListFactory::CreateMemTableRep","rocksdb::MemTable::GetMinLogContainingPrepSection","PhaseOutput::Process_OopMap_Node","MachSpillCopyNode::bottom_type","RegionNode::Ideal","PhaseIterGVN::subsume_node","MergeMemNode::hash","PhaseOutput::Output","PhaseOutput::shorten_branches","PhaseOutput::scratch_emit_size","Assembler::addq","java.lang.invoke.Invokers$Holder","linkToTargetMethod","java.lang.invoke.DirectMethodHandle$Holder","newInvokeSpecial","allocateInstance","InstanceKlass::check_valid_for_instantiation","remaining","one.nio.http.Response","<init>","java.lang.StringBuilder","toString","BlockList::iterate_forward","LIRGenerator::block_do","ciMethod::is_method_handle_intrinsic","PhaseIdealLoop::Dominators","NTarjan::EVAL","ConnectionGraph::do_analysis","ConnectionGraph::compute_escape","ConnectionGraph::add_node_to_connection_graph","ConnectionGraph::get_addp_base","PhaseIdealLoop::split_if_with_blocks","LIR_Assembler::emit_profile_type","Assembler::jmpb_0","Label::add_patch_at","CodeBuffer::create_patch_overflow","PhaseChaitin::Split","Matcher::match_sfpt","PhaseChaitin::split_USE","PhaseChaitin::get_spillcopy_wide","RegMask::is_aligned_pairs","LinearScan::assign_reg_num","LinearScan::compute_oop_map","Arena::Amalloc","IndexSetIterator::next","RegMask::AND","PhaseCFG::schedule_late","Node_Backward_Iterator::next","PhaseChaitin::Select","IndexSet::insert","IdealLoopTree::loop_predication","PhaseIdealLoop::loop_predication_impl","PhaseIdealLoop::loop_predication_follow_branches","PhaseIdealLoop::is_dominator","PhaseIdealLoop::dom_depth","isOpen","libc++abi.dylib","operator delete","one.nio.http.Request","getPath","java.lang.String","substring","java.lang.StringLatin1","newString","PhaseChaitin::post_allocate_copy_removal","RegMaskIterator::next","PhaseIdealLoop::split_if_with_blocks_pre","PhaseIdealLoop::split_thru_phi","Type::cmp","rocksdb::WriteBatch::Put","std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >::append","ParseGenerator::generate","Parse::Parse","Parse::do_all_blocks","Parse::do_one_block","Parse::do_call","PredictedCallGenerator::generate","GraphKit::null_check_receiver_before_call","ciMethod::get_method_at_bci","ciBytecodeStream::has_local_signature","ciEnv::is_in_vm","PhaseChaitin::assign_high_score_to_immediate_copies","Node_Array::grow","_platform_bzero$VARIANT$Haswell","_pthread_cond_wait","_pthread_mutex_firstfit_lock_slow","__psynch_mutexwait","compareAndSetState","PhaseCFG::PhaseCFG","PhaseCFG::build_cfg","Node::out_grow","Relocation::new_addr_for","PhaseIFG::init","rocksdb::MemTable::KeyComparator::operator","rocksdb::Comparator::CreateFromString","_platform_memcmp$VARIANT$Base","Node::rematerialize","PhaseAggressiveCoalesce::insert_copies","PhaseRemoveUseless::PhaseRemoveUseless","Compile::identify_useful_nodes","void AccessInternal::arraycopy_conjoint<signed char>","RegMask::overlap","one.nio.server.Server","incRequestsProcessed","java.util.concurrent.atomic.LongAdder","increment","add","java.util.concurrent.atomic.Striped64","getProbe","java.lang.invoke.VarHandleGuards","guard_L_I","ShouldNotReachHereNode::is_block_proj","PhaseChaitin::elide_copy","VectorSet::set","Compile::~Compile","Arena::~Arena","Arena::destruct_contents","Chunk::operator delete","libsystem_malloc.dylib","free_medium","madvise","PhaseIdealLoop::split_if_with_blocks_post","PhaseIdealLoop::identical_backtoback_ifs","MemBarNode::match_edge","RegionNode::pinned","PhaseIterGVN::remove_globally_dead_node","Node::replace_edge","Node::set_req_X","Node::set_req","PhiNode::Ideal","NonSafepointEmitter::emit_non_safepoint","DebugInformationRecorder::add_new_pc_offset","os::javaTimeMillis","libsystem_c.dylib","clock_gettime","advance_directory.cold.1","I2C/C2I adapters","rocksdb::WriteThread::LaunchParallelMemTableWriters","std::__1::condition_variable::notify_one","rocksdb::WriteBatch::WriteBatch","indexOf","OptoRuntime::new_instance_C","InstanceKlass::allocate_instance","MemAllocator::allocate","_sigtramp","AllocTracer::trapHandler","Profiler::recordSample","JvmtiEnvBase::get_stack_trace","vframe::java_sender","JavaThread::post_run","JavaThread::exit","Threads::remove","ThreadsSMRSupport::remove_thread","ThreadsList::remove_thread","ThreadsList::ThreadsList","AllocateHeap","os::malloc","_malloc_zone_malloc","nanov2_malloc","nanov2_allocate","std::__1::vector<std::__1::pair<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >, MethodSample>, std::__1::allocator<std::__1::pair<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >, MethodSample> > >::vector<std::__1::__map_iterator<std::__1::__tree_iterator<std::__1::__value_type<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >, MethodSample>, std::__1::__tree_node<std::__1::__value_type<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >, MethodSample>, void*>*, long> > >","rocksdb::WritableFileWriter::Append","rocksdb::CompactedDBImpl::Get","sun.nio.ch.Util","getTemporaryDirectBuffer","sun.nio.ch.Util$BufferCache","get","iteratorFor","java.util.HashMap$KeyIterator","java.util.HashMap$HashIterator","nextNode","isAsciiString","toAsciiString","pthread_mutex_trylock","rocksdb::WriteThread::ExitAsBatchGroupLeader","JavaThreadParkedState::~JavaThreadParkedState","OptoRuntime::new_array_C","CollectedHeap::array_allocate","JNIEnv_::CallStaticObjectMethod","jni_CallStaticObjectMethodV","JNI_ArgumentPusher::JNI_ArgumentPusher","rocksdb::log::Writer::EmitPhysicalRecord","rocksdb::BlobFileBuilder::Abandon","jni_ExceptionCheck","pthread_testcancel","rocksdb::WriteThread::EnterAsBatchGroupLeader","pthread_mutex_lock","_pthread_mutex_droplock","Parker::unpark","rocksdb::DBImpl::PreprocessWrite","ResourceArea::rollback_to","Chunk::next_chop","free","small_size","rocksdb::WriteThread::ExitAsBatchGroupFollower","jvmti_GetClassSignature","ThreadShadow::clear_pending_exception","rocksdb::ColumnFamilyHandleImpl::~ColumnFamilyHandleImpl","std::__1::moneypunct_byname<wchar_t, true>::moneypunct_byname","RegMask::SUBTRACT","ThreadsListHandle::ThreadsListHandle","SafeThreadsListPtr::acquire_stable_list_fast_path","equalsIgnoreCase","regionMatches","regionMatchesCI","SharedRuntime::complete_monitor_locking_C","SharedRuntime::monitor_enter_helper","ObjectSynchronizer::enter","ObjectSynchronizer::inflate","ObjectMonitor::ObjectMonitor","AccessInternal::PostRuntimeDispatch<G1BarrierSet::AccessBarrier<548964ull, G1BarrierSet>, ","rocksdb::DBImpl::RecordSeqnoToTimeMapping","one.nio.http.PathMapper","java.util.HashMap","getNode","operator new[]","tryRelease","getRequiredParameter","getParameter","one.nio.util.ByteArrayBuilder","append","charAt","JavaThreadParkedState::JavaThreadParkedState","JavaThreadStatusChanger::save_old_state","initialTryLock","Thread::is_Named_thread","java_lang_Thread::set_thread_status","java_lang_Thread::thread","Fingerprinter::compute_fingerprint_and_return_type","jni_invoke_static","JNI_ArgumentPusherVaArg::push_arguments_on","JNI_ArgumentPusherVaArg::do_type","rocksdb::WriteBatch::~WriteBatch","nanov2_pointer_size","JNIHandles::make_local","jni_GetByteArrayRegion","check_bounds","JvmtiEnv::GetClassSignature","InstanceKlass::signature_name","_platform_strlen","hash","hashCode","sun.misc.Unsafe","copyMemory","copyMemoryChecks","unknown_Java","begin","std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >::reserve","rocksdb::WriteBatchInternal::Put","LockTracer::recordContendedLock","jvmti_GetStackTrace","jvmti_GetCurrentThread","libnio.dylib","Java_sun_nio_ch_SocketDispatcher_read0","Java_sun_nio_ch_FileDispatcherImpl_write0","JavaCalls::call_helper","JavaCallWrapper::JavaCallWrapper","JNIHandleBlock::allocate_block","pthread_cond_signal","PhaseCFG::estimate_block_frequency","CFGLoop::compute_freq","IfTrueNode::Opcode","Symbol::as_C_string","enableWait","runStateAtLeast","std::__1::mutex::unlock","_pthread_mutex_firstfit_unlock_slow","__psynch_mutexdrop","InstanceKlass::initialize","java.nio.ByteBuffer","wrap","java.nio.HeapByteBuffer","rocksdb::ColumnFamilyHandleImpl::GetComparator","ZBUFFv07_recommendedDOutSize","putBuffer","ObjectMonitor::enter","JvmtiExport::post_monitor_contended_entered","LockTracer::MonitorContendedEntered","compiledVFrame::sender","vframe::sender","rocksdb::crc32c::Crc32cCombine","std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >::__shrink_or_extend","operator new","nanov2_allocate_from_block","WeakHandle::WeakHandle","Mutex::lock_without_safepoint_check","fdval","JavaThread::check_and_handle_async_exceptions","convertReturnVal","thread-local wrapper routine for rocksdb::perf_context","std::__1::chrono::steady_clock::now","rocksdb::DBImpl::MemTableInsertStatusCheck","rocksdb::GetColumnFamilyUserComparator","os::javaTimeNanos","mach_absolute_time","acquireScope","JavaThread::is_Java_thread","java.util.concurrent.locks.AbstractOwnableSynchronizer","setExclusiveOwnerThread","checkBoundsBeginEnd","rocksdb::ColumnFamilyMemTablesImpl::Seek","clock_gettime_nsec_np","mach_continuous_time","_mach_continuous_time","startsWith","sun.nio.ch.Util$2","iterator","java.util.HashSet","java.util.HashMap$KeySet","coder","SpinPause","_os_semaphore_wait.cold.1","jbyte_disjoint_arraycopy","getHeader","length","gettimeofday","pthread_cond_wait","std::__1::mutex::lock","trim","thread-local wrapper routine for rocksdb::iostats_context","ThreadInVMfromNative::ThreadInVMfromNative","checkPrimitivePointer","checkPrimitiveArray","processReadyEvents","putVal","newNode","pthread_mutex_unlock","jlong_disjoint_arraycopy","ObjAllocator::initialize","std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >::resize","rocksdb::crc32c::Extend","oopDesc::metadata_field","rocksdb::InstrumentedMutex::Lock","_kernelrpc_mach_port_deallocate_trap","jshort_disjoint_arraycopy","rocksdb::WriteBatch::Clear","_platform_memset$VARIANT$Haswell","HandleMark::~HandleMark","unsafe_arraycopy","jni_GetObjectClass","AccessInternal::PostRuntimeDispatch<G1BarrierSet::AccessBarrier<2646116ull, G1BarrierSet>, ","one.nio.util.URLEncoder","decode","java.util.LinkedHashMap","linkNodeLast","PreserveExceptionMark::PreserveExceptionMark","sched_yield","rocksdb::DBImpl::MergeBatch","rocksdb::port::Mutex::Unlock","JNIHandleBlock::allocate_handle","startParsingRequestBody","java.lang.Integer","parseInt","default_zone_free_definite_size","rocksdb::WriteController::IsStopped","os::os_exception_wrapper","std::__1::condition_variable::~condition_variable","pthread_cond_destroy","processDeregisterQueue","java.util.ArrayDeque","pollFirst","ObjectMonitor::TrySpin","ObjectMonitor::NotRunnable","java.nio.MappedByteBuffer","limit","java.nio.Buffer","rocksdb::WriteBatchInternal::Count","JavaThread::last_java_vframe","CodeBlob::is_compiled","nanov2_size","jvmti_Deallocate","rocksdb::WriteBatchInternal::Append","frame::real_sender","frame::sender","frame::sender_raw","frame::sender_for_compiled_frame","OopMapSet::update_register_map","ImmutableOopMapSet::find_map_at_offset","os::stack_shadow_pages_available","rocksdb::WriteBatchInternal::GetColumnFamilyIdAndTimestampSize","rocksdb::ColumnFamilyHandleImpl::GetID","ConcurrentGCThread::run","G1ServiceThread::run_service","G1ServiceThread::run_task","G1RemSetSamplingTask::execute","G1RemSetSamplingTask::sample_young_list_rs_length","G1CollectionSet::iterate","G1YoungRemSetSamplingClosure::do_heap_region","_pthread_cond_check_init_slow","__commpage_gettimeofday_internal","rocksdb::GetPerfLevel","default_zone_malloc","rocksdb::PosixWritableFile::Append","ObjectMonitor::EnterI","os::PlatformEvent::park","nanov2_free_definite_size","rocksdb::PosixDirectory::FsyncWithDirOptions","nanov2_free_to_block","rocksdb::MemTable::UpdateFlushState","equals","rocksdb::WriteBatch::VerifyChecksum","_pthread_mutex_lock_init_slow","jbyte_arraycopy","__commpage_gettimeofday","ThreadStateTransition::trans_from_native","thread_self_trap","rewind","_platform_strncmp","JavaCalls::call","Java_sun_nio_ch_KQueue_poll","Runtime1::counter_overflow","CompilationPolicy::event","CompilationPolicy::compile","RetNode::is_block_proj","std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >::push_back","GraphKit::record_profiled_parameters_for_speculation","ciMethod::parameter_profiled_type","MachNode::in_RegMask","putByte","JNI_OnLoad","operator delete[]","Method::jmethod_id","InstanceKlass::get_jmethod_id","getExclusiveOwnerThread","malloc","registerPendingSessions","rocksdb::DBImpl::DefaultColumnFamily","java.lang.ThreadLocal","_pthread_mutex_check_init_slow","rocksdb::WriteThread::LinkOne","java.lang.CharacterDataLatin1","toUpperCase","contains","containsKey","ChunkPool::free","JavaThread::pd_last_frame","CodeCache::find_blob","CodeCache::find_blob_unsafe","CodeHeap::find_blob_unsafe","jint_disjoint_arraycopy","std::__1::mutex::~mutex","getProperties","thread-local wrapper routine for rocksdb::ConcurrentArena::tls_cpuid","JfrConditionalFlushWithStacktrace<EventJavaMonitorEnter>::JfrConditionalFlushWithStacktrace","java.util.Arrays","copyOfRange","rocksdb::PosixWritableFile::GetFileSize","java.lang.ThreadLocal$ThreadLocalMap","getEntry","java.lang.ref.Reference","refersTo","VMThread::run","VMThread::loop","VMThread::inner_execute","SafepointSynchronize::begin","SafepointSynchronize::do_cleanup_tasks","WorkGang::run_task","GangTaskDispatcher::coordinator_execute_on_workers","semaphore_signal_trap","__cxa_guard_abort","getEvent","checkPointer","checkOffset","rocksdb::WriteThread::JoinBatchGroup","java.util.concurrent.atomic.AtomicInteger","rocksdb::port::Mutex::AssertHeld","call_stub","rocksdb::ReadRecordFromWriteBatch","java_lang_Thread::get_thread_status","rocksdb::WriteBatch::HasMerge","Unique_Node_List::remove_useless_nodes","getBody","linkFirst","signal","java.util.concurrent.ConcurrentLinkedQueue","updateHead","guard_LLL_Z","unlinkFirst","pthread_dependency_wait_np.cold.3","javaVFrame::is_java_frame","Java_org_rocksdb_AbstractEventListener_disposeInternal","ObjectSynchronizer::quick_enter","AccessInternal::PostRuntimeDispatch<G1BarrierSet::AccessBarrier<594020ull, G1BarrierSet>, ","ThreadsListHandle::cv_internal_thread_to_JavaThread","rocksdb::WriteBatchInternal::AppendedByteSize","methodHandle::~methodHandle","rocksdb::ColumnFamilyMemTablesImpl::GetMemTable","mach_timebase_info","JavaFrameAnchor::make_walkable","rocksdb::SetPerfLevel","JvmtiEnv::Deallocate","InstanceKlass::should_be_initialized","isHeldExclusively","rocksdb::PosixWritableFile::Flush","Unsafe_AllocateInstance","jint_arraycopy","itable stub","rocksdb::Random::GetTLSInstance","ciObjectFactory::get_metadata","NonSafepointEmitter::observe_instruction","JVMState::of_depth","rocksdb::port::Mutex::Lock","HandleMark::initialize","jfr_is_event_enabled","JvmtiExport::post_monitor_contended_enter","jvmti_SetTag","JvmtiEnv::SetTag","JvmtiTagMap::set_tag","CollectedHeap::hash_oop","doSignal","jdk.internal.misc.ScopedMemoryAccess","pthread_mutex_destroy","oopDesc::address_field","setBody","ThreadBlockInVMPreprocess<InFlightMutexRelease>::~ThreadBlockInVMPreprocess","rocksdb::EncodeVarint32","rocksdb::WriteBatch::Handler::Continue","InstanceKlass::allocate_objArray","vframe::new_vframe","java.lang.Character","toLowerCase","compiledVFrame::compiledVFrame","CompiledMethod::scope_desc_at","ScopeDesc::decode_body","CompressedReadStream::read_int","JvmtiEnv::GetCurrentThread","java.util.concurrent.atomic.Striped64$Cell","cas","guard_LJJ_Z","java.lang.invoke.VarHandleLongs$FieldInstanceReadWrite","weakCompareAndSetRelease","rocksdb::FlushScheduler::Empty","java_lang_Thread::interrupted","JavaThreadStatusChanger::set_thread_status","G1ServiceThread::sleep_before_next_cycle","Monitor::wait_without_safepoint_check","os::PlatformMonitor::wait","java.util.concurrent.locks.AbstractQueuedSynchronizer$Node","getAndUnsetStatus","getAndBitwiseAndInt","__ulock_wait","SignatureIterator::return_type","getState","_complete_monitor_locking_Java","JavaCallArguments::JavaCallArguments","StackOverflow::reguard_stack_if_needed","scope","nmethod::is_zombie","interpretedVFrame::bci","CallTraceStorage::put","AccessInternal::PostRuntimeDispatch<G1BarrierSet::AccessBarrier<544868ull, G1BarrierSet>, ","JavaCallWrapper::~JavaCallWrapper","Arena::grow","ChunkPool::allocate","ThreadCritical::ThreadCritical","isLatin1","GrowableArrayWithAllocator<Metadata*, GrowableArray<Metadata*> >::append","getMap","JavaCallArguments::parameters","WatcherThread::run","WatcherThread::sleep","JvmtiEnvBase::phase","setState","ThreadsListHandle::~ThreadsListHandle","VMError::is_error_reported","thread-local wrapper routine for rocksdb::perf_level","ensureCapacity","vframe::vframe","FlightRecorder::recordEvent","ScopeDesc::sender","rocksdb::NewThreadPool","rocksdb::ThreadPoolImpl::Impl::BGThreadWrapper","rocksdb::ThreadPoolImpl::Impl::BGThread","rocksdb::DBImpl::BackgroundCallFlush","rocksdb::DBImpl::BackgroundFlush","rocksdb::DBImpl::FlushMemTablesToOutputFiles","rocksdb::DBImpl::FlushMemTableToOutputFile","rocksdb::FlushJob::Run","rocksdb::FlushJob::WriteLevel0Table","rocksdb::BuildTable","rocksdb::BlockBasedTableBuilder::Add","rocksdb::BlockBasedTableBuilder::Flush","rocksdb::BlockBasedTableBuilder::WriteBlock","rocksdb::BlockBasedTableBuilder::CompressAndVerifyBlock","rocksdb::CompressBlock","rocksdb::CompressedSecondaryCache::Insert","snappy::RawCompress","snappy::Compress","snappy::internal::CompressFragment","JavaThread::is_interrupted","rocksdb::CompactionIterator::Next","rocksdb::CompactionIterator::NextFromInput","rocksdb::OutputValidator::Add","rocksdb::NotifyCollectTableCollectorsOnAdd","snappy::Bits::Log2Floor","snappy::LittleEndian::IsLittleEndian","snappy::Bits::FindLSBSetNonZero64","std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >::__assign_external","rocksdb::BlockBuilder::EstimateSizeAfterKV","CompilationPolicy::must_be_compiled","rocksdb::TableCache::NewIterator","rocksdb::TableCache::FindTable","rocksdb::TableCache::GetTableReader","rocksdb::FileSystem::Default","__open","rocksdb::ColumnFamilyData::UnrefAndTryDelete","rocksdb::SuperVersion::~SuperVersion","rocksdb::MemTable::~MemTable","rocksdb::Arena::~Arena","CompiledMethod::find_pc_desc","JfrEvent<EventThreadPark>::should_commit","OptoRuntime::new_array_nozero_C","CodeHeap::find_block_for","nmethod::metadata_at","SafeThreadsListPtr::release_stable_list","JavaThread::can_call_java","enqueue","casTail","CompilationPolicy::compile_if_required","hasNext","rocksdb::WriteBatch::GetProtectionBytesPerKey","__gettimeofday","RegisterMap::RegisterMap","_platform_strcpy","rocksdb::GetColumnFamilyID","nmethod::scopes_pcs_end","canReacquire","isEnqueued","JvmtiEnvBase::jvmtiMalloc","java.lang.invoke.LambdaForm$MH.0x0000000800cccc00","invokeExact_MT","java.lang.invoke.LambdaForm$DMH.0x0000000800ccd000","pthread_self","_pthread_cond_updateval","JavaThreadBlockedOnMonitorEnterState::JavaThreadBlockedOnMonitorEnterState","SafeThreadsListPtr::acquire_stable_list","JfrEvent<EventJavaMonitorEnter>::should_commit","AbstractInterpreter::size_top_interpreter_activation","jvmti_GetTag","rocksdb::TrimHistoryScheduler::Empty","MemAllocator::mem_allocate","MemAllocator::allocate_inside_tlab_slow","G1CollectedHeap::allocate_new_tlab","PcDescContainer::find_pc_desc_internal","PcDescCache::find_pc_desc","findHandlerByHost","OopMapStream::is_done","OopMapValue::read_from","PreserveExceptionMark::~PreserveExceptionMark","getHeaderCount","resource_allocate_bytes","_pthread_mutex_firstfit_wake","deoptimization","Deoptimization::uncommon_trap","Deoptimization::uncommon_trap_inner","Events::log_deopt_message","Deoptimization::fetch_unroll_info_helper","Deoptimization::create_vframeArray","vframeArray::allocate","vframeArray::fill_in","RegisterMap::location","RegisterMap::pd_location","jni_ThrowNew","Exceptions::_throw","ExceptionsEventLog::log","InstanceKlass::oop_print_value_on","Symbol::print_value_on","outputStream::do_vsnprintf_and_write","os::vsnprintf","vsnprintf","_vsnprintf","__v2printf","__vfprintf","__sfvwrite","NodeHash::hash_find_insert","Matcher::match_tree","Matcher::ReduceInst","State::MachNodeGenerator","checkCastPPNode::ideal_Opcode","PhaseLive::compute","IndexSet::clear","IndexSet::free_block","MachNode::rematerialize","PhaseChaitin::use_prior_register","RegMask::is_misaligned_pair","RegMask::Size",];
+
+    let currentHeatmap = executionsHeatmap;
+    let currentHeatmapType = 'executions';
+
+    let heatHeight = 60;
+
+    let heatLastSample = -1;
+    let heatActiveSample1 = -1;
+    let heatActiveSample2 = -1;
+    let heatDiffStart = -1;
+    let heatDiffEnd = -1;
+    let highlightStart = -1;
+    let highlightEnd = -1;
+
+    const titleText = document.getElementById("title").textContent;
+    document.getElementById("title").style.display = 'none';
+    document.title = titleText;
+
+    const heatCanvas = document.getElementById('heatmap-canvas');
+    const heatStatus = document.getElementById('status');
+    const heatCanvasWrapper = document.getElementById('heatmap-canvas-wrapper');
+    const heatCanvasContainer = document.getElementById('heatmap-canvas-container');
+
+    let heatC;
+    let prevDx = -1000000000;
+
+    let searchExecutedCount = 0;
+    let searchMax = 0;
+
+    const timeOptions = {
+        year: '2-digit',
+        month: '2-digit',
+        day: '2-digit',
+        timeZoneName: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 2
+    };
+
+    const timeOptionsShort = {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 2
+    };
+
+    const timeOptionsTiny = {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23',
+        //hour12: false
+    };
+
+    function methodInfo(methodIndex, out) {
+        if (methodIndex === -1) {
+            out.className = '';
+            out.methodName = 'all';
+            out.location = 0;
+            out.type = 3;
+            return;
+        }
+
+        methodIndex--;
+
+        let methodAndClass = methods.int36(methodIndex * 12);
+        let locationAndType = methods.int36(methodIndex * 12 + 6)
+        let className = (methodAndClass & 0x3FFFF) - 1;
+        let methodName = (methodAndClass >>> 18) - 1;
+
+        out.className = cpool[className];
+        out.methodName = cpool[methodName];
+        out.location = locationAndType >>> 4;
+        out.type = locationAndType & 15;
+    }
+
+    function title(methodIndex, out) {
+        methodInfo(methodIndex, out);
+        const codeLine = (out.location & 0xffff);
+        let locationSuffix = codeLine === 0 ? "" : (":" + codeLine);
+
+        if (out.methodName === '') {
+            return out.className + locationSuffix;
+        }
+        if (out.className === '') {
+            return out.methodName + locationSuffix;
+        }
+        if (out.type >= 3 && out.type <= 5) {
+            return out.methodName + locationSuffix;
+        }
+
+        return out.className + "." + out.methodName + locationSuffix;
+    }
+
+    let bgInterval = null;
+    let bgTasks = [];
+    let cooldownTime = 0;
+    let nextTask = 0;
+
+    function addTask(id, iteration, afterFrame) {
+        for (let t of bgTasks) {
+            if (t.id === id) {
+                t.f = iteration;
+                t.a = afterFrame;
+                return;
+            }
+        }
+
+        bgTasks.push({id: id, f: iteration, a: afterFrame});
+        if (bgTasks.length === 1) {
+            bgInterval = setInterval(function() {
+                let start = performance.now();
+                if (start <= cooldownTime) {
+                    return;
+                }
+                let overflow = false;
+                do {
+                    let task = bgTasks[nextTask];
+                    if (task.f()) {
+                        nextTask++;
+                    } else {
+                        bgTasks.splice(nextTask, 1);
+                        if (bgTasks.length === 0) {
+                            clearInterval(bgInterval);
+                            nextTask = 0;
+                            return;
+                        }
+                    }
+
+                    if (nextTask >= bgTasks.length) {
+                        nextTask = 0;
+                        overflow = true;
+                    }
+                } while(performance.now() - start < 8);
+
+                for (let q = 0; q < overflow ? bgTasks.length : nextTask; q++) {
+                    bgTasks[q].a();
+                }
+            })
+        }
+    }
+
+    function prepareFrames(from, to) {
+        let mul = zoomToGroupSize[currentHeatmap.zoom];
+        from *= mul;
+        to = (to + 1) * mul - 1;
+        if (to >= currentHeatmap.blocks.length) {
+            to = currentHeatmap.blocks.length - 1;
+        }
+
+        const frames = new Queue();
+        const root = new Map();
+        root.c = 0;
+        root.m = -1;
+        root.x = 0;
+        const roots = [root];
+        let levelsCount = 1;
+
+        for (let pos = from; pos <= to; pos++) {
+            const block = currentHeatmap.blocks[pos];
+
+            root.c += block.length;
+
+            for (let stack of block) {
+                levelsCount = Math.max(stack.length + 1, levelsCount);
+
+                frames.push(root);
+                frames.push(stack);
+            }
+        }
+
+        return [frames, roots, levelsCount]
+    }
+
+    function nextFrames(frames, level) {
+        frames.push(null);  // end stacks marker
+
+        let nowFrame = null;
+
+        while (true) {
+            const frame = frames.shift();
+            if (frame === null) {   // end stack marker
+                break;
+            }
+
+            const stack = frames.shift();
+            if (level >= stack.length) {
+                continue;
+            }
+
+            const methodId = stack[level];
+            nowFrame = frame.get(methodId);
+            if (nowFrame === undefined) {
+                nowFrame = new Map();
+                nowFrame.m = methodId;
+                nowFrame.c = 0;
+                frame.set(methodId, nowFrame);
+            }
+            nowFrame.c++;
+
+            frames.push(nowFrame);
+            frames.push(stack);
+        }
+    }
+
+    function renderTraces(from, to) {
+        let [frames, roots, levelsCount] = prepareFrames(from, to);
+        levels.length = 0;
+        for (let i = 0; i < levelsCount; i++) {
+            levels.push([]);
+        }
+
+        let currentLevel = 0;
+        let levelToRedraw = 0;
+        let methodInfoOut = {};
+
+        addTask('flame', function () {
+                nextFrames(frames, currentLevel);
+
+                let level = levels[currentLevel];
+                let nextRoots = [];
+                for (let root of roots) {
+                    let x = root.x;
+                    const t = title(root.m, methodInfoOut);
+                    let color = getColor(palette[methodInfoOut.type]);
+                    level.push({left: x, width: root.c, color: color, title: t});
+
+                    let nextFrames = [...root.values()];
+
+                    nextFrames.sort((k1, k2) => k2.c - k1.c);
+                    for (let frame of nextFrames) {
+                        frame.x = x;
+                        x += frame.c;
+                        nextRoots.push(frame);
+                    }
+                }
+                level.sort((k1, k2) => k1.left - k2.left);
+
+                roots = nextRoots;
+                currentLevel++;
+                if (currentLevel < levelsCount) {
+                    return true;
+                }
+                renderWithMatch(levelsCount * 16, levels[0][0], 0);
+                return false;
+            },
+            function () {
+                renderWithMatch(4096, levels[0][0], 0, levelToRedraw);
+                levelToRedraw = currentLevel;
+            });
+    }
+
+    function renderWithMatch(newCanvasHeight, root, level, minLevel) {
+        newCanvasHeight = Math.min(32767, newCanvasHeight);
+        if (canvasHeight !== newCanvasHeight) {
+            canvasHeight = newCanvasHeight;
+            canvas.style.height = canvasHeight + 'px';
+            canvas.height = canvasHeight * (devicePixelRatio || 1);
+            c = canvas.getContext('2d');
+            if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+            c.font = document.body.style.font;
+        }
+        const matched = render(root, level, minLevel);
+        if (pattern === undefined) {
+            document.getElementById('match').style.display = 'none';
+            document.getElementById('produced').style.display = 'inherit';
+        } else {
+            document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+            document.getElementById('match').style.display = 'inline-block';
+            document.getElementById('produced').style.display = 'none';
+        }
+    }
+
+    function renderDiff(from, to, baseFrom, baseTo) {
+        let [frames, roots, levelsCount] = prepareFrames(from, to);
+        let [baseFrames, baseRoots, ] = prepareFrames(baseFrom, baseTo);
+        roots[0].b = baseRoots[0];
+
+        levels.length = 0;
+        for (let i = 0; i < levelsCount; i++) {
+            levels.push([]);
+        }
+        let currentLevel = 0;
+        let levelToRedraw = 0;
+        let methodInfoOut = {};
+
+        let minDiff = 0;
+        let maxDiff = 0;
+
+        addTask('flame', function () {
+                nextFrames(frames, currentLevel);
+                nextFrames(baseFrames, currentLevel);
+                let level = levels[currentLevel];
+
+                for (let root of roots) {
+                    let wasCount = root.b === undefined ? 0 : root.b.c;
+                    if (wasCount !== 0) {
+                        maxDiff = Math.max(maxDiff, root.c - wasCount);
+                        minDiff = Math.min(minDiff, root.c - wasCount)
+                    }
+                }
+
+                let nextRoots = [];
+                for (let root of roots) {
+                    let x = root.x;
+
+                    let wasCount = root.b === undefined ? 0 : root.b.c;
+                    const t = title(root.m, methodInfoOut) + " (" + root.c + "/" + wasCount +")";
+                    let color;
+                    if (wasCount === 0) {
+                        color = "#dac571";
+                    } else if (wasCount >= root.c) {
+                        const ratio = (root.c - wasCount) / minDiff;
+                        color = 'rgb(' + (245 - 90 * ratio) + ',' + (250 - 90 * ratio) + ',' + 255 +')';
+                    } else {
+                        const ratio = (root.c - wasCount) / maxDiff;
+                        color = 'rgb(' + 255 + ',' + (245 - 180 * ratio) + ',' + (240 - 200 * ratio) +')';
+                    }
+                    level.push({left: x, width: root.c, color: color, title: t});
+
+                    let nextFrames = [];
+                    for (let [methodId, frame] of root) {
+                        frame.b = root.b && root.b.get(methodId);
+                        nextFrames.push(frame);
+                    }
+                    nextFrames.sort((k1, k2) => k2.c - k1.c);
+                    for (let frame of nextFrames) {
+                        frame.x = x;
+                        x += frame.c;
+                        nextRoots.push(frame);
+                    }
+                }
+                level.sort((k1, k2) => k1.left - k2.left);
+
+                roots = nextRoots;
+                currentLevel++;
+                if (currentLevel < levelsCount) {
+                    return true;
+                }
+                renderWithMatch(levelsCount * 16, levels[0][0], 0);
+                return false;
+            },
+            function () {
+                renderWithMatch(4096, levels[0][0], 0, levelToRedraw);
+                levelToRedraw = currentLevel;
+            });
+    }
+
+    function redrawHeatSamplesImpl(from, to, dx) {
+        const patternDraw = !!pattern;
+        const startBlock = currentHeatmap.startBlock();
+
+        const max = currentHeatmap.max();
+        const heatmap = currentHeatmap.heatmap();
+
+        for (let index = from; index <= to; index++) {
+            let color;
+            let i = index - startBlock;
+            if (i < 0 || i >= heatmap.length) {
+                color = '#ddd';
+            } else {
+                let count = heatmap[i];
+
+                let useFound = patternDraw && searchExecutedCount > i;
+                let maxValue = useFound ? searchMax : max;
+                let value = useFound ? found[i] : count;
+                let ratio = value / (maxValue || 1);
+
+                if (useFound) {
+                    if (ratio < 0.8) {
+                        let value = Math.round(255 - ratio * 255 / 0.8);
+                        color = 'rgb(' + value + ',' + value + ',255)';
+                    } else {
+                        let value = Math.round(255 - (ratio - 0.8) * 100 / 0.2);
+                        color = 'rgb(0,0,' + value + ')';
+                    }
+                } else {
+                    if (ratio < 0.8) {
+                        let value = Math.round(255 - ratio * 255 / 0.8);
+                        color = 'rgb(255,' + value + ',' + value + ')';
+                    } else {
+                        let value = Math.round(255 - (ratio - 0.8) * 100 / 0.2);
+                        color = 'rgb('+ value + ',0,0)';
+                    }
+                }
+
+            }
+            heatC.fillStyle = color;
+
+            let x = Math.floor(index / heatHeight);
+            let y = index % heatHeight;
+            heatC.fillRect(x * sq - dx, y * sq + canvasTimeHeight, sq, sq);
+        }
+
+        let blocksBetweenMarks = 20;
+
+        let fromBlock = Math.floor(from / blocksBetweenMarks / heatHeight) - 1;
+        let toBlock = Math.ceil(to / blocksBetweenMarks / heatHeight);
+
+        let markPixels = blocksBetweenMarks * sq;
+
+        heatC.fillStyle = '#fff';
+        heatC.fillRect(
+            fromBlock * markPixels - dx,
+            0,
+            (toBlock - fromBlock + 1) * markPixels,
+            canvasTimeHeight
+        );
+
+        heatC.beginPath();
+        heatC.moveTo(fromBlock * markPixels - dx + 0.5, canvasTimeHeight + 0.5);
+        heatC.lineTo(toBlock * markPixels - dx + 0.5, canvasTimeHeight + 0.5);
+        heatC.stroke();
+
+        heatC.fillStyle = '#000';
+
+        let groupSize = heatHeight;
+        let oneBlockMs = currentHeatmap.currentTimeBlock();
+        let oneGroupMs = oneBlockMs * groupSize;
+        let oneMarkMs = oneGroupMs * blocksBetweenMarks;
+        for (let markIndex = fromBlock; markIndex <= toBlock; markIndex++) {
+            let origin = Math.floor(startMs / oneMarkMs) * oneMarkMs;
+            let ms = origin + markIndex * oneMarkMs;
+            let markOffset = markIndex * markPixels - dx;
+
+            let title = new Date(ms).toLocaleTimeString(undefined, timeOptionsTiny);
+
+            let w = heatC.measureText(title).width;
+            let x = markOffset + (markPixels - w) / 2;
+            heatC.fillText(title, x, canvasTimeHeight - 1, markPixels);
+
+            heatC.beginPath();
+            heatC.moveTo(markOffset + 0.5, canvasTimeHeight - 2 * sqScale + 0.5);
+            heatC.lineTo(markOffset + 0.5, canvasTimeHeight + 2 * sqScale + 0.5);
+            heatC.stroke();
+        }
+    }
+
+    function redrawHeatSamples(from, to) {
+        let dx = Math.floor((heatCanvasContainer.scrollLeft - canvasScrollPadding) * sqScale);
+
+        from = Math.max(from, heatHeight * Math.floor(dx / sq));
+        to = Math.min(to, heatHeight * Math.ceil((dx + heatCanvas.width) / sq));
+        redrawHeatSamplesImpl(from, to, dx);
+    }
+
+    function redrawHeatMap() {
+        redrawHeatSamples(0, (1 + currentHeatmap.count() / heatHeight | 0) * heatHeight);
+    }
+
+    function fillCanvasWithEvents(zoom) {
+        searchExecutedCount = 0;
+        searchMax = 0;
+
+        addTask('search', function () {
+            return false;
+        }, function (){});
+
+        currentHeatmap.setZoom(zoom);
+        heatHeight = zoomToHeight[zoom];
+
+        const m = devicePixelRatio || 1;
+        sqScale = m;
+        sqPx = 5;
+        sq = Math.floor(sqPx * m);
+        sqPx = sq / m;
+        canvasTimeHeight = sq * 2 + 2;
+        canvasTimeHeightPx = canvasTimeHeight / m;
+
+        const widthPx = canvasScrollPadding + heatCanvasContainer.offsetWidth + canvasScrollPadding;
+        const heightPx = sqPx * heatHeight + canvasTimeHeightPx;
+
+        const heatWidthPx = Math.max(20, Math.ceil(currentHeatmap.count() / heatHeight)) * sqPx;
+        heatCanvasWrapper.style.width = heatWidthPx + 'px';
+        if (heatCanvasContainer.offsetWidth > heatWidthPx) {
+            heatCanvasContainer.style.overflowX = 'hidden';
+        } else {
+            heatCanvasContainer.style.overflowX = 'scroll';
+        }
+
+        heatCanvas.width = Math.ceil(widthPx * m);
+        heatCanvas.height = Math.ceil(heightPx * m);
+        heatCanvas.style.width = widthPx + 'px';
+        heatCanvas.style.height = heightPx + 'px';
+
+        heatC = heatCanvas.getContext('2d');
+        heatC.font = sq * 2 + 'px Verdana, sans-serif';
+        heatC.lineWidth = 1;
+        heatC.strokeStyle = '#000';
+
+        document.getElementById('heatmap-height-line').textContent = [' 1 sec : 20 ms ',' 1 min : 1 sec ',' 5 min : 5 sec ',' 1 hr  : 1 min '][currentHeatmap.zoom];
+        redrawHeatMap();
+    }
+
+    let found = new Uint32Array(0);
+
+    function searchIterative(r) {
+        if (r && (r = prompt('Enter regexp to search:', '')) === null) {
+            return;
+        }
+        searchExecutedCount = 0;
+        searchMax = 0;
+        if (!r) {
+            pattern = undefined;
+            redrawHeatMap();
+            addTask('search', function () {
+                return false;
+            }, function (){});
+            return;
+        }
+        let renderFrom = 0;
+        let heatmap = currentHeatmap.heatmap();
+        let count = heatmap.length;
+        found = new Uint32Array(count);
+        let start = currentHeatmap.startBlock();
+        function renderFunc() {
+            redrawHeatSamples(start + renderFrom, start + searchExecutedCount - 1);
+            renderFrom = searchExecutedCount;
+        }
+        pattern = r ? RegExp(r) : undefined;
+        const matchedMethods = new Set();
+        const methodOut = {};
+        for (let index = methods.data.length / 12; index >= 0; index--) {
+            if (pattern.test(title(index, methodOut))) {
+                matchedMethods.add(index);
+            }
+        }
+
+        let mul = zoomToGroupSize[currentHeatmap.zoom];
+
+        addTask('search', function () {
+            let amount = 0;
+            const from = searchExecutedCount * mul;
+            const to = (searchExecutedCount + 1) * mul;
+            for (let i = from; i < to; i++) {
+                const stacks = currentHeatmap.blocks[i];
+                if (stacks === undefined) {
+                    continue;
+                }
+
+                for (let stack of stacks) {
+                    for (let methodIndex of stack) {
+                        if (matchedMethods.has(methodIndex)) {
+                            amount++;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (searchMax < amount) {
+                renderFrom = 0;
+                searchMax = amount;
+            }
+
+            found[searchExecutedCount] = amount;
+            searchExecutedCount++;
+            if (searchExecutedCount >= count) {
+                renderFunc();
+
+                const matched = render(root, rootLevel);
+                document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+                document.getElementById('match').style.display = r ? 'inherit' : 'none';
+                document.getElementById('produced').style.display = r ? 'none' : 'inherit';
+
+                return false;
+            }
+            return true;
+        }, renderFunc);
+
+    }
+
+    function renderHeatmap() {
+        let dx = heatCanvasContainer.scrollLeft - canvasScrollPadding;
+        heatCanvas.style.transform = 'translate(' + dx + 'px, 0px)';
+
+        const width = Math.floor(heatCanvasContainer.offsetWidth / sq / (devicePixelRatio || 1));
+
+        let z = 0;
+        for (; z < zoomToGroupSize.length; z++) {
+            if (currentHeatmap.blocks.length / (zoomToGroupSize[z] * zoomToHeight[z]) < width) {
+                break;
+            }
+        }
+
+        fillCanvasWithEvents(Math.min(z, currentHeatmap.maxZoom - 1));
+
+        renderTraces(0, currentHeatmap.heatmap().length - 1);
+    }
+
+    heatCanvasContainer.addEventListener('scroll', function() {
+        let dx = Math.floor((heatCanvasContainer.scrollLeft - canvasScrollPadding) * sqScale);
+        let dxPx = dx / sqScale;
+        heatCanvas.style.transform = 'translate(' + dxPx + 'px, 0px)';
+        let delta = Math.abs(dx - prevDx);
+        if (delta >= heatCanvas.width || searchExecutedCount !== 0) {
+            redrawHeatMap();
+        } else {
+            heatC.drawImage(heatCanvas, prevDx - dx, 0);
+            if (prevDx < dx) {
+                let from = heatHeight * Math.floor((prevDx + heatCanvas.width) / sq);
+                let to = heatHeight * Math.ceil((dx + heatCanvas.width) / sq);
+                redrawHeatSamplesImpl(from, to, dx);
+            } else {
+                let from = heatHeight * Math.floor(dx / sq);
+                let to = heatHeight * Math.ceil(prevDx / sq);
+                redrawHeatSamplesImpl(from, to, dx);
+            }
+        }
+        prevDx = dx;
+        cooldownTime = performance.now() + 500;
+    });
+
+    document.getElementById('heatmap-height-line').onclick = function() {
+        fillCanvasWithEvents((currentHeatmap.maxZoom + currentHeatmap.zoom - 1) % (currentHeatmap.maxZoom));
+        highlightStart = highlightEnd = heatDiffStart = heatDiffEnd = heatActiveSample1 = heatActiveSample2 = -1;
+        for (let suffix of ['Selection', 'Diff', 'Active']) {
+            for (let prefix of ['left', 'leftMiddle', 'middle', 'rightMiddle', 'right']) {
+                document.getElementById(prefix + suffix).style.display = 'none';
+            }
+        }
+    }
+
+    function callHighlightRedraw(start, end, suffix) {
+        let left = document.getElementById('left' + suffix);
+        let leftMiddle = document.getElementById('leftMiddle' + suffix);
+        let middle = document.getElementById('middle' + suffix);
+        let rightMiddle = document.getElementById('rightMiddle' + suffix);
+        let right = document.getElementById('right' + suffix);
+
+        let x1 = Math.floor(start / heatHeight);
+        let y1 = start % heatHeight;
+        let x2 = Math.floor(end / heatHeight);
+        let y2 = end % heatHeight;
+
+        let veryStartX = x1 * sqPx;
+        let veryStartY = y1 * sqPx;
+        let veryEndX = x2 * sqPx;
+        let px = 1 / sqScale;
+        let singleElementWidth = sqPx + px;
+
+        let topPadding = canvasTimeHeightPx;
+
+        if (x1 === x2) {
+            left.style.display = 'none';
+            right.style.display = 'none';
+
+            for (let b of [middle, leftMiddle, rightMiddle]) {
+                b.style.left = veryStartX + 'px';
+                b.style.top = topPadding + veryStartY + 'px';
+                b.style.width = singleElementWidth + 'px';
+                b.style.height = (y2 - y1 + 1) * sqPx + px + 'px';
+                b.style.display = 'block';
+            }
+        } else {
+            left.style.left = veryStartX + 'px';
+            left.style.top = topPadding + veryStartY + 'px';
+            left.style.width = singleElementWidth + 'px';
+            left.style.height = (heatHeight - y1) * sqPx + px + 'px';
+            left.style.display = 'block';
+
+            leftMiddle.style.left = veryStartX + 'px';
+            leftMiddle.style.top = topPadding + 'px';
+            leftMiddle.style.width = singleElementWidth + 'px';
+            leftMiddle.style.height = y1 * sqPx + px + 'px';
+            leftMiddle.style.display = 'block';
+
+            rightMiddle.style.left = veryEndX + 'px';
+            rightMiddle.style.top = topPadding + (y2 + 1) * sqPx + 'px';
+            rightMiddle.style.width = sqPx + px + 'px';
+            rightMiddle.style.height = (heatHeight - y2 - 1) * sqPx + px + 'px';
+            rightMiddle.style.display = 'block';
+
+            right.style.left = veryEndX + 'px';
+            right.style.top = topPadding + 'px';
+            right.style.width = sqPx + px + 'px';
+            right.style.height = (y2 + 1) * sqPx + px + 'px';
+            right.style.display = 'block';
+
+            if (x2 - x1 === 1) {
+                middle.style.display = 'none';
+            } else {
+                middle.style.left = veryStartX + sqPx + px + 'px';
+                middle.style.top = topPadding + 'px';
+                middle.style.width = (x2 - x1 - 1) * sqPx - px + 'px';
+                middle.style.height = heatHeight * sqPx + px + 'px';
+                middle.style.display = 'block';
+            }
+        }
+    }
+
+    function callSelectionRedraw(sample, shiftPressed, ctrlPressed) {
+        if (ctrlPressed) {
+            highlightStart = sample;
+            highlightEnd = sample + Math.abs(heatActiveSample1 - heatActiveSample2);
+        } else if (shiftPressed && heatActiveSample1 !== -1) {
+            highlightStart = Math.min(heatActiveSample1, sample);
+            highlightEnd = Math.max(heatActiveSample1, sample);
+        } else {
+            highlightStart = highlightEnd = sample;
+        }
+
+        callHighlightRedraw(highlightStart, highlightEnd, 'Selection');
+
+        const index = sample - currentHeatmap.startBlock();
+        const heatmap = currentHeatmap.heatmap();
+        if (index >= 0 && index < heatmap.length) {
+            const ms = startMs + currentHeatmap.currentTimeBlock() * index;
+            const total =  heatmap[index];
+            const max = currentHeatmap.max();
+            heatCanvas.title = new Date(ms).toLocaleTimeString(undefined, timeOptionsShort) + " " + index;  // FIXME
+            const totalText = "total: " + total + " (" + Math.floor(total / max * 100) + "%)";
+            const searchText = searchExecutedCount > index
+                ? "; match: " + found[index] + " (" + Math.floor(found[index] / Math.max(total, 1) * 100) + "%)"
+                : "";
+            status.textContent = totalText + searchText;
+            status.style.display = 'inline';
+        } else {
+            status.style.display = 'none';
+        }
+    }
+
+    function callActiveRedraw(sample, shiftPressed, ctrlPressed) {
+        if (ctrlPressed) {
+            let minSelected = Math.min(heatActiveSample1, heatActiveSample2);
+            let maxSelected = Math.max(heatActiveSample1, heatActiveSample2);
+
+            heatDiffStart = highlightStart;
+            heatDiffEnd = highlightEnd;
+
+            callHighlightRedraw(highlightStart, highlightEnd, 'Diff');
+            renderDiff(
+                minSelected - currentHeatmap.startBlock(),
+                maxSelected - currentHeatmap.startBlock(),
+                heatDiffStart - currentHeatmap.startBlock(),
+                heatDiffEnd - currentHeatmap.startBlock()
+            );
+        } else {
+            heatDiffStart = -1;
+            heatDiffEnd = -1;
+            if (shiftPressed && heatActiveSample1 !== -1) {
+                heatActiveSample2 = sample;
+            } else {
+                heatActiveSample1 = heatActiveSample2 = sample;
+            }
+
+            let minSelected = Math.min(heatActiveSample1, heatActiveSample2);
+            let maxSelected = Math.max(heatActiveSample1, heatActiveSample2);
+
+            callHighlightRedraw(highlightStart, highlightEnd, 'Diff');
+            callHighlightRedraw(minSelected, maxSelected, 'Active');
+            renderTraces(
+                Math.max(0, minSelected - currentHeatmap.startBlock()),
+                Math.min(currentHeatmap.heatmap().length - 1, maxSelected - currentHeatmap.startBlock())
+            );
+        }
+    }
+
+    window.addEventListener('keydown', function (e) {
+        if (e.key === 'Shift') {
+            callSelectionRedraw(heatLastSample, true, e.ctrlKey);
+        } else if (e.key === 'Control') {
+            callSelectionRedraw(heatLastSample, e.shiftKey, true);
+        }
+    });
+
+    window.addEventListener('keyup', function (e) {
+        if (e.key === 'Shift') {
+            callSelectionRedraw(heatLastSample, false, e.ctrlKey);
+        } else if (e.key === 'Control') {
+            callSelectionRedraw(heatLastSample, e.shiftKey, false);
+        }
+    });
+
+    heatCanvas.onmousemove = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        if (y >= heatHeight) {
+            y = heatHeight - 1;
+        }
+        heatLastSample = x * heatHeight + y;
+        if ((event.buttons & 1) === 1) {
+            callSelectionRedraw(heatLastSample, true, event.ctrlKey);
+        } else {
+            callSelectionRedraw(heatLastSample, event.shiftKey, event.ctrlKey);
+        }
+    }
+
+    heatCanvas.onmouseout = function () {
+        status.style.display = 'none';
+    };
+
+    heatCanvas.onmousedown = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        let sample = x * heatHeight + y;
+
+        callActiveRedraw(sample, event.shiftKey, event.ctrlKey);
+    };
+
+    heatCanvas.onmouseup = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        let sample = x * heatHeight + y;
+
+        callActiveRedraw(sample, true, event.ctrlKey);
+    };
+
+
+
+init();
+// FIXME search(/*highlight:*/);
+</script></body></html>
