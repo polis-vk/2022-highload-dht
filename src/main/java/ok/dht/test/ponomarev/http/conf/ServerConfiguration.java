@@ -11,7 +11,7 @@ public class ServerConfiguration {
             Set.of(Request.METHOD_DELETE, Request.METHOD_GET, Request.METHOD_PUT)
     );
 
-    public static final long DAO_INMEMORY_LIMIT_BYTES = 2024;
+    public static final long DAO_INMEMORY_LIMIT_BYTES = 200_000;
 
     private ServerConfiguration() {
     }

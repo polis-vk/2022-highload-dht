@@ -8,7 +8,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.ponomarev.dao.store.Storage;
 
@@ -45,19 +44,14 @@ public class MemorySegmentDao implements Dao<MemorySegment, TimestampEntry> {
     public void upsert(TimestampEntry entry) {
         final long currentStoreSizeBytes = sizeBytes.addAndGet(entry.getSizeBytes());
         storage.upsert(entry);
-        if (currentStoreSizeBytes < limitBytes) {
-            return;
-        }
 
-        scheduleFlush(currentStoreSizeBytes);
+        if (currentStoreSizeBytes >= limitBytes) {
+            scheduleFlush(currentStoreSizeBytes);
+        }
     }
 
     private synchronized void scheduleFlush(long flushingSize) {
         sizeBytes.addAndGet(-flushingSize);
-        if (sizeBytes.get() < limitBytes) {
-            return;
-        }
-
         executorService.execute(() -> handleFlush(flushingSize));
     }
 
