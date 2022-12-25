@@ -2,7 +2,6 @@ package ok.dht.test.ponomarev.rest;
 
 import java.io.IOException;
 import java.util.Set;
-
 import ok.dht.test.ponomarev.rest.conf.ServerConfiguration;
 import ok.dht.test.ponomarev.rest.consts.DefaultResponse;
 import one.nio.http.HttpServer;

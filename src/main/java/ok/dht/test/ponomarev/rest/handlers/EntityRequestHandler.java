@@ -1,7 +1,6 @@
 package ok.dht.test.ponomarev.rest.handlers;
 
 import java.io.IOException;
-
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.ponomarev.dao.MemorySegmentDao;
 import ok.dht.test.ponomarev.dao.TimestampEntry;
@@ -28,7 +27,8 @@ public class EntityRequestHandler implements RequestHandler {
     }
 
     @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {}
+    public void handleRequest(Request request, HttpSession session) throws IOException {
+    }
 
     @RequestMethod(Request.METHOD_GET)
     @Path(ServerConfiguration.V_0_ENTITY_ENDPOINT)
@@ -39,7 +39,7 @@ public class EntityRequestHandler implements RequestHandler {
 
         try {
             final TimestampEntry entry = dao.get(
-                Utils.toMemorySegment(id)
+                    Utils.toMemorySegment(id)
             );
 
             if (entry == null) {
@@ -47,17 +47,15 @@ public class EntityRequestHandler implements RequestHandler {
             }
 
             return new Response(
-                Response.OK,
-                //TODO: Все ли тут ок?
-                entry.value().asByteBuffer().array()
+                    Response.OK,
+                    //TODO: Все ли тут ок?
+                    entry.value().asByteBuffer().array()
             );
         } catch (Exception e) {
             return DefaultResponse.SERVICE_UNAVAILABLE;
         }
     }
 
-    // Это PUT и мы знаем ID, то так же его можно использовать для создания 
-    // записи. Почему клиенту известен ID при создании, он должен аллоцироваться на сервере.
     @RequestMethod(Request.METHOD_PUT)
     @Path(ServerConfiguration.V_0_ENTITY_ENDPOINT)
     public Response put(Request request, @Param(value = "id", required = true) String id) {
@@ -72,11 +70,11 @@ public class EntityRequestHandler implements RequestHandler {
             }
 
             dao.upsert(
-                new TimestampEntry(
-                    Utils.toMemorySegment(id),
-                    MemorySegment.ofArray(body),
-                    System.currentTimeMillis()
-                )
+                    new TimestampEntry(
+                            Utils.toMemorySegment(id),
+                            MemorySegment.ofArray(body),
+                            System.currentTimeMillis()
+                    )
             );
 
             return DefaultResponse.CREATED;
@@ -94,11 +92,11 @@ public class EntityRequestHandler implements RequestHandler {
 
         try {
             dao.upsert(
-                new TimestampEntry(
-                    Utils.toMemorySegment(id),
-                    null,
-                    System.currentTimeMillis()
-                )
+                    new TimestampEntry(
+                            Utils.toMemorySegment(id),
+                            null,
+                            System.currentTimeMillis()
+                    )
             );
 
             return DefaultResponse.ACCEPTED;

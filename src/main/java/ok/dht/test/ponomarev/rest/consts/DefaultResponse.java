@@ -9,6 +9,7 @@ public class DefaultResponse {
     public static final Response NOT_FOUND = new Response(Response.NOT_FOUND, Response.EMPTY);
     public static final Response CREATED = new Response(Response.CREATED, Response.EMPTY);
     public static final Response ACCEPTED = new Response(Response.ACCEPTED, Response.EMPTY);
-    
-    private DefaultResponse() {}
+
+    private DefaultResponse() {
+    }
 }

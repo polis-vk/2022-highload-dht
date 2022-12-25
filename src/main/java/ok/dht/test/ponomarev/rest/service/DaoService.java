@@ -8,9 +8,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-
 import com.google.common.collect.Maps;
-
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ponomarev.dao.MemorySegmentDao;
@@ -43,8 +41,8 @@ public class DaoService implements Service {
             dao = new MemorySegmentDao(workingDir, ServerConfiguration.DAO_INMEMORY_LIMIT_BYTES);
 
             server = new Server(
-                createServerConfig(config.selfPort(), config.clusterUrls()),
-                new EntityRequestHandler(dao)
+                    createServerConfig(config.selfPort(), config.clusterUrls()),
+                    new EntityRequestHandler(dao)
             );
             server.start();
 
@@ -69,7 +67,7 @@ public class DaoService implements Service {
 
         final HttpServerConfig httpConfig = new HttpServerConfig();
         httpConfig.acceptors = new AcceptorConfig[]{
-            acceptor
+                acceptor
         };
         // При старте можно и побаловаться, почему бы нет?
         httpConfig.virtualHosts = createVirtualHosts(clusterUrls);
@@ -84,9 +82,9 @@ public class DaoService implements Service {
 
         final Map<String, String[]> virtualHosts = Maps.newHashMapWithExpectedSize(1);
         final String[] hosts = clusterUrls.stream()
-            .map(url -> URI.create(url).getHost())
-            .distinct()
-            .toArray(String[]::new);
+                .map(url -> URI.create(url).getHost())
+                .distinct()
+                .toArray(String[]::new);
 
         virtualHosts.put(EntityRequestHandler.ROUTER_NAME, hosts);
 
