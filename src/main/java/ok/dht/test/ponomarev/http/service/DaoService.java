@@ -1,4 +1,4 @@
-package ok.dht.test.ponomarev.rest.service;
+package ok.dht.test.ponomarev.http.service;
 
 import java.io.IOException;
 import java.net.URI;
@@ -9,14 +9,22 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import com.google.common.collect.Maps;
+import jdk.incubator.foreign.MemorySegment;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ponomarev.dao.MemorySegmentDao;
-import ok.dht.test.ponomarev.rest.Server;
-import ok.dht.test.ponomarev.rest.conf.ServerConfiguration;
-import ok.dht.test.ponomarev.rest.handlers.EntityRequestHandler;
+import ok.dht.test.ponomarev.dao.TimestampEntry;
+import ok.dht.test.ponomarev.dao.Utils;
+import ok.dht.test.ponomarev.http.Server;
+import ok.dht.test.ponomarev.http.conf.ServerConfiguration;
+import ok.dht.test.ponomarev.http.consts.DefaultResponse;
+import ok.dht.test.ponomarev.http.handlers.EntityRequestHandler;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
+import one.nio.http.Param;
+import one.nio.http.Request;
+import one.nio.http.RequestMethod;
+import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 
 public class DaoService implements Service {
@@ -37,9 +45,7 @@ public class DaoService implements Service {
                 Files.createDirectory(workingDir);
             }
 
-            // Может создавать файлы
             dao = new MemorySegmentDao(workingDir, ServerConfiguration.DAO_INMEMORY_LIMIT_BYTES);
-
             server = new Server(
                     createServerConfig(config.selfPort(), config.clusterUrls()),
                     new EntityRequestHandler(dao)

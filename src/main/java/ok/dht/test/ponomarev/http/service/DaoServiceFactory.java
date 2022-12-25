@@ -1,4 +1,4 @@
-package ok.dht.test.ponomarev.rest.service;
+package ok.dht.test.ponomarev.http.service;
 
 import ok.dht.Service;
 import ok.dht.ServiceConfig;

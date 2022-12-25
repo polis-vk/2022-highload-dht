@@ -1,12 +1,11 @@
-package ok.dht.test.ponomarev.rest.handlers;
+package ok.dht.test.ponomarev.http.handlers;
 
 import java.io.IOException;
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.ponomarev.dao.MemorySegmentDao;
 import ok.dht.test.ponomarev.dao.TimestampEntry;
 import ok.dht.test.ponomarev.dao.Utils;
-import ok.dht.test.ponomarev.rest.conf.ServerConfiguration;
-import ok.dht.test.ponomarev.rest.consts.DefaultResponse;
+import ok.dht.test.ponomarev.http.conf.ServerConfiguration;
 import one.nio.http.HttpSession;
 import one.nio.http.Param;
 import one.nio.http.Path;
@@ -34,7 +33,7 @@ public class EntityRequestHandler implements RequestHandler {
     @Path(ServerConfiguration.V_0_ENTITY_ENDPOINT)
     public Response getById(@Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
-            return DefaultResponse.BAD_REQUEST;
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         try {
@@ -43,7 +42,7 @@ public class EntityRequestHandler implements RequestHandler {
             );
 
             if (entry == null) {
-                return DefaultResponse.NOT_FOUND;
+                return new Response(Response.NOT_FOUND, Response.EMPTY);
             }
 
             return new Response(
@@ -52,7 +51,7 @@ public class EntityRequestHandler implements RequestHandler {
                     entry.value().asByteBuffer().array()
             );
         } catch (Exception e) {
-            return DefaultResponse.SERVICE_UNAVAILABLE;
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
     }
 
@@ -60,13 +59,13 @@ public class EntityRequestHandler implements RequestHandler {
     @Path(ServerConfiguration.V_0_ENTITY_ENDPOINT)
     public Response put(Request request, @Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
-            return DefaultResponse.BAD_REQUEST;
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         try {
             final byte[] body = request.getBody();
             if (body == null) {
-                return DefaultResponse.BAD_REQUEST;
+                return new Response(Response.BAD_REQUEST, Response.EMPTY);
             }
 
             dao.upsert(
@@ -77,9 +76,9 @@ public class EntityRequestHandler implements RequestHandler {
                     )
             );
 
-            return DefaultResponse.CREATED;
+            return new Response(Response.CREATED, Response.EMPTY);
         } catch (Exception e) {
-            return DefaultResponse.SERVICE_UNAVAILABLE;
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
     }
 
@@ -87,7 +86,7 @@ public class EntityRequestHandler implements RequestHandler {
     @Path(ServerConfiguration.V_0_ENTITY_ENDPOINT)
     public Response delete(@Param(value = "id", required = true) String id) {
         if (id.isEmpty()) {
-            return DefaultResponse.BAD_REQUEST;
+            return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
 
         try {
@@ -99,9 +98,9 @@ public class EntityRequestHandler implements RequestHandler {
                     )
             );
 
-            return DefaultResponse.ACCEPTED;
+            return new Response(Response.ACCEPTED, Response.EMPTY);
         } catch (Exception e) {
-            return DefaultResponse.SERVICE_UNAVAILABLE;
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
     }
 }

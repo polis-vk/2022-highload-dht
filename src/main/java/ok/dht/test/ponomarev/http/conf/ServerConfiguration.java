@@ -1,4 +1,4 @@
-package ok.dht.test.ponomarev.rest.conf;
+package ok.dht.test.ponomarev.http.conf;
 
 import java.util.Map;
 import java.util.Set;

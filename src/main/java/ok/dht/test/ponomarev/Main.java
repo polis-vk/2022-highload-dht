@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
-import ok.dht.test.ponomarev.rest.service.DaoService;
+import ok.dht.test.ponomarev.http.service.DaoService;
 
 public class Main {
     private static final int PORT = 8080;
