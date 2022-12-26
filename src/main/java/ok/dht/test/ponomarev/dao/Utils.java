@@ -1,14 +1,20 @@
 package ok.dht.test.ponomarev.dao;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Comparator;
-
+import java.util.Iterator;
+import java.util.List;
+import java.util.stream.Stream;
 import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;
 import one.nio.util.Utf8;
 
 public final class Utils {
-    private Utils() {}
-    
+    private Utils() {
+    }
+
     public static final Comparator<MemorySegment> COMPARATOR = (MemorySegment s1, MemorySegment s2) -> {
         final long mismatch = s1.mismatch(s2);
         if (mismatch == -1) {
@@ -28,7 +34,7 @@ public final class Utils {
                 MemoryAccess.getByteAtOffset(s2, mismatch)
         );
     };
-    
+
     public static int compare(MemorySegment key1, MemorySegment key2) {
         return COMPARATOR.compare(key1, key2);
     }

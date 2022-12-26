@@ -17,6 +17,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, TimestampEntry> {
     private final long sizeLimit;
     private final ExecutorService executorService;
 
+    private final Object flushLock = new Object();
+
     public MemorySegmentDao(Path path, long limitBytes) throws IOException {
         if (Files.notExists(path)) {
             throw new IllegalArgumentException("Path: " + path + " is not exist");
@@ -39,22 +41,27 @@ public class MemorySegmentDao implements Dao<MemorySegment, TimestampEntry> {
 
     @Override
     public void upsert(TimestampEntry entry) {
-        if (entry.getSizeBytes() + storage.getMemTableDataSize() >= sizeLimit) {
-            synchronized (this) {
-                storage.beforeFlush();
-                executorService.execute(this::handleFlush);
+        final long entrySize = entry.getSizeBytes();
+        if (entrySize + storage.getMemTableDataSize() >= sizeLimit) {
+            synchronized (flushLock) {
+                if (entrySize + storage.getMemTableDataSize() >= sizeLimit) {
+                    storage.beforeFlush();
+                    executorService.execute(this::handleFlush);
+                }
             }
         }
 
         storage.upsert(entry);
     }
 
-    private synchronized void handleFlush() {
-        try {
-            storage.flush(System.currentTimeMillis());
-            storage.afterFlush();
-        } catch (IOException e) {
-            throw new IllegalStateException(e);
+    private void handleFlush() {
+        synchronized (flushLock) {
+            try {
+                storage.flush(System.currentTimeMillis());
+                storage.afterFlush();
+            } catch (IOException e) {
+                throw new IllegalStateException(e);
+            }
         }
     }
 
@@ -78,22 +85,26 @@ public class MemorySegmentDao implements Dao<MemorySegment, TimestampEntry> {
         executorService.execute(this::handleCompact);
     }
 
-    private synchronized void handleCompact() {
-        try {
-            storage.beforeFlush();
-            storage.compact(System.currentTimeMillis());
-            storage.afterFlush();
-        } catch (IOException e) {
-            throw new IllegalStateException(e);
+    private void handleCompact() {
+        synchronized (flushLock) {
+            try {
+                storage.beforeFlush();
+                storage.compact(System.currentTimeMillis());
+                storage.afterFlush();
+            } catch (IOException e) {
+                throw new IllegalStateException(e);
+            }
         }
     }
 
     @Override
-    public synchronized void flush() throws IOException {
-        storage.beforeFlush();
-        storage.flush(
-                System.currentTimeMillis()
-        );
-        storage.afterFlush();
+    public void flush() throws IOException {
+        synchronized (flushLock) {
+            storage.beforeFlush();
+            storage.flush(
+                    System.currentTimeMillis()
+            );
+            storage.afterFlush();
+        }
     }
 }
