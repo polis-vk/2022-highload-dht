@@ -37,7 +37,8 @@ public class AtomicData {
     }
 
     public static AtomicData afterFlush(AtomicData data) {
-        return new AtomicData(data.memTable,
+        return new AtomicData(
+                data.memTable,
                 data.memTableSizeBytes,
                 new ConcurrentSkipListMap<>(Utils.COMPARATOR),
                 new AtomicLong()

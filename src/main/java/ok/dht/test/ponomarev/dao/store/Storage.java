@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.SortedMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 import jdk.incubator.foreign.MemorySegment;
@@ -27,7 +26,6 @@ public final class Storage implements Closeable {
 
     private final Path path;
     private final CopyOnWriteArrayList<SSTable> ssTables;
-    private final AtomicBoolean flushIsRunning = new AtomicBoolean(false);
 
     private volatile AtomicData atomicData;
 
@@ -62,42 +60,34 @@ public final class Storage implements Closeable {
     }
 
     public synchronized long flush(long timestamp) throws IOException {
-        try {
-            if (flushIsRunning.getAndSet(true)) {
-                throw new IllegalStateException("FLUSH:  Flushing is going on.");
-            }
-
-            //TODO: Может не стоит допускать таких флашей?
-            if (atomicData.flushData.isEmpty()) {
-                return 0;
-            }
-
-            FlushedData flushedData = flushAndCreateSSTable(atomicData.flushData, timestamp);
-            ssTables.add(flushedData.ssTable);
-
-            return flushedData.sizeBytes;
-        } finally {
-            flushIsRunning.set(false);
+        //TODO: Может не стоит допускать таких флашей?
+        if (atomicData.flushData.isEmpty()) {
+            return 0;
         }
+
+        FlushedData flushedData = flushAndCreateSSTable(atomicData.flushData, atomicData.flushDataSizeBytes.get(), timestamp);
+        ssTables.add(flushedData.ssTable);
+
+        return flushedData.sizeBytes;
     }
 
     public synchronized void compact(long timestamp) throws IOException {
-        if (flushIsRunning.get()) {
-            throw new IllegalStateException("COMPACT: Flushing is going on.");
-        }
-
         final Iterator<TimestampEntry> dataIterator = new TombstoneSkipIterator<>(get(null, null));
+        //TODO: Нужно очищать SSTable т.к. данных нет
         if (!dataIterator.hasNext()) {
             return;
         }
 
         final SortedMap<MemorySegment, TimestampEntry> data = new ConcurrentSkipListMap<>(Utils.COMPARATOR);
+
+        long dataSize = 0;
         while (dataIterator.hasNext()) {
             TimestampEntry entry = dataIterator.next();
+            dataSize += entry.getSizeBytes();
             data.put(entry.key(), entry);
         }
 
-        final SSTable flushedSSTable = flushAndCreateSSTable(data, timestamp).ssTable;
+        final SSTable flushedSSTable = flushAndCreateSSTable(data, dataSize, timestamp).ssTable;
         ssTables.forEach(ssTable -> {
             if (ssTable.getCreatedTime() < timestamp) {
                 ssTable.close();
@@ -112,8 +102,8 @@ public final class Storage implements Closeable {
     private static List<Path> getSSTablesOlderThan(Path path, long timestamp) throws IOException {
         try (Stream<Path> files = Files.walk(path)) {
             return files
-                    .filter(f -> f.getFileName().toString().contains(SSTABLE_DIR_PREFIX))
-                    .filter(f -> !f.getFileName().toString().contains(getTimeMark(timestamp)))
+                    .filter(f -> f.getFileName().toString().contains(SSTABLE_DIR_PREFIX)
+                            && !f.getFileName().toString().contains(getTimeMark(timestamp)))
                     .toList();
         }
     }
@@ -131,12 +121,9 @@ public final class Storage implements Closeable {
 
     private FlushedData flushAndCreateSSTable(
             SortedMap<MemorySegment, TimestampEntry> data,
-            long timestamp) throws IOException {
-        final long sizeBytes = data.values()
-                .stream()
-                .mapToLong(TimestampEntry::getSizeBytes)
-                .sum();
-
+            long sizeBytes,
+            long timestamp
+    ) throws IOException {
         final Path sstableDir = path.resolve(SSTABLE_DIR_PREFIX + createHash(timestamp));
         Files.createDirectory(sstableDir);
 
@@ -238,7 +225,17 @@ public final class Storage implements Closeable {
     }
 
     public void upsert(TimestampEntry entry) {
-        atomicData.memTable.put(entry.key(), entry);
+        //TODO: нужен полноценный свап, разовая операция
+        atomicData.memTable.compute(entry.key(), (k, v) -> {
+            long entrySize = entry.getSizeBytes();
+            if (v != null) {
+                entrySize -= v.getSizeBytes();
+            }
+
+            atomicData.memTableSizeBytes.addAndGet(entrySize);
+
+            return entry;
+        });
     }
 
     private static CopyOnWriteArrayList<SSTable> wakeUpSSTables(Path path) throws IOException {
