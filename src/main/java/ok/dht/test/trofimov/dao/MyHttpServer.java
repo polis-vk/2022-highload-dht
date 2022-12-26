@@ -148,7 +148,7 @@ public class MyHttpServer extends HttpServer {
             AtomicBoolean requestHandled = new AtomicBoolean(false);
             AtomicInteger anySuccessIndex = new AtomicInteger();
             CompletableFuture<?>[] responses = new CompletableFuture<?>[from];
-            AtomicReferenceArray<Response> responseAtomicReferenceArray = new AtomicReferenceArray<>(from);
+            AtomicReferenceArray<Response> responseArray = new AtomicReferenceArray<>(from);
             request.addHeader(TIMESTAMP_HEADER + System.currentTimeMillis());
             for (int i = 0; i < from; i++) {
                 int finalI = i;
@@ -159,7 +159,7 @@ public class MyHttpServer extends HttpServer {
                     responses[finalI] = proxyRequest(node.url, request);
                 }
                 responses[finalI].whenCompleteAsync((v, throwable) -> {
-                    responseAtomicReferenceArray.set(finalI, (Response) v);
+                    responseArray.set(finalI, (Response) v);
                     completed.incrementAndGet();
                     if (throwable == null) {
                         success.incrementAndGet();
@@ -181,7 +181,7 @@ public class MyHttpServer extends HttpServer {
                             long freshestEntryTimestamp = -1;
                             Response freshestResponse = null;
                             for (int j = 0; j < from; j++) {
-                                Response item = responseAtomicReferenceArray.get(j);
+                                Response item = responseArray.get(j);
                                 if (item == null) {
                                     continue;
                                 }
@@ -209,9 +209,9 @@ public class MyHttpServer extends HttpServer {
                         } else {
                             int anyIndex = anySuccessIndex.get();
                             String responseStatusCode =
-                                    getResponseStatusCode(responseAtomicReferenceArray.get(anyIndex).getStatus());
+                                    getResponseStatusCode(responseArray.get(anyIndex).getStatus());
                             Response response =
-                                    new Response(responseStatusCode, responseAtomicReferenceArray.get(anyIndex).getBody());
+                                new Response(responseStatusCode, responseArray.get(anyIndex).getBody());
                             sendResponse(session, response);
                         }
                     } else {
