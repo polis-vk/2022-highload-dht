@@ -37,17 +37,13 @@ public class EntityRequestHandler implements RequestHandler {
         }
 
         try {
-            final TimestampEntry entry = dao.get(
-                    Utils.toMemorySegment(id)
-            );
-
+            final TimestampEntry entry = dao.get(Utils.toMemorySegment(id));
             if (entry == null) {
                 return new Response(Response.NOT_FOUND, Response.EMPTY);
             }
-
-            return new Response(
-                    Response.OK,
-                    //TODO: Все ли тут ок?
+            
+            //TODO: Все ли тут ок?
+            return Response.ok(
                     entry.value().asByteBuffer().array()
             );
         } catch (Exception e) {

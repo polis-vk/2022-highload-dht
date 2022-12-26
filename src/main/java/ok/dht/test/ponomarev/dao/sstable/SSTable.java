@@ -7,7 +7,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Iterator;
-
 import jdk.incubator.foreign.MemoryAccess;
 import jdk.incubator.foreign.MemorySegment;
 import jdk.incubator.foreign.ResourceScope;
@@ -31,22 +30,22 @@ public final class SSTable implements Closeable {
     }
 
     public static SSTable createInstance(
-        Path path,
-        Iterator<TimestampEntry> data,
-        long sizeBytes,
-        int count,
-        long createdAt
+            Path path,
+            Iterator<TimestampEntry> data,
+            long sizeBytes,
+            int count,
+            long createdAt
     ) throws IOException {
         final Path sstableFile = path.resolve(SSTABLE_FILE_NAME);
         Files.createFile(sstableFile);
 
         final long sstableSizeBytes = (long) Long.BYTES * 2 * count + sizeBytes;
         final MemorySegment mappedSsTable = MemorySegment.mapFile(
-            sstableFile,
-            0,
-            sstableSizeBytes,
-            FileChannel.MapMode.READ_WRITE,
-            ResourceScope.newSharedScope()
+                sstableFile,
+                0,
+                sstableSizeBytes,
+                FileChannel.MapMode.READ_WRITE,
+                ResourceScope.newSharedScope()
         );
 
         final Path indexFile = path.resolve(INDEX_FILE_NAME);
@@ -54,11 +53,11 @@ public final class SSTable implements Closeable {
 
         final long indexSizeBytes = (long) Long.BYTES * count;
         final MemorySegment mappedIndex = MemorySegment.mapFile(
-            indexFile,
-            0,
-            indexSizeBytes,
-            FileChannel.MapMode.READ_WRITE,
-            ResourceScope.newSharedScope()
+                indexFile,
+                0,
+                indexSizeBytes,
+                FileChannel.MapMode.READ_WRITE,
+                ResourceScope.newSharedScope()
         );
 
         flush(data, mappedSsTable, mappedIndex);
@@ -74,19 +73,19 @@ public final class SSTable implements Closeable {
         }
 
         final MemorySegment mappedSsTable = MemorySegment.mapFile(
-            sstableFile,
-            0,
-            Files.size(sstableFile),
-            FileChannel.MapMode.READ_ONLY,
-            ResourceScope.newSharedScope()
+                sstableFile,
+                0,
+                Files.size(sstableFile),
+                FileChannel.MapMode.READ_ONLY,
+                ResourceScope.newSharedScope()
         );
 
         final MemorySegment mappedIndex = MemorySegment.mapFile(
-            indexFile,
-            0,
-            Files.size(indexFile),
-            FileChannel.MapMode.READ_ONLY,
-            ResourceScope.newSharedScope()
+                indexFile,
+                0,
+                Files.size(indexFile),
+                FileChannel.MapMode.READ_ONLY,
+                ResourceScope.newSharedScope()
         );
 
         return new SSTable(mappedIndex, mappedSsTable, createdAt);

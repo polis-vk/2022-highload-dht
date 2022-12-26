@@ -13,8 +13,8 @@ import java.util.SortedMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
-
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.ponomarev.dao.TimestampEntry;
 import ok.dht.test.ponomarev.dao.TombstoneSkipIterator;
@@ -27,7 +27,6 @@ public final class Storage implements Closeable {
 
     private final Path path;
     private final CopyOnWriteArrayList<SSTable> ssTables;
-
     private final AtomicBoolean flushIsRunning = new AtomicBoolean(false);
 
     private volatile AtomicData atomicData;
@@ -36,8 +35,10 @@ public final class Storage implements Closeable {
         this.path = path;
         this.ssTables = wakeUpSSTables(path);
         this.atomicData = new AtomicData(
-            new ConcurrentSkipListMap<>(Utils.COMPARATOR),
-            new ConcurrentSkipListMap<>(Utils.COMPARATOR)
+                new ConcurrentSkipListMap<>(Utils.COMPARATOR),
+                new AtomicLong(),
+                new ConcurrentSkipListMap<>(Utils.COMPARATOR),
+                new AtomicLong()
         );
     }
 
@@ -48,14 +49,25 @@ public final class Storage implements Closeable {
         }
     }
 
+    public void beforeFlush() {
+        atomicData = AtomicData.beforeFlush(atomicData);
+    }
+
+    public void afterFlush() {
+        atomicData = AtomicData.afterFlush(atomicData);
+    }
+
+    public long getMemTableDataSize() {
+        return this.atomicData.memTableSizeBytes.get();
+    }
+
     public synchronized long flush(long timestamp) throws IOException {
         try {
             if (flushIsRunning.getAndSet(true)) {
                 throw new IllegalStateException("FLUSH:  Flushing is going on.");
             }
 
-            atomicData = AtomicData.beforeFlush(atomicData);
-
+            //TODO: Может не стоит допускать таких флашей?
             if (atomicData.flushData.isEmpty()) {
                 return 0;
             }
@@ -74,7 +86,6 @@ public final class Storage implements Closeable {
             throw new IllegalStateException("COMPACT: Flushing is going on.");
         }
 
-        atomicData = AtomicData.beforeFlush(atomicData);
         final Iterator<TimestampEntry> dataIterator = new TombstoneSkipIterator<>(get(null, null));
         if (!dataIterator.hasNext()) {
             return;
@@ -96,16 +107,14 @@ public final class Storage implements Closeable {
         ssTables.add(flushedSSTable);
 
         removeFilesWithNested(getSSTablesOlderThan(path, timestamp));
-
-        atomicData = AtomicData.afterFlush(atomicData);
     }
 
     private static List<Path> getSSTablesOlderThan(Path path, long timestamp) throws IOException {
         try (Stream<Path> files = Files.walk(path)) {
             return files
-                .filter(f -> f.getFileName().toString().contains(SSTABLE_DIR_PREFIX))
-                .filter(f -> !f.getFileName().toString().contains(getTimeMark(timestamp)))
-                .toList();
+                    .filter(f -> f.getFileName().toString().contains(SSTABLE_DIR_PREFIX))
+                    .filter(f -> !f.getFileName().toString().contains(getTimeMark(timestamp)))
+                    .toList();
         }
     }
 
@@ -121,27 +130,27 @@ public final class Storage implements Closeable {
     }
 
     private FlushedData flushAndCreateSSTable(
-        SortedMap<MemorySegment, TimestampEntry> data,
-        long timestamp) throws IOException {
+            SortedMap<MemorySegment, TimestampEntry> data,
+            long timestamp) throws IOException {
         final long sizeBytes = data.values()
-            .stream()
-            .mapToLong(TimestampEntry::getSizeBytes)
-            .sum();
+                .stream()
+                .mapToLong(TimestampEntry::getSizeBytes)
+                .sum();
 
         final Path sstableDir = path.resolve(SSTABLE_DIR_PREFIX + createHash(timestamp));
         Files.createDirectory(sstableDir);
 
         SSTable flushedSSTable = SSTable.createInstance(
-            sstableDir,
-            data.values().iterator(),
-            sizeBytes,
-            data.size(),
-            timestamp
+                sstableDir,
+                data.values().iterator(),
+                sizeBytes,
+                data.size(),
+                timestamp
         );
 
         return new FlushedData(
-            flushedSSTable,
-            sizeBytes
+                flushedSSTable,
+                sizeBytes
         );
     }
 
@@ -159,8 +168,8 @@ public final class Storage implements Closeable {
         final int HASH_SIZE = 40;
 
         StringBuilder hash = new StringBuilder(getTimeMark(timestamp))
-            .append("_H_")
-            .append(System.nanoTime());
+                .append("_H_")
+                .append(System.nanoTime());
 
         while (hash.length() < HASH_SIZE) {
             hash.append(0);
@@ -205,9 +214,9 @@ public final class Storage implements Closeable {
     }
 
     private static Iterator<TimestampEntry> slice(
-        SortedMap<MemorySegment, TimestampEntry> store,
-        MemorySegment from,
-        MemorySegment to
+            SortedMap<MemorySegment, TimestampEntry> store,
+            MemorySegment from,
+            MemorySegment to
     ) {
         if (store == null || store.isEmpty()) {
             return Collections.emptyIterator();
@@ -235,10 +244,10 @@ public final class Storage implements Closeable {
     private static CopyOnWriteArrayList<SSTable> wakeUpSSTables(Path path) throws IOException {
         try (Stream<Path> files = Files.list(path)) {
             final List<String> tableDirNames = files
-                .map(f -> f.getFileName().toString())
-                .filter(n -> n.contains(SSTABLE_DIR_PREFIX))
-                .sorted()
-                .toList();
+                    .map(f -> f.getFileName().toString())
+                    .filter(n -> n.contains(SSTABLE_DIR_PREFIX))
+                    .sorted()
+                    .toList();
 
             final CopyOnWriteArrayList<SSTable> tables = new CopyOnWriteArrayList<>();
             for (String name : tableDirNames) {
