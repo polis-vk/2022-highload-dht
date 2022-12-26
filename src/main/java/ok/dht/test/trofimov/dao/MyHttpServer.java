@@ -208,8 +208,10 @@ public class MyHttpServer extends HttpServer {
                             sendResponse(session, result);
                         } else {
                             int anyIndex = anySuccessIndex.get();
-                            String responseStatusCode = getResponseStatusCode(responseAtomicReferenceArray.get(anyIndex).getStatus());
-                            Response response = new Response(responseStatusCode, responseAtomicReferenceArray.get(anyIndex).getBody());
+                            String responseStatusCode =
+                                    getResponseStatusCode(responseAtomicReferenceArray.get(anyIndex).getStatus());
+                            Response response =
+                                    new Response(responseStatusCode, responseAtomicReferenceArray.get(anyIndex).getBody());
                             sendResponse(session, response);
                         }
                     } else {
