@@ -24,13 +24,11 @@ public class ServiceImpl implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        if (server != null) {
-            server.close();
-        }
+        server.close();
         return CompletableFuture.completedFuture(null);
     }
 
-    @ServiceFactory(stage = 2, week = 1)
+    @ServiceFactory(stage = 3, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
