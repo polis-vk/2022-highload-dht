@@ -95,7 +95,9 @@ public class DemoService implements Service {
                                 .onSuccess(requestParser -> {
                                     List<CompletableFuture<Response>> replicaResponsesFutures
                                             = createReplicaResponsesFutures(requestParser, requestTime);
-                                    ReplicaResponsesHandler.handle(extendedSession, requestParser, replicaResponsesFutures);
+                                    ReplicaResponsesHandler.handle(extendedSession,
+                                            requestParser,
+                                            replicaResponsesFutures);
                                 })
                                 .onFail(rp -> ServiceUtils.sendResponse(extendedSession, rp.failStatus()));
                         case "/v0/entities" -> RequestParser.parse(request)
