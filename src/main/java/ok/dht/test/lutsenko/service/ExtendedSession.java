@@ -6,6 +6,8 @@ import one.nio.http.Request;
 import one.nio.net.Socket;
 
 import java.io.IOException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ExtendedSession extends HttpSession {
 
@@ -17,20 +19,23 @@ public class ExtendedSession extends HttpSession {
         return (ExtendedSession) session;
     }
 
-    public void sendQueueItem(QueueItem queueItem) throws IOException {
-        Request handling = this.handling;
-        if (handling == null) {
-            throw new IOException("Out of order response");
-        }
-        super.server.incRequestsProcessed();
-        write(queueItem);
-        this.handling = handling = pipeline.pollFirst();
-        if (handling != null) {
-            if (handling == FIN) {
-                scheduleClose();
-            } else {
-                super.server.handleRequest(handling, this);
+    public static ExecutorService executor = Executors.newFixedThreadPool(4,
+            r -> new Thread(r, "ExtendedSessionThread"));
+
+    public void sendQueueItem(QueueItem queueItem) {
+        executor.execute(() -> {
+            try {
+                Request handling = this.handling;
+                if (handling == null) {
+                    throw new IOException("Out of order response");
+                }
+                super.server.incRequestsProcessed();
+                write(queueItem);
+                this.handling = pipeline.pollFirst();
+            } catch (Exception e) {
+                ServiceUtils.closeSession(this);
             }
-        }
+        });
+
     }
 }
