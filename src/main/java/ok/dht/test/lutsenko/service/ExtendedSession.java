@@ -2,7 +2,6 @@ package ok.dht.test.lutsenko.service;
 
 import one.nio.http.HttpServer;
 import one.nio.http.HttpSession;
-import one.nio.http.Request;
 import one.nio.net.Socket;
 
 import java.io.IOException;
@@ -22,20 +21,37 @@ public class ExtendedSession extends HttpSession {
     public static ExecutorService executor = Executors.newFixedThreadPool(4,
             r -> new Thread(r, "ExtendedSessionThread"));
 
-    public void sendQueueItem(QueueItem queueItem) {
+
+    public void sendQueueItem(QueueItem queueItem) throws IOException {
+        write(queueItem);
+        super.server.incRequestsProcessed();
+        this.handling = pipeline.pollFirst();
+    }
+
+    @Override
+    protected void processWrite() throws Exception {
+        if (eventsToListen == READABLE || eventsToListen == (SSL | WRITEABLE)) {
+            throw new IOException("Illegal subscription state: " + eventsToListen);
+        }
         executor.execute(() -> {
-            try {
-                Request handling = this.handling;
-                if (handling == null) {
-                    throw new IOException("Out of order response");
+            for (QueueItem item = queueHead; item != null; queueHead = item = item.next()) {
+                try {
+                    int written = item.write(socket);
+                    if (item.remaining() > 0) {
+                        listen(written >= 0 ? WRITEABLE : SSL | READABLE);
+                        return;
+                    }
+                } catch (IOException e) {
+                    ServiceUtils.closeSession(this);
+                } finally {
+                    item.release();
                 }
-                super.server.incRequestsProcessed();
-                write(queueItem);
-                this.handling = pipeline.pollFirst();
-            } catch (Exception e) {
-                ServiceUtils.closeSession(this);
             }
         });
-
+        if (closing) {
+            close();
+        } else {
+            listen(READABLE);
+        }
     }
 }
