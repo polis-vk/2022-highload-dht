@@ -10,6 +10,9 @@ import java.util.concurrent.Executors;
 
 public class ExtendedSession extends HttpSession {
 
+    public static ExecutorService executor = Executors.newFixedThreadPool(4,
+            r -> new Thread(r, "ExtendedSessionThread"));
+
     public ExtendedSession(Socket socket, HttpServer server) {
         super(socket, server);
     }
@@ -17,10 +20,6 @@ public class ExtendedSession extends HttpSession {
     public static ExtendedSession of(HttpSession session) {
         return (ExtendedSession) session;
     }
-
-    public static ExecutorService executor = Executors.newFixedThreadPool(4,
-            r -> new Thread(r, "ExtendedSessionThread"));
-
 
     public void sendQueueItem(QueueItem queueItem) throws IOException {
         write(queueItem);
@@ -34,18 +33,17 @@ public class ExtendedSession extends HttpSession {
             throw new IOException("Illegal subscription state: " + eventsToListen);
         }
         executor.execute(() -> {
-            for (QueueItem item = queueHead; item != null; queueHead = item = item.next()) {
-                try {
+            try {
+                for (QueueItem item = queueHead; item != null; queueHead = item = item.next()) {
                     int written = item.write(socket);
                     if (item.remaining() > 0) {
                         listen(written >= 0 ? WRITEABLE : SSL | READABLE);
                         return;
                     }
-                } catch (IOException e) {
-                    ServiceUtils.closeSession(this);
-                } finally {
                     item.release();
                 }
+            } catch (IOException e) {
+                ServiceUtils.closeSession(this);
             }
         });
         if (closing) {
