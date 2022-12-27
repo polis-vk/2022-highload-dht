@@ -32,24 +32,41 @@ public class ExtendedSession extends HttpSession {
         if (eventsToListen == READABLE || eventsToListen == (SSL | WRITEABLE)) {
             throw new IOException("Illegal subscription state: " + eventsToListen);
         }
-        executor.execute(() -> {
-            try {
-                for (QueueItem item = queueHead; item != null; queueHead = item = item.next()) {
-                    int written = item.write(socket);
-                    if (item.remaining() > 0) {
-                        listen(written >= 0 ? WRITEABLE : SSL | READABLE);
-                        return;
-                    }
-                    item.release();
-                }
-            } catch (IOException e) {
-                ServiceUtils.closeSession(this);
+        for (QueueItem item = queueHead; item != null; queueHead = item = item.next()) {
+            if (isRangeItem(item)) {
+                writeItemAsync(item);
+            } else {
+                writeItem(item);
             }
-        });
+        }
         if (closing) {
             close();
         } else {
             listen(READABLE);
         }
+    }
+
+    private static boolean isRangeItem(QueueItem item) {
+        return item instanceof RangeRequestHandler.RangeChunkedQueueItem
+                || item instanceof RangeRequestHandler.EmptyChunkedQueueItem;
+    }
+
+    private void writeItem(QueueItem finalItem) throws IOException {
+        int written = finalItem.write(socket);
+        if (finalItem.remaining() > 0) {
+            listen(written >= 0 ? WRITEABLE : SSL | READABLE);
+            return;
+        }
+        finalItem.release();
+    }
+
+    private void writeItemAsync(QueueItem finalItem) {
+        executor.execute(() -> {
+            try {
+                writeItem(finalItem);
+            } catch (IOException e) {
+                ServiceUtils.closeSession(this);
+            }
+        });
     }
 }

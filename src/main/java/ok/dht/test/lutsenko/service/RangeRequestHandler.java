@@ -63,7 +63,7 @@ public final class RangeRequestHandler {
         );
     }
 
-    private static class EmptyChunkedQueueItem extends Session.QueueItem {
+    public static class EmptyChunkedQueueItem extends Session.QueueItem {
         private final Response response;
 
         public EmptyChunkedQueueItem(Response response) {
@@ -78,7 +78,7 @@ public final class RangeRequestHandler {
         }
     }
 
-    private static class RangeChunkedQueueItem extends Session.QueueItem {
+    public static class RangeChunkedQueueItem extends Session.QueueItem {
         private static final int WRITE_BUFFER_LIMIT = 1024;
         private static final int WRITE_BUFFER_CAPACITY = WRITE_BUFFER_LIMIT + LAST_CHUNK_BYTES.length;
         private final Iterator<BaseEntry<String>> entriesIterator;
