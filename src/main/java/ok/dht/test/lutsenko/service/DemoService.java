@@ -75,15 +75,16 @@ public class DemoService implements Service {
         server = new HttpServer(ServiceUtils.createConfigFromPort(config.selfPort())) {
 
             @Override
-            public HttpSession createSession(Socket socket) {
+            public ExtendedSession createSession(Socket socket) {
                 return new ExtendedSession(socket, this);
             }
 
             @Override
             public void handleRequest(Request request, HttpSession session) {
+                ExtendedSession extendedSession = ExtendedSession.of(session);
                 long requestTime = System.currentTimeMillis();
-                requestExecutor.execute(new SessionRunnable(session, () -> {
-                    if (isProxyRequestAndHandle(request, session)) {
+                requestExecutor.execute(new SessionRunnable(extendedSession, () -> {
+                    if (isProxyRequestAndHandle(request, extendedSession)) {
                         return;
                     }
                     switch (request.getPath()) {
@@ -94,9 +95,9 @@ public class DemoService implements Service {
                                 .onSuccess(requestParser -> {
                                     List<CompletableFuture<Response>> replicaResponsesFutures
                                             = createReplicaResponsesFutures(requestParser, requestTime);
-                                    ReplicaResponsesHandler.handle(session, requestParser, replicaResponsesFutures);
+                                    ReplicaResponsesHandler.handle(extendedSession, requestParser, replicaResponsesFutures);
                                 })
-                                .onFail(rp -> ServiceUtils.sendResponse(session, rp.failStatus()));
+                                .onFail(rp -> ServiceUtils.sendResponse(extendedSession, rp.failStatus()));
                         case "/v0/entities" -> RequestParser.parse(request)
                                 .checkSuccessStatusCodes()
                                 .checkStart()
@@ -105,10 +106,10 @@ public class DemoService implements Service {
                                     String start = requestParser.getParam(RequestParser.START_PARAM_NAME).asString();
                                     String end = requestParser.getParam(RequestParser.END_PARAM_NAME).asString();
                                     Iterator<BaseEntry<String>> entriesIterator = daoHandler.getDao().get(start, end);
-                                    RangeRequestHandler.handle(ExtendedSession.of(session), entriesIterator);
+                                    RangeRequestHandler.handle(extendedSession, entriesIterator);
                                 })
-                                .onFail(rp -> ServiceUtils.sendResponse(session, rp.failStatus()));
-                        default -> ServiceUtils.sendResponse(session, Response.BAD_REQUEST);
+                                .onFail(rp -> ServiceUtils.sendResponse(extendedSession, rp.failStatus()));
+                        default -> ServiceUtils.sendResponse(extendedSession, Response.BAD_REQUEST);
                     }
                 }));
             }
@@ -141,7 +142,7 @@ public class DemoService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    private boolean isProxyRequestAndHandle(Request request, HttpSession session) {
+    private boolean isProxyRequestAndHandle(Request request, ExtendedSession session) {
         String proxyRequestTimeHeaderValue = request.getHeader(CustomHeaders.PROXY_REQUEST_TIME);
         if (proxyRequestTimeHeaderValue == null) {
             return false;

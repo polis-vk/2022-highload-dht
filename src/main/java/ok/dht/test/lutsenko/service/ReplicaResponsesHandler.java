@@ -1,6 +1,5 @@
 package ok.dht.test.lutsenko.service;
 
-import one.nio.http.HttpSession;
 import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +20,7 @@ public final class ReplicaResponsesHandler {
     private ReplicaResponsesHandler() {
     }
 
-    public static void handle(HttpSession session,
+    public static void handle(ExtendedSession session,
                               RequestParser requestParser,
                               List<CompletableFuture<Response>> responsesFutures) {
         // Может возникнуть вопрос зачем нужны счетчики, ведь можно использовать размер мапы responses?
@@ -60,7 +59,7 @@ public final class ReplicaResponsesHandler {
     private static void finishIfSuccess(int successCounter,
                                         int ack,
                                         NavigableMap<Long, Response> responses,
-                                        HttpSession session,
+                                        ExtendedSession session,
                                         List<CompletableFuture<Response>> responsesFutures) {
         if (successCounter == ack) {
             ServiceUtils.sendResponse(session, responses.lastEntry().getValue());
@@ -70,7 +69,7 @@ public final class ReplicaResponsesHandler {
 
     private static void finishIfFailed(int failsCounter,
                                        int failLimit,
-                                       HttpSession session,
+                                       ExtendedSession session,
                                        List<CompletableFuture<Response>> responsesFutures) {
         if (failsCounter == failLimit) {
             ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);

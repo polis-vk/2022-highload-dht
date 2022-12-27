@@ -3,7 +3,6 @@ package ok.dht.test.lutsenko.service;
 import ok.dht.test.lutsenko.dao.PersistenceRangeDao;
 import ok.dht.test.lutsenko.dao.common.BaseEntry;
 import ok.dht.test.lutsenko.dao.common.DaoConfig;
-import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import org.slf4j.Logger;
@@ -44,7 +43,7 @@ public class DaoHandler implements Closeable {
                 });
     }
 
-    public void handle(Request request, HttpSession session, String id, Long requestTime) {
+    public void handle(Request request, ExtendedSession session, String id, Long requestTime) {
         proceed(id, request, requestTime)
                 .thenAccept(response -> ServiceUtils.sendResponse(session, response));
     }
