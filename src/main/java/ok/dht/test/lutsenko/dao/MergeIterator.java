@@ -82,7 +82,7 @@ public class MergeIterator implements Iterator<BaseEntry<String>> {
             throw new RuntimeException("Fail to read new Entry after" + polledEntry, e);
         }
         hasNextCalled = true;
-        hasNextResult = polledEntry.value() != null && (isToNull || polledEntry.key().compareTo(to) < 0);
+        hasNextResult = (isToNull || polledEntry.key().compareTo(to) < 0);
         return hasNextResult;
     }
 
