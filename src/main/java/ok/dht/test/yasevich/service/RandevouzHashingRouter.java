@@ -1,4 +1,4 @@
-package ok.dht.test.yasevich;
+package ok.dht.test.yasevich.service;
 
 import one.nio.http.Request;
 import one.nio.util.Hash;

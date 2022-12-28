@@ -1,4 +1,4 @@
-package ok.dht.test.yasevich;
+package ok.dht.test.yasevich.utils;
 
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.test.yasevich.dao.BaseEntry;
@@ -7,8 +7,11 @@ import ok.dht.test.yasevich.dao.Entry;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Iterator;
 
 public class TimeStampingDao {
 
@@ -16,6 +19,29 @@ public class TimeStampingDao {
 
     public TimeStampingDao(Dao<MemorySegment, Entry<MemorySegment>> dao) {
         this.dao = dao;
+    }
+
+    public Iterator<Entry<byte[]>> get(String start, String end) {
+        MemorySegment endSegment = end == null ? null : memSegmentOfString(end);
+        Iterator<Entry<MemorySegment>> entries;
+        try {
+            entries = dao.get(memSegmentOfString(start), endSegment);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return new Iterator<>() {
+            @Override
+            public boolean hasNext() {
+                return entries.hasNext();
+            }
+
+            @Override
+            public Entry<byte[]> next() {
+                Entry<MemorySegment> next = entries.next();
+                return new BaseEntry<>(next.key().toByteArray(),
+                        TimeStampedValue.fromBytes(next.value().toByteArray()).value);
+            }
+        };
     }
 
     public TimeStampedValue get(String key) {
@@ -37,25 +63,29 @@ public class TimeStampingDao {
         dao.upsert(new BaseEntry<>(memSegmentOfString(key), memorySegmentValue));
     }
 
-    static byte[] longToBytes(long x) {
+    private static byte[] longToBytes(long x) {
         ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
         buffer.putLong(x);
         return buffer.array();
     }
 
     private static MemorySegment memSegmentOfString(String data) {
-        return MemorySegment.ofArray(data.toCharArray());
+        return MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 
-    public void close() throws IOException {
-        dao.close();
+    public void close() throws UncheckedIOException {
+        try {
+            dao.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
-    static class TimeStampedValue {
+    public static class TimeStampedValue {
         public final byte[] value;
         public final long time;
 
-        TimeStampedValue(byte[] value, long time) {
+        public TimeStampedValue(byte[] value, long time) {
             this.value = value == null ? null : Arrays.copyOf(value, value.length); //codeclimate fix
             this.time = time;
         }
@@ -93,9 +123,7 @@ public class TimeStampingDao {
         }
 
         public byte[] valueBytes() {
-            ByteBuffer buffer = ByteBuffer.allocate(value.length);
-            buffer.put(value);
-            return buffer.array();
+            return value;
         }
 
         public byte[] timeBytes() {
