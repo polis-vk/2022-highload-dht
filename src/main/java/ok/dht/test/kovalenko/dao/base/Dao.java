@@ -4,7 +4,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.Iterator;
 
-public interface Dao<D, E extends Entry<D>> extends Closeable {
+public interface Dao<D, E extends TimedEntry<D>> extends Closeable {
 
     /**
      * Returns ordered iterator of entries with keys between from (inclusive) and to (exclusive).

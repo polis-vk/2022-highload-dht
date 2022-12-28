@@ -18,13 +18,13 @@ public class MappedFileDiskSSTable
         this.serializer = serializer;
     }
 
-    public TypedEntry get(ByteBuffer key) {
+    public TypedTimedEntry get(ByteBuffer key) {
         ByteBufferRange range = this.value.range();
         if (DaoUtils.byteBufferComparator.lessThan(key, range.from())
                 || DaoUtils.byteBufferComparator.greaterThan(key, range.to())) {
             return null;
         }
-        TypedEntry res = null;
+        TypedTimedEntry res = null;
         int greaterOrEqualEntryIndex = entryIndex(this.value, key);
         if (greaterOrEqualEntryIndex >= 0) {
             res = entryAt(this.value, greaterOrEqualEntryIndex);
@@ -50,7 +50,7 @@ public class MappedFileDiskSSTable
             }
 
             @Override
-            public TypedEntry next() {
+            public TypedTimedEntry next() {
                 return entryAt(mappedPairedFiles, curPos++);
             }
         };
@@ -87,7 +87,7 @@ public class MappedFileDiskSSTable
         return index;
     }
 
-    private TypedEntry entryAt(MappedPairedFiles mappedPairedFiles, int pos) {
+    private TypedTimedEntry entryAt(MappedPairedFiles mappedPairedFiles, int pos) {
         return serializer.readEntry(mappedPairedFiles, FileUtils.INDEX_SIZE * pos);
     }
 }

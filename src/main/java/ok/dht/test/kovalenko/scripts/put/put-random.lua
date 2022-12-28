@@ -15,8 +15,8 @@ raw_path = "/v0/entity?id="
 request = function()
     math.randomseed(os.clock()^5)
     local r = math.random(1, 10000)
-    key = "k:" .. randomString(r)
-    value = "v:" .. randomString(r)
+    key = randomString(r)
+    value = randomString(r)
     path = raw_path .. key
     wrk.body = value
     return wrk.format("PUT", path)
