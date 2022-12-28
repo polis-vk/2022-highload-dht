@@ -2,6 +2,7 @@ package ok.dht.test.lutsenko.service;
 
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
+import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.slf4j.Logger;
@@ -9,10 +10,16 @@ import org.slf4j.LoggerFactory;
 
 import java.net.HttpURLConnection;
 import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 
 public final class ServiceUtils {
-
+    private static final Map<Integer, List<Integer>> METHODS_TO_SUCCESS_STATUSES_MAP = Map.ofEntries(
+            Map.entry(Request.METHOD_GET, List.of(HttpURLConnection.HTTP_OK, HttpURLConnection.HTTP_NOT_FOUND)),
+            Map.entry(Request.METHOD_PUT, List.of(HttpURLConnection.HTTP_CREATED)),
+            Map.entry(Request.METHOD_DELETE, List.of(HttpURLConnection.HTTP_ACCEPTED))
+    );
     private static final Map<Integer, String> HTTP_CODES_MAP = Map.ofEntries(
             Map.entry(HttpURLConnection.HTTP_OK, Response.OK),
             Map.entry(HttpURLConnection.HTTP_CREATED, Response.CREATED),
@@ -50,6 +57,7 @@ public final class ServiceUtils {
             Map.entry(HttpURLConnection.HTTP_GATEWAY_TIMEOUT, Response.GATEWAY_TIMEOUT),
             Map.entry(HttpURLConnection.HTTP_VERSION, Response.HTTP_VERSION_NOT_SUPPORTED)
     );
+
     private static final Logger LOG = LoggerFactory.getLogger(ServiceUtils.class);
 
     private ServiceUtils() {
@@ -73,13 +81,13 @@ public final class ServiceUtils {
         sendResponse(session, new Response(resultCode, Response.EMPTY));
     }
 
-    public static void sendResponse(HttpSession session, HttpResponse<byte[]> httpResponse) {
-        sendResponse(session, new Response(
-                HTTP_CODES_MAP.get(httpResponse.statusCode()),
-                httpResponse.body() == null
-                        ? Response.EMPTY
-                        : httpResponse.body()
-        ));
+    public static Response toResponse(HttpResponse<byte[]> httpResponse) {
+        Response response = new Response(HTTP_CODES_MAP.get(httpResponse.statusCode()), httpResponse.body());
+        OptionalLong requestTime = httpResponse.headers().firstValueAsLong(trim(CustomHeaders.REQUEST_TIME));
+        if (requestTime.isPresent()) {
+            response.addHeader(CustomHeaders.REQUEST_TIME + requestTime.getAsLong());
+        }
+        return response;
     }
 
     public static void closeSession(HttpSession session) {
@@ -88,6 +96,14 @@ public final class ServiceUtils {
         } catch (Exception e) {
             LOG.error("Failed close session", e);
         }
+    }
+
+    public static List<Integer> successCodesFor(int method) {
+        return METHODS_TO_SUCCESS_STATUSES_MAP.get(method);
+    }
+
+    public static String trim(String header) {
+        return header.substring(0, header.indexOf(':'));
     }
 
     public static HttpServerConfig createConfigFromPort(int port) {

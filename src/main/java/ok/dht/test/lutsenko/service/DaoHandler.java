@@ -23,35 +23,43 @@ public class DaoHandler implements Closeable {
         dao = new PersistenceRangeDao(config);
     }
 
-    public void handle(String id, Request request, HttpSession session) {
+    public Response proceed(String id, Request request, Long requestTime) {
         try {
-            Response response = switch (request.getMethod()) {
+            return switch (request.getMethod()) {
                 case Request.METHOD_GET -> proceedGet(id);
-                case Request.METHOD_PUT -> proceedPut(id, request.getBody());
-                case Request.METHOD_DELETE -> proceedDelete(id);
+                case Request.METHOD_PUT -> proceedPut(id, request.getBody(), requestTime);
+                case Request.METHOD_DELETE -> proceedDelete(id, requestTime);
                 default -> new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
             };
-            ServiceUtils.sendResponse(session, response);
         } catch (Exception e) {
             LOG.error("Failed to proceed request in dao", e);
-            ServiceUtils.sendResponse(session, Response.SERVICE_UNAVAILABLE);
+            return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
         }
+    }
+
+    public void handle(Request request, HttpSession session, String id, Long requestTime) {
+        ServiceUtils.sendResponse(session, proceed(id, request, requestTime));
     }
 
     private Response proceedGet(String id) {
         BaseEntry<String> entry = dao.get(id);
-        return entry == null
+        if (entry == null) {
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
+        }
+        Response response = (entry.value() == null)
                 ? new Response(Response.NOT_FOUND, Response.EMPTY)
                 : new Response(Response.OK, Base64.getDecoder().decode(entry.value()));
+        response.addHeader(CustomHeaders.REQUEST_TIME + entry.requestTime());
+        return response;
     }
 
-    private Response proceedPut(String id, byte[] body) {
-        dao.upsert(new BaseEntry<>(id, Base64.getEncoder().encodeToString(body)));
+    private Response proceedPut(String id, byte[] body, long requestTime) {
+        dao.upsert(new BaseEntry<>(requestTime, id, Base64.getEncoder().encodeToString(body)));
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    private Response proceedDelete(String id) {
-        dao.upsert(new BaseEntry<>(id, null));
+    private Response proceedDelete(String id, long requestTime) {
+        dao.upsert(new BaseEntry<>(requestTime, id, null));
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
