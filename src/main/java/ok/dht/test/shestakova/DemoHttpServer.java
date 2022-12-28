@@ -1,43 +1,42 @@
 package ok.dht.test.shestakova;
 
-import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
 import ok.dht.test.shestakova.dao.MemorySegmentDao;
-import ok.dht.test.shestakova.dao.base.BaseEntry;
 import ok.dht.test.shestakova.exceptions.MethodNotAllowedException;
+import ok.dht.test.shestakova.exceptions.NotEnoughReplicasException;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;
 import one.nio.net.Session;
 import one.nio.server.SelectorThread;
-import one.nio.util.Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class DemoHttpServer extends HttpServer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DemoHttpServer.class);
+    private static final String RESPONSE_NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
+    private static final int NOT_FOUND_CODE = 404;
     private final HttpClient httpClient;
     private final ServiceConfig serviceConfig;
     private final ExecutorService workersPool;
     private final CircuitBreakerImpl circuitBreaker;
     private final MemorySegmentDao dao;
+    private final RequestsHandler requestsHandler;
 
     public DemoHttpServer(HttpServerConfig config, HttpClient httpClient, ExecutorService workersPool,
                           ServiceConfig serviceConfig, MemorySegmentDao dao, Object... routers) throws IOException {
@@ -47,128 +46,199 @@ public class DemoHttpServer extends HttpServer {
         this.workersPool = workersPool;
         this.circuitBreaker = new CircuitBreakerImpl(serviceConfig, httpClient);
         this.dao = dao;
+        this.requestsHandler = new RequestsHandler(this.dao);
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) {
         String key = request.getParameter("id=");
         if (key == null || key.isEmpty()) {
-            tryToSendErrorResponse(session, Response.BAD_REQUEST);
+            tryToSendResponseWithEmptyBody(session, Response.BAD_REQUEST);
             return;
         }
 
-        String targetNode = getClusterByRendezvousHashing(key);
-        if (targetNode == null) {
-            LOGGER.error("There are no available nodes in the cluster!");
+        int methodNum = request.getMethod();
+        if (methodNum != Request.METHOD_GET && methodNum != Request.METHOD_PUT && methodNum != Request.METHOD_DELETE) {
+            tryToSendResponseWithEmptyBody(session, Response.METHOD_NOT_ALLOWED);
             return;
         }
-        if (!targetNode.equals(serviceConfig.selfUrl())) {
-            HttpRequest httpRequest;
-            try {
-                httpRequest = buildHttpRequest(key, targetNode, request);
-            } catch (MethodNotAllowedException e) {
-                LOGGER.error("Method not allowed {} method: {}", serviceConfig.selfUrl(), request.getMethod());
-                tryToSendErrorResponse(session, Response.METHOD_NOT_ALLOWED);
-                return;
-            }
-            try {
-                CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture = httpClient
-                        .sendAsync(
-                                httpRequest,
-                                HttpResponse.BodyHandlers.ofByteArray()
-                        );
-                getResponse(responseCompletableFuture, session);
-                return;
-            } catch (InterruptedException | IOException e) {
-                LOGGER.error("Error while working with response in server {}", serviceConfig.selfUrl());
-                tryToSendErrorResponse(session, Response.INTERNAL_ERROR);
-                return;
-            }
+
+        String fromString = request.getParameter("from=");
+        String ackString = request.getParameter("ack=");
+        int from = fromString == null || fromString.isEmpty() ? serviceConfig.clusterUrls().size()
+                : Integer.parseInt(fromString);
+        int ack = ackString == null || ackString.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackString);
+
+        if (ack == 0 || ack > from || from > serviceConfig.clusterUrls().size()) {
+            tryToSendResponseWithEmptyBody(session, Response.BAD_REQUEST);
+            return;
         }
 
         workersPool.execute(() -> {
             try {
-                handleInternalRequest(request, session);
+                executeHandlingRequest(request, session, key, ack, from);
+            } catch (MethodNotAllowedException e) {
+                LOGGER.error("Method not allowed {} method: {}", serviceConfig.selfUrl(), request.getMethod());
+                tryToSendResponseWithEmptyBody(session, Response.METHOD_NOT_ALLOWED);
             } catch (IOException e) {
-                LOGGER.error("Error while handling request in {}", serviceConfig.selfUrl());
-                circuitBreaker.incrementFallenRequestsCount();
-                tryToSendErrorResponse(session, Response.SERVICE_UNAVAILABLE);
+                LOGGER.error("Internal error in server {}", serviceConfig.selfUrl());
+                tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
             }
         });
     }
 
-    private void tryToSendErrorResponse(HttpSession session, String resultCode) {
-        Response response = new Response(
-                resultCode,
-                Response.EMPTY
-        );
+    private void executeHandlingRequest(Request request, HttpSession session, String key, int ack, int from)
+            throws IOException {
+        if (request.getHeader("internal") != null || request.getPath().contains("/service/message")) {
+            Response response = handleInternalRequest(request, session);
+            if (response != null) {
+                session.sendResponse(response);
+            }
+            return;
+        }
+
+        List<String> targetNodes = HttpServerUtils.INSTANCE.getNodesSortedByRendezvousHashing(key, circuitBreaker,
+                serviceConfig, from);
+        List<HttpRequest> httpRequests = requestsHandler.getHttpRequests(request, key, targetNodes, serviceConfig);
+        CompletableFuture<List<Response>> completableFuture = getResponses(request, session, ack, httpRequests)
+                .whenComplete((list, throwable) -> {
+                    if (throwable != null || list == null || list.size() < ack) {
+                        tryToSendResponseWithEmptyBody(session, RESPONSE_NOT_ENOUGH_REPLICAS);
+                        return;
+                    }
+                    try {
+                        if (request.getMethod() != Request.METHOD_GET) {
+                            session.sendResponse(list.get(0));
+                            return;
+                        }
+                        aggregateResponsesAndSend(session, list);
+                    } catch (IOException e) {
+                        LOGGER.error("Internal error in server {}", serviceConfig.selfUrl());
+                        tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
+                    }
+                });
+        checkCompletableFuture(completableFuture);
+    }
+
+    private void aggregateResponsesAndSend(HttpSession session, List<Response> responses) throws IOException {
+        byte[] body = null;
+        int notFoundResponsesCount = 0;
+        long maxTimestamp = Long.MIN_VALUE;
+        for (Response response : responses) {
+            if (response.getStatus() == NOT_FOUND_CODE) {
+                notFoundResponsesCount++;
+                continue;
+            }
+            ByteBuffer bodyBB = ByteBuffer.wrap(response.getBody());
+            long timestamp = bodyBB.getLong();
+            if (maxTimestamp < timestamp) {
+                maxTimestamp = timestamp;
+                body = HttpServerUtils.INSTANCE.getBody(bodyBB);
+            }
+        }
+
+        boolean cond = body != null && notFoundResponsesCount != responses.size();
+        session.sendResponse(new Response(
+                cond ? Response.OK : Response.NOT_FOUND,
+                cond ? body : Response.EMPTY
+        ));
+    }
+
+    private CompletableFuture<List<Response>> getResponses(Request request, HttpSession session, int ack,
+                                                           List<HttpRequest> httpRequests) {
+        final CompletableFuture<List<Response>> resultFuture = new CompletableFuture<>();
+        List<Response> responses = new CopyOnWriteArrayList<>();
+        AtomicInteger successCount = new AtomicInteger(ack);
+        // если ack < from, допускаем from - ack + 1 ошибку
+        AtomicInteger errorCount = new AtomicInteger(httpRequests.size() - ack + 1);
+        for (HttpRequest httpRequest : httpRequests) {
+            (httpRequest == null ? getInternalResponse(request, session) : proxyRequest(httpRequest))
+                    .whenComplete((response, throwable) -> {
+                        if (response == null) {
+                            if (errorCount.decrementAndGet() == 0) {
+                                resultFuture.completeExceptionally(new NotEnoughReplicasException());
+                            }
+                            return;
+                        }
+                        responses.add(response);
+                        if (successCount.decrementAndGet() == 0) {
+                            resultFuture.complete(responses);
+                        }
+                    });
+        }
+        return resultFuture;
+    }
+
+    private CompletableFuture<Response> getInternalResponse(Request request, HttpSession session) {
+        final CompletableFuture<Response> responseCompletableFuture = new CompletableFuture<>();
+        workersPool.execute(() -> {
+            Response response = handleInternalRequest(request, session);
+            if (response == null) {
+                responseCompletableFuture.completeExceptionally(new IllegalArgumentException());
+                return;
+            }
+            responseCompletableFuture.complete(response);
+        });
+        return responseCompletableFuture;
+    }
+
+    private CompletableFuture<Response> proxyRequest(HttpRequest httpRequest) {
+        final CompletableFuture<Response> responseCompletableFuture = new CompletableFuture<>();
+        CompletableFuture<HttpResponse<byte[]>> completableFuture = httpClient
+                .sendAsync(
+                        httpRequest,
+                        HttpResponse.BodyHandlers.ofByteArray()
+                )
+                .whenComplete((response, throwable) -> {
+                    if (throwable != null) {
+                        responseCompletableFuture.completeExceptionally(new IllegalArgumentException());
+                        return;
+                    }
+                    responseCompletableFuture.complete(new Response(
+                            StatusCodes.statuses.getOrDefault(response.statusCode(), "UNKNOWN ERROR"),
+                            response.body()
+                    ));
+                });
+        checkCompletableFuture(completableFuture);
+        return responseCompletableFuture;
+    }
+
+    private void checkCompletableFuture(CompletableFuture<?> completableFuture) {
+        if (completableFuture == null) {
+            LOGGER.error("Internal error in server {} during working with CF", serviceConfig.selfUrl());
+        }
+    }
+
+    private void tryToSendResponseWithEmptyBody(HttpSession session, String resultCode) {
         try {
-            session.sendResponse(response);
-        } catch (IOException ex) {
+            session.sendResponse(new Response(
+                    resultCode,
+                    Response.EMPTY
+            ));
+        } catch (IOException e) {
             LOGGER.error("Error while sending response in server {}", serviceConfig.selfUrl());
         }
     }
 
-    private void handleInternalRequest(Request request, HttpSession session) throws IOException {
+    private Response handleInternalRequest(Request request, HttpSession session) {
         int methodNum = request.getMethod();
-        Response response;
-        String id = request.getParameter("id");
+        Response response = null;
+        String id = request.getParameter("id=");
         if (methodNum == Request.METHOD_GET) {
-            response = handleGet(id);
+            response = requestsHandler.handleGet(id);
         } else if (methodNum == Request.METHOD_PUT) {
-            if (request.getPath().equals("/service/message/ill")) {
-                putNodesIllnessInfo(Arrays.toString(request.getBody()), true);
-                return;
-            } else if (request.getPath().equals("/service/message/healthy")) {
-                putNodesIllnessInfo(Arrays.toString(request.getBody()), false);
-                return;
+            String requestPath = request.getPath();
+            if (requestPath.contains("/service/message")) {
+                circuitBreaker.putNodesIllnessInfo(Arrays.toString(request.getBody()),
+                        "/service/message/ill".equals(requestPath));
+                tryToSendResponseWithEmptyBody(session, Response.SERVICE_UNAVAILABLE);
+                return null;
             }
-            response = handlePut(request, id);
+            response = requestsHandler.handlePut(request, id);
         } else if (methodNum == Request.METHOD_DELETE) {
-            response = handleDelete(id);
-        } else {
-            response = new Response(
-                    Response.METHOD_NOT_ALLOWED,
-                    Response.EMPTY
-            );
+            response = requestsHandler.handleDelete(id);
         }
-        session.sendResponse(response);
-    }
-
-    private Response handleGet(@Param(value = "id") String id) {
-        BaseEntry<MemorySegment> entry = dao.get(fromString(id));
-        if (entry == null) {
-            return new Response(
-                    Response.NOT_FOUND,
-                    Response.EMPTY
-            );
-        }
-        return new Response(
-                Response.OK,
-                entry.value().toByteArray()
-        );
-    }
-
-    private Response handlePut(Request request, @Param(value = "id") String id) {
-        dao.upsert(new BaseEntry<>(
-                fromString(id),
-                MemorySegment.ofArray(request.getBody())
-        ));
-        return new Response(
-                Response.CREATED,
-                Response.EMPTY
-        );
-    }
-
-    private Response handleDelete(@Param(value = "id") String id) {
-        dao.upsert(new BaseEntry<>(
-                fromString(id),
-                null
-        ));
-        return new Response(
-                Response.ACCEPTED,
-                Response.EMPTY
-        );
+        return response;
     }
 
     @Override
@@ -183,74 +253,5 @@ public class DemoHttpServer extends HttpServer {
         }
         circuitBreaker.doShutdownNow();
         super.stop();
-    }
-
-    private void putNodesIllnessInfo(String node, boolean isIll) {
-        circuitBreaker.putNodesIllnessInfo(node, isIll);
-    }
-
-    private HttpRequest.Builder request(String nodeUrl, String path) {
-        return HttpRequest.newBuilder(URI.create(nodeUrl + path));
-    }
-
-    private HttpRequest.Builder requestForKey(String nodeUrl, String key) {
-        return request(nodeUrl, "/v0/entity?id=" + key);
-    }
-
-    private HttpRequest buildHttpRequest(String key, String targetCluster, Request request)
-            throws MethodNotAllowedException {
-        if (request.getMethod() != Request.METHOD_GET && request.getMethod() != Request.METHOD_PUT
-                && request.getMethod() != Request.METHOD_DELETE) {
-            throw new MethodNotAllowedException();
-        }
-
-        HttpRequest.Builder httpRequest = requestForKey(targetCluster, key);
-        int requestMethod = request.getMethod();
-        if (requestMethod == Request.METHOD_GET) {
-            httpRequest.GET();
-        } else if (requestMethod == Request.METHOD_PUT) {
-            httpRequest.PUT(HttpRequest.BodyPublishers.ofByteArray(request.getBody()));
-        } else if (requestMethod == Request.METHOD_DELETE) {
-            httpRequest.DELETE();
-        }
-        return httpRequest.build();
-    }
-
-    private void getResponse(CompletableFuture<HttpResponse<byte[]>> responseCompletableFuture, HttpSession session)
-            throws InterruptedException, IOException {
-        try {
-            HttpResponse<byte[]> response = responseCompletableFuture.get(1, TimeUnit.SECONDS);
-            session.sendResponse(new Response(
-                    StatusCodes.statuses.getOrDefault(response.statusCode(), "UNKNOWN ERROR"),
-                    response.body()
-            ));
-        } catch (ExecutionException | TimeoutException e) {
-            LOGGER.error("Error while working with response in {}", serviceConfig.selfUrl());
-            session.sendResponse(new Response(
-                    Response.SERVICE_UNAVAILABLE,
-                    Response.EMPTY
-            ));
-        }
-    }
-
-    private String getClusterByRendezvousHashing(String key) {
-        long hashVal = Integer.MIN_VALUE;
-        String cluster = null;
-
-        for (String nodeUrl : serviceConfig.clusterUrls()) {
-            if (circuitBreaker.isNodeIll(nodeUrl)) {
-                continue;
-            }
-            int tmpHash = Hash.murmur3(nodeUrl + key);
-            if (cluster == null || tmpHash > hashVal) {
-                hashVal = tmpHash;
-                cluster = nodeUrl;
-            }
-        }
-        return cluster;
-    }
-
-    private MemorySegment fromString(String data) {
-        return data == null ? null : MemorySegment.ofArray(data.getBytes(StandardCharsets.UTF_8));
     }
 }

@@ -4,13 +4,13 @@ import ok.dht.test.kiselyov.dao.BaseEntry;
 
 import java.util.Iterator;
 
-public class IndexedPeekIterator implements Iterator<BaseEntry<byte[]>> {
+public class IndexedPeekIterator implements Iterator<BaseEntry<byte[], Long>> {
 
     private final int index;
-    protected final Iterator<BaseEntry<byte[]>> delegate;
-    protected BaseEntry<byte[]> peek;
+    protected final Iterator<BaseEntry<byte[], Long>> delegate;
+    protected BaseEntry<byte[], Long> peek;
 
-    public IndexedPeekIterator(int index, Iterator<BaseEntry<byte[]>> delegate) {
+    public IndexedPeekIterator(int index, Iterator<BaseEntry<byte[], Long>> delegate) {
         this.index = index;
         this.delegate = delegate;
     }
@@ -19,7 +19,7 @@ public class IndexedPeekIterator implements Iterator<BaseEntry<byte[]>> {
         return index;
     }
 
-    public BaseEntry<byte[]> peek() {
+    public BaseEntry<byte[], Long> peek() {
         if (peek == null && delegate.hasNext()) {
             peek = delegate.next();
         }
@@ -32,8 +32,8 @@ public class IndexedPeekIterator implements Iterator<BaseEntry<byte[]>> {
     }
 
     @Override
-    public BaseEntry<byte[]> next() {
-        BaseEntry<byte[]> result = peek();
+    public BaseEntry<byte[], Long> next() {
+        BaseEntry<byte[], Long> result = peek();
         peek = null;
         return result;
     }
