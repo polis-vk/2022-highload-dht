@@ -7,15 +7,16 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Collections;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
 public final class Launch {
     private static final Logger log = LoggerFactory.getLogger(Launch.class);
 
-    private static final int DEFAULT_SERVER_PORT = 2022;
-    private static final String DEFAULT_SERVER_URL = "http://localhost:" + DEFAULT_SERVER_PORT;
-    private static final String DEFAULT_SERVER_NAME = "server";
+    static final int[] DEFAULT_CLUSTER_PORTS = new int[]{2022, 2023, 2024};
+    static final String DEFAULT_SERVER_NAME = "server";
 
     private Launch() {
         // Only main method
@@ -29,23 +30,32 @@ public final class Launch {
         return serverDirectory;
     }
 
+    static List<ServiceConfig> getServiceConfigs(Path serverDirectory) {
+        List<String> clusterUrls = Arrays.stream(DEFAULT_CLUSTER_PORTS)
+                .mapToObj(port -> "http://localhost:" + port)
+                .toList();
+
+        return IntStream.range(0, DEFAULT_CLUSTER_PORTS.length)
+                .mapToObj(clusterIndex -> new ServiceConfig(
+                        DEFAULT_CLUSTER_PORTS[clusterIndex],
+                        clusterUrls.get(clusterIndex),
+                        clusterUrls,
+                        serverDirectory))
+                .toList();
+    }
+
     public static void main(String[] args) {
         try {
-            String serverDirectoryName = args.length == 0 ? null : args[0];
-
-            Path serverDirectory = serverDirectoryName == null
+            Path serverDirectory = args.length == 0
                     ? Files.createTempDirectory(DEFAULT_SERVER_NAME)
-                    : createServerDirectory(serverDirectoryName);
+                    : createServerDirectory(args[0]);
 
-            ServiceConfig cfg = new ServiceConfig(
-                    DEFAULT_SERVER_PORT,
-                    DEFAULT_SERVER_URL,
-                    Collections.singletonList(DEFAULT_SERVER_URL),
-                    serverDirectory
-            );
-            new SladkiiService(cfg).start().get(1, TimeUnit.SECONDS);
-
-            log.info("Server is located by {}", DEFAULT_SERVER_URL);
+            for (var config : getServiceConfigs(serverDirectory)) {
+                var serviceBuilder = new SladkiiServiceBuilder(config);
+                serviceBuilder.setDbOptionsSupplier(SladkiiService.DEFAULT_OPTIONS_SUPPLIER);
+                serviceBuilder.build().start().get(1, TimeUnit.SECONDS);
+                log.info("Server started {}", config.selfUrl());
+            }
         } catch (Exception e) {
             log.error("Error occurred with server", e);
         }

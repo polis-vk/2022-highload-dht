@@ -1,6 +1,6 @@
 package ok.dht.test.kiselyov.dao;
 
-public record BaseEntry<Data>(Data key, Data value) implements Entry<Data> {
+public record BaseEntry<D, E>(D key, D value, E timestamp) implements Entry<D, E> {
     @Override
     public String toString() {
         return "{" + key + ":" + value + "}";

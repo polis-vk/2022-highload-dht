@@ -1,7 +1,7 @@
 package ok.dht.test.kovalenko.dao.iterators;
 
-import ok.dht.test.kovalenko.dao.aliases.TypedEntry;
 import ok.dht.test.kovalenko.dao.aliases.TypedIterator;
+import ok.dht.test.kovalenko.dao.aliases.TypedTimedEntry;
 import ok.dht.test.kovalenko.dao.utils.MergeIteratorUtils;
 
 import java.util.NoSuchElementException;
@@ -24,7 +24,7 @@ public class TombstoneFilteringIterator
     }
 
     @Override
-    public TypedEntry next() {
+    public TypedTimedEntry next() {
         if (!hasNext()) {
             throw new NoSuchElementException("There is no next iterable element");
         }

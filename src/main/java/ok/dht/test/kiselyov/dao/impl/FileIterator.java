@@ -10,7 +10,7 @@ import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-public class FileIterator implements Iterator<BaseEntry<byte[]>>, Closeable {
+public class FileIterator implements Iterator<BaseEntry<byte[], Long>>, Closeable {
 
     private final FileChannel channelTable;
     private final FileChannel channelIndex;
@@ -34,8 +34,8 @@ public class FileIterator implements Iterator<BaseEntry<byte[]>>, Closeable {
     }
 
     @Override
-    public BaseEntry<byte[]> next() {
-        BaseEntry<byte[]> entry;
+    public BaseEntry<byte[], Long> next() {
+        BaseEntry<byte[], Long> entry;
         try {
             entry = FileOperations.getCurrent(pos, channelTable, channelIndex);
         } catch (IOException e) {
