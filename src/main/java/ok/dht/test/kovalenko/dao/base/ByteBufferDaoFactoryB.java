@@ -2,18 +2,18 @@ package ok.dht.test.kovalenko.dao.base;
 
 import ok.dht.ServiceConfig;
 import ok.dht.test.kovalenko.dao.LSMDao;
-import ok.dht.test.kovalenko.dao.aliases.TypedBaseEntry;
-import ok.dht.test.kovalenko.dao.aliases.TypedEntry;
+import ok.dht.test.kovalenko.dao.aliases.TypedBaseTimedEntry;
+import ok.dht.test.kovalenko.dao.aliases.TypedTimedEntry;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
 @DaoFactoryB(stage = 5000, week = 1)
-public class ByteBufferDaoFactoryB implements DaoFactoryB.Factory<ByteBuffer, TypedEntry> {
+public class ByteBufferDaoFactoryB implements DaoFactoryB.Factory<ByteBuffer, TypedTimedEntry> {
 
     @Override
-    public Dao<ByteBuffer, TypedEntry> createDao(ServiceConfig config) throws IOException {
+    public Dao<ByteBuffer, TypedTimedEntry> createDao(ServiceConfig config) throws IOException {
         return new LSMDao(config);
     }
 
@@ -31,8 +31,8 @@ public class ByteBufferDaoFactoryB implements DaoFactoryB.Factory<ByteBuffer, Ty
     }
 
     @Override
-    public TypedBaseEntry fromBaseEntry(Entry<ByteBuffer> baseEntry) {
-        return new TypedBaseEntry(baseEntry.key(), baseEntry.value());
+    public TypedBaseTimedEntry fromBaseEntry(TimedEntry<ByteBuffer> baseTimedEntry) {
+        return new TypedBaseTimedEntry(baseTimedEntry.timestamp(), baseTimedEntry.key(), baseTimedEntry.value());
     }
 
     @Override
@@ -41,4 +41,5 @@ public class ByteBufferDaoFactoryB implements DaoFactoryB.Factory<ByteBuffer, Ty
         bb.get(bytes);
         return bytes;
     }
+
 }

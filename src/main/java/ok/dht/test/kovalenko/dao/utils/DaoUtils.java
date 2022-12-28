@@ -11,6 +11,7 @@ public final class DaoUtils {
     public static final EntryComparator entryComparator = EntryComparator.INSTANSE;
 
     public static final ByteBufferComparator byteBufferComparator = ByteBufferComparator.INSTANSE;
+    public static final int TIMESTAMP_LENGTH = Long.BYTES;
 
     private DaoUtils() {
     }

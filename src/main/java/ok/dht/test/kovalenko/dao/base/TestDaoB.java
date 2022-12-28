@@ -8,7 +8,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-public class TestDaoB<D, E extends Entry<D>> implements Dao<String, Entry<String>> {
+public class TestDaoB<D, E extends TimedEntry<D>> implements Dao<String, TimedEntry<String>> {
 
     public final ServiceConfig config;
     final DaoFactoryB.Factory<D, E> factory;
@@ -28,7 +28,7 @@ public class TestDaoB<D, E extends Entry<D>> implements Dao<String, Entry<String
         this.name = "TestDao<" + lastPackagePart + "." + delegateClass.getSimpleName() + ">";
     }
 
-    public Dao<String, Entry<String>> reopen() throws IOException {
+    public Dao<String, TimedEntry<String>> reopen() throws IOException {
         if (delegate != null) {
             throw new IllegalStateException("Reopening open db");
         }
@@ -38,19 +38,20 @@ public class TestDaoB<D, E extends Entry<D>> implements Dao<String, Entry<String
     }
 
     @Override
-    public Entry<String> get(String key) throws IOException {
+    public TimedEntry<String> get(String key) throws IOException {
         E result = delegate.get(factory.fromString(key));
         if (result == null) {
             return null;
         }
-        return new BaseEntry<>(
+        return new BaseTimedEntry<>(
+                result.timestamp(),
                 factory.toString(result.key()),
                 factory.toString(result.value())
         );
     }
 
     @Override
-    public Iterator<Entry<String>> get(String from, String to) throws IOException {
+    public Iterator<TimedEntry<String>> get(String from, String to) throws IOException {
         Iterator<E> iterator = delegate.get(
                 factory.fromString(from),
                 factory.fromString(to)
@@ -62,20 +63,22 @@ public class TestDaoB<D, E extends Entry<D>> implements Dao<String, Entry<String
             }
 
             @Override
-            public Entry<String> next() {
+            public TimedEntry<String> next() {
                 E next = iterator.next();
+                long timestamp = next.timestamp();
                 String key = factory.toString(next.key());
                 String value = factory.toString(next.value());
-                return new BaseEntry<>(key, value);
+                return new BaseTimedEntry<>(timestamp, key, value);
             }
         };
     }
 
     @Override
-    public void upsert(Entry<String> entry) {
-        BaseEntry<D> e = new BaseEntry<>(
-                factory.fromString(entry.key()),
-                factory.fromString(entry.value())
+    public void upsert(TimedEntry<String> timedEntry) {
+        BaseTimedEntry<D> e = new BaseTimedEntry<>(
+                System.currentTimeMillis(),
+                factory.fromString(timedEntry.key()),
+                factory.fromString(timedEntry.value())
         );
         delegate.upsert(factory.fromBaseEntry(e));
     }

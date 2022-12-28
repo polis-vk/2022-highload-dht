@@ -1,4 +1,6 @@
 package ok.dht.test.kovalenko.dao.aliases;
 
-public interface TypedIterator extends java.util.Iterator<TypedEntry> {
+import java.util.Iterator;
+
+public interface TypedIterator extends Iterator<TypedTimedEntry> {
 }
