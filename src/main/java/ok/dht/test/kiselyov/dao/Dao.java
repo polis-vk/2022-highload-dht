@@ -4,27 +4,29 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.Iterator;
 
-public interface Dao<D, E extends Entry<D>> extends Closeable {
+public interface Dao<D, E, B extends Entry<D, E>> extends Closeable {
 
     /**
      * Returns ordered iterator of entries with keys between from (inclusive) and to (exclusive).
+     *
      * @param from lower bound of range (inclusive)
-     * @param to upper bound of range (exclusive)
+     * @param to   upper bound of range (exclusive)
      * @return entries [from;to)
      */
-    Iterator<E> get(D from, D to) throws IOException;
+    Iterator<B> get(D from, D to) throws IOException;
 
     /**
      * Returns entry by key. Note: default implementation is far from optimal.
+     *
      * @param key entry`s key
      * @return entry
      */
-    default E get(D key) throws IOException {
-        Iterator<E> iterator = get(key, null);
+    default Entry<D, E> get(D key) throws IOException {
+        Iterator<B> iterator = get(key, null);
         if (!iterator.hasNext()) {
             return null;
         }
-        E next = iterator.next();
+        Entry<D, E> next = iterator.next();
         if (next.key().equals(key)) {
             return next;
         }
@@ -36,7 +38,7 @@ public interface Dao<D, E extends Entry<D>> extends Closeable {
      * @param from lower bound of range (inclusive)
      * @return entries with key >= from
      */
-    default Iterator<E> allFrom(D from) throws IOException {
+    default Iterator<B> allFrom(D from) throws IOException {
         return get(from, null);
     }
 
@@ -45,7 +47,7 @@ public interface Dao<D, E extends Entry<D>> extends Closeable {
      * @param to upper bound of range (exclusive)
      * @return entries with key < to
      */
-    default Iterator<E> allTo(D to) throws IOException {
+    default Iterator<B> allTo(D to) throws IOException {
         return get(null, to);
     }
 
@@ -53,7 +55,7 @@ public interface Dao<D, E extends Entry<D>> extends Closeable {
      * Returns ordered iterator of all entries.
      * @return all entries
      */
-    default Iterator<E> all() throws IOException {
+    default Iterator<B> all() throws IOException {
         return get(null, null);
     }
 
@@ -61,7 +63,7 @@ public interface Dao<D, E extends Entry<D>> extends Closeable {
      * Inserts of replaces entry.
      * @param entry element to upsert
      */
-    void upsert(E entry);
+    void upsert(B entry);
 
     /**
      * Persists data (no-op by default).
@@ -77,7 +79,7 @@ public interface Dao<D, E extends Entry<D>> extends Closeable {
         // Do nothing
     }
 
-    /*
+    /**
      * Releases Dao (calls flush by default).
      */
     @Override

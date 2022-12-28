@@ -8,7 +8,6 @@ import one.nio.util.Utf8;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.Arrays;
 
 public final class DaoService implements Closeable {
 
@@ -23,7 +22,7 @@ public final class DaoService implements Closeable {
     }
 
     private MemorySegment toMemorySegment(final byte[] value) {
-        return MemorySegment.ofArray(Arrays.copyOf(value, value.length));
+        return MemorySegment.ofArray(value);
     }
 
     public byte[] get(final String id) throws IOException {
