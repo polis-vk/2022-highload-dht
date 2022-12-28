@@ -27,6 +27,27 @@ Transfer/sec:    654.26KB
 Это скорее всего связано с тем, что теперь потоки должны синхронизироваться как для работы с очередью задач,
 так и для добавления в dao, поэтому среднее время на ответ немного выше, но и пропускная способность больше.
 
+```
+veronika@MacBook-Pro-Veronika anikina % wrk2 -t 8 -c 64 -d 3m -R 20000 -s lua/put.lua http://localhost:8080
+Running 3m test @ http://localhost:8080
+  8 threads and 64 connections
+  Thread calibration: mean lat.: 1.098ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.104ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.100ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.101ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.103ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.100ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.053ms, rate sampling interval: 10ms
+  Thread calibration: mean lat.: 1.093ms, rate sampling interval: 10ms
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.15ms  814.61us  13.58ms   87.07%
+    Req/Sec     2.63k   288.05     5.67k    86.78%
+  3597211 requests in 3.00m, 229.85MB read
+Requests/sec:  19984.31
+Transfer/sec:      1.28MB
+```
+Теперь сервис выдерживает R = 20000, но средняя latency уже больше 1ms.
+
 ## Профилирование
 
 ### CPU

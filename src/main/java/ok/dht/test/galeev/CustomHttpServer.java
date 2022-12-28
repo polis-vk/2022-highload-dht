@@ -8,6 +8,8 @@ import one.nio.http.Request;
 import one.nio.http.RequestHandler;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import one.nio.server.SelectorThread;
 
 import java.io.IOException;
@@ -39,6 +41,12 @@ public class CustomHttpServer extends HttpServer {
         }
     }
 
+    @SuppressWarnings("RedundantThrows")
+    @Override
+    public HttpSession createSession(Socket socket) throws RejectedSessionException {
+        return new UniversalHttpSession(socket, this);
+    }
+
     @Override
     public synchronized void stop() {
         for (SelectorThread thread : selectors) {
@@ -62,6 +70,7 @@ public class CustomHttpServer extends HttpServer {
         defaultMapper.add(path, methods, handler);
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @Override
     public void handleRequest(Request request, HttpSession session) throws IOException {
         if (isStopping) {
@@ -86,6 +95,7 @@ public class CustomHttpServer extends HttpServer {
         isStopping = true;
     }
 
+    @SuppressWarnings("ClassCanBeRecord")
     public static class RunnableForRequestHandler implements Runnable {
         private final HttpSession session;
         private final Request request;
