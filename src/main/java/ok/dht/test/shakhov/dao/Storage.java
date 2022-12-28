@@ -6,27 +6,66 @@ import jdk.incubator.foreign.ResourceScope;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 
-import static ok.dht.test.shakhov.dao.StorageController.INDEX_HEADER_SIZE;
-import static ok.dht.test.shakhov.dao.StorageController.INDEX_RECORD_SIZE;
+import static ok.dht.test.shakhov.dao.StorageUtils.FILE_EXT;
+import static ok.dht.test.shakhov.dao.StorageUtils.FILE_NAME;
+import static ok.dht.test.shakhov.dao.StorageUtils.INDEX_HEADER_SIZE;
+import static ok.dht.test.shakhov.dao.StorageUtils.INDEX_RECORD_SIZE;
 
-public class Storage implements Closeable {
+final class Storage implements Closeable {
 
     private final ResourceScope scope;
     private final List<MemorySegment> sstables;
     private final boolean hasTombstones;
 
-    public Storage(ResourceScope scope, List<MemorySegment> sstables, boolean hasTombstones) {
+    static Storage load(DaoConfig daoConfig) throws IOException {
+        Path basePath = daoConfig.basePath();
+        Path compactedFile = daoConfig.basePath().resolve(StorageUtils.COMPACTED_FILE);
+        if (Files.exists(compactedFile)) {
+            StorageUtils.finishCompact(daoConfig, compactedFile);
+        }
+
+        ArrayList<MemorySegment> sstables = new ArrayList<>();
+        ResourceScope scope = ResourceScope.newSharedScope(StorageUtils.CLEANER);
+
+        for (int i = 0; ; i++) {
+            Path nextFile = basePath.resolve(FILE_NAME + i + FILE_EXT);
+            try {
+                MemorySegment sstable = StorageUtils.mapForRead(scope, nextFile);
+                if (sstable == null) {
+                    break;
+                }
+                sstables.add(sstable);
+            } catch (NoSuchFileException e) {
+                break;
+            }
+        }
+
+        boolean hasTombstones = !sstables.isEmpty() && MemoryAccess.getLongAtOffset(sstables.get(0), 16) == 1;
+        return new Storage(scope, sstables, hasTombstones);
+    }
+
+    // it is supposed that entries can not be changed externally during this method call
+    static void save(
+            DaoConfig daoConfig,
+            Storage previousState,
+            Collection<Entry<MemorySegment>> entries) throws IOException {
+        int nextSSTableIndex = previousState.sstables.size();
+        Path sstablePath = daoConfig.basePath().resolve(FILE_NAME + nextSSTableIndex + FILE_EXT);
+        StorageUtils.save(entries::iterator, sstablePath);
+    }
+
+    private Storage(ResourceScope scope, List<MemorySegment> sstables, boolean hasTombstones) {
         this.scope = scope;
         this.sstables = sstables;
         this.hasTombstones = hasTombstones;
-    }
-
-    public List<MemorySegment> getSstables() {
-        return sstables;
     }
 
     private long greaterOrEqualEntryIndex(MemorySegment sstable, MemorySegment key) {
@@ -38,7 +77,7 @@ public class Storage implements Closeable {
     }
 
     // file structure:
-    // (fileVersion)(entryCount)((entryPosition)...)|((keySize/key/valueSize/value)...)
+    // (fileVersion)(entryCount)((entryPosition)...)|((keySize/key/timestamp/valueSize/value)...)
     private long entryIndex(MemorySegment sstable, MemorySegment key) {
         long fileVersion = MemoryAccess.getLongAtOffset(sstable, 0);
         if (fileVersion != 0) {
@@ -76,10 +115,13 @@ public class Storage implements Closeable {
         try {
             long offset = MemoryAccess.getLongAtOffset(sstable, INDEX_HEADER_SIZE + keyIndex * INDEX_RECORD_SIZE);
             long keySize = MemoryAccess.getLongAtOffset(sstable, offset);
-            long valueOffset = offset + Long.BYTES + keySize;
+            long timestampOffset = offset + Long.BYTES + keySize;
+            long timestamp = MemoryAccess.getLongAtOffset(sstable, timestampOffset);
+            long valueOffset = timestampOffset + Long.BYTES;
             long valueSize = MemoryAccess.getLongAtOffset(sstable, valueOffset);
             return new BaseEntry<>(
                     sstable.asSlice(offset + Long.BYTES, keySize),
+                    timestamp,
                     valueSize == -1 ? null : sstable.asSlice(valueOffset + Long.BYTES, valueSize)
             );
         } catch (IllegalStateException e) {
@@ -127,7 +169,7 @@ public class Storage implements Closeable {
     // it is ok to mutate list after
     public List<Iterator<Entry<MemorySegment>>> iterate(MemorySegment keyFrom, MemorySegment keyTo) {
         try {
-            ArrayList<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
+            List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(sstables.size());
             for (MemorySegment sstable : sstables) {
                 iterators.add(iterate(sstable, keyFrom, keyTo));
             }
@@ -174,4 +216,5 @@ public class Storage implements Closeable {
         }
         return !hasTombstones;
     }
+
 }

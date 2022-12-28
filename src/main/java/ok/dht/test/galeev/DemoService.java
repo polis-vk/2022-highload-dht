@@ -29,6 +29,7 @@ public class DemoService implements Service {
     private static final Logger LOGGER = LoggerFactory.getLogger(DemoService.class);
     private static final Duration CLIENT_TIMEOUT = Duration.of(500, ChronoUnit.MILLIS);
     public static final String DEFAULT_PATH = "/v0/entity";
+    public static final String DEFAULT_RANGE_PATH = "/v0/entities";
     public static final String LOCAL_PATH = "/v0/local/entity";
     private final ServiceConfig config;
     private final SkipOldExecutorFactory skipOldThreadExecutorFactory = new SkipOldExecutorFactory();
@@ -67,7 +68,8 @@ public class DemoService implements Service {
 
         server = new CustomHttpServer(createConfigFromPort(config.selfPort()), workersExecutor);
         server.addRequestHandlers(DEFAULT_PATH,
-                new int[]{Request.METHOD_PUT, Request.METHOD_GET, Request.METHOD_DELETE},this::universalHandler);
+                new int[]{Request.METHOD_PUT, Request.METHOD_GET, Request.METHOD_DELETE}, this::universalHandler);
+        server.addRequestHandlers(DEFAULT_RANGE_PATH, new int[]{Request.METHOD_GET}, this::rangeHandler);
         server.addRequestHandlers(LOCAL_PATH, new int[]{Request.METHOD_GET}, this::localHandleGet);
         server.addRequestHandlers(LOCAL_PATH, new int[]{Request.METHOD_PUT}, this::localHandlePutDelete);
         server.start();
@@ -85,6 +87,24 @@ public class DemoService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
+    public void rangeHandler(Request request, HttpSession session) throws IOException {
+        RangeHeader header = new RangeHeader(request);
+        if (!header.isOk()) {
+            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            return;
+        }
+        localNode.get(header.getStartParameter(), header.getEndParameter()).thenAcceptAsync((iterator) -> {
+                    try {
+                        session.sendResponse(new ChunkedResponse(Response.OK, new ChunkedIterator(iterator)));
+                    } catch (IOException e) {
+                        LOGGER.error("Error? while sending chunked response", e);
+                    }
+                },
+                proxyExecutor);
+    }
+
+    @SuppressWarnings("FutureReturnValueIgnored")
     public void universalHandler(Request request, HttpSession session) throws IOException {
         Header header = new Header(request, consistentHashRouter.getAmountOfPhysicalNodes());
         if (!header.isOk()) {
@@ -97,29 +117,39 @@ public class DemoService implements Service {
 
         List<Node> routerNode = consistentHashRouter.getNode(header.getKey(), header.getFrom());
         for (Node node : routerNode) {
-            handler.action(node, header.getKey()).thenAccept((optional) -> {
-                if (optional.isEmpty()) {
-                    handler.onError();
-                    barrier.unSuccess();
-                } else {
-                    handler.onSuccess(optional);
-                    barrier.success();
-                }
-            });
+            handler.action(node, header.getKey()).thenAcceptAsync((optional) -> {
+                        if (optional.isEmpty()) {
+                            handler.onError();
+                            barrier.unSuccess();
+                        } else {
+                            handler.onSuccess(optional);
+                            barrier.success();
+                        }
+                        if (barrier.isNeedToSendResponseToClient()) {
+                            defaultResponse(session, handler, barrier);
+                        }
+                    },
+                    proxyExecutor);
         }
+    }
 
-        barrier.waitContinueBarrier(session,
-                String.format("%nInterrupted while awaiting GET responses key: %s%n", header.getKey()));
-
-        if (barrier.isAckAchieved()) {
-            session.sendResponse(handler.responseOk());
-        } else {
-            session.sendResponse(handler.responseError());
+    @SuppressWarnings("FutureReturnValueIgnored")
+    private void defaultResponse(HttpSession session, Handler<?> handler, AckBarrier barrier) {
+        try {
+            if (barrier.isAckAchieved()) {
+                session.sendResponse(handler.responseOk());
+            } else {
+                session.sendResponse(handler.responseError());
+            }
+        } catch (IOException e) {
+            LOGGER.error("Error, while sending response to client", e);
+        } finally {
+            handler.finishResponse();
         }
     }
 
     public void localHandleGet(Request request, HttpSession session) throws IOException {
-        String key = request.getParameter(Header.ID_PARAMETR);
+        String key = request.getParameter(Header.ID_PARAMETER);
 
         Entry<Timestamp, byte[]> entry = localNode.getFromDao(key);
         if (entry.key() == null) {
@@ -132,7 +162,7 @@ public class DemoService implements Service {
     }
 
     public void localHandlePutDelete(Request request, HttpSession session) throws IOException {
-        String key = request.getParameter(Header.ID_PARAMETR);
+        String key = request.getParameter(Header.ID_PARAMETER);
         Entry<Timestamp, byte[]> entry = Node.ClusterNode.getEntryFromByteArray(request.getBody());
 
         localNode.putToDao(key, entry);
@@ -152,7 +182,7 @@ public class DemoService implements Service {
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 4, week = 2, bonuses = {"SingleNodeTest#respectFileFolder"})
+    @ServiceFactory(stage = 6, week = 3, bonuses = {"SingleNodeTest#respectFileFolder"})
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

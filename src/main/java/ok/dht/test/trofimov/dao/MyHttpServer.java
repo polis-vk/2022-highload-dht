@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -41,6 +42,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 public class MyHttpServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(MyHttpServer.class);
@@ -162,8 +164,8 @@ public class MyHttpServer extends HttpServer {
 
             if (localRequest != null) {
                 try {
-                    sendResponse(session, handleRequest(request, id));
-                } catch (IOException e) {
+                    sendResponse(session, handleRequest(request, id).get());
+                } catch (InterruptedException | ExecutionException e) {
                     logger.error("Error while handling request", e);
                     sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                 }
@@ -186,29 +188,24 @@ public class MyHttpServer extends HttpServer {
             AtomicInteger completed = new AtomicInteger(0);
             AtomicBoolean requestHandled = new AtomicBoolean(false);
             AtomicInteger anySuccessIndex = new AtomicInteger();
-            Response[] responses = new Response[from];
+            CompletableFuture<?>[] responses = new CompletableFuture<?>[from];
+            AtomicReferenceArray<Response> responseArray = new AtomicReferenceArray<>(from);
             request.addHeader(TIMESTAMP_HEADER + System.currentTimeMillis());
             for (int i = 0; i < from; i++) {
                 int finalI = i;
-                CompletableFuture.runAsync(() -> {
-                    HashItem node = nodes.get(finalI);
-                    try {
-                        if (node.url.equals(config.selfUrl())) {
-                            responses[finalI] = handleRequest(request, id);
-                        } else {
-                            responses[finalI] = proxyRequest(node.url, request);
-                        }
-                        anySuccessIndex.set(finalI);
+                HashItem node = nodes.get(finalI);
+                if (node.url.equals(config.selfUrl())) {
+                    responses[finalI] = handleRequest(request, id);
+                } else {
+                    responses[finalI] = proxyRequest(node.url, request);
+                }
+                responses[finalI].whenCompleteAsync((v, throwable) -> {
+                    responseArray.set(finalI, (Response) v);
+                    completed.incrementAndGet();
+                    if (throwable == null) {
                         success.incrementAndGet();
-                    } catch (IOException | ExecutionException e) {
-                        logger.error("Exception while proxy request to {}", node.url, e);
-                    } catch (InterruptedException e) {
-                        logger.error("Interrupted while proxy request to {}", node.url, e);
-                        Thread.currentThread().interrupt();
-                    } finally {
-                        completed.incrementAndGet();
+                        anySuccessIndex.set(finalI);
                     }
-                }, clientExecutor).whenCompleteAsync((v, throwable) -> {
                     int curSuccess = success.get();
                     if (completed.get() == from && curSuccess < ack) {
                         if (requestHandled.compareAndSet(false, true)) {
@@ -224,10 +221,12 @@ public class MyHttpServer extends HttpServer {
                             int countNotFound = 0;
                             long freshestEntryTimestamp = -1;
                             Response freshestResponse = null;
-                            for (Response item : responses) {
+                            for (int j = 0; j < from; j++) {
+                                Response item = responseArray.get(j);
                                 if (item == null) {
                                     continue;
                                 }
+
                                 if (item.getStatus() == HttpURLConnection.HTTP_NOT_FOUND) {
                                     countNotFound++;
                                     continue;
@@ -250,8 +249,10 @@ public class MyHttpServer extends HttpServer {
                             sendResponse(session, result);
                         } else {
                             int anyIndex = anySuccessIndex.get();
-                            String responseStatusCode = getResponseStatusCode(responses[anyIndex].getStatus());
-                            Response response = new Response(responseStatusCode, responses[anyIndex].getBody());
+                            String responseStatusCode =
+                                    getResponseStatusCode(responseArray.get(anyIndex).getStatus());
+                            Response response =
+                                new Response(responseStatusCode, responseArray.get(anyIndex).getBody());
                             sendResponse(session, response);
                         }
                     } else {
@@ -259,13 +260,7 @@ public class MyHttpServer extends HttpServer {
                                         + " ack ={}, reqHan= {} ", request.getMethod(), config.selfPort(), id, from,
                                 curSuccess, ack, requestHandled.get());
                     }
-                }, aggregatorExecutor).exceptionally(throwable -> {
-                    logger.error("error while processing on {}:{} for key {}", config.selfUrl(),
-                            config.selfPort(), id, throwable);
-                    sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
-
-                    return null;
-                });
+                }, aggregatorExecutor);
             }
         });
     }
@@ -352,42 +347,50 @@ public class MyHttpServer extends HttpServer {
         }
     }
 
-    private Response handleRequest(Request request, String id) throws IOException {
-        String timestamp = request.getHeader(TIMESTAMP_HEADER);
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> {
-                Entry<String> entry = dao.get(id);
-                if (entry == null) {
-                    return new Response(Response.NOT_FOUND, Response.EMPTY);
+    private CompletableFuture<Response> handleRequest(Request request, String id) {
+        return CompletableFuture.supplyAsync(() -> {
+            String timestamp = request.getHeader(TIMESTAMP_HEADER);
+            switch (request.getMethod()) {
+                case Request.METHOD_GET -> {
+                    Entry<String> entry = null;
+                    try {
+                        entry = dao.get(id);
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                    if (entry == null) {
+                        return new Response(Response.NOT_FOUND, Response.EMPTY);
+                    }
+                    String value = entry.value();
+                    Response response;
+                    if (value == null) {
+                        response = new Response(Response.OK, Response.EMPTY);
+                        response.addHeader("X-tomb: 1");
+                    } else {
+                        char[] chars = value.toCharArray();
+                        response = new Response(Response.OK, Base64.decodeFromChars(chars));
+                    }
+                    response.addHeader(TIMESTAMP_HEADER + entry.getTimestamp());
+                    return response;
                 }
-                String value = entry.value();
-                Response response;
-                if (value == null) {
-                    response = new Response(Response.OK, Response.EMPTY);
-                    response.addHeader("X-tomb: 1");
-                } else {
-                    char[] chars = value.toCharArray();
-                    response = new Response(Response.OK, Base64.decodeFromChars(chars));
+                case Request.METHOD_PUT -> {
+                    byte[] value = request.getBody();
+                    dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value)), Long.parseLong(timestamp)));
+                    return new Response(Response.CREATED, Response.EMPTY);
                 }
-                response.addHeader(TIMESTAMP_HEADER + entry.getTimestamp());
-                return response;
+                case Request.METHOD_DELETE -> {
+                    dao.upsert(new BaseEntry<>(id, null, Long.parseLong(timestamp)));
+                    return new Response(Response.ACCEPTED, Response.EMPTY);
+                }
+                default -> {
+                    return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                }
             }
-            case Request.METHOD_PUT -> {
-                byte[] value = request.getBody();
-                dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value)), Long.parseLong(timestamp)));
-                return new Response(Response.CREATED, Response.EMPTY);
-            }
-            case Request.METHOD_DELETE -> {
-                dao.upsert(new BaseEntry<>(id, null, Long.parseLong(timestamp)));
-                return new Response(Response.ACCEPTED, Response.EMPTY);
-            }
-            default -> {
-                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            }
-        }
+        }, requestsExecutor);
+
     }
 
-    private Response proxyRequest(String url, Request request) throws InterruptedException, ExecutionException {
+    private CompletableFuture<Response> proxyRequest(String url, Request request) {
         HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(url + request.getURI()))
                 .method(
                         request.getMethodName(),
@@ -408,7 +411,7 @@ public class MyHttpServer extends HttpServer {
                     headerTimestamp.ifPresent(s -> result.addHeader(TIMESTAMP_HEADER + s));
                     headerTomb.ifPresent(s -> result.addHeader(X_TOMB_HEADER + s));
                     return result;
-                }).get();
+                });
 
     }
 

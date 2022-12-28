@@ -131,8 +131,8 @@ public class FileDBWriter implements Closeable {
     }
 
     /*
-     * @param iterableCollection which we are going to write
-     * @return if had something been written
+     * Param iterableCollection which we are going to write
+     * Returns if had something been written
      */
     public boolean writeIterable(
             Iterable<Entry<MemorySegment, MemorySegment>> iterableCollection
@@ -175,7 +175,7 @@ public class FileDBWriter implements Closeable {
         writeScope.close();
     }
 
-    @SuppressWarnings("all")
+    @SuppressWarnings({"unused", "all"})
     private record IteratorData(long numberOfEntries, long dataArraySize, byte[] sha256) {
     }
 }

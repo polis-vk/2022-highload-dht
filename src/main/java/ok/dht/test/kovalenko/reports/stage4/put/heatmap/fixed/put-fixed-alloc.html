@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<style>
+	body {margin: 0; padding: 4px 8px 24px; background-color: #ffffff; overflow-y: scroll}
+    h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+	header {margin: -24px 0 5px 0; line-height: 24px}
+	button {font: 12px sans-serif; cursor: pointer}
+	p {margin: 5px 0 5px 0}
+	a {color: #0366d6}
+	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+	#hl span {padding: 0 3px 0 3px}
+	#status {overflow: hidden; white-space: nowrap}
+	#match {overflow: hidden; white-space: nowrap; display: none; float: right; text-align: right}
+	#reset {cursor: pointer}
+	#canvas {width: 100%; height: 300px}
+
+    .selectionPart {position: absolute; display: none; pointer-events: none; box-sizing: border-box;}
+    .sel {background-color: #dada0040}
+    .act {background-color: #00da0040}
+    .dif {background-color: #00dada40}
+    .top {border-top: .1px solid #000}
+    .left {border-left: .1px solid #000}
+    .bottom {border-bottom: .1px solid #000}
+    .right {border-right: .1px solid #000}
+
+    #info-tooltip {display: none; position: absolute; top: 100px; right: 32px; width: 204px; border: 1px solid #666666; background: #ffffe0; border-radius: 8px; padding: 4px}
+    #heatmap-height-line, #heatmap-info { text-decoration: #0366d6 dashed underline; cursor: pointer; font-family: monospace}
+    #heatmap-info {cursor: help}
+    #heatmap-info:hover + #info-tooltip {display: block}
+
+    .colortip {width: 100px; box-sizing: border-box; padding: 4px; background: linear-gradient(var(--c1), var(--c2))}
+
+
+</style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+
+
+<div style="display: flex">
+    <div style="width: 20px; margin-right: 2px; float: left; writing-mode: vertical-rl; transform: scale(-1); text-align: center; user-select: none"><pre id="heatmap-height-line"> 1 sec : 20 ms </pre></div>
+
+    <div id='heatmap-canvas-container' style="width: 100%; position: relative" autofocus>
+        <div id='heatmap-canvas-wrapper' style='overflow: hidden; width: 100%'>
+            <canvas id='heatmap-canvas' style='height: 314px'></canvas>
+        </div>
+
+        <div id='middleActive' class='selectionPart top bottom act'><span></span></div>
+        <div id='leftActive' class='selectionPart top left bottom act'><span></span></div>
+        <div id='rightActive' class='selectionPart top right bottom act'><span></span></div>
+        <div id='leftMiddleActive' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleActive' class='selectionPart left'><span></span></div>
+
+        <div id='middleSelection' class='selectionPart top bottom sel'><span></span></div>
+        <div id='leftSelection' class='selectionPart top left bottom sel'><span></span></div>
+        <div id='rightSelection' class='selectionPart top right bottom sel'><span></span></div>
+        <div id='leftMiddleSelection' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleSelection' class='selectionPart left'><span></span></div>
+
+        <div id='middleDiff' class='selectionPart top bottom dif'><span></span></div>
+        <div id='leftDiff' class='selectionPart top left bottom dif'><span></span></div>
+        <div id='rightDiff' class='selectionPart top right bottom dif'><span></span></div>
+        <div id='leftMiddleDiff' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleDiff' class='selectionPart left'><span></span></div>
+    </div>
+
+    <div id="heatmap-info" style="width: 20px; margin-right: 2px; writing-mode: vertical-rl; text-align: center; user-select: none">
+        <pre> Info </pre>
+    </div>
+    <div id="info-tooltip">
+        <div style="float:left">
+            <div style="padding: 4px;">Frame types:</div>
+            <div class="colortip" style="--c1:#b2e1b2;--c2:#c6f5c6">Interpreted</div>
+            <div class="colortip" style="--c1:#50e150;--c2:#6eff6e">JIT-Compiled</div>
+            <div class="colortip" style="--c1:#50cccc;--c2:#6eeaea">Inlined</div>
+            <div class="colortip" style="--c1:#e15a5a;--c2:#ff8282">Native</div>
+            <div class="colortip" style="--c1:#c8c83c;--c2:#e6e646">C++</div>
+            <div class="colortip" style="--c1:#e17d00;--c2:#ff9b00">Kernel</div>
+            <div class="colortip" style="--c1:#cce880;--c2:#e0fc94">C1-Compiled</div>
+        </div>
+        <div style="float:left; margin-left: 4px">
+            <div style="padding: 4px;">Special colors:</div>
+            <div class="colortip" style="--c1:#ee00ee;--c2:#ee00ee">Matches regexp</div>
+            <div class="colortip" style="--c1:#baa551;--c2:#baa551">New frames</div>
+            <div class="colortip" style="--c1:#f0f0c0;--c2:#f0f0c0">Same frames</div>
+            <div class="colortip" style="--c1:#99aaff;--c2:#99aaff">Less frames</div>
+            <div class="colortip" style="--c1:#ffaa99;--c2:#ffaa99">More frames</div>
+        </div>
+        <div style="float:left; margin-top: 4px; width: 100%; border: 1px solid #666666; border-radius: 2px; padding: 2px; box-sizing: border-box;">
+            Shift + Click - Select range<br>
+            Ctrl + Click - Compare<br>
+            Ctrl + F - Search<br>
+        </div>
+    </div>
+</div>
+<div id="executionsHeatmap" style="display:none">BMza@AvAzFbNvOpRfT{TiWbX~]`^v^`eE???????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????@???G?@?????????????????????????@G???@?????????G??@??????????????????????????????G??????????G?????GG??????????@?????H???G?????????????????G???????????????G??G??G????????????@?@????GG????????@??@??@??????????????????@???????????G??????@???G????????????G??????@G??????????????@?????@?GA?????G?GH?????????G@??@??????G??G??????????G??@??@G????????A?@@G@G@@@??GO?G?G?GG@??O??HG?@???????H?????@@??G@?????G??@G?G????@??G@???@??OG??G?G?H?H??G?@O????@@@???????????GGG?@?@????????@??G@????G@@??G??????@???G??@G?G??A@?@?????G@???G?G?@G@G?G@G?@????@@??????@G??H?@?@@???????@????@??@?????@@??????G???@??@?@?@G@@GG?????H????@@GGGG????H@??????@??????GGG?????????GH?G???O?HG?????@????G?G???G?????@?HG???A@??H?@????@OO???@?O???W@??@G??@????????@??G?????@???G?????????G?????HG?O?G?G??A?GGG?@???????????GA?G????G???@?A@@??G?????????@??@???@?G?@I??????@?@?????????GG??G???@?@@?@?@@H???GH@G?GG???GA?IGG????G?G??GIG?G?@@I?????G??????@?GGH????@???@?????GG?@????H?@??H?????@?@??O?????GG?@????@??G?????????????@?????@@??????????G??G????@@@@G????GG??@@?H?@???G????@?G@???GO???@?G@@???@????A@@G@GH???@????????G@??@?G?@???????????@A?@@???G?@?H@?????G?@?GG????@?????@??O??GH?@@@G?GG??H??HG@G?HH???G@?@@?????H??@G@GH@??????GG?X?????HGG?@?@@?PG?@@???GG??????????A@@@?G??GA?G?G?@?G?@??O?????????G??G?H?@@?????P@??HG??G?A@?????@?????A?G?@??APG@????@???H???H?G?@@??@@@G????A??@G????H??G??@??@?G???GO@?G??G?G@??G?????G?@????P?G@????G@?G?G???@??@@???@@???PH@?G@@????G??????GH@?@@???@G??????????@??GG@G???????G@??????G??G???????????AG?G?????G????????@????G???H??????GGG?????@?G?????????????G??@??@?@??G@???@????H?GHG?G????????????GW????????G?@????@???????A?@????AGO?????G???G?G??G???G@?@??G?G????G??????@???????????????@??G??G???@??@?G????AG???????@?????????@???GG???GH???O??@????A@??@@GG?????G?????????????????A?G?????G?????HA@????A??G??????GA????G??@??????G?@G@?G????O@H@@?@?@???????@????G?????????G??@?????????@@?G??????G?????????????????????H???????????G??G??@?@???????@?H????????H?G????????????@???G?GG?G????G????I???O?????@??G?I?G@G????????@@?G?G?G?@???G?O@OA@@?G???@GG?@?GGG???????????G????G?GG@G????????@G???G?A??G?@@@????GG?G?@@?G??????G??@??O?G????GG@???G@???IG?@?G@???G@???????G??H??@????G@???G??G?A?G?@????GG?GG?H??????G??@G?@G@??G?@??@GG????G???????@???G???G?????@?GG@???GG?H?????????G?????IG???G@???G?@?@??????A???G???????@@?????@?????@@???@?@???@?????@??H???@@?@????G???@?@@?HG?O?G?@???GG@?GG?@???@?H??@????????G?G?G?O????@??????GGGGG???@?@?G?G?H?GH?GO????????@?????G@G?G@???G@???@@@?G??G?G????????G???@@??@?G??@???G?G??G?GH?P?GG?G??G?HH??@?G????@??@??????G?????????G??G@???????????G?@?@?G@G@G??????????????????@????????@???O?????@@@????@G???A???????????GG??????@@???G?OGGGG??GG?@@G?GG?@??G??@??@???@??G???OG?@G??G??????????@@???????????@?@?H???????@GG?@G??@??@P?G???G??G@@@??G??@??GI?G???CG?@H?GG??????@??H??@????G??@@??@H??A???GGA???G??G?????A?????@@?G?HHG??G???G?@G??G?????????G?@@?????H@??@???G????G@??????????G?G???G??G????G?@G????????@?@?@@???@?H???G@G?G???G@??????@?@G???????G@??A?????????@????@?????G@GG@???????@j}Aj}Ai~A`cBqaBwlCrwB{gB|oCwuB|xBlgClcCvjBmcCsdBy_CgaCy~C`gByvBccCtnBotBwxBdeCpxCekB~sBwyB`|ByaCpgCugCijCikC}lCc_D_jBmmBwnBquBgwBz}Bj`CeaCvbCwcCyeCygC~hCsjC|kC~pCt~CzmDfaB`eB}lBhmBznBjrBpxBxyBazBe}B{_Cz`C{`CsaCkdC{dCelC|uCiwCh_BmaBgbBqbBtbBybBddB~fBuiBlqBkrB|tB`vB`xBnyBkzBszBx{B{~Bn`CrbCfdCgdC`iC{jC~jComCcoCkqCyrCssCluCvvCyvCg|Ck}Cq~ChaDafDwkDsmDbaBhaB_bBebBubBwbBacBzdB{fBlgBciBhjBrjBwjBplBumBfnBunBroBapBspB}pB}wBfxBhxBg_Cb`Cq`CdaCrgC|gCehClhCriC}iCjjCpjC|jC`kCfkC{kC~kCnnC_oCdoCuoCdpCopC~rCesCvsCfuCkuCuwCywC~|Cv}Ck`DmaDsaDabDxcDmdDwdDheDxfDzgDwhD{jDjmDlmDzpDo}At`B|`B_aBiaBraByaBcbBjbBnbBobBpbBxbBzbBicBmcBocBpcBvcBadBedBgdBidBpdBieBjeBmeBwfByfBegBrgBwgBxgBygB|gBahBhhBnhBohBvhBwhB~hBdiB{iBcjBejBqjBnkB}kBllBvlBemBimBlnBnnBrnB`oBeoBooBbpBfpBypBzpB{pB_qBpqBvqBwqBhrBmsBpsBktBntBxtBytBztBmuBouBxuB_vBcvBevBivBjvBpvB}vBbwBcxBexBtxB{xBsyBuyB}yBhzBk{Bn{Bu{Bk|B~|Bf}Bk}Bx}B{}Bv~Bw~Bl_Cu_Cw_Cx`C~`CraCxaCzaCcbCmbCacCtcCzcC{cCceC~eCgfCkfCqfCqgCahCphCaiCdjCejCgjCvjCyjCakCrkCskCflCenCknCrpCvpC{pCpqC|qC`rC{rCisClsC_tCdtCftCgtChtCvtCruCtuCyuC}uC_vCbvCivCkvC~vCfwCiyCyyC_zCbzCezClzC~zCw{Cj|Cr|Cy|Cl}Cm}Ct}Cc~C}~CdbDmbDtbD{bDwcDycDzcDgdDvdDydDleDweDefDkfDnfD~fDcgDvhDokDskDhlDplD`mDjnDqqDarDvsDltDvtDquD}vDk}Am}An}Ap}Aq}Ar}As}At}Ag~Ah~Aj~Ap~Ar~At~Av~Ae_Bf_Bg_Bq_Br_Bs_Bm`Bo`Bp`Bq`Br`Bs`Bu`Bv`Bw`Bx`By`Bz`B{`B}`B~`B`aBaaBcaBdaBeaBgaBjaBkaBnaBoaBpaBtaBuaBvaBwaBxaBzaB{aB|aB}aB~aB`bBabBbbBdbBfbBhbBibBkbBlbBmbBrbBsbBvbB{bB|bB}bB~bB_cBccBdcBecBfcBgcBhcBjcBlcBncBqcBrcBscBtcBucBycBzcB{cB}cB~cB_dB`dBbdBcdBfdBhdBjdBkdBldBmdBodBqdBrdBtdBudBvdBwdBydB{dB|dB}dB~dB_eBaeBceBdeBeeBfeBgeBheBneBpeBqeBreBseBteBueBveBxeB|eB}eB_fBbfBcfBdfBefBffBgfBhfBifBkfBlfBnfBofBpfBqfBrfBsfBufBvfBxfBzfB_gBcgBdgBfgBggBigBjgBkgBmgBogBpgBsgBtgBugBvgB`hBbhBchBdhBfhBihBjhBkhBlhBmhBphBqhBrhBthBxhByhBzhB{hB|hB}hB_iB`iBaiBbiBgiBhiBiiBliBmiBpiBsiBviBxiByiBziB|iB}iB~iB`jBbjBfjBgjBjjBkjBljBmjBnjBojBpjBsjBujBzjB|jB}jB~jB_kBakBbkBckBdkBikBkkBlkBmkBskBukBwkBykBzkB{kB|kB`lBalBblBclBdlBelBglBhlBilBjlBklBnlBolBrlBslBulBylBzlB{lB|lB~lB`mBamBbmBcmBdmBfmBlmBomBpmBqmBrmBsmBtmBvmBxmBymBzmB{mB|mB}mB~mB_nB`nBanBdnBgnBhnBinBjnBknBmnBpnBqnBsnBxnBynB|nB}nB~nB_oBaoBboBcoBdoBfoBgoBhoBioBkoBloBmoBnoBqoBsoBtoBuoBvoBxoByoBzoB{oB|oB~oB_pB`pBcpBdpBhpBipBjpBkpBlpBnpBopBppBqpBrpBtpBupBvpBwpBxpB|pB~pB`qBbqBcqBdqBfqBgqBhqBkqBnqBoqBrqBsqBtqBuqByqB{qB|qB}qB~qB`rBarBbrBcrBerBgrBirBmrBnrBorBrrBsrBurBwrByrB{rB}rB_sB`sBasBcsBesBgsBhsBisBksBlsBnsBosBrsBssBtsBvsBwsBxsBysB{sB|sB`tBbtBdtBetBgtBitBjtBqtBrtBstBttButBvtBwtB{tB}tB`uBbuBcuBeuBfuBguBhuBiuBjuBkuBluBnuBpuBsuBtuBuuBvuB{uB}uBavBdvBfvBgvBhvBkvBlvBmvBovBrvBsvBtvBuvBwvBxvBzvB{vB~vB_wB`wBawBfwBiwBmwBowBtwBvwBwwBxwBywBzwB{wB|wB_xBaxBbxBdxBgxBkxBmxBrxBvxBzxB}xB~xB_yB`yBayBbyBcyBdyBfyBhyBjyBkyBmyBoyBqyBryBtyBvyBzyB{yB|yB_zB`zBbzBdzBezBfzBgzBizBjzBnzBozBqzBuzBvzBwzBxzByzBzzB{zB|zB~zB_{B`{Ba{Bc{Bd{Bf{Bg{Bi{Bj{Bl{Bq{Bs{Bv{By{B{{B|{B}{B~{B_|Ba|Bc|Be|Bg|Bi|Bl|Bm|Bp|Br|Bs|Ba}Bc}Bd}Bh}Bi}Bj}Bn}Bo}Bp}Br}Bs}Bt}Bw}By}B}}B~}B`~Ba~Bd~Be~Bf~Bg~Bh~Bj~Bk~Bl~Bn~Bo~Bp~Bq~Br~Bs~Bt~Bu~By~Bz~B~~B`_Cc_Ce_Cf_Ci_Ck_Cm_Co_Cp_Cq_Cs_Ct_Cv_C~_C_`C``Ca`Cc`Ce`Cf`Cg`Ch`Ci`Cl`Cm`Co`Cp`Cr`Cs`Ct`Cu`Cw`C}`C_aCaaCbaCcaChaCjaCkaCmaCpaCuaCvaCwaC}aC~aC_bC`bCabCbbCdbCfbCgbCibCkbClbCqbCsbCxbCybCzbC|bC~bC`cCdcCfcCgcChcCicCjcCkcCocCpcCqcCscCvcCycC|cC~cC`dCbdCcdCddCedChdCidCjdCmdCndCodCpdCqdCrdCtdCudCvdCwdCydCzdC|dC}dC~dC`eCaeCfeCheCieCleCneCpeCreCueCveCweCxeC{eC|eC}eC`fCafCbfCcfCdfCifCjfCofCpfCsfCtfCufCvfCwfCxfCzfC|fC}fC~fC_gC`gCagCbgCcgCfgCggChgCigCkgCmgCngCogCsgCtgCwgCxgCzgC}gC_hC`hCchCdhCghChhCihCkhCmhCnhCohCrhCshCuhCwhCyhC{hC}hC_iCeiCgiChiCiiCkiCliCmiCniCoiCpiCqiCtiCwiCxiCyiC{iC`jCajCbjChjCljCmjCnjCqjCrjCujCzjCckChkCjkCkkCmkCokCpkCqkCukCwkCxkCykC`lCalCblCclCdlChlCilCjlCllCmlCnlColCrlCulCvlCxlCylCzlC|lCamCcmCemCfmCgmChmCimCjmClmCmmCnmCpmCqmCsmCtmCumCvmCxmCzmC{mC|mC}mC~mC_nC`nCanCbnCcnCgnChnCinCjnClnCmnCpnCvnCxnCynCznCboCeoCfoChoCioCjoCkoCmoCnoCpoCqoCroCsoCtoCwoCyoC{oC~oC`pCbpCcpCepCgpChpCkpCtpCxpCypCzpC}pC_qCaqCbqCcqCdqCfqCgqChqCiqCjqClqCnqCqqCrqCsqCtqCyqC~qCarCcrCdrCgrChrCirCjrClrCorCqrCrrCsrCurCwrCxrCzrC|rC}rC`sCbsCdsCgsCjsCksCosCqsCrsCtsCusCwsCzsC{sC|sC}sC~sCbtCctCetCjtCktCmtCntCotCptCqtCrtCstCttCxtCytC{tC|tC~tC`uCauCcuChuCiuCmuCouCpuCquCvuCavCcvCdvCfvCjvClvCmvCovCrvCsvCtvCwvCxvCzvC|vC_wCcwChwCjwCkwCnwCowCpwCrwCtwC{wC~wC_xC`xCcxCfxChxCjxCnxCoxCtxCvxCwxCyxCzxC|xC~xC_yCayCcyCdyCfyCgyChyCjyCkyClyCoyCpyCryCtyCvyCwyCxyCzyC|yC}yC~yC`zCczCdzCfzCgzChzCizCjzCnzCozCpzCqzCrzCszCuzCwzCyzCzzC{zC}zCd{Ce{Cf{Cg{Ck{Cl{Cn{Co{Cq{Cr{Cs{Cy{Cz{C}{C`|Cb|Cc|Cf|Ch|Ck|Cm|Cn|Co|Cp|Cq|Cv|Cw|Cz|C{|C}|C`}Ca}Cd}Ce}Ci}Co}Cq}Cs}Cx}Cz}C{}C}}C`~Cb~Cd~Cf~Cg~Ch~Ci~Ck~Cl~Cm~Cp~Cs~Cx~Cz~C|~C~~C`_Db_Dd_De_Dj_Dl_Do_Ds_Dt_Du_Dx_Dy_D}_D~_D_`Da`Dd`De`Df`Dg`Dh`Dj`Dm`Dn`Do`Dp`Dr`Dt`Du`Dw`Dy`D{`D|`D_aDaaDbaDeaDjaDlaDoaDraDtaDvaDwaDxaDyaD{aD`bDbbDfbDgbDhbDnbDobDqbDrbDsbDvbDxbDybD|bD}bD_cDacDccDecDfcDgcDhcDjcDncDpcDrcDtcD{cD~cD_dDadDcdDddDedDidDjdDldDodDqdDrdDudDxdD|dD}dD~dD`eDbeDceDeeDjeDkeDmeDoeDpeDqeDzeD|eD}eD_fDbfDdfDffDhfDjfDmfDrfDtfDvfDzfD{fD_gDbgDfgDggDigDlgDmgDngDogDtgDvgDwgDxgD~gD_hD`hDchDdhDhhDlhDnhDohDrhDuhDzhD|hD}hD`iDiiDjiDliDmiDpiDriDsiDuiDxiDziD|iD_jD`jDpjDqjDrjDtjDujDyjDzjD_kDhkDikDjkDlkDnkDqkDrkDxkD{kD}kD_lDalDblDdlDilDjlDmlDnlDqlDslDzlD|lD}lD_mDbmDcmDdmDgmDhmDimDkmDnmDpmDrmDtmD}mD~mD`nDhnDpnDsnDxnDynDznD{nD}nD~nD_oD`oDdoDfoDnoD{oD}oDbpDgpDipDlpDmpDnpDspDvpD|pD}pD~pD`qDbqDgqDiqDmqDoqDpqDtqDvqDwqDxqDcrDfrDhrDlrDorDsrDxrDzrD_sDasDcsDdsDjsDksDmsDosDssDwsD~sDatDctDdtDgtDhtDktDotDptDstDwtDytD}tD_uD`uDbuDcuDeuDluDruDtuDvuDxuDavDcvDevDrvDfwDkwDpwDswDtwD}wD_xDfxDayDcyDdyDfyDkyDnyDqyDxyDg{Dl}Au}Av}Aw}Ax}Ay}Az}A{}A|}A}}A~}A_~A`~Aa~Ab~Ac~Ad~Ae~Af~Ak~Al~Am~An~Ao~Aq~As~Au~Aw~Ax~Ay~Az~A{~A|~A}~A~~A__B`_Ba_Bb_Bc_Bd_Bi_Bj_Bk_Bl_Bm_Bn_Bo_Bp_Bt_Bu_Bv_Bw_Bx_By_Bz_B{_B|_B}_B~_B_`B``Ba`Bb`Bc`Bd`Be`Bf`Bg`Bh`Bi`Bj`Bk`Bl`Bn`BlaBsaBbcBkcBwcBxcB|cBndBxdBbeBkeBleBoeBweByeBzeB{eB~eB`fBafBjfBmfBtfB|fB}fBagBbgBhgBngBqgBzgB}gB~gB_hBehBghBshBuhBeiBfiBjiBkiBniBoiBqiBriBtiBwiBajBdjBijBtjBxjByjB{jB`kBfkBgkBhkBjkBokBpkBqkBrkBtkBvkBxkB~kB_lBflBmlBqlBtlBwlBxlB_mBgmBjmBkmBnmBwmBbnBcnBenBonBvnB{nBjoBpoBwoB}oBepBgpBmpBaqBeqBiqBjqBmqBqqBxqBzqB_rBdrBfrBlrBprBqrBtrBvrBxrBzrB|rB~rBbsBdsBfsBjsBqsBusBzsB}sB_tBatBctBftBhtBltBmtBptB~tB_uBauBduBruByuBzuB|uB~uBbvBnvBqvBvvB|vBcwBdwBewBhwBjwBkwBlwBnwBpwBqwBswBuwB~wBixBjxBlxBnxBoxBqxBsxBuxBxxByxBeyBgyBiyBlyBpyByyB~yBczBlzBmzBpzBrzBtzB}zBb{Be{Bh{Bm{Bo{Bp{Br{Bt{Bw{Bz{Bb|Bd|Bf|Bh|Bj|Bn|Bo|Bq|Bt|Bu|Bv|Bw|Bx|By|Bz|B{|B||B}|B_}B`}Bb}Bg}Bl}Bm}Bq}Bu}Bv}B|}B_~Bb~Bc~Bi~Bm~Bx~B|~B}~B__Ca_Cb_Cd_Ch_Cj_Cn_Cr_Cx_Cz_C|_C}_Cd`Ck`Cv`Cy`C|`C`aCfaCiaClaCnaCoaCqaCtaC{aC|aCebChbCjbCnbCobCpbCtbCubCwbC{bC}bC_cCbcCecCncCrcCucCxcC}cC_dCadCldCsdCxdC_eCbeCeeCgeCjeCkeCmeCoeCqeCseCteCzeC_fCefCffChfClfCmfCnfCrfCyfC{fCdgCegCjgCvgC{gC~gCbhCfhCjhCqhCthCvhCxhCzhC|hCbiCciCdiCfiCjiCsiCuiCviCziC|iC~iC_jCcjCfjCkjCojCtjCwjCxjC}jC_kCbkCdkCekCgkClkCnkCtkCvkCzkC}kC_lCglCklCplCqlCslCtlC{lC~lC_mC`mCbmCdmCkmCrmCwmCymCdnCfnConCqnCrnCsnCtnCunCwnC{nC|nC}nC~nC`oCaoCgoCloCooCvoCxoCzoC}oC_pCapCfpCipCjpClpCmpCnpCppCqpCspCupCwpC|pC`qCeqCmqCoqCuqCvqCwqCxqCzqC{qC}qC_rCbrCerCfrCkrCmrCnrCprCtrCvrC_sCasCcsCfsChsCmsCnsCpsCxsCysC`tCatCitCltCutCwtCztC}tC_uCbuCduCeuCguCjuCnuCsuCuuCwuCxuCzuC{uC~uC`vCevCgvChvCnvCpvCqvCuvC{vC}vC`wCawCbwCdwCewCgwClwCmwCqwCswCvwCwwCxwCzwC|wC}wCaxCbxCdxCexCgxCixCkxClxCmxCqxCrxCsxCuxCxxC{xC}xC`yCbyCeyCmyCnyCqyCsyCuyC{yCazCkzCmzCtzCvzCxzC|zC_{C`{Ca{Cb{Cc{Ch{Ci{Cj{Cm{Cp{Ct{Cu{Cv{Cx{C{{C|{C~{C_|Ca|Cd|Ce|Ci|Cl|Cs|Ct|Cu|Cx|C||C_}Cb}Cc}Cf}Cg}Ch}Cj}Cn}Cp}Cr}Cu}Cw}Cy}C|}C~}C_~Ca~Ce~Cj~Cn~Co~Cr~Cu~Cv~Cw~C{~C__Da_Df_Dg_Dh_Di_Dk_Dm_Dn_Dp_Dq_Dr_Dv_Dw_Dz_D{_D|_D``Db`Dc`Di`Dl`Dq`Ds`Dv`Dx`Dz`D}`D~`D`aDcaDdaDfaDgaDiaDkaDnaDpaDqaDuaDzaD|aD}aD~aD_bDcbDebDibDjbDkbDlbDpbDubDwbDzbD~bD`cDbcDdcDicDkcDlcDmcDocDqcDscDucDvcD|cD}cD`dDbdDfdDhdDkdDndDpdDsdDtdDzdD{dD_eDaeDdeDfeDgeDieDneDreDseDteDueDveDxeDyeD{eD~eD`fDcfDgfDifDlfDofDpfDqfDsfDufDwfDyfD|fD}fD`gDagDdgDegDhgDjgDkgDpgDqgDrgDsgDugDygD{gD|gD}gDahDbhDehDfhDghDihDjhDkhDmhDphDqhDshDthDxhDyhD{hD~hD_iDaiDbiDciDdiDeiDfiDgiDhiDkiDniDoiDqiDtiDviDwiDyiD{iD}iD~iDajDbjDcjDdjDejDfjDgjDhjDijDjjDkjDljDmjDnjDojDsjDvjDwjDxjD|jD}jD~jD`kDakDbkDckDdkDekDfkDgkDkkDmkDpkDtkDukDvkDykDzkD|kD~kD`lDclDelDflDglDklDllDolDrlDtlDulDvlDwlDxlDylD{lD~lDamDemDfmDmmDomDqmDumDvmDwmDxmDymD{mD|mD_nDanDbnDcnDdnDenDfnDgnDinDknDlnDmnDnnDonDqnDrnDtnDunDvnDwnD|nDaoDboDcoDeoDgoDhoDioDjoDkoDloDmoDooDpoDqoDroDsoDtoDuoDvoDwoDxoDyoDzoD|oD~oD_pD`pDapDcpDdpDepDfpDhpDjpDkpDopDppDqpDrpDtpDupDwpDxpDypD{pD_qDaqDcqDdqDeqDfqDhqDjqDkqDlqDnqDrqDsqDuqDyqDzqD{qD|qD}qD~qD_rD`rDbrDdrDerDgrDirDjrDkrDmrDnrDprDqrDrrDtrDurDvrDwrDyrD{rD|rD}rD~rD`sDbsDesDfsDgsDhsDisDlsDnsDpsDqsDrsDtsDusDxsDysDzsD{sD|sD}sD_tD`tDbtDetDftDitDjtDmtDntDqtDrtDttDutDxtDztD{tD|tD~tDauDduDfuDguDhuDiuDjuDkuDmuDnuDouDpuDsuDuuDwuDyuDzuD{uD|uD}uD~uD_vD`vDbvDdvDfvDgvDhvDivDjvDkvDlvDmvDnvDovDpvDqvDsvDtvDuvDvvDwvDxvDyvDzvD{vD|vD~vD_wD`wDawDbwDcwDdwDewDgwDhwDiwDjwDlwDmwDnwDowDqwDrwDuwDvwDwwDxwDywDzwD{wD|wD~wD`xDaxDbxDcxDdxDexDgxDhxDixDjxDkxDlxDmxDnxDoxDpxDqxDrxDsxDtxDuxDvxDwxDxxDyxDzxD{xD|xD}xD~xD_yD`yDbyDeyDgyDhyDiyDjyDlyDmyDoyDpyDryDsyDtyDuyDvyDwyDyyDzyD{yD|yD}yD~yD_zD`zDazDbzDczDdzDezDfzDgzDhzDizDjzDkzDlzDmzDnzDozDpzDqzDrzDszDtzDuzDvzDwzDxzDyzDzzD{zD|zD}zD~zD_{D`{Da{Db{Dc{Dd{De{Df{Dh{Di{Dj{Dk{Dl{Dm{Dn{Do{Dp{Dq{Dr{Ds{Dt{Dba@??????A??????@?@????@?K????w@@???????TAMK???EB??aC???M?????@??????`N?@oS?Y?rG?Z@?A????B?[??x@G??zF???ByGYM?B?_SqAd@?GA????@???@E?E?????????AhHi@??x@?????????aAOn[?{GH?@?qH??ZnC??BtAJ@?~@qA?[Ei@MA?H??xR?_B?M[?AJ?S???I~@eAG???B?I?O?aBoHZmC??G??_A?@@^vC?B?|B^vZ?Z?B??fAA~@`@p@?\y@?eAxC?E?]|B?AaC}A??@??o@???Htf@wAzA??CaB?TwA@?\vCO?I~A????A{@?w@p@`DyG@?s@cB??qA??zC????YaARMdDuAO??H?AC??EK@oC?xCca@???I?O?Z?K@HfBzCtAd@?CqA_A??hB??@J??x@?eBfBeBB`@aAO?rI?RJs@B@JI^rIBy@?hHSG]^?gBeAs@@O??A??K?eBBB@??gAd@?@`l@Ep@SlCZ???aBY]hA?sO?Mh`@???uA?|_@zC}A?dBgAw@@??SlHJJtAfl@??lC?}ACR@?bG?o@??Cmj@?Rmi@hg@?eA[?pCKpC??A?S?Ei@ExW?vCCM?c@zA?eA?x@HlBjB@??TqH`J{@C?TaCi@`DI??d@E`o@hA??ii@iDp@@??AKM[??hA??????oC?@_L?SRi@G?gACB??oCo@dBzl@PfB??[|m@`@\Hp@~@H{HhB?qDhAnCcB?@?CRAhB?gB?@aAtn@?iB??aI?z]c@?c@?t@C?iBy@t@HEOABjHY\??_B?T?~AgAc@P?GtEzY@SIsJ`BB?OlB?Jpd@ECpDB?fA??}c@fBiDmDqDzF~X^??lCpk@`DoD?gn@?~AGB??{n@?Jbs@B??{GdB@t@`@cg@iH?@th@nDrG{U?TeIt@{@~g@JI?zIwAI@cp@c@]?Khm@?[t@|BP?oBJw@?C|b@H}o@CwA~@oDpB??}A?iBs@pD??`@????oBs@mo@??Ces@???E?PlH`BRY]GCT?kB?oHAhB{@@IdDaI?TpD??`B??cJ@?_B??fAqt@?vt@\i@??jBcJSH???}IEB_AJwJ?hr@bGaA??C?mD^C?cKtES`B}IkYC?mJjH?jBrr@G@R?iDeBu@zAke@?yp@{@bHmD@P??sJ@p@vDmr@P@~O??u@??c@?fKAu@bH?A@Hw@s@wf@o@pn@?hq@CuAoBGd@?jJ~JC@`b@?`@hApBmu@_AwDkBHmJBYAIiB??PmCzAiK?wDiHhl@`KG?nVpBcB?nDjBPdBcw@tv@cKkKJA?qDo@?E{Sfa@?~AKwJ????kt@?ea@]qB?H`m@E|l@|Jd@AC`JvDoBtA_AApC@?wD@Pu@??mCvDo]?uAci@?E|JKuJcB??gv@OqB?PqB???{H\Ho@u@?IE\u@kBx@IlBMiKc@gAxCgBfAgK~q@gKR?uw@t@pw@zIdD`KuJeI?GGnC??_f@??Z?jJfKmK????kBll@lB]~J`@gBKzVC?aB@@mKy@II?an@_BkKoDGqBne@B^pBdHdHnD?y@@fAK??A?B?C?D?E?F?G?H?I?J?K?L?M?N?O?P?Q?R?S?T?U?V?W?X?Y?Z?[?\?]?^?_@nKBoKDzDFrKHtKJ?`@?a@?b@?c@?d@?e@?f@?g@?h@?i@?j@?k@?l@?m@?n@?o@?p@?q@?r@?s@?t@?u@?v@?w@?x@xKCpKEqKGsKIuK`@yKb@zKd@{Kf@|Ky@?z@?{@?|@?}@?~@?_A?`A?aA?bA?cA?dA?eA?fA?gA?hA?iA?jA?kA?lA?mA?nA?oA?pA?qA?rA?sA?tA?uA?vA?wA?xA?yA?zA?{A?|A?}A?~A?_B?`B?aB?bB?cB?dB?eB?fB?gB?hB?iB?jB?kB?lB?mB?nB?oB?pB?qB?rB?sB?tB?uB?vB?wB?xB?yB?zBcLwAdLyAfL{AhL}AiL_BkLaBmLcBoLeBpLgB}DiBsLkBtLmBvLoBwLqB~DsByL{B?|B?}B?~B?_C?`C?aC?bC?cC?dC?eC?fC?gCjAhC?iC?jC?kC?lC?mC?nC?oC?pC?qC?rC?sC?tC?uC?vC?wC?xC?yC?zC_ExAeLzAgL|A{D~AjL`BlLbBnLdB|DfBqLhBrLjBrB{C?|CxB}C?~C?_D?`D?aD?bD?cD?dD?eD?fD?gD?hDuMwCwMyCxByA}L|AzM_B`MbB}MeBbMhB_NkBeMnBv@pBsBrBxLtB?{BiM}BjM_CkMaClMcCbEeCoMgCcEiCeEiD?jD?kD?lD?mD?nDiE~CjE`DbNbDdNdDfNoD?pDmAoC?qDwBrCnAtCtMvCvMxCxMzCiNzAyM}A_M`B|McB`EfBhEiBdMlBuLnBoNqBgMtB?rDuBsD?tDcO{A~L~A{MaBaMdB~MgBcMjBrBlBiOoBtBrBnEuD?vD?wD?xD?yD?zDjO|AjN`BeOdBmOhBmElBpOpBoAsBhM|BaE~BuB`CkAbCmMdCnMfC?{D?|DtO}AdOaBlOeBmNiBhOmBfMpBwOtBpN|BaE}D?~D?_EzOaC?`E?aE?bE?cE?dE?eE?fE?gE?hE?iE?jEiAkE?lE?mE?nE_P~AkObBlNfBgOjBoOmBcPqBsE{BoE}DfP_EuE`EvEoE?pE?qE?rE?sE?tE?uE?vE?wE?xE?yEnP_BkNcB`EzE?{E?|EpA}E?~EvK^|E`BuOeBaPjBqPnBrErBnE{BoE~BuEbC|OeCtNvB?hCdEjClA_F?`F?aF?bFiEcF?dFaN_DkEeF?fF?gF?hF?iF?jF?kF?lF?mF?nF?oF?pF?qF|PaB`PfBpPkBnNoBqOsBxO}B?}DsP_CpE`EvEbEzBrF?sF?tF?uF?vF?wF?xF?yF?zF?{F?|F?}F?~F?_G?`G?aG?bG?cGyN_DkEaDcNcDeNeDlEdG?eG?fG?gGdFbBoPgBnOkBqQpBdP{B_Q_CpEbCaQfCpMvB_FiCeEkCqMmCmAhG?iG?jG}BcBfOgB}DkG?lG?mG?nG?oG?pG_CdB|DzE?qG?rG?sG?tG?uGdFvG?wG?xGkPlEwEyG?zG?{GQyEpReB}PkBdRqBsEuDrO|G?}G?~G?_H?`H?aH?bH?cH?dH?eH?fHiFfBhEgH?hH?iHyBpC_OsCgEuCgNxCjFgBcRjH?kH?lH?mH?nH?oH?pH?qH?rH?sHeShBmEtH?uH?vH?wH?xH_R`D{NcDfFoD}NnCvBqDwByHqElDxNnD`CiBbPnB~EsBsQ~B`QcCsNfCiRhC`FkC?zHmA{H?|HtSjBrBjH?}HoRjGnFkB?tHmSvH?~H?_I?`I?aI?bI?cIlFaD`RdD?dI?eIsBfI?gIv@hI?iI?jIoAkI?lI?mI?nI?oIbTbD|NdIdTqB?fIfToB?hIhTjIjTlIlTpI?qIv@rI?sI?tIpAuI?vI?wI{P_@`CkGlRxI?yI?zIqFwIe@lBvOqBrP|ByO_CgRcCxSgCuNjClAlCrMnCvBpCwB{I?|I?}I?~I?_Jz@mB{BrB~P|BzT`C{OcC|TvBhFjClAzHyB`JsMqC?yHqEaJ?bJdUnBuStBeP}BqN`CgUdC}OgCrFkCjRnC?cJfQdFaF`D?eFgQgFiQiFkQkFcFdJ?eJ?fJ?gJ?hJ?iJ?jJxBkJ?lJ?mJ?nJ?oJ?pJv@}CaFqJ?rJ{BsJkAtJ?uJbEvJ?wJ?xJ?yJ?zJ?{J?|J?}JmUoBrQtBnU~BwSdCqUvBhF~J?_K?`KmTcDfFfD?dGgFaKz@bK?cKjAwB{LyBoVdDcTeIeTgIgTiIiTqB~DkIkTmI?pIsToB?rI?dK?eK?fKQgK{FdIbCfIoThIqTqBvVlIoFhK?iKv@jK?kK?lK?mK?nK?oKe@tH|S~H~S`I`TbItU~CzNeFuFpK?qK?rK?sKbCtK?uK?vK?wKbCxK?yK?zK?{K{VeIsVoBpTiIuVrB?kI?|KxE}K?~KiVpBeR|BfUaCrNdClVhCdE_L?`L?aL?bL?cL?dLqWqByT}BoUaCsWeCbQhCmFeLiUpCrSkDwNmD`GrBeU}ByWbChRgCrFfL?gL_ChLpAgEQiL_XsBvS_C{TdCtWiC?~J?jL?kL?lL?mL?}CfCrJ?nL?oLcXtBjV_CdXeC{WiC~BeL|WqCfEpLgEqL?rL?sL?tL?uL?vL?wL`CgH?xL?yLU{BfR`CpUeCjXjCcQzL?{L?|L?}L?~L?_M?`M?aM?bM?cMaRgGuRmEmP_@e@jHfSlHhSnHjSpH?dMgFfGbR_@iAeM?fM?gMrX|BrWbCaXvBtFiDvNkD~WnD|UlJ}UnJ_VpJaV~CjEqJbVnBrEsJdVuJfVwJxFyJgV{JhV}JeYmJ~UoJ`VoBaG~CkGrJcVaC?tJeVdC?vJ?hM?iMqVxB|LzBe@{ClYnJjGoBnG_D?qJgYoBtBsJiYdCqYwJmGzJgCjM?kM?lMcY}B`XcChUhC`FmM?nM?oMsAuHnSwHuYoJmY}CfCpMbXhE?qMh@~BkVeCtXkC?eLlXrC?pLnXrLcGtLsRtGiFzEqRrM?sM?tM?uM?vM?wM?xM?yMhCqG?rMfZtMgZvMqGxM~Y_CiXfCySiC~BzMD{M{FeDlE|Mg@kHgSmHiSoHkFqHkSsH|@fD?}M?~M?_N?`N}X_@g@aNaZpLcSvCbOyC?bN?cN?dNeW_DbFeNf@gEQfNwZ`DeCfFhQhFjQjF?gNdGuLpXwLkZ`CsXfClZjClAeLqZtC?qLoXsLdGsGtRuGh@}D?hNcEiN?jN?kNxQ{FyQ}F{Q_G|QaG~QcG}ZaCzWfC~ZkC`ZnCvB`JdCrCbZtC`[rLdZsGcClG?lN?mN?nNiADzDoN?pN?qN}@~DgP_CtQaE?oExEqEvPsExPuE?rNiGlDyA_EtPaEr[pEuPrEwPtEyEvE{EsN?tNlWqBnTgItVjIrTmI}FuN?vN?wN?xNsAyN?zNx[_Cq[bEzBdE?{N?|NhG}N?~N?_Oh@`OjAaO?bOg[bCdYhCmFlC~ToCdC{IsFcO?dO?eOzG`CkA`EuQcE?fO~[fI|ViInWkI|FpI?uNa\wNg@gOa[tGm\aChPaEy[qEt[tEyErNw[mDs\`En\hO?iOsGjO?kO?lO?mO?nO?oO?pO?qOv\aEiPcE?rOcCsO?tOf@uOzP]wK_@?vO?wO?xO?yO}ReH~GzO?{O?|O?}O?~OwG|FzQ~FeF`G}QbGg\cC{YiC~BlCi\pC`U|IaU~IcUzCxAlN?_P?`P?aP?bPfGfGb]dCeXjC}TmCaSqC?{IsF}IbU_J}BcP?dP?eP?fP}YpJfY_D?gP?hP?iP?jP?kP?lP?mP?nP?oPmZlH_YoHkFdMpVyEh]eC_ZpPdQqP?rP?sPjFtP?uP?vP?wPyPfE?}Ey\^}GbEzBxP?yP?zP?{P?|Pp]oBoGqJwYpBsBsJyYvJwF}P?~P?_Q?`Q?aQ?bQ?cQxZhE?dQ{AfCh[eLuGqLvGeQ?fQvAgQ?hQ?iQaH_Pe]aP?jQ?kQ?lQ?mQg]gGVgD?nQ?oQfGaKpZnC?pQxVfKQqQj@~MoZ`N?aK`AgCrUlCc]qCj]|I?cOl\eO|YvH}S_I_TaIaTcIbArQ`LsQ?tQ?uQ?vQ?wQV}M?xQr^_@o\gI_\qB~VmI}FqIpFyQ?zQ?{QN|Q_]}Fe[`Ga]cGyZeFuFhF{ZkFcFmFnQoFpQqFtY|Cz^vBtFkCi[oC?`Jk[pLcZsL?eQj^tM?gQl^iQ_C}Q?~Q?_RbA~HcWaIkHhCh\mCi]{Ik]~IqXhH`SnC_UqCfEsCrZwChNzCb^}CfC`RDaRr_@iCkXnCj[pC}WlDcAfFzZiFwUlFmQbR{RbH|RdH~RfHyAcR?dRd[zBxAeR?fR?gR?hR?iR?jR?kR?lR?mRl@jC_[nCw_@qCmXtCl[sLr\uGiCvNb\xNg@nR?oRLkCzSnCu^eKyVhE?qQ?pR?qR?rR?sR?tR?uR?vR?wR?xR?yR?zRc\zN|AoCi_@pC`HcOm@_F?zLuX|LwX~LyX`M{XbMaHmNrA{RD|Re\~Nj@nQs^cM|@oDpSoC~NqCgH}Il]zCL}RbYgGv_@~CkGpMDqMm@eLmApQv^hEkCcE?~R?_ScA`S?aScHmHsGpH?bSz@cS?dSe@eS?fSbAgS?hSa_@oBmWjI`\iS?jS?kS?lS?mSda@nCd`@rCxGqLvGtLeGvL_H{O?nSdAoS?pS?qS?rS?sS}@tSNuS_EvS?wS?xS?ySka@hI}VrB?zS?{S?|S}\~Oba@_DvYrJnYtJpYvJwFxJ?}S?~SuHiIp\lIoFuNrRsGxAxIf@zIqF_T?`Tn@oCr`@qC_a@~I}`@pDyBqDx_@mDmHiHs_@|Id]_JrAaT?bT?cTrVzB`a@eGsa@pSua@rSwa@_@iCrGeZuGgGyGvR{Gjb@nCqSqCjUkD?aJlUnDLdT?eTlS_@m@lC{^yHsSmDwHsG?fT?gT?hT?iTvHqJc^qB?sJe^wJmGjT?kTdSyCj@lT?mT?nT?oTy_@gFvUjFlQlF?pT?qT?rT?sTab@jIoAtT?uT?vT_@oC~`@rC`OuC`c@zCVwTnZ_@gc@qBb_@pIq\rMjCgQ?xT?yTUrDuBzT?{TnA|T?}T?~T?_U?`U?aUgXmLaGbU?cU?dU?eU?fU?gUjG~F`]aGxb@mClb@}Ik@nQ|`@fGzHrBoWlI_WiK`WhUDiU~GwOz\yO|\fHWrF?jU?kU?lU?mUtCkI|FiSla@kSna@mSga@nH`YdMaa@_@e@nU~FoU`ApU?qU?rUuc@}CuUeF?sU?tU?uU?vU|@wU?xUWxP`^yU?zUqCrJ|a@uJlGxJyFzJgC{UuClIbb@vNV|Mkb@nCi`@fK}GoEs[rE{[uEzE|U?}U?~U?_V?`VyCmIc_@oBwVaV?bV?cVpb@fGgb@`Jj\|Imb@zCzc@nCsUjG}BdV?eV?fV?gVdb@vIvT]j@xQt^yEhC{E?hV?iVqd@gGLjV?kV?lV?mVVnVyHhFf_@lF?dJvFfJxUhJzUjJ`AoVsYyByd@_@WpVoQpFzd@kV{d@mVtZcNbIpI?qV?rVLfL`InBhYaCoYuJlG}Pf^_QeHaQfHcQNdQz@sVsAtV?uV?vVr@oCdCyHyb@nD{c@oQ}_@fR~_@hR``@jRb`@wV?xVtHwSxa@yS|]uP?yV?zV?{Vj@hDdA|V?}V?~V?_W?`Woe@pCs`@dO|A{Hb@uNjZsMvAaW?bW?cW?dW?eWrd@pC`H}IWdEd\yU~d@iFz_@dJvFaL_GfW?gW?hWb@qIpFsItTfE?uIeb@`Tm@pP?|V|e@~V~e@`Whf@jFdc@mFh_@pFze@vCsZzC`f@qCib@_Jq_@_I|^bIq`@`Jj_@tCaOwC?iWf@jWQkWnFlW?mW?nW?oWk@pW?qW?rW|C{N?sW?tW?uWb@hK?vW?wWjPhE?xWre@gR_`@yW{CzWnA{W?|Wn`@xRp`@zRrC}W?~W?_XbIiS`d@lSoa@zBbd@oHy]eGsf@yI?jWff@qCe`@qLqa@uLqC`X{BaXo_@~Qp_@zC?bX?cX?dX?eX|CfX{CeVsd@gVud@_Tfb@yEw\tOx\~EwHuLqb@qSva@sScAeNNfNaD{Ik\dOVdGk@xQUgXae@zBfe@oBxYaCge@dCpG}Phe@`Qh^bQ?hX?iX?oUj`@qRk`@sRl`@uRm`@wRo`@yRcAjXDkXcIhVxd@_@ug@pBd^aCvg@vJ~a@yJjYlX?mXo[E?oNp[qNfg@_Rl@nX~FnKof@`IdWcIic@qDbStCrf@xCm@zHuGuCrCoXg`@wNif@oBod@pX?qXuTvIvd@^r@hGkRjGcb@yIwTvI?_TaDyHdh@qCnf@zCxHgT{b@iT}CkFg_@rXwQxF_DzPa^|P~C{Iqg@eOpg@|IsH|O{a@yF~f@hRse@kRc`@mR|@sX?tX?uX?vXng@_@rAwXjAxX?yXaDrCpa@rLm[tGmIcO`e@vBzLxB~CyHkUbJ|g@qB}b@aCkIhMrYvB?xXnh@kD{`@oQbi@cMy^yEgIzXeG{X?|XdAzLt`@}LxX_MzXaM|XcMsh@}O~\yFbD{It_@_JiCrMjCuMhZwMiZyMig@vUw^_NtGaKr@cJjd@pEz[sEu[vE{E}X?~Xzh@pLk_@tLUuD?_Y?`YbByP?yUqCpM_HaYDbYLcYu\nDwGdY?eY~HbUsCfY?gY?hY?iY?jY?kY?lYDmYkHwBpi@qEt\uEv[nYue@zCm^`Pf]oY}^z@aL|@?pY?qYVrYdA`FeQbFa@cJiAsY?tY}d@eGa@hGji@|Ilg@vLve@xSya@bGoIsJ~b@xJ_b@~Shi@~Olh@zIxT]aj@wLoi@jGLiDr@uY?vYxHwYvAxY?yYtIzY?{YyHpKfWrK?|Y?}Ydg@jSma@lS?~Ysi@tCf`@tLra@wLdj@yFpIlDk@lTac@nTcc@mRrAcK_@hGyA_ZWfOL`Zxe@{V|IcOxIaPn^aZui@fEFqMeg@pHaYeGq@bZDcZ}@dZdd@xBfDeZhIfVtd@yIlI_Tcj@aCkIwJxFfZ?gZ?hZde@lV|d@sSyj@tJ}a@wJ_c@iZwIjZmg@rSsg@cMhh@rI?kZvj@yB_@{HwIrEkd@vE?|Uld@~Und@`Vch@aI}@hNb[jNk@~Mx^fG{j@mV{AlZNmZdAnZta@qSmI}InHoZ?pZ?qZ?rZ?sZ?tZek@sSgDbP|j@uJgd@yJ?uZ?vZWwZ?xZ|HsFvQyZ?zZ?{Z?|Z?}ZbDyH_i@nDoc@sC?|Tpc@~Trc@`Utc@lLhX}C?bUsC~Z?_[?`[?a[?b[n@cJbBc[?d[{Ae[Xf[?g[ck@vB_FiNc[kN}j@sSbAh[ce@qFxf@qWzf@_@{Ci[e_@~Fyc@bG_k@sEqi@wE?}Xri@_@wk@|Txk@_Usc@aUxi@cU?~Z?j[?k[?l[?m[?n[?o[Wp[hGq[lPmE?yGtb@hE~IuCzHsJkAr[?s[~IqLi^fQk^hQhDbSgIcXgg@eXb@t[Du[}CgNl_@fQwl@iQcAsU_IuUzb@tGle@zBmHv[?w[XdKrHgKnj@mDxAmGmRx[hIy[~Kx@z`@_OUz[D{[~h@kDok@dCpG|[iI}[?~[?_\?`\?a\~H~C?b\?c\?d\mV`K~c@xO{\dHrh@|Imf@wCXyQd_@e\aWmKbWoK~CrCjc@vCnIiRa`@kR?wVjm@xCjl@tE|[wE?sN}[gGkg@yI?uO_^_@wj@mRtCzS?f\vl@rLcGeQm_@gQ_@g\sHnSrm@sL|ZvLph@lFec@h\ml@}Tqc@_Unl@lLaJbUsCdUwc@fU?i\?j\?k\?l\?m\?n\}Co\}Hn[pl@_@lJeQsm@hQeDsW?p\?q\?r\bDrCmm@wCah@mKzg@xBpm@uEzEwEkl@~X~l@nDfInLy`@fEF|RgJaJdl@_@yIsQ~^uQ`_@wQlJtLuC|KpW~K{As\nc@xByl@dXmk@_@|I}InJsGlFt\?u\?v\vIkY{i@fEFmYkc@rH_m@nGnRpGwb@eT~i@qP{]sP|GeQ~m@iQom@yCq@w\?x\kCy\ej@vIjh@_@we@vP}]|EpAz\_J`Thk@~Ixj@gVjg@`Tl@_LuWaL_GcLr@{\?|\?}\hDdMa@oCpe@kDvb@bJbm@vJ}g@jT?~\_d@mUoIaXh@_]D`]iJ}Ihj@vYgJlDdi@{LvX}Lei@`Mw`@cMLa]?b]?c]f@d]a@uYnn@sHum@~Tyk@aUeJ~ZbJ`[}k@b[xh@vBai@yXcCe]io@~Eeh@nCid@hEUf]?g]?h]kDwJ?}PiIaQfHhXyg@nKn@pQrHqQwn@yIlIwIbk@bIco@~Ioj@oXkm@zQ?e\lm@oUhCi]?j]{l@tU?k]?l]?m]wi@eYeJfYzi@hY?n]xc@_Gf[bGXaV?pXih@fEkf@vImh@`T{m@kUia@fS_h@F{Do]?p]?q]?r]?s]?t]?u]?v]?w]kJ{Sza@}Ocd@mKk@hDrl@lEwEnEb@x]?y]?z]Q{]ro@zIlf@yEvn@_J`j@iGdo@mDsIsGqk@xZh@|]N}]vi@fEFbYsj@zVye@mUdIrMjCaWcf@cWef@eW|f@iK|c@fEFiUx`@nNlp@nD|GtLao@bOon@sH?~]?_^}Kw@?`^nAa^?b^?c^?d^?e^tp@x@kJf\nb@bTob@xBkn@~Idk@_NtGfGyCf^bh@oKfDnYlD}Ppo@bQxg@iXcn@yBLmM?g^f@h^un@yEtm@mRfJtLg@i^iGaJep@vC}m@fQ|AhGkCj^?k^~o@}A?o]_p@q]ap@l^eFm^?n^tJsGpJn[lDxJyFjT_o@lU{h@dOrg@eGnBoChb@rCxGuCbj@ySwd@cMti@vD?|GyR~GzR`H{_@cHmBo^bo@fEF`]fn@tQ__@vQgj@jDpf@pCaf@eOLp^?q^jp@zCvo@e\wo@xBbAr^mBs^UuByh@yX|@t^?u^vh@vXja@hSjIiViJcOip@vI?v^?w^?x^_g@sC?{W`g@wR{g@zR`Ay^Dz^mBvE`k@}Umd@_VcH{^?|^wC}^gh@xN_j@jGb@~^?__@n@{H|n@eGsb@zGwRhEgDoYjDpT?`_@sk@{Ztk@}Zl@a_@el@oFln@tGxq@dOm]dPn]fPno@g]oo@kD~n@nDdJhC?iNcl@zBsn@wIjo@_Uvm@mLvc@cU?b_@mn@gEQmYfh@yR{JnY`h@zC~j@fGin@_C?sDcDkMrq@q^tCtThc@vTrJoUVc_@rDfZzj@hZm@d_@?e_@Nf_@eo@|Lu`@_Mfi@bMgo@b]ho@yI?d]|Cg_@xo@m]rDyJ?jT?iZ|o@bV_KaKb@h_@bl@g[hd@gLxIi_@Uj_@Nk_@q@l_@?m_@rp@oB?jK?hUn@hG|p@mKr@pQeD|Nfp@mEuh@tXwq@rSso@cI_l@d[bq@tMn_@hQuDuZyq@{Wzq@xRmc@_Cnr@tDoq@uQql@d[uo@yR_KfGpj@vB}h@yBar@qTfc@sT~k@jGyn@|\og@yIFfNzJeZtl@aC?r[ul@kN}@n_@Do_@kj@qKgWsKhWuKiWwKjWyKkW{KjIp_@sl@vCgGnE|HjU}HlUbg@~Wjr@`Uzk@mLtDdUxm@gUzo@`Guq@vBds@zBgl@rWdp@|Sur@l]pp@sMvAuMtIxMjDdJ_e@gJyUiJgp@y]hp@hE?{]yo@lLwm@cU?fYoJiYvIq_@}Er_@_Js_@ns@tM?aWqp@dWrJnKuDzJgClXnBg\vJcTer@eOyI{@bLpYtJuLfInB~Et_@?u_@?v_@?w_@?x_@?y_@j@pWyf@rWeq@o]fq@r]qJt]bp@v]kr@zRqj@iGlD|[cm@~[em@`\gm@lLaJ~C?z_@?{_@vs@|@|i@qYaq@sGcr@pFam@fEF{[xJeZbn@sCu_@xCvHgPr]iPt]kPv]mPx]oPoh@hTgDjQo^lQq^cMnJuLos@mLtDfYoJn]ls@aGee@dNzr@eKpHqQgs@wC|s@p]`p@r]qJ|_@?}_@tr@c]`q@tZsq@lKjq@eOqn@zCop@{VuHxK?~_@?_`@?``@dr@uGz@a`@?b`@~s@~Pg^`Q?}[dm@_\fm@a\hJz_@dKjL?c`@?d`@ym@l\zm@n\}J_Ttg@vBrn@x\xn@`LvWbLwWdLnp@yIF}]ft@iTxl@gLut@`T}p@~Pst@aQje@yIFdQ~r@gQhDqHpr@xBmp@tGsr@}Lfo@aMgi@fG}JwIxDe`@}f@gEQf`@tq@zCdIvNto@_JmBrNwt@_Qie@bQ~p@nKXsIjf@uIfj@^|h@wBms@xXsD|Uak@_VyAg`@Nh`@cI|E}E~EXkZ{r@}JXi`@Dj`@wCk`@yCl`@Dm`@wr@mK_q@zBks@aUko@_[|k@a[sDn`@?o`@sDwEdn@_@uDjTiq@mU_r@|HeKkQp^mQuf@mWvf@oWLp`@?q`@}n@pCgf@~Idq@k^yr@yIFk_@n@uYdu@lLps@~Zlo@a[nHdR{p@`Na@{\zn@}\q@r`@?s`@?t`@uCu`@_u@hE?v`@ij@tM?xYjj@vMqGzYfu@lQgt@aKyt@yB}t@]{JeZot@yI?h^fk@yIFmZgr@iN`InLiu@qCgHcOhs@_@vJw`@?x`@_n@p\`n@r\_@pQ|r@uXwh@rSnu@wWFv`@as@sDtu@jNyDy`@pu@xYqu@wM?zYbK{Jus@oKbBz`@?{`@be@oFrk@tF?yZbr@|Zuk@zCnBuYqr@e_@qIfGru@^hn@pEzs@xB_s@vZpt@mKkD|`@ws@oBtBaXau@`Qwg@cQkp@jGup@sC?a^vp@c^wp@e^cu@nKl@~JfXkLhJ_Dq]hPs]jPu]lPw]nPa@pQcs@gGjDmF?rXqh@yFcD}`@?~`@is@kUol@o[kq@`Jqf@uCf\vB{t@~Lv`@aM|t@gG`A{Dh@_a@N`a@sp@_@il@_G{o@cG}i@gLaKaWts@eWnm@jRte@xVct@hPdv@kPet@nPbBaa@?ba@zp@_Jgk@pSrb@sSni@`Nmt@xCik@pZjk@rZlk@tZgu@nWqq@qCub@aJfJeQjs@_XxDq]gq@_G?m^pq@kDyJfGmq@bGjn@eXvq@u^}r@sSrD}Sq@ca@Dda@pJlUyDs`@ir@]qo@eKnk@cM{u@{`@lu@kNbt@tGlr@xVkDhM`i@wB~v@ea@Dfa@bu@}U|q@`Vlt@fK`GaXl@ga@Dha@fv@eKlv@`G{s@qWq@qUed@lL`t@_DbFsU_Ik]{v@fGsv@oWrt@_QeH}[tt@`\_t@mLnGz_@dK_KzJjDnv@ba@`w@rUcv@`DeCsUbw@l]_@uYjKrClq@vCrCmTbc@oTqv@yC{q@fEFz^pIaJuu@{Iki@zC{IaKg@}Hdw@lLaw@`DeC`Svr@cV`s@|Wag@yRkh@iGrv@qZkk@sZuv@r]nt@}_@kv@|Duj@fEFcZor@lMaKgQlc@yTW~RbKia@uZdN`r@cMav@a^bv@d^xp@v@yJaKit@}C{k@cUqs@gYuIn]jt@bGiv@pCju@_JjKyHrj@vBht@vLiw@bUyi@gYuIiYrs@fE~]r_@ss@]|u@yZ}u@}Zxt@rH~u@gG}l@eKpHgKxu@eKmw@sH|v@zBfs@}\zv@fKal@vBfr@ePzt@uGvk@kDsIuL?{X_DsW{f@uWlKja@|AcJfDjDov@zClw@wLeDzP?}`@wCxU}q@|^xr@zB~t@wWFf`@lj@kSad@zBim@yOjw@qCvu@dOqe@cMnIyW}s@jGzGzTqIaKtj@dOvv@lDdJwBsu@d]en@bJxJnY_DyUpv@qSeKaZsw@xB_w@bOat@pYow@xXhKka@li@sMbf@bWdf@dWrw@eOhw@fGnq@fGha@dSgw@mLoG`Dew@tUfd@vUxDla@ou@ma@{e@}V}e@_W`u@zCxv@~SyDna@fw@vYku@mLtD~ZbJoa@?pa@hu@eOqw@yEww@wQXqa@?ra@eu@}Xqm@uOhv@lUyu@vXcq@iGnw@fKmv@iPdt@lPev@oPhK{UlKrWwv@uXzu@sSa@{Hkw@wBjv@wB}v@uGwu@q\{IfGme@uV`v@pBoAt_@xs@v_@ys@x_@_v@yBtw@rSsAsa@cD{Pvw@l]tHta@?ua@?va@?wa@nB{Hxw@sS|Exa@?ya@_@cJyv@t`@?za@</div>
+<div id="globalStacks" style="display:none"></div>
+<div id="methods" style="display:none">@??A??B?????B??C??pS?WC?D??E??@U?wL?F??G??PJ?sC?F??H??@A@sK?F??I??PD??H?J??K??`d?wC?L??M??@??w??N??M??@??C@?O??P??p??GI?Q??R??P??[G?S??M??@C?KE?T??M??P?@OL?U??V??`J?{O?U??W??`@?cP?X??Y??@A?kR?Z??[??pN@WG?\??]??@F????^??_??pE????`??a??pO?ST?b??c??P??OM?b??d??pY?kR?b??e??@O@wU?f??g??`}?_c?h??i??`]?gM?j??k??@D?CF?l??m??p`?cRCn??o??`C?WnAp??o??PK?cR?q??r??pC?w]?s??t??pK?{T@u??A??A?????S??v??`B?wO?S??w??Pa?kP?x??y??`A?wE?x??z??@B?cJ?{??z??@M?OI?{??z??`??oM?|??}??pw?Ss@|??~??P@?wt@|???@?P??Wt@|??@@?`J?oy@|??A@?@O?sw@l??B@?pA?[V?l??C@?@?????D@?M??@T?oa?E@?F@?@@?WT?E@?G@?p_?WW?H@?I@?`T?OI?J@?I@?@G??I?K@?L@?pG?{D?M@?N@?PM?sO?M@?N@?@D?cM?O@?P@?p??{S?Q@?R@?p@?wI?S@?R@?@??[|?T@?A??A?????|???@?PA?[t@U@?}??`F??]?U@?V@?PO?K^?W@?}??P@?sA?X@?}??`\?sC?X@?Y@?@?????Z@?w??@@?[D@[@?M??@@??x?[@?\@?pE?wz?]@?^@?P@?gP?_@?`@?`@?CB?a@?b@?`@?cB?c@?b@?Pd??T?c@?d@?`_?WW?e@?f@?`@?C[@g@?h@?pn?GN?i@?h@?PGACp?j@?k@?P@?KU?l@?m@?`L?cE?n@?w??`K?[J?n@?o@?@x?cn@p@?w??pO?cI?p@?o@?PV??h?q@?w??`@?KR?q@?r@?`Y?sp?s@?w??PH?CN?t@?u@?p@?{K?v@?w@?pN?GO@x@?A??A?????y@?C??pA?Cs?z@?C??P@?kf?{@?|@?@V??F@}@?C??pH?_O?~@??A?@@?k`?@A?C??@B????J??AA?`@?SE?L??BA?P??GC?CA?DA?@B????J??EA?p??OE?FA?K??PG?GC?GA?K??`@????HA?IA?`N?_E?JA?KA?`U??B?JA?LA?@\?[F?JA?MA?@@?GH?JA?NA?p??{H?OA?IA?`@????PA?QA?@U?o@?N??RA?@F?[A?SA?TA?`@?kF?S??TA?PD?_a?S??UA?@e?wg?VA?WA?PF?WQ?XA?YA?`E?CfAZA?DA?`E?sH?[A?C??PM?sm@XA?\A?@R?w^?]A?^A?PY?wF@_A?`A?@A????VA?aA?P??ST?VA?bA?P^?S[?XA?cA?p??SOAXA?dA?PB?GH@eA?fA?P??WA?eA?fA?@??SD?eA?A??A?????VA?bA?@X?_X?gA?WA?`??OV?gA?bA?@C?oV?gA?hA?pQ?o\?XA?IA?p??OQAXA?iA?`L?Wz?XA?jA?`M?Wy?kA?`A?@C????gA?lA?@@?o\?gA?mA?@j?OX?nA?`A?@B????gA?oA?P??_\?pA?qA?Pz?SO?XA?dA?`[?KI@rA?`A?@A????pA?sA?PN?KP?tA?uA?`q?WR?tA?vA?`E?WE?wA?R??p@?gC?xA?yA?@B?OL?xA?zA?`I??N?{A?|A?@F?GO@}A?~A?@E????xA??B?@L?WN?@B?|A?`J?[]@AB?~A?@C????xA?BB?@E?cN?@B?CB?@D?K\?@B?CB?p@?W[?@B?DB?p@?ON?@B?DB?@L?{M?EB?A??A?????S??UA?p_?[g?VA?A??A?????FB?C??`B?WM?GB?C??P??SH?HB?C??`G?sK?IB?C??@@????JB?KB?`p?cM?LB?MB?pH?oh?NB?~A?PD?Oe?LB?IA?p@?se?LB?IA?@W?Gj?OB?o@?@d?wF?OB?PB?@s?GS?OB?QB?Pb?CP?tA?uA?@V?OQ?wA?RB?pD?wB?{A?RA?@@?W`?{A?RA?@u?or?{A?SB?@??sn?TB?A??A?????OB?o@?@f?{F?OB?UB?pK?wS?VB?|A?`Q?sW@VA?bA?p\?[Z?XA?iA?@F?Oz?WB?A??A?????VA?bA?PK?[W?XB?yA?P@?cA?XB?w??@A?sA?YB?ZB?PC?GU?[B?yA?@??CF?[B?A??A?????pA?qA?pH?[M?\B?A??A?????gA?hA?PO?k\?gA?]B?pX?[T?^B?_B?@U?GE?`B?`A?@C????^B?aB?@@?GE?^B?bB?`x??H?^B?cB?`@?CI?pA?w??PK?GD?dB?w??pA?Cf?\??eB?P@????fB?gB?P?????hB?iB?@B?__?s??iB?@?????jB?A??A?????F??H??@o?oJ?kB?lB?@A?SG?kB?lB?`C?gG?kB?mB?P??sJ?^B?bB?pz?CH?XA?nB?p??_FAXA?oB?PE?Wh?XA?pB?PR?oi?qB?`A?@A????^B?rB?P??GH?gA?sB?@C?sR?YB?tB?`G?SQ?uB?vB?pC?WL?wB?xB?`@?gT?n??A??A?????JA?NA?PG?OI?L??yB?@K?KB?zB?w??@A?k??{B?[??PG????fB?_??`A????tA?vA?pV?[F?tA?|B?@@?wJ?}B?~B?@A?c^@?C?A??A?????GB?C??P@?[H?@C?AC?`g?kT?JB?KB?@L?WL?JB?BC?@R?kW?CC?DC?`A?So?EC?DC?PR?ga?FC?C??@@????\B?GC?pS?s_?HC?IC?`[?sW?JC?KC?@A?kH?JC?KC?`k?wJ?LC?CB?@Z?_W?MC?CB?`??WT?MC?NC?P@?GH?OC?A??A?????pA?w??@l?[K?HC?PC?pG?wN?JC?PC?`M?CH?JC?QC?PH?sL?LC?RC?pC??X?SC?TC?`??[R?MC?TC?P@?_u?UC?A??A?????VC?C??PBASs?WC?IA?@@?WB?XC?C??@@????YC?ZC?@b?OW?ZA?DA?PC?kH?{@?DA?PN?sS@[C?\C?pC?ku?]C?^C?@^@sX?]C?_C?@@?_S?`C?A??A?????OB?PB?pn??S?aC?bC?@C?S[?p??cC?@C?Co?dC?eC?PI?wmBxA?zA?`C?wM?fC?w??P??sG?{A?A??A?????N??RA?@A?_A?N??gC?pC?sB?N??hC?`A?SC?iC?jC?P@?CR?kC?w??PE?cB?wA?w??P@?cA?L??yB?@F?CB?xA?lC?P@?CE?mC?nC?p@?[m?oC?nC?P@?SC?pC?A??A?????HA?IA?`C?GE?qC?rC?@@?o??sC?A??A?????kB?mB?`E??K?tC?]??@D????uC?gB?@A????XB?w??PC?sA?vC?w??@E?KB?wC?xC?`??Op?yC?zC?PC??D@wC?xC?p??{K?wC?xC?PW?_t?wC?{C?p??{u?wC?xC?pK?Cy?wC?|C?pE?oS?wC?v??pH?{X?wC?A??A?????N??RA?@D?_A?kC?R??pI?kL?}C?w??pI?KB?S??UA?PG?Cf?YB?w??p}?cG?YB?~C?@@?wQ??D?@D?`x?cL?AD?BD?P@?wR?AD?CD?PF?_o?DD?C??P??gL?DD?C??`L?gM?aC?w??p??gE?ED?w??@B?_D?S??UA?pb?[g?VA?w??pP?WI?S??FD?@@?gJ@GD?HD?PH?sA?ID?A??A?????xA??B?`^?GO?tA?vA?PN?gE?xA?zA?@N?[O?xA?A??A?????YB?w??Pl?wF?GD?HD?@I?sA?l??JD?pE?wLAKD?LD?P@?kS?MD?LD?P??CF?U@?ND?PC?WH?U@?A??A?????LB?IA?@i?[j?XA?AC?p@?KEAOD?^A?PU?Gg?PD?QD?pE?ob?RD?C??`??G]?OD?^A?Pc?sg?XA?SD?@O?We?TD?`A?@A????VA?UD?PL?CU?gA?VD?@H?cJ?pA?VD?P??SV?WD?A??A?????pA?VD?@I?_V?\B?XD?@r?WY?YD?C??@D????\B?ZD?PD?_Y?[D?w??@G?GC?\D?[??PD????fB?_??pA????q??]D?PN?SY?N??hC?`??SC?\??eB?`@????^D?_D?`B????xA??B?p]?GO?`D?aD?P??oA@bD?cD?`F?oI?@B?dD?@A?CV?dC?aD?`@?cXB}B?|A?P@?C`@{A?RA?`B?Cp?{A?eD?@A?co?xA?zA?@??sM?JC?KC?pH?cI?JC?fD?PK?CL?gD?hD?pF?gO@iD?jD?`??G`?gD?DC?P@?GG?YC?DC?@P?kQ?kD?A??A?????lD?C??@@????YC?mD?`@?oW?kD?mD?Pb?{^?nD?hC?PV?[m?oD?pD?`@?GP?oD?pD?`V?CR?qD?C??@~?wj?pA?rD?Px?Wd?WB?^A?@L?{w?sD?`A?@C????gA?tD?@@?c\?uD?`A?@A????gA?vD?PK?{Z?pA?wD?PL??S?tA?xD?`L?[S?yD?jD?@F?oE?zD?jD?PX?{B?{D?w??`A?{C?oD?A??A?????pA?sA?Pe?cP?pA?|D?P??w_?}D?A??A?????p??cC?p@?Co?VA?WA?`C?SQ?VA?~D?p@?ST?\B?ZD?pa?o[?\??eB?PA?????E?gB?P?????@E?A??A?????\B?XD?Pv?w]?AE?BE?PU?oF@CE?C??@B????AE?DE?@B?wF@XA?EE?`???H?XA?EE?p??SPAXA?FE?@F?Sv?GE?A??A?????EC?DC?PU?ka?HE?IE?`??WW?HE?AC?pK?KT?JE?IE?@D?oV?GE?^A?@L?cs?XA?KE?PM?{t?LE?~A?PA????AE?ME?pB?GG@OD?^A?`Y?Wg?NE?`A?PB????VA?OE?P??KU?PE?A??A?????VA?UD?@O?GU?XA?oB?@H?_h?OD?A??A?????pA?sA?`F??P?pA?hD?@K?_L?gD?hD?`E?cO@gD?jD?PH?CF?QE?jD?`A??b?RE?A??A?????tA?vA?PT??F?tA?uA?@G?oP?aC?A??A?????JA?LA?@W?OF?OA?A??A?????pA?|D?`A?w_?pA?|D?pI?O`?oD?pD?`@??O?oD?pD?`T?{Q?XA?YA?PC?CfA[A?A??A?????SE?|A?`F?kC?xA?BB?`B?_N?TE?UE?@B????tA?VE?`??CF?xA?WE?P@?GD?mC?nC?P??[m?`D?XE?p@?go?YE?A??A?????kC?R??`H?kL?}C?A??A?????tA?|B?`W?GK?ZE?UE?`A????[E?\E?`B?cC?]E?UE?@A????T??^E?@@?oO?_E?UE?P@????`E?aE?`???D?bE?UE?@@????T??cE?@D??K?n??dE?PI?_hADD?C??@Q?gM?F??H??Pf?cJ?F??eE?pM?wL?fE?A??A?????gA?vD?@O?C[?gA?gE?`B?G]?{D?w??`D?{C?oD?w??PI?sM?FB?A??A?????tA?uA?PU?OQ?tA?hE?`R??N?iE?bC?@B?_[?pA?rD?pv?Wd?jE?A??A?????xA?lC?@D?CE?kE?lE?P@?[`?mE?nE?@U?gM?oE?pE?`B?WH?mE?qE?PA?K^?mE?rE?pD?Ka?sE?tE?@??OM?uE?A??A?????tA?vA?@S??F?TE?A??A?????OB?PB?PN?wQ?OB?PB?PQ?{Q?OB?QB?PS?kO?n??vE?pA?o[Bp??vE?@P?Sd?YB?w??pY?GF?VC?C??@u@Ks?@B?R@?@??Kz?wE?A??A?????JB?BC?`K?OV?xE?A??A?????HC?IC?@N?[W?gA?]B?@f?CU?yE?`A?@A????gA?zE?@E?oU?eA?{E?@??GB?N??hC?p@?SC?|E?v??@??_w?|E?A??A?????J??K??`S?KC?qC?}E?@A?K@?~E?A??A?????YB?tB?pD?OQ?wB?xB?pB?gT?n??w??`L?OX?\B?XD?p_?gX?xA?lC?pB?CE??F?@F?P@??M?sE?A??A?????VA?w??`m?SJ?gA?A??A?????dB?w??`L?[f?oD?AF?@??_X?F??eE?@T?wL?fE?w??@O?[D?BF?A??A?????gA?hA?PS?s\?XA?dA?`e?[I@CF?A??A?????bD?cD?pG?oI?`D?yA?`G?K@@DF?A??A?????pA?w??pO?[D?YB?w??Po??G?pA?w??pg?WK?YB?EF?PQ?[W?FF?C??@A????YB?GF?`@?WW?HF?w??pB?SM?IF?JF?P??[M@IF?KF?`??cP@IF?KF?@e@CU@IF?LF?@t?{]@MF?A??A?????pA?w??@M?SD?N??gC?`A?{B?sC?NF?@A?gA?OF?[??@L????VC?C??pnACu?JC?PF?PB?WO?wC?QF?@??KP?RF?SF?@S?{_?JC?PF?@C?WO?JC?PF?@E?SP?LC?TF?`E?[Y?MC?UF?P@?w|?VF?w??`A?S}?|E?v??P@?_w?|E?w??pC?{e?WF?o@?@Z?[EBWF?XF?ph?GIBJA?KA?P??{@?JA?YF?PA?wC?ZF?R@?@??K@@[F?A??A?????qD?C??`@A[l?gD?\F?P@?gB?gD?\F?P@?[G?YC?\F?`T?sR?YC?]F?@Y?wT?gD?^F?@@?{K@DF?dD?pD??g?_F?}??`??wC?`F?A??A?????tA?vA?pX?oF?}B?~B?@C?c^@{A?~B?`B?wG@aF?A??A?????bF?IA?`@????HA?IA?@L?CF?HA?cF?@H?WG?HA?dF?PA?gB?pA?w??@t?gK?JB?w??`H?gI?oD?AF?@B?_X?oD?w??P@?gL?eF?A??A?????pA?wD?Pd?cS?XA?fF?p??WGAXA?gF?PE?{l?XA?hF?PQ?Sn?iF?~A?@A????pA?jF?`??cS?pA?kF?PA?_Q?lF?A??A?????xA?WE?`A?GD??F?lE?P@?[g?oE?pE?P@?WH?mF?_B?@?????nF?A??A?????WF?XF?PK?KHBWF?oF?@_?sKBWF?pF?pz?wPBWF?qF?`p??[BOB?QB?`R?kO?n??dE?`@?_fAxA?zA?PH??N?}A?A??A?????GD?HD?pJ?sA?U@?V@?`C?c]?rF?sF?`@?Ci?rF?tF?pK?sj?rF?uF?PK?Sl?vF?A??A?????OB?QB?@I?KO?\B?ZD?pe??]?HC?wF?P@?SE?xF?CB?@E?gD?yF?A??A?????JA?LA?@C?oE?zF?w??@@?kH?zF?w??pC?{I?pA?rD?@N@?e?{F?A??A?????LC?CB?pA?KV?^B?_B?PL?sD?uB?|F?Pp?oF?N??hC?PG?[C?kC?}F?p??kA?kC?}F?@B?{F?wA?~F?`A?WB?{A??G?pC?wa?{A?@G?p@?om?AG?`A?@@????wA?BG?@??WB?@B?A??A?????YB?w??Pk?wF?wA?A??A?????VC?C??@`Bcv?CG?@D?pF?sG?CG?DG?`I?CG?EG?FG?@r?[G?EG?GG?PZ?KK?CG?HG?PY?KR?Q@?CB?@A?sL?VB?RA?PA?Ge?VB?IG?@M?Sf?VB?JG?@??su@KG?A??A?????VA?~D?pA?ST?TD?A??A?????tA?uA?`r?[R?pA?w??@J?GD?dB?A??A?????JB?BC?PM?_W?LG?A??A?????DD?C??`K?gM?VA?WA?PA?OQ?MG?w??P@?kJ?S??UA?@E?Cf?YB?A??A?????GD?HD?@??cA?MC?A??A?????pA?VD?PE?SV?NG?`A?P?????OG?PG?@??ki?QG?RG?p@?sA@JE?w??P@?gS?LC?TF?`B?CY?tA?|B?@[?OK?aC?SG?`??KJ?ED?SG?PD?Wc?ED?TG?@G?OM?dC?aD?P??C\BgA?]B?``?kT?UG?A??A?????{@?|@?`E?GE@{@?VG?@`?SA@[C?WG?pA?[w?]C?^C?PT?KV?XG?`A?@B????VA?YG?`??sX?VA?ZG?PB?ON?tA?xD?@I?WS?[G?A??A?????q??]D?`U?gY?q??cC?`@?KW?VA?~D?PE?[U?XA?\G?p??kSAXA?]G?PB?[A@tA?uA?`H?oP?aC?w??`??[F?VC?C??@iCwx??F?|A?p??Od?^G?_G?P@?_C?`G?A??A?????yD?jD?PB?gE?yD?ND?pP?KE?OB?QB?p_??P?VB??G?`q?OK@aG?`A?@@????OB?bG?@??CP?JC?KC?p`?cJ?JC?cG?P??ON?dG?eG?@??sV?fG?A??A?????gG?`A?@A????gA?hG?`@?G]?gA?iG?`U??c?OB?PB?@q?CS?jG?_B?@?????kG?A??A?????XA?iA?PB?Cz?VC?C??puCWy?lG?~A?@A????VC?mG?p??Wy?VC?nG?@D?K|?oG?IA?P@?sN?pG?qG?`C?sz?rG?sG?@@?Wo?tG?C??`G?SJ?uG?C??@@????rG?lB?ptBct?vG?\F?P@?s`?vG?\F?pJ?_c?JB?wG?@P??\?AE?DE?p@?wF@LE?A??A?????HC?PC?pJ?{N?HC?xG?@B?kJ?yG?zG?PA?kU?{G?A??A?????S??UA?Pg?wg?XA?FE?PB?Gv?pA?qA?@L?[M?\B?w??`b?KE?JB?jD?`X?OZ?JB?BC?@P?_W?LG?w??P??wG?|G?w??P@?OA?}G?A??A?????OB?o@?@Z?cF?OB?~G?`c?OK?oD?AF?@@?_X?HB?A??A?????{D?w??PF??D?uB?vB?P??GL?uB??H?@@?cN?@H?w??`??wD?@H?w??PA?cD?AH?A??A?????\B?ZD?PQ?SZ?[D?BH?@I?gF?EC?A??A?????JA?KA?@K?_A?JA?CH?@H?[D?JA?DH?pK?_B?JA?EH?`??KE?zB?w??p??g??FH?w??PF?_D?tA?uA?`v?cR?n??GH?PD?gn@n??HH?@H?{r?n??IH?p@?Oz?OB?PB?@M?sQ?pA?qA?`|?OQ?pA?w??p^?CK?\B?XD?`Y?WX?HE?A??A?????VA?WA?@??OQ?VA?w??po?SJ?gA?w??PD?oD?JH?A??A?????wA?BG?P@?WB?@B?w??`A?oH?HA?cF?pB?OG?yG?KH?@@?SZ?yG?KH?@??_X?tA?|B?PA?wJ??C?R@?P@?_i@LH?w??PC?ci@aF?R@?@??oR@MH?A??A?????oE?pE?@D?WH?kG?_B?P??SM?kG?_B?PC?{M?NH?yA?@??KF?NH?A??A?????QE?jD?@D??b?RE?w??`A?Od?OH?A??A?????VC?C??`kC{x?PH?gB?P?????QH?A??A?????S??TA?`E?ca?XA?_B?pA?_@AXA?RH?`F?st@SH?A??A?????OB?QB?p]??P?n??TH?PB?{RBp??TH?PX?S[?oD?AF?PA?_X?HB?w??P@?{J?UH?A??A?????AE?BE?@T?oF@\??eB?p@????CE?A??A?????{A??G?`F??b?JA?CH?`T?wD?VH?~A?@A????JA?WH?PA?wD?VB??G?PM?wI@VB?XH?P`?wj?YH?A??A?????pA?rD?pK@wd?]A?^A?pb?GG@VC?C??`eCwx?ZH?[H?pB?g@@?F?\H?P@?WI?]H?A??A?????dB?w??pG?Sf?VA?bA?`Z?cX?pA?kF?`C?_Q?XA?^H?`@?{PAJB?BC?`I?{U?_H?A??A?????{D?w??`B?{C?`H?A??A?????pA?sA?PD?_O?VB??G?`F@?L@[D?BH?`K?gF?EC?w??PG?S`?LC?CB?@D?gV?OB?o@?@`?oF?OB?aH?@Y?gN?aC?SG?`??WN?ED?SG?p@?Gq?VA?~D?@C?WT?XA?dA?@F?SH@]A?A??A?????ZH?[H?@@?c@@Q@?XE?@??kU?bH?A??A?????wB?xB?`??cT?wB?HH?PA?OQ?XB?yA?@??cA?XB?A??A?????JC?PF?pj?KQ?cH?A??A?????tA?uA?pi??R?dH?C??@@????rG?eH?pR?gj?rG?lB?PW?Wp?rG?fH?PB@[y?RE?gH?@M?gg?iD?DC?`??S_?RE?hC?@B?ke?rG?hC?pL?Gl?rG?hH?pJ?gm?iH?A??A?????wA?RB?P@?oB?WF?XF?@Z?oHBjH?}??@?????kH?A??A?????OB?PB?@p?CS?F??H??Px?GK?F??lH?pL?_G?xA?zA?pA?wM?fC?A??A??????F?|A?`@?Od?`G?pE?p??sI?mH?pE?p??WH?]H?tE?@??gI?nH?A??A?????JE?IE?@B?oV?JE?oH?@A?{U?JE?w??@C?kS?^B?_B?@X?KE?tA?uA?Pw?cR?WF?oF?Pf??LB\B?w??PW?wD?pH?A??A?????gA?]B?pa?kT?wA?RB?@??oB?tA?xD?PJ?WS?[G?w??`A?wW?qH?w??P@?cF?yD?ND?@??gD?XA?pB?P??{h?\B?ZD?@c?o[?gA?oA?`@?_\?sD?A??A?????tA?|B?p^?SK?uB?|F?`B?GE?rH?sH?pE?k`?rH?tH?pR?{b?uH?eB?p@????vH?[??@n????fB?_??PB????yD?jD?PC?kE?zD?A??A?????pA?w??pm?cK?tA?A??A?????JC?QC?`??_L?VB?_B?`??oa?VB?wH?pD?_b?VB?EH?PA?GT?fG?xH?P??cE?rG?lB?`gACs?gD?yH?pe?OJ@zH?SG?`J?GB@{G?{H?@??sG?|H?A??A?????JB?w??PD?[I?}H?A??A?????gA?oA?PC?g\?\B?ZD?pT?W[?CC?~H?P??Km?GD?HD?`M?wA?JA?CH?P@?OD?gD?yH?Pl?gJ@zH??I?PD?w@@@I?_B?@?????T???I?p??CQ?yG?zG?@C?kU?{G?w??`@??C?pA?w??PG?wC?F??eE?`L?sL?AI?`A?@B????VA?BI?pE?oZ?\B?XD?Px?O^?CI?A??A?????}C?w??PQ?WB?[B?DI?`A??G?kC?w??PD?cB?JA?DH?@B?[B?VA?bA?`[?cX?AI?A??A?????pA?wD?`f?gS?EI?~A?@A????pA?FI?P??gS?pA?GI?PF??a?qH?hC?`J?cG?{D?hC?pJ?gG?`H?C??pg?WF?[G?\F?P@?kW?[G?\F?`h?sY?xF?CB?PF?gD?VA?YG?PK?WY?xA?zA?`D?{M?JC?cG?@I?gN?JB?wG?@M?k[?}H?\C?`??K|?}H?HI?`??Cu?}H?NC?@@?kT?}H?JG?@??GR?II?A??A?????HC?IC?@V?kW?HB?w??PA?{J?UH?w??P@?WQ?JI?A??A?????gA?oA?pA?c\?JB?KB?@N@KO?JB?KI?@P?wS?vG?mD?`P?ob?\B?w??PZ??E?OB?A??A?????^B?cB?PA?CI?{B?[??`Q????xA?zA?PO?[O?LI?MI?pA?[[@}B?A??A?????yD?ND?PD?oD?gA?hA?PK??\?uD?A??A?????tA?uA?@F?kP?tA?NI?@K?gN?tA?OI?PJ?[L?PI?[??@S????N??gC?PB?{B?VA?bA?pN?_W?S??QI?pC?GK@fC?CB?@A?{N?L??yB?PI?KB?zB?A??A?????|G?w??PA?OA?}G?w??P@?WA?RI?A??A?????vG?DC?p^?{a?SI?DA?@B????J??TI?p??sC?J??IA?PD?SE?UI?VI?P@?GA?WI?VI?pB?gF?WI?XI?`@?GE?}@?w??p@?_H?YI?ZI?@B?KY?~@?A??A?????\B?XD?pp?WY?[I?eB?@B????\I?gB?P?????YD?A??A?????gA?hA?PM?[\?nA?A??A?????VC?C??P|Bgw?]I?R@?@@?CU?VC?C??`~Cwy?^I?~A?@@????VC?_I?P??wy?QH?C??@A????VC?`I?`??{x?ZH?aI?`@?OA@gA?VD?PJ?gJ?tA?hE?PS??N?PI?[??@c????YB?w??ps?CG?^B?cB?@??CI?pA?A??A?????WI?VI?PD?kF?bI?\C?`F?cX?cI?A??A?????YB?tB?`A?KQ?tA?uA?@i??R?dI?bC?@B?o]?GD?HD?@J?sA?YB?tB?PH?SQ?OB?o@?@X?_F?OB?eI?pG?kI?B??C??@M?KC?fI?@D?@D?_G?gI?A??A?????pA?qA?@y?OO?rA?A??A??????D?@D?@u?cL?DD?A??A?????OB?~G?@N?kJ?\B?XD?@i?CY?hI?A??A?????JC?cG?p@?SN?pA?sA?@??WO?rG?lB?PvBCu?OB?PB?PO?wQ?tA?vA?@C?OE?[E?iI?p@?cC?ZE?A??A?????dB?w??pH?Sf?\B?XD?`y?O^?WF?o@?PT?OEBVA?bA?PY?_X?XG?A??A?????\B?w??PQ?sD?LB?A??A?????gA?]B?pd?CU?yE?A??A?????FH?w??pA?WD?rG?hC?`S?cl?jI?[??pD????q??kI?p@?k\?lI?`A?@A????gA?mI?P@??[?pA?nI?PF?WT?\B?oI?py?oL?XA?pI?`@?GGAXA?oB?`F?[h?`H?C??Pv?kF?[G?IE?pc?O\?WI?XI?@??GE?}@?A??A?????qI?`A?@A????\B?rI?PT?kK?sI?A??A?????VA?WA?@@?OQ?MG?A??A?????pA?|D?@G?K`?}H?CB?`??{|?J??IA?p??OE?CA?A??A?????^B?_B?pS?CE?`B?A??A?????\B?ZD?@C?_Y?FC?A??A?????OB?~G?pP?oJ?gA?VD?@I?cJ?tI?A??A?????uB?vB?`@?KL?@H?uI?@@?wG?tA?uA?@y?gR?`D?yA?@??oq?\B?w??P[??E?OB?w??@C?[B?VB?A??A?????VA?UD?pM?CU?NE?A??A?????XA?]G?@F?gA@vI?A??A?????OB?w??PA?KB?JB?w??PE?[I?}H?w??`@?Oo?gA?vD?`M??[?oD?w??PF?oM?@C?A??A?????gA?hA?`P?k\?kA?A??A?????JB?w??PJ?sI?vG?A??A?????\B?w??pR?sD?wI?A??A?????gA?gE?PA?G]?gG?A??A?????pA?sA?@C?_O?xI?A??A?????zD?jD?pV?{B?p??TH?pj??\?{D?w??PG??D?J??IA?@C?SE?@A?A??A?????OB?w??P@?KB?zH?SG?PK?GB@gD?yI?PJ?OK@\B?ZD?P??_Y?[D?A??A?????VA?w??P@?[D?{@?VG?pc?WA@bI?zI?pE?KZ?{I?|I?`B?gc@}I?A??A?????FA?K??pB?wB?fE?~I?@C?SF?</div>
+<span style="position:fixed; bottom: 0; right:0; padding: 2px 4px; background-color: #ffffe0; border-top: 1px solid #ffc000; border-left: 1px solid #ffc000; border-top-left-radius: 4px;"><span id="produced">Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a>&nbsp;</span><span id='match' style="display: none">Matched: <span id='matchval'></span>&nbsp;<span id='reset' title='Clear'>&#x274c;</span></span></span>
+
+<h1 id="title">Heatmap, ALLOC</h1>
+
+<canvas id='canvas'></canvas>
+<div id='hl'><span></span></div>
+
+<span id='status' style="position:fixed; bottom: 0; left:0; padding: 2px 4px; background-color: #ffffe0; border-top: 1px solid #ffc000; border-right: 1px solid #ffc000; border-top-right-radius: 4px; display: none">&nbsp;</span>
+<script>
+	// Copyright 2020 Andrei Pangin
+	// Licensed under the Apache License, Version 2.0.
+	'use strict';
+	let root, rootLevel, px, pattern;
+	let reverse = true;
+	const levels = Array(0);
+	for (let h = 0; h < levels.length; h++) {
+		levels[h] = [];
+	}
+
+	const canvas = document.getElementById('canvas');
+	let c = canvas.getContext('2d');
+	const hl = document.getElementById('hl');
+	const status = document.getElementById('status');
+
+	const canvasWidth = canvas.offsetWidth;
+	let canvasHeight = canvas.offsetHeight;
+	canvas.style.width = canvasWidth + 'px';
+	canvas.width = canvasWidth * (devicePixelRatio || 1);
+	canvas.height = canvasHeight * (devicePixelRatio || 1);
+	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+	c.font = document.body.style.font;
+
+    const search = typeof searchIterative === 'function' ? searchIterative : searchSimple;
+    const init = typeof renderHeatmap === 'function' ? renderHeatmap : render;
+
+	const palette = [
+		[0xb2e1b2, 20, 20, 20],
+		[0x50e150, 30, 30, 30],
+		[0x50cccc, 30, 30, 30],
+		[0xe15a5a, 30, 40, 40],
+		[0xc8c83c, 30, 30, 10],
+		[0xe17d00, 30, 30,  0],
+		[0xcce880, 20, 20, 20],
+	];
+
+	function getColor(p) {
+		const v = Math.random();
+		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+	}
+
+	function f(level, left, width, type, title, inln, c1, int) {
+		levels[level].push({left: left, width: width, color: getColor(palette[type]), title: title,
+			details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
+		});
+	}
+
+	function samples(n) {
+		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+	}
+
+	function pct(a, b) {
+		return a >= b ? '100' : (100 * a / b).toFixed(2);
+	}
+
+	function findFrame(frames, x) {
+		let left = 0;
+		let right = frames.length - 1;
+
+		while (left <= right) {
+			const mid = (left + right) >>> 1;
+			const f = frames[mid];
+
+			if (f.left > x) {
+				right = mid - 1;
+			} else if (f.left + f.width <= x) {
+				left = mid + 1;
+			} else {
+				return f;
+			}
+		}
+
+		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+
+		return null;
+	}
+
+    const marked = [];
+
+    function render(newRoot, newLevel, minLevel) {
+        minLevel = minLevel || 0;
+        if (root && minLevel === 0) {
+			c.fillStyle = '#ffffff';
+			c.fillRect(0, 0, canvasWidth, canvasHeight);
+		}
+
+		root = newRoot || levels[0][0];
+		rootLevel = newLevel || 0;
+		px = canvasWidth / root.width;
+
+		const x0 = root.left;
+		const x1 = x0 + root.width;
+
+		if (minLevel === 0) {
+		    marked.length = 0;
+        }
+
+		function mark(f) {
+			return marked[f.left] >= f.width || (marked[f.left] = f.width);
+		}
+
+		function totalMarked() {
+			let total = 0;
+			let left = 0;
+			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
+				if (+x >= left) {
+					total += marked[x];
+					left = +x + marked[x];
+				}
+			});
+			return total;
+		}
+
+		function drawFrame(f, y, alpha) {
+			if (f.left < x1 && f.left + f.width > x0) {
+                let match = pattern && pattern.test(f.title) && mark(f);
+                const fw = f.width * px;
+                if (fw < 0.1) {
+                    return;
+                }
+                c.fillStyle = match ? '#ee00ee' : f.color;
+				c.fillRect((f.left - x0) * px, y, fw, 15);
+
+				if (fw >= 21) {
+					const chars = Math.floor(fw / 7);
+					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+					c.fillStyle = '#000000';
+					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, fw - 6);
+				}
+
+				if (alpha) {
+					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+					c.fillRect((f.left - x0) * px, y, fw, 15);
+				}
+			}
+		}
+
+		for (let h = minLevel; h < levels.length; h++) {
+			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+			const frames = levels[h];
+			for (let i = 0; i < frames.length; i++) {
+				drawFrame(frames[i], y, h < rootLevel);
+			}
+		}
+
+		return totalMarked();
+	}
+
+	canvas.onmousemove = function() {
+		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+		if (h >= 0 && h < levels.length) {
+			const f = findFrame(levels[h], event.offsetX / px + root.left);
+			if (f) {
+				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+				hl.firstChild.textContent = f.title;
+				hl.style.display = 'block';
+				let details = f.details || '';
+				canvas.title = f.title + '\n(' + samples(f.width) + details + ', ' + pct(f.width, levels[0][0].width) + '%)';
+				canvas.style.cursor = 'pointer';
+				canvas.onclick = function() {
+					if (f !== root) {
+						render(f, h);
+						canvas.onmousemove();
+					}
+				};
+				status.textContent = 'Function: ' + canvas.title;
+                status.style.display = 'inline';
+				return;
+			}
+		}
+		canvas.onmouseout();
+	}
+
+	canvas.onmouseout = function() {
+		hl.style.display = 'none';
+		status.textContent = '\xa0';
+        status.style.display = 'none';
+		canvas.title = '';
+		canvas.style.cursor = '';
+		canvas.onclick = '';
+	}
+
+    window.onkeydown = function() {
+        if (event.ctrlKey && event.keyCode === 70) {
+            event.preventDefault();
+            search(true);
+        } else if (event.keyCode === 27) {
+            search(false);
+        }
+    }
+
+    document.getElementById('reset').onclick = function() {
+        search(false);
+    }
+
+
+
+    class DataBuffer {
+        data;
+        pos = 0;
+        constructor(encodedData) {
+            this.data = encodedData;
+        }
+
+        nextVarInt() {
+            let res = 0;
+            let shift = 0;
+            let b;
+            do {
+                b = this.byteAt(this.pos++);
+                res |= (b & 0x1F) << shift
+                shift += 5;
+            } while (b >= 0x20)
+            return res;
+        }
+
+        byteAt(pos) {
+            return this.data.charCodeAt(pos) - 63;
+        }
+
+        int30(pos) {
+            return (this.byteAt(pos++) << 0)
+                | (this.byteAt(pos++) << 6)
+                | (this.byteAt(pos++) << 12)
+                | (this.byteAt(pos++) << 18)
+                | (this.byteAt(pos) << 24);
+        }
+
+        int36(pos) {
+            return (this.byteAt(pos++) << 0)
+                | (this.byteAt(pos++) << 6)
+                | (this.byteAt(pos++) << 12)
+                | (this.byteAt(pos++) << 18)
+                | (this.byteAt(pos++) << 24)
+                | (this.byteAt(pos++) << 30);
+        }
+
+        varInt(pos) {
+            let res = 0;
+            let shift = 0;
+            let b;
+            do {
+                b = this.byteAt(pos++);
+                res |= (b & 0x1F) << shift
+                shift += 5;
+            } while (b >= 0x20)
+            return res;
+        }
+
+    }
+
+    class HeatmapCollection extends DataBuffer {
+
+        maxZoom;
+        blocks;
+        zoomToCounts;
+        zoomToMaxes;
+        zoom;
+
+        constructor(encodedData) {
+            super(encodedData);
+
+            this.maxZoom = this.nextVarInt();   // fixme
+            this.maxZoom = 3;
+
+            const startMethodsCount = this.nextVarInt();
+            const starts = new Set();
+            for (let i = 0; i < startMethodsCount; i++) {
+                starts.add(this.nextVarInt());
+            }
+
+            const lz = new Lz78Data(this, starts);
+
+            let max = 1;
+
+            let prevByte = -1;
+            const blocksCount = this.nextVarInt();
+            let counts = new Uint32Array(blocksCount);
+            for (let i = 0; i < blocksCount; i++) {
+                let v = 0;
+                let p = 0;
+                let hasMore = false;
+                do {
+                    if (prevByte === -1) {
+                        prevByte = this.byteAt(this.pos++);
+                        hasMore = (prevByte >>> 5) === 1;
+                        v |= ((prevByte >>> 3) & 3) << p;
+                        prevByte &= 7;
+                    } else {
+                        hasMore = (prevByte >>> 2) === 1;
+                        v |= (prevByte & 3) << p;
+                        prevByte = -1;
+                    }
+                    p += 2;
+                } while (hasMore);
+                counts[i] = v;
+                max = Math.max(max, v);
+            }
+
+            this.blocks = lz.decode(counts);
+
+            this.zoomToCounts = new Array(this.maxZoom);
+            this.zoomToMaxes = new Array(this.maxZoom);
+
+            this.zoomToCounts[0] = counts;
+            this.zoomToMaxes[0] = max;
+
+            for (let z = 1; z < zoomToGroupSize.length; z++) {
+                const size = zoomToGroupSize[z] / zoomToGroupSize[z - 1];
+                const nextCounts = new Uint32Array(Math.ceil(counts.length / size));
+                for (let i = 0; i < counts.length; i++) {
+                    const index = (i / size) | 0;
+                    nextCounts[index] += counts[i];
+                    max = Math.max(max, nextCounts[index]);
+                }
+                this.zoomToCounts[z] = counts = nextCounts;
+                this.zoomToMaxes[z] = max;
+            }
+
+            this.data = null;
+        }
+
+        setZoom(zoom) {
+            this.zoom = zoom;
+        }
+
+        heatmap() {
+            return this.zoomToCounts[this.zoom];
+        }
+
+        max() {
+            return this.zoomToMaxes[this.zoom];
+        }
+
+        currentTimeBlock() {
+            // FIXME 20 is hardcoded
+            return 20 * zoomToGroupSize[this.zoom];
+        }
+
+        startBlock() {
+            const blockMs = this.currentTimeBlock();
+            const timeBlockMs = blockMs * heatHeight * 20;
+            return Math.floor(startMs % timeBlockMs / blockMs);
+        }
+
+        count() {
+            return Math.ceil((this.heatmap().length + this.startBlock()) / 20 / heatHeight) * 20 * heatHeight;
+        }
+
+    }
+
+    class LzChunk extends Uint32Array {
+        constructor(size) {
+            super(size);
+        }
+
+        copyWithNext(element) {
+            let result = new LzChunk(this.length + 1);
+            result.set(this);
+            result[this.length] = element;
+            return result;
+        }
+    }
+
+    class Lz78Data {
+        data;
+        starts;
+        lz78;
+
+        tmp = [];
+        prevSubTreeId = -1;
+
+        constructor(data, starts) {
+            this.data = data;
+            this.starts = starts;
+
+            this.lz78 = [new LzChunk(0)];
+        }
+
+        decode(counts) {
+            const synonymsCount = this.data.nextVarInt();
+            const synonyms = new Uint32Array(synonymsCount);
+            for (let i = 0; i < synonymsCount; i++) {
+                synonyms[i] = this.data.nextVarInt();
+            }
+
+            const tailsCount = this.data.nextVarInt();
+            const tails = new Uint32Array(tailsCount);
+            for (let i = 0; i < tailsCount; i++) {
+                const tail = this.data.nextVarInt();
+                tails[i] = (tail < synonyms.length ? synonyms[tail] : tail) - synonymsCount;
+            }
+
+            const result = new Array(counts.length);
+            for (let i = 0; i < counts.length; i++) {
+                result[i] = new Array(counts[i]);
+            }
+
+            let thisChunk = null;
+            let currentTail = 0;
+            const tmp = [];
+            let t = -1;
+            for (let block of result) {
+                for (let i = 0; i < block.length; i++, currentTail++) {
+                    t++;
+                    const tailId = tails[currentTail];
+                    if (tailId < this.lz78.length) {
+                        const tail = this.lz78[tailId];
+                        if (tail.length !== 0 && this.starts.has(tail[0])) {
+                            console.log(t, 'only', tailId);
+                            block[i] = tail;
+                            continue;
+                        }
+                    }
+
+                    if (thisChunk === null) {
+                        const chunkId = this.data.nextVarInt();
+                        const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
+                        const addMethodId = this.data.nextVarInt();
+                        console.log(t, 'chunk', chunkId, addMethodId);
+                        thisChunk = prevChunk.copyWithNext(addMethodId);
+                        this.lz78.push(thisChunk);
+                    }
+
+                    tmp.length = 0;
+                    tmp.push(...thisChunk); // FIXME it is ok to push as is, or even as lz78 index
+
+                    while (true) {
+                        const chunkId = this.data.nextVarInt();
+                        const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
+                        const addMethodId = this.data.nextVarInt();
+                        thisChunk = prevChunk.copyWithNext(addMethodId);
+                        this.lz78.push(thisChunk);
+                        console.log(t, 'chunk', chunkId, addMethodId);
+
+                        if (this.starts.has(thisChunk[0])) {
+                            console.log(t, 'starts', thisChunk[0]);
+                            console.log(t, 'ends', tailId);
+                            const tail = this.lz78[tailId];
+                            tmp.push(...tail);
+                            block[i] = new Uint32Array(tmp);
+                            break;
+                        } else {
+                            tmp.push(...thisChunk);
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+    }
+
+    class Queue {
+        data = new Array(1024);
+        first = 0;
+        afterLast = 0;
+
+        push(e) {
+            let a = this.afterLast;
+            let d = this.data;
+            d[a++] = e;
+            if (a >= this.data.length) {
+                a = 0;
+            }
+            if (a === this.first) {
+                let d2 = new Array(d.length * 2);
+                let i = 0;
+                for (let p = a; p < d.length; p++) {
+                    d2[i++] = d[p];
+                }
+                for (let p = 0; p < a; p++) {
+                    d2[i++] = d[p];
+                }
+                this.data = d2;
+                this.first = 0;
+                this.afterLast = i;
+            } else {
+                this.afterLast = a;
+            }
+        }
+
+        shift() {
+            let i = this.first;
+            let r = this.data[i++];
+            if (i >= this.data.length) {
+                this.first = 0;
+            } else {
+                this.first = i;
+            }
+            return r;
+        }
+
+        size() {
+            let r = this.afterLast - this.first;
+            if (r < 0) {
+                return r + this.data.length;
+            }
+            return r;
+        }
+
+        reset() {
+            this.first = this.afterLast = 0;
+        }
+    }
+
+    function claimHtml(id) {
+        let e = document.getElementById(id);
+        let r = e.innerHTML;
+        e.remove();
+        return r;
+    }
+
+    let sq = 5;
+    let sqPx = sq;
+    let sqScale = 1;
+    const canvasScrollPadding = 200;
+    let canvasTimeHeight = 12;
+    let canvasTimeHeightPx = 12;
+    let ticksPerSecond = 1000000000;
+    let startMs = 1667840130694;
+
+    const zoomToGroupSize = [
+        1,              // 20 ms
+        50,             // 1 s
+        50 * 5,         // 5 s
+        50 * 60         // 1 m
+    ];
+    const zoomToHeight = [50, 60, 60, 60]
+
+    let methods = new DataBuffer(claimHtml("methods"));
+    let executionsHeatmap = new HeatmapCollection(claimHtml("executionsHeatmap"));
+    let cpool = ["all","","one.nio.server.SelectorThread","run","one.nio.net.Session","process","one.nio.http.HttpSession","processRead","processHttpBuffer","handleParsedRequest","ok.dht.test.kovalenko.MyServerBase","handleRequest","ok.dht.test.kovalenko.utils.HttpUtils","<clinit>","ok.dht.test.kovalenko.Client","java.net.http.HttpClient","newHttpClient","jdk.internal.net.http.HttpClientBuilderImpl","build","jdk.internal.net.http.HttpClientImpl","jdk.internal.net.http.common.Utils","java.lang.invoke.MethodHandleNatives","linkCallSite","linkCallSiteImpl","java.lang.invoke.CallSite","makeSite","java.lang.invoke.BootstrapMethodInvoker","invoke","java.lang.invoke.Invokers$Holder","invokeExact_MT","java.lang.invoke.LambdaForm$DMH.0x0000000800ca1800","invokeStatic","java.lang.invoke.LambdaMetafactory","metafactory","java.lang.invoke.InnerClassLambdaMetafactory","buildCallSite","spinInnerClass","generateInnerClass","java.lang.invoke.InnerClassLambdaMetafactory$ForwardingMethodGenerator","generate","java.lang.invoke.TypeConvertingMethodAdapter","convertType","sun.invoke.util.BytecodeDescriptor","unparse","java.lang.Class","descriptorString","java.lang.String","replace","java.lang.StringLatin1","java.lang.StringConcatHelper","newArray","jdk.internal.misc.Unsafe","allocateUninitializedArray","byte[]","create","<init>","javax.net.ssl.SSLContext","getDefault","getInstance","sun.security.jca.GetInstance","java.security.Provider$Service","newInstance","newInstanceUtil","newInstanceOf","getDefaultConstructor","getImplClass","forName","forName0","sun.security.ssl.SSLContextImpl$AbstractTLSContext","sun.security.ssl.SSLContextImpl","getApplicableSupportedCipherSuites","getApplicableCipherSuites","sun.security.ssl.SSLAlgorithmConstraints","permits","sun.security.util.DisabledAlgorithmConstraints","sun.security.util.AbstractAlgorithmConstraints","checkAlgorithm","sun.security.ssl.SSLAlgorithmDecomposer","decompose","java.util.AbstractCollection","addAll","java.util.HashSet","iterator","java.util.HashMap$KeySet","java.util.HashMap$KeyIterator","java.lang.reflect.Constructor","newInstanceWithCaller","jdk.internal.reflect.DelegatingConstructorAccessorImpl","jdk.internal.reflect.NativeConstructorAccessorImpl","newInstance0","sun.security.ssl.SSLContextImpl$DefaultSSLContext","sun.security.ssl.SSLContextImpl$DefaultManagersHolder","getTrustManagers","javax.net.ssl.TrustManagerFactory","init","sun.security.ssl.TrustManagerFactoryImpl","engineInit","sun.security.ssl.TrustStoreManager","getTrustedCerts","sun.security.ssl.TrustStoreManager$TrustAnchorManager","loadKeyStore","java.security.KeyStore","load","sun.security.util.KeyStoreDelegator","engineLoad","sun.security.provider.JavaKeyStore","java.security.cert.CertificateFactory","generateCertificate","sun.security.provider.X509Factory","engineGenerateCertificate","sun.security.x509.X509CertImpl","parse","sun.security.x509.X509CertInfo","sun.security.x509.X500Name","parseDER","sun.security.x509.RDN","sun.security.util.DerInputStream","getSet","sun.security.util.DerValue","subs","sun.security.util.DerValue[]","java.lang.Thread","java.util.concurrent.ThreadPoolExecutor$Worker","java.util.concurrent.ThreadPoolExecutor","runWorker","java.util.concurrent.FutureTask","java.util.concurrent.Executors$RunnableAdapter","call","ok.dht.test.kovalenko.MyServerBase$$Lambda$207.0x0000000800d18000","lambda$handle$2","safeHttpRequest","ok.dht.test.kovalenko.MyServerBase$$Lambda$205.0x0000000800cabbb0","execute","lambda$handle$1","one.nio.http.HttpServer","RequestHandler0_handle","ok.dht.test.kovalenko.MyServiceBase","handle","ok.dht.test.kovalenko.LoadBalancer","balance","handleWithReplicas","requestForReplica","nodeRequest","ok.dht.test.kovalenko.LoadBalancer$$Lambda$210.0x0000000800d19178","ok.dht.test.kovalenko.Node","proxyRequest","put","jdk.internal.net.http.HttpClientFacade","send","sendAsync","jdk.internal.net.http.MultiExchange","responseAsync","java.util.concurrent.CompletableFuture","completeAsync","jdk.internal.net.http.HttpClientImpl$DelegatingExecutor","java.util.concurrent.CompletableFuture$AsyncSupply","postComplete","java.util.concurrent.CompletableFuture$UniCompose","tryFire","jdk.internal.net.http.MultiExchange$$Lambda$219.0x0000000800d83228","apply","lambda$responseAsync0$2","responseAsyncImpl","thenCompose","uniComposeStage","jdk.internal.net.http.common.MinimalFuture","newIncompleteFuture","jdk.internal.net.http.Exchange","responseAsyncImpl0","uniHandleStage","uniHandle","jdk.internal.net.http.Exchange$$Lambda$251.0x0000000800d979b0","lambda$responseAsyncImpl0$10","checkFor407","jdk.internal.net.http.Exchange$$Lambda$225.0x0000000800d82c58","lambda$responseAsyncImpl0$9","jdk.internal.net.http.Http1Exchange","sendHeadersAsync","jdk.internal.net.http.Http1Exchange$$Lambda$263.0x0000000800d9f120","lambda$sendHeadersAsync$4","jdk.internal.net.http.Http1Request","headers","collectHeaders0","jdk.internal.net.http.common.HttpHeadersBuilder","java.net.http.HttpHeaders","of","headersOf","java.util.TreeMap","forEach","java.net.http.HttpHeaders$$Lambda$212.0x0000000800d84cf0","accept","lambda$headersOf$1","java.util.ArrayList","java.net.http.HttpHeaders$$Lambda$213.0x0000000800d84f28","lambda$headersOf$0","add","grow","java.lang.Object[]","jdk.internal.net.http.common.SequentialScheduler$SchedulableTask","jdk.internal.net.http.common.SequentialScheduler$CompleteRestartableTask","jdk.internal.net.http.common.SequentialScheduler$LockingRestartableTask","jdk.internal.net.http.Http1AsyncReceiver$$Lambda$246.0x0000000800d96bf8","jdk.internal.net.http.Http1AsyncReceiver","flush","jdk.internal.net.http.Http1Response$HeadersReader","tryAsyncReceive","jdk.internal.net.http.Http1Response$Receiver","jdk.internal.net.http.Http1HeaderParser","resumeOrSecondCR","addHeaderFromString","setHeader","addEntry","java.util.TreeMap$Entry","resumeOrEndHeaders","java.util.HashMap","java.util.concurrent.CompletableFuture$UniHandle","jdk.internal.net.http.ResponseTimerEvent","jdk.internal.net.http.HttpRequestImpl","timeout","java.util.Optional","jdk.internal.net.http.Http1Response","establishExchange","jdk.internal.net.http.ExchangeImpl","get","jdk.internal.net.http.ExchangeImpl$$Lambda$228.0x0000000800d8acf8","lambda$get$0","createExchangeImpl","createHttp1Exchange","jdk.internal.net.http.Http1Exchange$Http1Publisher","linkToTargetMethod","java.lang.invoke.DirectMethodHandle$Holder","newInvokeSpecial","java.lang.invoke.DirectMethodHandle","allocateInstance","jdk.internal.net.http.Http1Exchange$Http1Publisher$$Lambda$230.0x0000000800d8b6b8","one.nio.util.Utf8","read","toAsciiString","thenApply","uniApplyStage","uniApplyNow","jdk.internal.net.http.ExchangeImpl$$Lambda$247.0x0000000800d970a8","lambda$createExchangeImpl$2","h2Upgrade","setH2Upgrade","jdk.internal.net.http.Http2ClientImpl","getSettingsString","java.util.Base64$Encoder","encodeToString","toOneNio","ok.dht.test.kovalenko.utils.MyOneNioResponse","java.lang.invoke.LambdaForm$MH.0x0000000800d08800","collectHeaders1","java.util.Collections$UnmodifiableMap","entrySet","java.util.Collections$UnmodifiableMap$UnmodifiableEntrySet","jdk.internal.net.http.common.SequentialScheduler$TryEndDeferredCompleter","complete","handlePendingDelegate","jdk.internal.net.http.Http1Response$BodyReader","onSubscribe","jdk.internal.net.http.ResponseContent$FixedLengthBodyParser","jdk.internal.net.http.Http1Response$$Lambda$300.0x0000000800da2af8","onFinished","jdk.internal.net.http.HttpConnection","closeOrReturnToCache","jdk.internal.net.http.ConnectionPool","returnToPool","jdk.internal.net.http.ConnectionPool$ExpiryList","java.util.LinkedList","linkLast","java.util.LinkedList$Node","getConnection","findConnection","remove","java.util.AbstractList","listIterator","java.util.LinkedList$ListItr","jdk.internal.net.http.HttpClientImpl$SelectorManager","jdk.internal.net.http.AsyncTriggerEvent","jdk.internal.net.http.SocketTube$InternalWriteSubscriber$$Lambda$242.0x0000000800d952c8","jdk.internal.net.http.SocketTube$InternalWriteSubscriber","startSubscription","java.util.concurrent.SynchronousQueue","offer","java.util.concurrent.SynchronousQueue$TransferStack","transfer","snode","java.util.concurrent.SynchronousQueue$TransferStack$SNode","java.lang.StringBuilder","toString","newString","java.util.Arrays","copyOfRange","java.util.TreeSet","requestForKey","request","java.net.http.HttpRequest","newBuilder","jdk.internal.net.http.HttpRequestBuilderImpl","firstValueAsLong","java.util.Collection","stream","java.util.stream.StreamSupport","java.util.stream.ReferencePipeline$Head","ok.dht.test.kovalenko.utils.ReplicasUtils","recreate","ok.dht.test.kovalenko.utils.ReplicasUtils$Replicas","java.lang.invoke.LambdaForm$MH.0x0000000800cad000","java.lang.invoke.LambdaForm$DMH.0x0000000800da8400","jdk.internal.net.http.TimeoutEvent","java.time.Instant","plus","java.time.Duration","addTo","plusSeconds","ofEpochSecond","jdk.internal.net.http.ImmutableHttpRequest","retrieveProxy","sun.net.spi.DefaultProxySelector","select","java.security.AccessController","doPrivileged","executePrivileged","sun.net.spi.DefaultProxySelector$3","java.lang.AbstractStringBuilder","filterChain","jdk.internal.net.http.FilterFactory","getFilterChain","java.lang.Class[]","getConstructor","jdk.internal.reflect.ReflectionFactory","copyConstructor","java.lang.reflect.ReflectAccess","copy","java.util.concurrent.CompletableFuture$UniApply","java.util.concurrent.CompletableFuture$UniCompletion","claim","java.util.concurrent.CompletableFuture$Completion","postFire","jdk.internal.net.http.MultiExchange$$Lambda$220.0x0000000800d836a8","lambda$responseAsync0$4","readBodyAsync","jdk.internal.net.http.ResponseInfoImpl","readBody","jdk.internal.net.http.Http1Response$$Lambda$299.0x0000000800da24a8","lambda$readBody$3","jdk.internal.net.http.ResponseContent","java.lang.invoke.LambdaForm$MH.0x0000000800c91800","simpleConcat","java.lang.invoke.DelegatingMethodHandle$Holder","reinvoke_L","java.util.List","copyOf","java.util.ImmutableCollections","listCopy","toArray","addEntryToEmptyMap","registerCleanupTrigger","jdk.internal.net.http.SocketTube","connectFlows","jdk.internal.net.http.ConnectionPool$CleanupTrigger","subscribe","jdk.internal.net.http.SocketTube$InternalWriteSubscriber$WriteSubscription","jdk.internal.net.http.SocketTube$InternalWriteSubscriber$$Lambda$278.0x0000000800da4000","requestMore","jdk.internal.net.http.Http1Exchange$Http1Publisher$Http1WriteSubscription","jdk.internal.net.http.common.SequentialScheduler","runOrSchedule","jdk.internal.net.http.Http1Exchange$Http1Publisher$WriteTask","getOutgoing","jdk.internal.net.http.Exchange$$Lambda$265.0x0000000800d9f5b0","lambda$responseAsyncImpl0$8","jdk.internal.net.http.Exchange$$Lambda$224.0x0000000800d82a10","sendRequestBody","sendBodyAsync","continueRequest","jdk.internal.net.http.RequestPublishers$ByteArrayPublisher","jdk.internal.net.http.PullPublisher","jdk.internal.net.http.PullPublisher$Subscription","appendToOutgoing","jdk.internal.net.http.Http1Exchange$DataPair","responseAsync0","java.lang.invoke.LambdaForm$DMH.0x0000000800d82000","jdk.internal.net.http.Http1Response$$Lambda$303.0x0000000800da3410","jdk.internal.net.http.ResponseSubscribers","getBodyAsync","jdk.internal.net.http.ResponseSubscribers$$Lambda$306.0x0000000800da3ab8","lambda$getBodyAsync$3","whenComplete","uniWhenCompleteStage","java.util.concurrent.CompletableFuture$UniWhenComplete","jdk.internal.net.http.Http1Response$Http1BodySubscriber","onComplete","jdk.internal.net.http.ResponseSubscribers$ByteArraySubscriber","uniWhenComplete","jdk.internal.net.http.ResponseSubscribers$$Lambda$307.0x0000000800da3ce0","lambda$getBodyAsync$2","jdk.internal.net.http.MultiExchange$$Lambda$310.0x0000000800dac470","lambda$responseAsync0$3","jdk.internal.net.http.HttpResponseImpl","jdk.internal.net.http.SocketTube$InternalReadPublisher","jdk.internal.net.http.SocketTube$InternalReadPublisher$ReadSubscription","java.lang.Iterable","jdk.internal.net.http.Http1Request$$Lambda$282.0x0000000800da46b8","test","lambda$collectHeaders0$1","firstValue","spliterator","java.util.AbstractList$RandomAccessSpliterator","java.util.function.BiPredicate$$Lambda$280.0x0000000800dc6f38","java.util.function.BiPredicate","lambda$and$0","jdk.internal.net.http.common.Utils$$Lambda$168.0x0000000800d04dd0","lambda$static$12","java.util.function.Predicate$$Lambda$158.0x0000000800d40f48","java.util.function.Predicate","lambda$negate$1","jdk.internal.net.http.common.Utils$$Lambda$157.0x0000000800d04000","lambda$static$5","substring","parseRequest","one.nio.http.Request","wrapForUpgrade","hostString","java.lang.Integer","jdk.internal.net.http.Http1Exchange$$Lambda$283.0x0000000800da4d28","java.util.stream.LongPipeline","findFirst","java.util.stream.AbstractPipeline","evaluate","java.util.stream.FindOps$FindOp","evaluateSequential","wrapAndCopyInto","wrapSink","java.util.stream.ReferencePipeline$5","opWrapSink","java.util.stream.ReferencePipeline$5$1","trim","java.util.ArrayList$Itr","jdk.internal.net.http.Http1AsyncReceiver$$Lambda$256.0x0000000800d9df70","jdk.internal.net.http.Exchange$$Lambda$250.0x0000000800d97768","lambda$establishExchange$3","completedFuture","java.net.URI","validate","ok.dht.test.kovalenko.utils.ReplicasUtils$ReplicasValidation","java.util.stream.ReferencePipeline","mapToLong","lockingScheduler","java.lang.String[]","java.util.concurrent.CompletableFuture$UniRelay","java.util.ImmutableCollections$List12","getAddress","jdk.internal.net.http.HttpRequestImpl$$Lambda$231.0x0000000800d901f8","lambda$getAddress$5","java.net.InetSocketAddress","java.net.InetAddress","getByName","getAllByName","getAllByName0","java.net.InetAddress[]","toHttpString","java.lang.invoke.LambdaForm$MH.0x0000000800d81800","purgeExpiredConnectionsAndReturnNextDeadline","now","java.time.Clock","currentInstant","purgeUntil","descendingIterator","java.util.LinkedList$DescendingIterator","java.net.URI$Parser","parseHierarchical","makeAllNodesHealthy","java.util.HashMap$Values","java.util.HashMap$ValueIterator","onNext","tryFlushCurrent","writeAvailable","java.lang.reflect.Array","java.nio.ByteBuffer[]","java.util.TreeMap$EntrySet","ok.dht.test.kovalenko.LoadBalancer$$Lambda$315.0x0000000800d197f0","handlePut","emptyResponseFor","java.util.concurrent.atomic.AtomicInteger","thenAccept","uniAcceptStage","uniAcceptNow","jdk.internal.net.http.Http1Exchange$$Lambda$285.0x0000000800da5a90","lambda$sendBodyAsync$7","cancelIfFailed","jdk.internal.net.http.Http1Exchange$$Lambda$286.0x0000000800da5cc8","java.util.stream.FindOps$FindSink$OfRef$$Lambda$14.0x80000001d","java.util.stream.FindOps$FindSink$OfRef","parseAuthority","parseServer","parseHostname","java.lang.reflect.AccessibleObject","checkAccess","verifyAccess","slowVerifyAccess","java.lang.ref.WeakReference","addTrailingOperation","jdk.internal.net.http.HttpConnection$TrailingOperations","jdk.internal.net.http.HttpConnection$TrailingOperations$$Lambda$304.0x0000000800da3648","java.util.PriorityQueue","jdk.internal.net.http.Http1Exchange$$Lambda$288.0x0000000800da6138","getConnectionFor","header","addHeader","computeIfAbsent","callMappingFunctionWithCheck","jdk.internal.net.http.common.HttpHeadersBuilder$$Lambda$211.0x0000000800d84240","lambda$addHeader$0","sun.nio.ch.SelectorImpl","lockAndDoSelect","sun.nio.ch.EPollSelectorImpl","doSelect","processEvents","processReadyEvents","putVal","newNode","java.util.HashMap$Node","jdk.internal.net.http.Http1AsyncReceiver$Http1AsyncDelegateSubscription","jdk.internal.net.http.MultiExchange$CancelableRef","java.net.http.HttpResponse$BodyHandlers$$Lambda$214.0x0000000800d85968","java.net.http.HttpResponse$BodyHandlers","lambda$ofByteArray$12","java.net.http.HttpResponse$BodySubscribers","ofByteArray","append","ensureCapacityInternal","jdk.internal.net.http.Exchange$$Lambda$249.0x0000000800d97530","getTask","poll","jdk.internal.net.http.MultiExchange$$Lambda$267.0x0000000800d9fc40","lambda$responseAsyncImpl$6","responseFilters","jdk.internal.net.http.Http1Request$FixedContentSubscriber","exceptionallyCompose","uniComposeExceptionallyStage","java.util.stream.ForEachOps","makeRef","java.util.stream.ForEachOps$ForEachOp$OfRef","jdk.internal.net.http.Http1HeaderParser$$Lambda$293.0x0000000800da6e68","lambda$addHeaderFromString$0","putConnection","jdk.internal.net.http.PlainHttpConnection","cacheKey","jdk.internal.net.http.ConnectionPool$CacheKey","jdk.internal.net.http.Exchange$$Lambda$292.0x0000000800da6a18","lambda$wrapForUpgrade$11","checkForUpgradeAsync","java.util.stream.FindOps$FindSink$OfLong$$Lambda$296.0x0000000800dca7b0","java.util.stream.FindOps$FindSink$OfLong","jdk.internal.net.http.HttpClientImpl$SelectorManager$$Lambda$273.0x0000000800d9ab20","lambda$run$3","handleEvent","jdk.internal.net.http.SocketTube$SocketFlowEvent","jdk.internal.net.http.SocketTube$InternalReadPublisher$ReadEvent","signalEvent","jdk.internal.net.http.SocketTube$InternalReadPublisher$InternalReadSubscription","signalReadable","jdk.internal.net.http.SocketTube$SocketFlowTask","jdk.internal.net.http.SocketTube$InternalReadPublisher$InternalReadSubscription$$Lambda$238.0x0000000800d94578","jdk.internal.net.http.Http1AsyncReceiver$Http1TubeSubscriber","asyncReceive","checkOpen","java.nio.ByteBuffer","allocate","java.nio.HeapByteBuffer","jdk.internal.net.http.AbstractSubscription","jdk.internal.net.http.common.Demand","readStatusLineFeed","getClientSettings","jdk.internal.net.http.frame.SettingsFrame","int[]","getBodyParser","replicasForKey","responsibleNodeForKey","hash","one.nio.http.Response","getBytes","encode","encodeASCII","jdk.internal.net.http.Exchange$ConnectionAborter","wrap","java.util.Collections$UnmodifiableMap$UnmodifiableEntrySet$1","java.util.TreeMap$EntryIterator","java.util.OptionalLong","java.util.concurrent.atomic.AtomicReference","java.lang.invoke.LambdaForm$DMH.0x0000000800ca0000","jdk.internal.net.http.HttpClientImpl$SelectorManager$$Lambda$272.0x0000000800d9a8f8","waitingGet","java.util.concurrent.CompletableFuture$Signaller","toLowerCase","java.util.concurrent.locks.ReentrantLock","ok.dht.test.kovalenko.LoadBalancer$$Lambda$209.0x0000000800d18aa8","lambda$replicasForKey$1","resize","java.util.HashMap$Node[]","jdk.internal.net.http.HttpClientImpl$SelectorAttachment","events","filter","java.util.stream.ReferencePipeline$2","whenCompleteAsync","jdk.internal.net.http.Http1AsyncReceiver$$Lambda$255.0x0000000800d9dd38","jdk.internal.net.http.PullPublisher$Subscription$PullTask","readResumeHeader","java.util.HashMap$KeySpliterator","jdk.internal.net.http.ConnectionPool$$Lambda$313.0x0000000800dad6e0","jdk.internal.net.http.SocketTube$InternalReadPublisher$InternalReadSubscription$$Lambda$240.0x0000000800d949d8","handleSubscribeEvent","handlePending","signalOnSubscribe","resumeReadEvent","jdk.internal.net.http.SocketTube$InternalReadPublisher$InternalReadSubscription$$Lambda$279.0x0000000800da4228","jdk.internal.reflect.GeneratedConstructorAccessor7","jdk.internal.net.http.AuthenticationFilter","startParsingRequestBody","java.util.stream.ForEachOps$ForEachOp","java.util.stream.ReferencePipeline$2$1","join","jdk.internal.net.http.Http1Response$$Lambda$254.0x0000000800d9d488","jdk.internal.net.http.Http1Exchange$Http1BodySubscriber","jdk.internal.net.http.Http2Connection","keyFor","keyString","java.lang.invoke.LambdaForm$MH.0x0000000800d8e800","java.lang.invoke.LambdaForm$MH.0x0000000800d8e000","getNode","hashCode","readAvailable","jdk.internal.net.http.SocketTube$SliceBufferSource","asReadOnlyBuffer","java.nio.HeapByteBufferR","java.util.concurrent.ConcurrentLinkedDeque","start","getBuffer","jdk.internal.net.http.PlainHttpConnection$$Lambda$236.0x0000000800d931e8","jdk.internal.net.http.MultiExchange$$Lambda$270.0x0000000800d9a488","lambda$responseAsyncImpl$7","jdk.internal.net.http.Http1Response$$Lambda$308.0x0000000800dac000","ofNullable","jdk.internal.net.http.Http1Exchange$$Lambda$287.0x0000000800da5f00","lambda$sendBodyAsync$8","requestMoreBody","offerLast","java.util.concurrent.ConcurrentLinkedDeque$Node","java.util.concurrent.locks.ReentrantLock$NonfairSync","checkRequestMore","java.util.Collections","unmodifiableMap","requestURI","getPathAndQuery","java.lang.invoke.LambdaForm$MH.0x0000000800c0fc00","registerTimer","java.util.concurrent.atomic.AtomicLong","ok.dht.test.kovalenko.MyServerBase$$Lambda$147.0x0000000800caaee8","lambda$handleRequest$0","ok.dht.test.kovalenko.dao.utils.PoolKeeper","submit","java.util.concurrent.AbstractExecutorService","newTaskFor","java.util.concurrent.Executors","callable","java.lang.invoke.LambdaForm$MH.0x0000000800da1800","java.lang.invoke.LambdaForm$DMH.0x0000000800da1000","sun.nio.ch.Util$2","jdk.internal.net.http.HttpClientImpl$SelectorManager$$Lambda$276.0x0000000800d9b3c0","lambda$run$5","lambda$run$2","resetInterestOps","java.util.concurrent.LinkedBlockingQueue","java.util.concurrent.LinkedBlockingQueue$Node","java.lang.Long","readResumeStatusLine","one.nio.net.NativeSelector","one.nio.net.NativeSelector$2","jdk.internal.net.http.Http1Response$ClientRefCountTracker","and","java.lang.invoke.LambdaForm$MH.0x0000000800c0d000","newArrayWithSuffix","jdk.internal.net.http.Exchange$$Lambda$290.0x0000000800da6588","lambda$sendRequestBody$7","getResponseAsync","readHeadersAsync","thenApplyAsync","jdk.internal.net.http.Http1Response$$Lambda$291.0x0000000800da67d0","lambda$readHeadersAsync$0","jdk.internal.net.http.Response","jdk.internal.net.http.Exchange$$Lambda$309.0x0000000800dac238","toByteArray","java.util.concurrent.CompletableFuture$UniComposeExceptionally","jdk.internal.net.http.Http1Response$$Lambda$253.0x0000000800d9d250","jdk.internal.net.http.Http1Exchange$$Lambda$277.0x0000000800d9b7e8","listOf","take","java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject","await","java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode","getPath",];
+
+    let currentHeatmap = executionsHeatmap;
+    let currentHeatmapType = 'executions';
+
+    let heatHeight = 60;
+
+    let heatLastSample = -1;
+    let heatActiveSample1 = -1;
+    let heatActiveSample2 = -1;
+    let heatDiffStart = -1;
+    let heatDiffEnd = -1;
+    let highlightStart = -1;
+    let highlightEnd = -1;
+
+    const titleText = document.getElementById("title").textContent;
+    document.getElementById("title").style.display = 'none';
+    document.title = titleText;
+
+    const heatCanvas = document.getElementById('heatmap-canvas');
+    const heatStatus = document.getElementById('status');
+    const heatCanvasWrapper = document.getElementById('heatmap-canvas-wrapper');
+    const heatCanvasContainer = document.getElementById('heatmap-canvas-container');
+
+    let heatC;
+    let prevDx = -1000000000;
+
+    let searchExecutedCount = 0;
+    let searchMax = 0;
+
+    const timeOptions = {
+        year: '2-digit',
+        month: '2-digit',
+        day: '2-digit',
+        timeZoneName: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 2
+    };
+
+    const timeOptionsShort = {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 2
+    };
+
+    const timeOptionsTiny = {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23',
+        //hour12: false
+    };
+
+    function methodInfo(methodIndex, out) {
+        if (methodIndex === -1) {
+            out.className = '';
+            out.methodName = 'all';
+            out.location = 0;
+            out.type = 3;
+            return;
+        }
+
+        methodIndex--;
+
+        let methodAndClass = methods.int36(methodIndex * 12);
+        let locationAndType = methods.int36(methodIndex * 12 + 6)
+        let className = (methodAndClass & 0x3FFFF) - 1;
+        let methodName = (methodAndClass >>> 18) - 1;
+
+        out.className = cpool[className];
+        out.methodName = cpool[methodName];
+        out.location = locationAndType >>> 4;
+        out.type = locationAndType & 15;
+    }
+
+    function title(methodIndex, out) {
+        methodInfo(methodIndex, out);
+        const codeLine = (out.location & 0xffff);
+        let locationSuffix = codeLine === 0 ? "" : (":" + codeLine);
+
+        if (out.methodName === '') {
+            return out.className + locationSuffix;
+        }
+        if (out.className === '') {
+            return out.methodName + locationSuffix;
+        }
+        if (out.type >= 3 && out.type <= 5) {
+            return out.methodName + locationSuffix;
+        }
+
+        return out.className + "." + out.methodName + locationSuffix;
+    }
+
+    let bgInterval = null;
+    let bgTasks = [];
+    let cooldownTime = 0;
+    let nextTask = 0;
+
+    function addTask(id, iteration, afterFrame) {
+        for (let t of bgTasks) {
+            if (t.id === id) {
+                t.f = iteration;
+                t.a = afterFrame;
+                return;
+            }
+        }
+
+        bgTasks.push({id: id, f: iteration, a: afterFrame});
+        if (bgTasks.length === 1) {
+            bgInterval = setInterval(function() {
+                let start = performance.now();
+                if (start <= cooldownTime) {
+                    return;
+                }
+                let overflow = false;
+                do {
+                    let task = bgTasks[nextTask];
+                    if (task.f()) {
+                        nextTask++;
+                    } else {
+                        bgTasks.splice(nextTask, 1);
+                        if (bgTasks.length === 0) {
+                            clearInterval(bgInterval);
+                            nextTask = 0;
+                            return;
+                        }
+                    }
+
+                    if (nextTask >= bgTasks.length) {
+                        nextTask = 0;
+                        overflow = true;
+                    }
+                } while(performance.now() - start < 8);
+
+                for (let q = 0; q < overflow ? bgTasks.length : nextTask; q++) {
+                    bgTasks[q].a();
+                }
+            })
+        }
+    }
+
+    function prepareFrames(from, to) {
+        let mul = zoomToGroupSize[currentHeatmap.zoom];
+        from *= mul;
+        to = (to + 1) * mul - 1;
+        if (to >= currentHeatmap.blocks.length) {
+            to = currentHeatmap.blocks.length - 1;
+        }
+
+        const frames = new Queue();
+        const root = new Map();
+        root.c = 0;
+        root.m = -1;
+        root.x = 0;
+        const roots = [root];
+        let levelsCount = 1;
+
+        for (let pos = from; pos <= to; pos++) {
+            const block = currentHeatmap.blocks[pos];
+
+            root.c += block.length;
+
+            for (let stack of block) {
+                levelsCount = Math.max(stack.length + 1, levelsCount);
+
+                frames.push(root);
+                frames.push(stack);
+            }
+        }
+
+        return [frames, roots, levelsCount]
+    }
+
+    function nextFrames(frames, level) {
+        frames.push(null);  // end stacks marker
+
+        let nowFrame = null;
+
+        while (true) {
+            const frame = frames.shift();
+            if (frame === null) {   // end stack marker
+                break;
+            }
+
+            const stack = frames.shift();
+            if (level >= stack.length) {
+                continue;
+            }
+
+            const methodId = stack[level];
+            nowFrame = frame.get(methodId);
+            if (nowFrame === undefined) {
+                nowFrame = new Map();
+                nowFrame.m = methodId;
+                nowFrame.c = 0;
+                frame.set(methodId, nowFrame);
+            }
+            nowFrame.c++;
+
+            frames.push(nowFrame);
+            frames.push(stack);
+        }
+    }
+
+    function renderTraces(from, to) {
+        let [frames, roots, levelsCount] = prepareFrames(from, to);
+        levels.length = 0;
+        for (let i = 0; i < levelsCount; i++) {
+            levels.push([]);
+        }
+
+        let currentLevel = 0;
+        let levelToRedraw = 0;
+        let methodInfoOut = {};
+
+        addTask('flame', function () {
+                nextFrames(frames, currentLevel);
+
+                let level = levels[currentLevel];
+                let nextRoots = [];
+                for (let root of roots) {
+                    let x = root.x;
+                    const t = title(root.m, methodInfoOut);
+                    let color = getColor(palette[methodInfoOut.type]);
+                    level.push({left: x, width: root.c, color: color, title: t});
+
+                    let nextFrames = [...root.values()];
+
+                    nextFrames.sort((k1, k2) => k2.c - k1.c);
+                    for (let frame of nextFrames) {
+                        frame.x = x;
+                        x += frame.c;
+                        nextRoots.push(frame);
+                    }
+                }
+                level.sort((k1, k2) => k1.left - k2.left);
+
+                roots = nextRoots;
+                currentLevel++;
+                if (currentLevel < levelsCount) {
+                    return true;
+                }
+                renderWithMatch(levelsCount * 16, levels[0][0], 0);
+                return false;
+            },
+            function () {
+                renderWithMatch(4096, levels[0][0], 0, levelToRedraw);
+                levelToRedraw = currentLevel;
+            });
+    }
+
+    function renderWithMatch(newCanvasHeight, root, level, minLevel) {
+        newCanvasHeight = Math.min(32767, newCanvasHeight);
+        if (canvasHeight !== newCanvasHeight) {
+            canvasHeight = newCanvasHeight;
+            canvas.style.height = canvasHeight + 'px';
+            canvas.height = canvasHeight * (devicePixelRatio || 1);
+            c = canvas.getContext('2d');
+            if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+            c.font = document.body.style.font;
+        }
+        const matched = render(root, level, minLevel);
+        if (pattern === undefined) {
+            document.getElementById('match').style.display = 'none';
+            document.getElementById('produced').style.display = 'inherit';
+        } else {
+            document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+            document.getElementById('match').style.display = 'inline-block';
+            document.getElementById('produced').style.display = 'none';
+        }
+    }
+
+    function renderDiff(from, to, baseFrom, baseTo) {
+        let [frames, roots, levelsCount] = prepareFrames(from, to);
+        let [baseFrames, baseRoots, ] = prepareFrames(baseFrom, baseTo);
+        roots[0].b = baseRoots[0];
+
+        levels.length = 0;
+        for (let i = 0; i < levelsCount; i++) {
+            levels.push([]);
+        }
+        let currentLevel = 0;
+        let levelToRedraw = 0;
+        let methodInfoOut = {};
+
+        let minDiff = 0;
+        let maxDiff = 0;
+
+        addTask('flame', function () {
+                nextFrames(frames, currentLevel);
+                nextFrames(baseFrames, currentLevel);
+                let level = levels[currentLevel];
+
+                for (let root of roots) {
+                    let wasCount = root.b === undefined ? 0 : root.b.c;
+                    if (wasCount !== 0) {
+                        maxDiff = Math.max(maxDiff, root.c - wasCount);
+                        minDiff = Math.min(minDiff, root.c - wasCount)
+                    }
+                }
+
+                let nextRoots = [];
+                for (let root of roots) {
+                    let x = root.x;
+
+                    let wasCount = root.b === undefined ? 0 : root.b.c;
+                    const t = title(root.m, methodInfoOut) + " (" + root.c + "/" + wasCount +")";
+                    let color;
+                    if (wasCount === 0) {
+                        color = "#dac571";
+                    } else if (wasCount >= root.c) {
+                        const ratio = (root.c - wasCount) / minDiff;
+                        color = 'rgb(' + (245 - 90 * ratio) + ',' + (250 - 90 * ratio) + ',' + 255 +')';
+                    } else {
+                        const ratio = (root.c - wasCount) / maxDiff;
+                        color = 'rgb(' + 255 + ',' + (245 - 180 * ratio) + ',' + (240 - 200 * ratio) +')';
+                    }
+                    level.push({left: x, width: root.c, color: color, title: t});
+
+                    let nextFrames = [];
+                    for (let [methodId, frame] of root) {
+                        frame.b = root.b && root.b.get(methodId);
+                        nextFrames.push(frame);
+                    }
+                    nextFrames.sort((k1, k2) => k2.c - k1.c);
+                    for (let frame of nextFrames) {
+                        frame.x = x;
+                        x += frame.c;
+                        nextRoots.push(frame);
+                    }
+                }
+                level.sort((k1, k2) => k1.left - k2.left);
+
+                roots = nextRoots;
+                currentLevel++;
+                if (currentLevel < levelsCount) {
+                    return true;
+                }
+                renderWithMatch(levelsCount * 16, levels[0][0], 0);
+                return false;
+            },
+            function () {
+                renderWithMatch(4096, levels[0][0], 0, levelToRedraw);
+                levelToRedraw = currentLevel;
+            });
+    }
+
+    function redrawHeatSamplesImpl(from, to, dx) {
+        const patternDraw = !!pattern;
+        const startBlock = currentHeatmap.startBlock();
+
+        const max = currentHeatmap.max();
+        const heatmap = currentHeatmap.heatmap();
+
+        for (let index = from; index <= to; index++) {
+            let color;
+            let i = index - startBlock;
+            if (i < 0 || i >= heatmap.length) {
+                color = '#ddd';
+            } else {
+                let count = heatmap[i];
+
+                let useFound = patternDraw && searchExecutedCount > i;
+                let maxValue = useFound ? searchMax : max;
+                let value = useFound ? found[i] : count;
+                let ratio = value / (maxValue || 1);
+
+                if (useFound) {
+                    if (ratio < 0.8) {
+                        let value = Math.round(255 - ratio * 255 / 0.8);
+                        color = 'rgb(' + value + ',' + value + ',255)';
+                    } else {
+                        let value = Math.round(255 - (ratio - 0.8) * 100 / 0.2);
+                        color = 'rgb(0,0,' + value + ')';
+                    }
+                } else {
+                    if (ratio < 0.8) {
+                        let value = Math.round(255 - ratio * 255 / 0.8);
+                        color = 'rgb(255,' + value + ',' + value + ')';
+                    } else {
+                        let value = Math.round(255 - (ratio - 0.8) * 100 / 0.2);
+                        color = 'rgb('+ value + ',0,0)';
+                    }
+                }
+
+            }
+            heatC.fillStyle = color;
+
+            let x = Math.floor(index / heatHeight);
+            let y = index % heatHeight;
+            heatC.fillRect(x * sq - dx, y * sq + canvasTimeHeight, sq, sq);
+        }
+
+        let blocksBetweenMarks = 20;
+
+        let fromBlock = Math.floor(from / blocksBetweenMarks / heatHeight) - 1;
+        let toBlock = Math.ceil(to / blocksBetweenMarks / heatHeight);
+
+        let markPixels = blocksBetweenMarks * sq;
+
+        heatC.fillStyle = '#fff';
+        heatC.fillRect(
+            fromBlock * markPixels - dx,
+            0,
+            (toBlock - fromBlock + 1) * markPixels,
+            canvasTimeHeight
+        );
+
+        heatC.beginPath();
+        heatC.moveTo(fromBlock * markPixels - dx + 0.5, canvasTimeHeight + 0.5);
+        heatC.lineTo(toBlock * markPixels - dx + 0.5, canvasTimeHeight + 0.5);
+        heatC.stroke();
+
+        heatC.fillStyle = '#000';
+
+        let groupSize = heatHeight;
+        let oneBlockMs = currentHeatmap.currentTimeBlock();
+        let oneGroupMs = oneBlockMs * groupSize;
+        let oneMarkMs = oneGroupMs * blocksBetweenMarks;
+        for (let markIndex = fromBlock; markIndex <= toBlock; markIndex++) {
+            let origin = Math.floor(startMs / oneMarkMs) * oneMarkMs;
+            let ms = origin + markIndex * oneMarkMs;
+            let markOffset = markIndex * markPixels - dx;
+
+            let title = new Date(ms).toLocaleTimeString(undefined, timeOptionsTiny);
+
+            let w = heatC.measureText(title).width;
+            let x = markOffset + (markPixels - w) / 2;
+            heatC.fillText(title, x, canvasTimeHeight - 1, markPixels);
+
+            heatC.beginPath();
+            heatC.moveTo(markOffset + 0.5, canvasTimeHeight - 2 * sqScale + 0.5);
+            heatC.lineTo(markOffset + 0.5, canvasTimeHeight + 2 * sqScale + 0.5);
+            heatC.stroke();
+        }
+    }
+
+    function redrawHeatSamples(from, to) {
+        let dx = Math.floor((heatCanvasContainer.scrollLeft - canvasScrollPadding) * sqScale);
+
+        from = Math.max(from, heatHeight * Math.floor(dx / sq));
+        to = Math.min(to, heatHeight * Math.ceil((dx + heatCanvas.width) / sq));
+        redrawHeatSamplesImpl(from, to, dx);
+    }
+
+    function redrawHeatMap() {
+        redrawHeatSamples(0, (1 + currentHeatmap.count() / heatHeight | 0) * heatHeight);
+    }
+
+    function fillCanvasWithEvents(zoom) {
+        searchExecutedCount = 0;
+        searchMax = 0;
+
+        addTask('search', function () {
+            return false;
+        }, function (){});
+
+        currentHeatmap.setZoom(zoom);
+        heatHeight = zoomToHeight[zoom];
+
+        const m = devicePixelRatio || 1;
+        sqScale = m;
+        sqPx = 5;
+        sq = Math.floor(sqPx * m);
+        sqPx = sq / m;
+        canvasTimeHeight = sq * 2 + 2;
+        canvasTimeHeightPx = canvasTimeHeight / m;
+
+        const widthPx = canvasScrollPadding + heatCanvasContainer.offsetWidth + canvasScrollPadding;
+        const heightPx = sqPx * heatHeight + canvasTimeHeightPx;
+
+        const heatWidthPx = Math.max(20, Math.ceil(currentHeatmap.count() / heatHeight)) * sqPx;
+        heatCanvasWrapper.style.width = heatWidthPx + 'px';
+        if (heatCanvasContainer.offsetWidth > heatWidthPx) {
+            heatCanvasContainer.style.overflowX = 'hidden';
+        } else {
+            heatCanvasContainer.style.overflowX = 'scroll';
+        }
+
+        heatCanvas.width = Math.ceil(widthPx * m);
+        heatCanvas.height = Math.ceil(heightPx * m);
+        heatCanvas.style.width = widthPx + 'px';
+        heatCanvas.style.height = heightPx + 'px';
+
+        heatC = heatCanvas.getContext('2d');
+        heatC.font = sq * 2 + 'px Verdana, sans-serif';
+        heatC.lineWidth = 1;
+        heatC.strokeStyle = '#000';
+
+        document.getElementById('heatmap-height-line').textContent = [' 1 sec : 20 ms ',' 1 min : 1 sec ',' 5 min : 5 sec ',' 1 hr  : 1 min '][currentHeatmap.zoom];
+        redrawHeatMap();
+    }
+
+    let found = new Uint32Array(0);
+
+    function searchIterative(r) {
+        if (r && (r = prompt('Enter regexp to search:', '')) === null) {
+            return;
+        }
+        searchExecutedCount = 0;
+        searchMax = 0;
+        if (!r) {
+            pattern = undefined;
+            redrawHeatMap();
+            addTask('search', function () {
+                return false;
+            }, function (){});
+            return;
+        }
+        let renderFrom = 0;
+        let heatmap = currentHeatmap.heatmap();
+        let count = heatmap.length;
+        found = new Uint32Array(count);
+        let start = currentHeatmap.startBlock();
+        function renderFunc() {
+            redrawHeatSamples(start + renderFrom, start + searchExecutedCount - 1);
+            renderFrom = searchExecutedCount;
+        }
+        pattern = r ? RegExp(r) : undefined;
+        const matchedMethods = new Set();
+        const methodOut = {};
+        for (let index = methods.data.length / 12; index >= 0; index--) {
+            if (pattern.test(title(index, methodOut))) {
+                matchedMethods.add(index);
+            }
+        }
+
+        let mul = zoomToGroupSize[currentHeatmap.zoom];
+
+        addTask('search', function () {
+            let amount = 0;
+            const from = searchExecutedCount * mul;
+            const to = (searchExecutedCount + 1) * mul;
+            for (let i = from; i < to; i++) {
+                const stacks = currentHeatmap.blocks[i];
+                if (stacks === undefined) {
+                    continue;
+                }
+
+                for (let stack of stacks) {
+                    for (let methodIndex of stack) {
+                        if (matchedMethods.has(methodIndex)) {
+                            amount++;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (searchMax < amount) {
+                renderFrom = 0;
+                searchMax = amount;
+            }
+
+            found[searchExecutedCount] = amount;
+            searchExecutedCount++;
+            if (searchExecutedCount >= count) {
+                renderFunc();
+
+                const matched = render(root, rootLevel);
+                document.getElementById('matchval').textContent = pct(matched, root.width) + '%';
+                document.getElementById('match').style.display = r ? 'inherit' : 'none';
+                document.getElementById('produced').style.display = r ? 'none' : 'inherit';
+
+                return false;
+            }
+            return true;
+        }, renderFunc);
+
+    }
+
+    function renderHeatmap() {
+        let dx = heatCanvasContainer.scrollLeft - canvasScrollPadding;
+        heatCanvas.style.transform = 'translate(' + dx + 'px, 0px)';
+
+        const width = Math.floor(heatCanvasContainer.offsetWidth / sq / (devicePixelRatio || 1));
+
+        let z = 0;
+        for (; z < zoomToGroupSize.length; z++) {
+            if (currentHeatmap.blocks.length / (zoomToGroupSize[z] * zoomToHeight[z]) < width) {
+                break;
+            }
+        }
+
+        fillCanvasWithEvents(Math.min(z, currentHeatmap.maxZoom - 1));
+
+        renderTraces(0, currentHeatmap.heatmap().length - 1);
+    }
+
+    heatCanvasContainer.addEventListener('scroll', function() {
+        let dx = Math.floor((heatCanvasContainer.scrollLeft - canvasScrollPadding) * sqScale);
+        let dxPx = dx / sqScale;
+        heatCanvas.style.transform = 'translate(' + dxPx + 'px, 0px)';
+        let delta = Math.abs(dx - prevDx);
+        if (delta >= heatCanvas.width || searchExecutedCount !== 0) {
+            redrawHeatMap();
+        } else {
+            heatC.drawImage(heatCanvas, prevDx - dx, 0);
+            if (prevDx < dx) {
+                let from = heatHeight * Math.floor((prevDx + heatCanvas.width) / sq);
+                let to = heatHeight * Math.ceil((dx + heatCanvas.width) / sq);
+                redrawHeatSamplesImpl(from, to, dx);
+            } else {
+                let from = heatHeight * Math.floor(dx / sq);
+                let to = heatHeight * Math.ceil(prevDx / sq);
+                redrawHeatSamplesImpl(from, to, dx);
+            }
+        }
+        prevDx = dx;
+        cooldownTime = performance.now() + 500;
+    });
+
+    document.getElementById('heatmap-height-line').onclick = function() {
+        fillCanvasWithEvents((currentHeatmap.maxZoom + currentHeatmap.zoom - 1) % (currentHeatmap.maxZoom));
+        highlightStart = highlightEnd = heatDiffStart = heatDiffEnd = heatActiveSample1 = heatActiveSample2 = -1;
+        for (let suffix of ['Selection', 'Diff', 'Active']) {
+            for (let prefix of ['left', 'leftMiddle', 'middle', 'rightMiddle', 'right']) {
+                document.getElementById(prefix + suffix).style.display = 'none';
+            }
+        }
+    }
+
+    function callHighlightRedraw(start, end, suffix) {
+        let left = document.getElementById('left' + suffix);
+        let leftMiddle = document.getElementById('leftMiddle' + suffix);
+        let middle = document.getElementById('middle' + suffix);
+        let rightMiddle = document.getElementById('rightMiddle' + suffix);
+        let right = document.getElementById('right' + suffix);
+
+        let x1 = Math.floor(start / heatHeight);
+        let y1 = start % heatHeight;
+        let x2 = Math.floor(end / heatHeight);
+        let y2 = end % heatHeight;
+
+        let veryStartX = x1 * sqPx;
+        let veryStartY = y1 * sqPx;
+        let veryEndX = x2 * sqPx;
+        let px = 1 / sqScale;
+        let singleElementWidth = sqPx + px;
+
+        let topPadding = canvasTimeHeightPx;
+
+        if (x1 === x2) {
+            left.style.display = 'none';
+            right.style.display = 'none';
+
+            for (let b of [middle, leftMiddle, rightMiddle]) {
+                b.style.left = veryStartX + 'px';
+                b.style.top = topPadding + veryStartY + 'px';
+                b.style.width = singleElementWidth + 'px';
+                b.style.height = (y2 - y1 + 1) * sqPx + px + 'px';
+                b.style.display = 'block';
+            }
+        } else {
+            left.style.left = veryStartX + 'px';
+            left.style.top = topPadding + veryStartY + 'px';
+            left.style.width = singleElementWidth + 'px';
+            left.style.height = (heatHeight - y1) * sqPx + px + 'px';
+            left.style.display = 'block';
+
+            leftMiddle.style.left = veryStartX + 'px';
+            leftMiddle.style.top = topPadding + 'px';
+            leftMiddle.style.width = singleElementWidth + 'px';
+            leftMiddle.style.height = y1 * sqPx + px + 'px';
+            leftMiddle.style.display = 'block';
+
+            rightMiddle.style.left = veryEndX + 'px';
+            rightMiddle.style.top = topPadding + (y2 + 1) * sqPx + 'px';
+            rightMiddle.style.width = sqPx + px + 'px';
+            rightMiddle.style.height = (heatHeight - y2 - 1) * sqPx + px + 'px';
+            rightMiddle.style.display = 'block';
+
+            right.style.left = veryEndX + 'px';
+            right.style.top = topPadding + 'px';
+            right.style.width = sqPx + px + 'px';
+            right.style.height = (y2 + 1) * sqPx + px + 'px';
+            right.style.display = 'block';
+
+            if (x2 - x1 === 1) {
+                middle.style.display = 'none';
+            } else {
+                middle.style.left = veryStartX + sqPx + px + 'px';
+                middle.style.top = topPadding + 'px';
+                middle.style.width = (x2 - x1 - 1) * sqPx - px + 'px';
+                middle.style.height = heatHeight * sqPx + px + 'px';
+                middle.style.display = 'block';
+            }
+        }
+    }
+
+    function callSelectionRedraw(sample, shiftPressed, ctrlPressed) {
+        if (ctrlPressed) {
+            highlightStart = sample;
+            highlightEnd = sample + Math.abs(heatActiveSample1 - heatActiveSample2);
+        } else if (shiftPressed && heatActiveSample1 !== -1) {
+            highlightStart = Math.min(heatActiveSample1, sample);
+            highlightEnd = Math.max(heatActiveSample1, sample);
+        } else {
+            highlightStart = highlightEnd = sample;
+        }
+
+        callHighlightRedraw(highlightStart, highlightEnd, 'Selection');
+
+        const index = sample - currentHeatmap.startBlock();
+        const heatmap = currentHeatmap.heatmap();
+        if (index >= 0 && index < heatmap.length) {
+            const ms = startMs + currentHeatmap.currentTimeBlock() * index;
+            const total =  heatmap[index];
+            const max = currentHeatmap.max();
+            heatCanvas.title = new Date(ms).toLocaleTimeString(undefined, timeOptionsShort) + " " + index;  // FIXME
+            const totalText = "total: " + total + " (" + Math.floor(total / max * 100) + "%)";
+            const searchText = searchExecutedCount > index
+                ? "; match: " + found[index] + " (" + Math.floor(found[index] / Math.max(total, 1) * 100) + "%)"
+                : "";
+            status.textContent = totalText + searchText;
+            status.style.display = 'inline';
+        } else {
+            status.style.display = 'none';
+        }
+    }
+
+    function callActiveRedraw(sample, shiftPressed, ctrlPressed) {
+        if (ctrlPressed) {
+            let minSelected = Math.min(heatActiveSample1, heatActiveSample2);
+            let maxSelected = Math.max(heatActiveSample1, heatActiveSample2);
+
+            heatDiffStart = highlightStart;
+            heatDiffEnd = highlightEnd;
+
+            callHighlightRedraw(highlightStart, highlightEnd, 'Diff');
+            renderDiff(
+                minSelected - currentHeatmap.startBlock(),
+                maxSelected - currentHeatmap.startBlock(),
+                heatDiffStart - currentHeatmap.startBlock(),
+                heatDiffEnd - currentHeatmap.startBlock()
+            );
+        } else {
+            heatDiffStart = -1;
+            heatDiffEnd = -1;
+            if (shiftPressed && heatActiveSample1 !== -1) {
+                heatActiveSample2 = sample;
+            } else {
+                heatActiveSample1 = heatActiveSample2 = sample;
+            }
+
+            let minSelected = Math.min(heatActiveSample1, heatActiveSample2);
+            let maxSelected = Math.max(heatActiveSample1, heatActiveSample2);
+
+            callHighlightRedraw(highlightStart, highlightEnd, 'Diff');
+            callHighlightRedraw(minSelected, maxSelected, 'Active');
+            renderTraces(
+                Math.max(0, minSelected - currentHeatmap.startBlock()),
+                Math.min(currentHeatmap.heatmap().length - 1, maxSelected - currentHeatmap.startBlock())
+            );
+        }
+    }
+
+    window.addEventListener('keydown', function (e) {
+        if (e.key === 'Shift') {
+            callSelectionRedraw(heatLastSample, true, e.ctrlKey);
+        } else if (e.key === 'Control') {
+            callSelectionRedraw(heatLastSample, e.shiftKey, true);
+        }
+    });
+
+    window.addEventListener('keyup', function (e) {
+        if (e.key === 'Shift') {
+            callSelectionRedraw(heatLastSample, false, e.ctrlKey);
+        } else if (e.key === 'Control') {
+            callSelectionRedraw(heatLastSample, e.shiftKey, false);
+        }
+    });
+
+    heatCanvas.onmousemove = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        if (y >= heatHeight) {
+            y = heatHeight - 1;
+        }
+        heatLastSample = x * heatHeight + y;
+        if ((event.buttons & 1) === 1) {
+            callSelectionRedraw(heatLastSample, true, event.ctrlKey);
+        } else {
+            callSelectionRedraw(heatLastSample, event.shiftKey, event.ctrlKey);
+        }
+    }
+
+    heatCanvas.onmouseout = function () {
+        status.style.display = 'none';
+    };
+
+    heatCanvas.onmousedown = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        let sample = x * heatHeight + y;
+
+        callActiveRedraw(sample, event.shiftKey, event.ctrlKey);
+    };
+
+    heatCanvas.onmouseup = function (event) {
+        let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
+        let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
+        let sample = x * heatHeight + y;
+
+        callActiveRedraw(sample, true, event.ctrlKey);
+    };
+
+
+
+init();
+// FIXME search(/*highlight:*/);
+</script></body></html>
