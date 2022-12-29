@@ -4,36 +4,31 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
 
 public class RequestParser {
 
-    public static final String REQUEST_PATH = "/v0/entity";
     public static final String ID_PARAM_NAME = "id=";
     public static final String ACK_PARAM_NAME = "ack=";
     public static final String FROM_PARAM_NAME = "from=";
+    public static final String START_PARAM_NAME = "start=";
+    public static final String END_PARAM_NAME = "end=";
 
     private final Request request;
+    private final Map<String, Param> paramsMap = new HashMap<>();
     private boolean isFailed;
     private String failStatus;
     private List<Integer> successStatuses;
-    private String id;
-    private int ack;
-    private int from;
 
     public RequestParser(Request request) {
         this.request = request;
     }
 
-    @CanIgnoreReturnValue
-    public RequestParser checkPath() {
-        if (isFailed) {
-            return this;
-        }
-        if (!request.getPath().equals(REQUEST_PATH)) {
-            setFailedWithStatus(Response.BAD_REQUEST);
-        }
-        return this;
+    public static RequestParser parse(Request request) {
+        return new RequestParser(request);
     }
 
     @CanIgnoreReturnValue
@@ -53,9 +48,11 @@ public class RequestParser {
         if (isFailed) {
             return this;
         }
-        id = request.getParameter(ID_PARAM_NAME);
+        String id = request.getParameter(ID_PARAM_NAME);
         if (id == null || id.isBlank()) {
             setFailedWithStatus(Response.BAD_REQUEST);
+        } else {
+            paramsMap.put(ID_PARAM_NAME, new Param(id));
         }
         return this;
     }
@@ -69,15 +66,20 @@ public class RequestParser {
         String fromString = request.getParameter(FROM_PARAM_NAME);
         try {
             if (ackString == null && fromString == null) {
-                from = clusterUrlsSize;
-                ack = quorum(from);
+                int from = clusterUrlsSize;
+                int ack = quorum(from);
+                paramsMap.put(ACK_PARAM_NAME, new Param(ack));
+                paramsMap.put(FROM_PARAM_NAME, new Param(from));
             } else if (ackString == null || fromString == null) {
                 setFailedWithStatus(Response.BAD_REQUEST);
             } else {
-                ack = Integer.parseInt(ackString);
-                from = Integer.parseInt(fromString);
+                int ack = Integer.parseInt(ackString);
+                int from = Integer.parseInt(fromString);
                 if (ack <= 0 || ack > from || from > clusterUrlsSize) {
                     setFailedWithStatus(Response.BAD_REQUEST);
+                } else {
+                    paramsMap.put(ACK_PARAM_NAME, new Param(ack));
+                    paramsMap.put(FROM_PARAM_NAME, new Param(from));
                 }
             }
         } catch (NumberFormatException e) {
@@ -86,32 +88,65 @@ public class RequestParser {
         return this;
     }
 
+    @CanIgnoreReturnValue
+    public RequestParser checkStart() {
+        if (isFailed) {
+            return this;
+        }
+        String start = request.getParameter(START_PARAM_NAME);
+        if (start == null || start.isBlank()) {
+            setFailedWithStatus(Response.BAD_REQUEST);
+        } else {
+            paramsMap.put(START_PARAM_NAME, new Param(start));
+        }
+        return this;
+    }
+
+    @CanIgnoreReturnValue
+    public RequestParser checkEnd() {
+        if (isFailed) {
+            return this;
+        }
+        String end = request.getParameter(END_PARAM_NAME);
+        if (end != null && end.isBlank()) {
+            setFailedWithStatus(Response.BAD_REQUEST);
+        } else {
+            paramsMap.put(END_PARAM_NAME, new Param(end));
+        }
+        return this;
+    }
+
+    @CanIgnoreReturnValue
+    public RequestParser onSuccess(Consumer<RequestParser> consumer) {
+        if (isFailed) {
+            return this;
+        }
+        consumer.accept(this);
+        return this;
+    }
+
+    @CanIgnoreReturnValue
+    public RequestParser onFail(Consumer<RequestParser> consumer) {
+        if (isFailed) {
+            consumer.accept(this);
+        }
+        return this;
+    }
+
     public List<Integer> successStatuses() {
         return successStatuses;
-    }
-
-    public String id() {
-        return id;
-    }
-
-    public int ack() {
-        return ack;
-    }
-
-    public int from() {
-        return from;
     }
 
     public String failStatus() {
         return failStatus;
     }
 
-    public boolean isFailed() {
-        return isFailed;
-    }
-
     public Request getRequest() {
         return request;
+    }
+
+    public Param getParam(String name) {
+        return paramsMap.get(name);
     }
 
     private void setFailedWithStatus(String status) {
@@ -121,6 +156,22 @@ public class RequestParser {
 
     private static int quorum(int from) {
         return (from / 2) + 1;
+    }
+
+    public static class Param {
+        final Object value;
+
+        private Param(Object value) {
+            this.value = value;
+        }
+
+        public String asString() {
+            return (String) value;
+        }
+
+        public int asInt() {
+            return (int) value;
+        }
     }
 
 }

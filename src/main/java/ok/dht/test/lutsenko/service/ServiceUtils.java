@@ -63,7 +63,7 @@ public final class ServiceUtils {
     private ServiceUtils() {
     }
 
-    public static void sendResponse(HttpSession session, Response response) {
+    public static void sendResponse(ExtendedSession session, Response response) {
         try {
             session.sendResponse(response);
         } catch (Exception e) {
@@ -77,7 +77,7 @@ public final class ServiceUtils {
         }
     }
 
-    public static void sendResponse(HttpSession session, String resultCode) {
+    public static void sendResponse(ExtendedSession session, String resultCode) {
         sendResponse(session, new Response(resultCode, Response.EMPTY));
     }
 
