@@ -6,8 +6,6 @@ import ok.dht.test.ServiceFactory;
 import ok.dht.test.kosnitskiy.dao.Config;
 import ok.dht.test.kosnitskiy.dao.MemorySegmentDao;
 import ok.dht.test.kosnitskiy.server.HttpServerImpl;
-import one.nio.http.HttpServerConfig;
-import one.nio.server.AcceptorConfig;
 
 import java.io.IOException;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -19,7 +17,7 @@ public class ServiceImpl implements Service {
 
     private static final int IN_MEMORY_SIZE = 8388608;
 
-    private static final int CORE_POOL_SIZE = 1;
+    private static final int CORE_POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private static final int MAX_POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private static final long KEEP_ALIVE_SECS = 60L;
     private static final int MAX_QUEUE_SIZE = MAX_POOL_SIZE * 40;
@@ -35,7 +33,7 @@ public class ServiceImpl implements Service {
     @Override
     public CompletableFuture<?> start() throws IOException {
         memorySegmentDao = new MemorySegmentDao(new Config(config.workingDir(), IN_MEMORY_SIZE));
-        server = new HttpServerImpl(createConfigFromPort(config.selfPort()), memorySegmentDao,
+        server = new HttpServerImpl(config, memorySegmentDao,
                 new ThreadPoolExecutor(
                         CORE_POOL_SIZE,
                         MAX_POOL_SIZE,
@@ -54,16 +52,7 @@ public class ServiceImpl implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    private static HttpServerConfig createConfigFromPort(int port) {
-        HttpServerConfig httpConfig = new HttpServerConfig();
-        AcceptorConfig acceptor = new AcceptorConfig();
-        acceptor.port = port;
-        acceptor.reusePort = true;
-        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
-        return httpConfig;
-    }
-
-    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

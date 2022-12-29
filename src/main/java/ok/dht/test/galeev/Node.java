@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -50,6 +51,7 @@ public abstract class Node {
         return Objects.hashCode(nodeAddress);
     }
 
+    // First value is for cancellation
     // If null was returned -> some error
     // If (null,null) -> Not Found
     // If (timestamp, null) -> tombstone
@@ -71,6 +73,10 @@ public abstract class Node {
         public LocalNode(ServiceConfig config) throws IOException {
             super(config.selfUrl());
             dao = createDao(config);
+        }
+
+        public CompletableFuture<Iterator<Entry<String, Entry<Timestamp, byte[]>>>> get(String from, String to) {
+            return CompletableFuture.completedFuture(dao.get(from, to));
         }
 
         @Override
@@ -133,7 +139,6 @@ public abstract class Node {
 
     public static class ClusterNode extends Node {
 
-        public static final byte[] EMPTY_BODY = new byte[0];
         private final HttpClient httpClient;
 
         public ClusterNode(String nodeAddress, HttpClient httpClient) {
@@ -141,15 +146,17 @@ public abstract class Node {
             this.httpClient = httpClient;
         }
 
+        @SuppressWarnings("FutureReturnValueIgnored")
         @Override
         public CompletableFuture<Entry<Timestamp, byte[]>> get(String key) {
             if (!isAlive) {
                 return CompletableFuture.completedFuture(null);
             }
-            return httpClient.sendAsync(
+            CompletableFuture<HttpResponse<byte[]>> sendAsyncFuture = httpClient.sendAsync(
                     requestBuilderForKey(nodeAddress, key).GET().build(),
                     HttpResponse.BodyHandlers.ofByteArray()
-            ).thenApply((response) -> {
+            );
+            CompletableFuture<Entry<Timestamp, byte[]>> returnFuture = sendAsyncFuture.thenApply((response) -> {
                 if (response.statusCode() == 200) {
                     return getEntryFromByteArray(response.body());
                 } else if (response.statusCode() == 404) {
@@ -167,6 +174,13 @@ public abstract class Node {
                 ), e);
                 return null;
             });
+            returnFuture.whenComplete((entry, throwable) -> {
+                if (!sendAsyncFuture.isDone()) {
+                    LOGGER.debug("Canceling useless GET requests by key: " + key);
+                    sendAsyncFuture.cancel(false);
+                }
+            });
+            return returnFuture;
         }
 
         @Override

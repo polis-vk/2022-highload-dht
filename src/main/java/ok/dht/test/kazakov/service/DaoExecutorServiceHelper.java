@@ -5,8 +5,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -21,25 +21,28 @@ public final class DaoExecutorServiceHelper {
         // no operations
     }
 
-    public static ExecutorService createAbortThreadPool(final int poolSize,
+    public static ExecutorService createAbortThreadPool(final String threadName,
+                                                        final int poolSize,
                                                         final int queueCapacity) {
-        return createExecutorService(poolSize, queueCapacity, new ThreadPoolExecutor.AbortPolicy());
+        return createExecutorService(threadName, poolSize, queueCapacity, new ThreadPoolExecutor.AbortPolicy());
     }
 
-    public static ExecutorService createDiscardOldestThreadPool(final int poolSize,
+    public static ExecutorService createDiscardOldestThreadPool(final String threadName,
+                                                                final int poolSize,
                                                                 final int queueCapacity) {
-        return createExecutorService(poolSize, queueCapacity, new DiscardOldestRejectionPolicy());
+        return createExecutorService(threadName, poolSize, queueCapacity, new DiscardOldestRejectionPolicy());
     }
 
-    private static ExecutorService createExecutorService(final int poolSize,
+    private static ExecutorService createExecutorService(final String threadName,
+                                                         final int poolSize,
                                                          final int queueCapacity,
                                                          final RejectedExecutionHandler rejectedExecutionHandler) {
         return new ThreadPoolExecutor(poolSize,
                 poolSize,
                 0L,
                 TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(queueCapacity),
-                new DaoAsyncExecutorThreadFactory(),
+                new LinkedBlockingQueue<>(queueCapacity),
+                new DaoAsyncExecutorThreadFactory(threadName),
                 rejectedExecutionHandler);
     }
 
@@ -61,11 +64,16 @@ public final class DaoExecutorServiceHelper {
 
     private static final class DaoAsyncExecutorThreadFactory implements ThreadFactory {
 
+        private final String threadName;
         private final AtomicInteger threadsCreated = new AtomicInteger(1);
+
+        private DaoAsyncExecutorThreadFactory(final String threadName) {
+            this.threadName = threadName;
+        }
 
         @Override
         public Thread newThread(@Nonnull final Runnable target) {
-            final Thread thread = new Thread(target, "DaoAsyncExecutor#" + threadsCreated.getAndIncrement());
+            final Thread thread = new Thread(target, threadName + "#" + threadsCreated.getAndIncrement());
             thread.setUncaughtExceptionHandler(new DaoAsyncExecutorUncaughtExceptionHandler());
             return thread;
         }

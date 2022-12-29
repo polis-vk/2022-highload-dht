@@ -1,7 +1,7 @@
 package ok.dht.test.kovalenko.dao.iterators;
 
-import ok.dht.test.kovalenko.dao.aliases.TypedEntry;
 import ok.dht.test.kovalenko.dao.aliases.TypedIterator;
+import ok.dht.test.kovalenko.dao.aliases.TypedTimedEntry;
 import ok.dht.test.kovalenko.dao.comparators.IteratorComparator;
 import ok.dht.test.kovalenko.dao.utils.MergeIteratorUtils;
 
@@ -17,7 +17,7 @@ public class MergeIterator
     private final Queue<PeekIterator> iterators = new PriorityQueue<>(IteratorComparator.INSTANSE);
     private final TombstoneFilteringIterator tombstoneFilteringIterator;
 
-    public MergeIterator(List<Iterator<TypedEntry>> memoryIterators, List<Iterator<TypedEntry>> diskIterators)
+    public MergeIterator(List<Iterator<TypedTimedEntry>> memoryIterators, List<Iterator<TypedTimedEntry>> diskIterators)
             throws IOException, ReflectiveOperationException {
         memoryIterators.forEach(it -> iterators.add(new PeekIterator(it, iterators.size())));
         diskIterators.forEach(it -> iterators.add(new PeekIterator(it, iterators.size())));
@@ -30,8 +30,8 @@ public class MergeIterator
     }
 
     @Override
-    public TypedEntry next() {
-        TypedEntry result = tombstoneFilteringIterator.next();
+    public TypedTimedEntry next() {
+        TypedTimedEntry result = tombstoneFilteringIterator.next();
         MergeIteratorUtils.skipEntry(iterators, result);
         return result;
     }
