@@ -233,4 +233,21 @@ class SingleNodeTest extends TestBase {
                 service.post(key, value).statusCode()
         );
     }
+
+    @ServiceTest(stage = 1)
+    void restart(ServiceInfo service) throws Exception {
+        String key = randomId();
+        byte[] value = randomValue();
+
+        // Insert & check
+        assertEquals(HttpURLConnection.HTTP_CREATED, service.upsert(key, value).statusCode());
+        assertArrayEquals(value, service.get(key).body());
+
+        // Restart
+        service.stop();
+        service.start();
+
+        // Check
+        assertArrayEquals(value, service.get(key).body());
+    }
 }
