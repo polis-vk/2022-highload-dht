@@ -93,9 +93,9 @@ public class MappedFileDiskSSTableStorage
         }
     }
 
-    public TypedEntry get(ByteBuffer key) throws IOException, ReflectiveOperationException {
+    public TypedTimedEntry get(ByteBuffer key) throws IOException, ReflectiveOperationException {
         updateTables(filesCounter.get());
-        TypedEntry res = null;
+        TypedTimedEntry res = null;
         for (MappedFileDiskSSTable diskSSTable : this.descendingMap().values()) {
             if ((res = diskSSTable.get(key)) != null) {
                 return res;
@@ -104,13 +104,13 @@ public class MappedFileDiskSSTableStorage
         return res;
     }
 
-    public List<Iterator<TypedEntry>> get(ByteBuffer from, ByteBuffer to)
+    public List<Iterator<TypedTimedEntry>> get(ByteBuffer from, ByteBuffer to)
             throws ReflectiveOperationException, IOException {
         updateTables(filesCounter.get());
-        List<Iterator<TypedEntry>> res = new ArrayList<>();
+        List<Iterator<TypedTimedEntry>> res = new ArrayList<>();
         ByteBuffer from1 = from == null ? DaoUtils.EMPTY_BYTEBUFFER : from;
         for (MappedFileDiskSSTable diskSSTable : this.descendingMap().values()) {
-            Iterator<TypedEntry> rangeIt = diskSSTable.get(from1, to);
+            Iterator<TypedTimedEntry> rangeIt = diskSSTable.get(from1, to);
             if (rangeIt == null) {
                 continue;
             }
