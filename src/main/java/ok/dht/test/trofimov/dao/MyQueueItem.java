@@ -82,6 +82,6 @@ public class MyQueueItem extends Session.ArrayQueueItem {
 
     @Override
     public int remaining() {
-        return 0;
+        return count - written;
     }
 }
