@@ -47,8 +47,8 @@ public class ExtendedSession extends HttpSession {
     }
 
     private static boolean isRangeItem(QueueItem item) {
-        return item instanceof RangeRequestHandler.EmptyChunkedQueueItem
-                || item instanceof RangeRequestHandler.RangeChunkedQueueItem;
+        return item instanceof RangeRequestHandler.RangeChunkedQueueItem
+                || item instanceof RangeRequestHandler.EmptyChunkedQueueItem;
     }
 
     private void writeItem(QueueItem finalItem) throws IOException {
