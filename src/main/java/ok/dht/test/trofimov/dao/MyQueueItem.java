@@ -79,9 +79,4 @@ public class MyQueueItem extends Session.ArrayQueueItem {
                 .append(CRLF);
         return bytesBuilder.toBytes();
     }
-
-    @Override
-    public int remaining() {
-        return count - written;
-    }
 }
