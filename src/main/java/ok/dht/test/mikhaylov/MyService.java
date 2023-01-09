@@ -3,28 +3,28 @@ package ok.dht.test.mikhaylov;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
-import one.nio.http.HttpException;
+import ok.dht.test.mikhaylov.internal.InternalHttpClient;
+import ok.dht.test.mikhaylov.internal.OneNioHttpClient;
+import ok.dht.test.mikhaylov.resolver.ConsistentHashingResolver;
+import ok.dht.test.mikhaylov.resolver.ShardResolver;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
-import one.nio.http.HttpSession;
 import one.nio.http.Path;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.net.Session;
 import one.nio.server.AcceptorConfig;
-import one.nio.server.SelectorThread;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingDeque;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
+import java.util.regex.Pattern;
 
 public class MyService implements Service {
 
@@ -34,25 +34,40 @@ public class MyService implements Service {
 
     private RocksDB db;
 
-    private ExecutorService requestHandlers;
+    private final ShardResolver shardResolver;
+
+    private InternalHttpClient internalHttpClient;
+
+    private static final Logger logger = LoggerFactory.getLogger(MyService.class);
 
     private static final byte[] EMPTY_ID_RESPONSE_BODY = strToBytes("Empty id");
-    private static final int REQUEST_HANDLERS = 4;
-    private static final int MAX_REQUESTS = 128;
 
-    public MyService(ServiceConfig config) {
+    private static final Set<Integer> ALLOWED_METHODS = Set.of(Request.METHOD_GET, Request.METHOD_PUT,
+            Request.METHOD_DELETE);
+
+    private static final String ENTITY_PATH = "/v0/entity";
+
+    private static final String ENTITY_INTERNAL_PATH = "/v0/internal/entity";
+
+    private static final Pattern ENTITY_PATH_PATTERN = Pattern.compile(ENTITY_PATH);
+
+    public MyService(ServiceConfig config, ShardResolver shardResolver) {
         this.config = config;
+        this.shardResolver = shardResolver;
+    }
+
+    public static Response makeError(Logger logger, String shard, Throwable e) {
+        logger.error("Could not proxy request to {}", shard, e);
+        return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+    }
+
+    public static String convertPathToInternal(String path) {
+        return ENTITY_PATH_PATTERN.matcher(path).replaceFirst(ENTITY_INTERNAL_PATH);
     }
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        requestHandlers = new ThreadPoolExecutor(
-                REQUEST_HANDLERS,
-                REQUEST_HANDLERS,
-                0L,
-                TimeUnit.MILLISECONDS,
-                new LinkedBlockingDeque<>(MAX_REQUESTS)
-        );
+        internalHttpClient = new OneNioHttpClient(config.clusterUrls());
         try {
             db = RocksDB.open(config.workingDir().toString());
         } catch (RocksDBException e) {
@@ -75,12 +90,16 @@ public class MyService implements Service {
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
-        server.stop();
+        if (server != null) {
+            server.stop();
+        }
         server = null;
-        requestHandlers.shutdownNow();
         try {
-            db.closeE();
+            if (db != null) {
+                db.closeE();
+            }
         } catch (RocksDBException e) {
+            logger.error("Error while closing db", e);
             throw new IOException(e);
         }
         db = null;
@@ -91,29 +110,60 @@ public class MyService implements Service {
         return s.getBytes(StandardCharsets.UTF_8);
     }
 
-    @Path("/v0/entity")
+    @Path(ENTITY_PATH)
     public Response handle(Request request) {
         String id = request.getParameter("id=");
         if (id == null || id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, EMPTY_ID_RESPONSE_BODY);
         }
+        if (!ALLOWED_METHODS.contains(request.getMethod())) {
+            return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+        }
+        String shard = shardResolver.resolve(id);
+        if (shard.equals(config.selfUrl())) {
+            return handleLocal(request, id);
+        }
+        return proxyRequest(request, shard);
+    }
+
+    // Assumes everything is valid and the shard containing the id is this node
+    @Path(ENTITY_INTERNAL_PATH)
+    public Response handleInternal(Request request) {
+        // todo: verify that the request is not coming from outside
+        String id = request.getParameter("id=");
+        return handleLocal(request, id);
+    }
+
+    private Response handleLocal(Request request, String id) {
         try {
-            switch (request.getMethod()) {
-                case Request.METHOD_GET:
-                    return handleGet(id);
-                case Request.METHOD_PUT:
-                    return handlePut(id, request.getBody());
-                case Request.METHOD_DELETE:
-                    return handleDelete(id);
-                default:
-                    return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            }
+            return switch (request.getMethod()) {
+                case Request.METHOD_GET -> dbGet(id);
+                case Request.METHOD_PUT -> dbPut(id, request.getBody());
+                case Request.METHOD_DELETE -> dbDelete(id);
+                // Should never happen
+                default -> {
+                    logger.error("Unexpected method: {}", request.getMethod());
+                    throw new IllegalArgumentException("Method " + request.getMethod() + " is not allowed");
+                }
+            };
         } catch (RocksDBException e) {
+            logger.error("RocksDB error while handling request: {}", request, e);
             return new Response(Response.INTERNAL_ERROR, strToBytes("Could not access database"));
         }
     }
 
-    private Response handleGet(final String id) throws RocksDBException {
+    private Response proxyRequest(Request request, String shard) {
+        try {
+            return internalHttpClient.proxyRequest(request, shard);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return makeError(logger, shard, e);
+        } catch (ExecutionException | TimeoutException e) {
+            return makeError(logger, shard, e);
+        }
+    }
+
+    private Response dbGet(final String id) throws RocksDBException {
         byte[] value = db.get(strToBytes(id));
         if (value == null) {
             return new Response(Response.NOT_FOUND, Response.EMPTY);
@@ -122,75 +172,26 @@ public class MyService implements Service {
         }
     }
 
-    private Response handlePut(final String id, final byte[] body) throws RocksDBException {
+    private Response dbPut(final String id, final byte[] body) throws RocksDBException {
         db.put(strToBytes(id), body);
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    private Response handleDelete(final String id) throws RocksDBException {
+    private Response dbDelete(final String id) throws RocksDBException {
         db.delete(strToBytes(id));
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
-    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
         public Service create(ServiceConfig config) {
-            return new MyService(config);
-        }
-    }
-
-    private class MyHttpServer extends HttpServer {
-        public MyHttpServer(HttpServerConfig config) throws IOException {
-            super(config);
-        }
-
-        @Override
-        public void handleRequest(Request request, HttpSession session) throws IOException {
-            try {
-                requestHandlers.submit(() -> handleRequestImpl(request, session));
-            } catch (RejectedExecutionException ignored) {
-                session.sendError(Response.SERVICE_UNAVAILABLE, "Server is overloaded");
+            ShardResolver resolver = new ConsistentHashingResolver();
+            for (String url : config.clusterUrls()) {
+                resolver.addShard(url);
             }
-        }
-
-        private void handleRequestImpl(Request request, HttpSession session) {
-            try {
-                super.handleRequest(request, session);
-            } catch (Exception e) {
-                handleRequestException(e, session);
-            }
-        }
-
-        private static void handleRequestException(Exception e, HttpSession session) {
-            try {
-                // missing required parameter
-                if (e instanceof HttpException && e.getCause() instanceof NoSuchElementException) {
-                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-                } else {
-                    session.sendError(Response.INTERNAL_ERROR, e.getMessage());
-                }
-            } catch (IOException ex) {
-                RuntimeException re = new RuntimeException(ex);
-                re.addSuppressed(e);
-                throw re;
-            }
-        }
-
-        @Override
-        public void handleDefault(Request request, HttpSession session) throws IOException {
-            session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
-        }
-
-        @Override
-        public synchronized void stop() {
-            for (SelectorThread selectorThread : selectors) {
-                for (Session session : selectorThread.selector) {
-                    session.close();
-                }
-            }
-            super.stop();
+            return new MyService(config, resolver);
         }
     }
 }
