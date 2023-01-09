@@ -16,13 +16,13 @@ public @interface DaoFactoryB {
 
     int week() default 1;
 
-    interface Factory<D, E extends Entry<D>> {
+    interface Factory<D, E extends TimedEntry<D>> {
 
-        static ServiceConfig extractConfig(Dao<String, Entry<String>> dao) {
+        static ServiceConfig extractConfig(Dao<String, TimedEntry<String>> dao) {
             return ((TestDaoB<?, ?>) dao).config;
         }
 
-        static Dao<String, Entry<String>> reopen(Dao<String, Entry<String>> dao) throws IOException {
+        static Dao<String, TimedEntry<String>> reopen(Dao<String, TimedEntry<String>> dao) throws IOException {
             return ((TestDaoB<?, ?>) dao).reopen();
         }
 
@@ -38,11 +38,11 @@ public @interface DaoFactoryB {
 
         D fromString(String data);
 
-        E fromBaseEntry(Entry<D> baseEntry);
+        E fromBaseEntry(TimedEntry<D> baseTimedEntry);
 
         byte[] toBytes(D data);
 
-        default Dao<String, Entry<String>> createStringDao(ServiceConfig config) throws IOException {
+        default Dao<String, TimedEntry<String>> createStringDao(ServiceConfig config) throws IOException {
             return new TestDaoB<>(this, config);
         }
     }

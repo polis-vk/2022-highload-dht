@@ -1,17 +1,17 @@
 package ok.dht.test.kovalenko.dao.iterators;
 
-import ok.dht.test.kovalenko.dao.aliases.TypedEntry;
 import ok.dht.test.kovalenko.dao.aliases.TypedIterator;
+import ok.dht.test.kovalenko.dao.aliases.TypedTimedEntry;
 
 import java.util.Iterator;
 
 public class PeekIterator implements TypedIterator {
 
     private final int priority;
-    private final Iterator<TypedEntry> delegate;
-    private TypedEntry peek;
+    private final Iterator<TypedTimedEntry> delegate;
+    private TypedTimedEntry peek;
 
-    public PeekIterator(Iterator<TypedEntry> delegate, int priority) {
+    public PeekIterator(Iterator<TypedTimedEntry> delegate, int priority) {
         this.delegate = delegate;
         this.priority = priority;
     }
@@ -22,13 +22,13 @@ public class PeekIterator implements TypedIterator {
     }
 
     @Override
-    public TypedEntry next() {
-        TypedEntry peekNext = peek();
+    public TypedTimedEntry next() {
+        TypedTimedEntry peekNext = peek();
         this.peek = null;
         return peekNext;
     }
 
-    public TypedEntry peek() {
+    public TypedTimedEntry peek() {
         if (peek == null && delegate.hasNext()) {
             peek = delegate.next();
         }
