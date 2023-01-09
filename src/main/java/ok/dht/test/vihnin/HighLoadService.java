@@ -1,4 +1,5 @@
 package ok.dht.test.vihnin;
+
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
@@ -15,9 +16,11 @@ public class HighLoadService implements Service {
     private HttpServer server;
     private DataBase<String, byte[]> storage;
     private ResponseManager responseManager;
+
     public HighLoadService(ServiceConfig config) {
         this.config = config;
     }
+
     private static DataBase<String, byte[]> getDataStorage(ServiceConfig config) {
         DataBase<String, byte[]> storage;
         try {
@@ -28,6 +31,7 @@ public class HighLoadService implements Service {
         }
         return storage;
     }
+
     @Override
     public CompletableFuture<?> start() throws IOException {
         storage = getDataStorage(this.config);
@@ -36,6 +40,7 @@ public class HighLoadService implements Service {
         server.start();
         return CompletableFuture.completedFuture(null);
     }
+
     @Override
     public CompletableFuture<?> stop() throws IOException {
         server.stop();
@@ -45,6 +50,7 @@ public class HighLoadService implements Service {
         storage = null;
         return CompletableFuture.completedFuture(null);
     }
+
     @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
