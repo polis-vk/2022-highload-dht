@@ -15,7 +15,7 @@ public abstract class DiskSSTable<PairedFileT>
         this.value = value;
     }
 
-    public static int sizeOf(TypedEntry entry) {
+    public static int sizeOf(TypedTimedEntry entry) {
         return MemorySSTable.sizeOf(entry) + FileUtils.INDEX_SIZE;
     }
 

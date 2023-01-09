@@ -3,6 +3,7 @@ package ok.dht.test.trofimov.dao;
 import ok.dht.ServiceConfig;
 import ok.dht.test.trofimov.common.Responses;
 import ok.dht.test.trofimov.dao.impl.InMemoryDao;
+import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -17,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -28,9 +30,16 @@ import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 public class MyHttpServer extends HttpServer {
     private static final Logger logger = LoggerFactory.getLogger(MyHttpServer.class);
@@ -41,8 +50,11 @@ public class MyHttpServer extends HttpServer {
     private final ServiceConfig config;
     private final InMemoryDao dao;
     private ThreadPoolExecutor requestsExecutor;
+    private ExecutorService clientExecutor;
+    private ExecutorService aggregatorExecutor;
     private final HttpClient client;
     public static final int TIMEOUT_EXECUTOR = 10;
+    public static final int CLIENT_EXECUTOR_THREADS = 2;
 
     public MyHttpServer(ServiceConfig config) throws IOException {
         super(createConfigFromPort(config.selfPort()));
@@ -57,10 +69,16 @@ public class MyHttpServer extends HttpServer {
     }
 
     private void initExecutor() {
-        int threadsCount = Runtime.getRuntime().availableProcessors() - 2;
+        int threadsCount = Math.max(Runtime.getRuntime().availableProcessors() - 2, 1);
         requestsExecutor = new ThreadPoolExecutor(threadsCount, threadsCount, 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(REQUESTS_MAX_QUEUE_SIZE), new ThreadPoolExecutor.AbortPolicy());
         requestsExecutor.prestartAllCoreThreads();
+
+        clientExecutor = Executors.newFixedThreadPool(CLIENT_EXECUTOR_THREADS,
+                new CustomThreadFactory("client-executor"));
+
+        aggregatorExecutor = Executors.newFixedThreadPool(CLIENT_EXECUTOR_THREADS,
+                new CustomThreadFactory("aggregator-executor"));
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -105,8 +123,8 @@ public class MyHttpServer extends HttpServer {
 
             if (localRequest != null) {
                 try {
-                    sendResponse(session, handleRequest(request, id));
-                } catch (IOException e) {
+                    sendResponse(session, handleRequest(request, id).get());
+                } catch (InterruptedException | ExecutionException e) {
                     logger.error("Error while handling request", e);
                     sendResponse(session, new Response(Response.INTERNAL_ERROR, Response.EMPTY));
                 }
@@ -125,64 +143,84 @@ public class MyHttpServer extends HttpServer {
             }
 
             List<HashItem> nodes = getArrayOfNodesFor(config.clusterUrls(), id, from);
-            int success = 0;
-            Response[] responses = new Response[ack];
+            AtomicInteger success = new AtomicInteger(0);
+            AtomicInteger completed = new AtomicInteger(0);
+            AtomicBoolean requestHandled = new AtomicBoolean(false);
+            AtomicInteger anySuccessIndex = new AtomicInteger();
+            CompletableFuture<?>[] responses = new CompletableFuture<?>[from];
+            AtomicReferenceArray<Response> responseArray = new AtomicReferenceArray<>(from);
             request.addHeader(TIMESTAMP_HEADER + System.currentTimeMillis());
             for (int i = 0; i < from; i++) {
-                if (success == ack) {
-                    break;
-                }
-                HashItem node = nodes.get(i);
-                try {
-                    if (node.url.equals(config.selfUrl())) {
-                        responses[success] = handleRequest(request, id);
-                    } else {
-                        responses[success] = proxyRequest(node.url, request);
-                    }
-                    success++;
-                } catch (IOException e) {
-                    logger.error("Exception while proxy request to {}", node.url, e);
-                } catch (InterruptedException e) {
-                    logger.error("Interrupted while proxy request to {}", node.url, e);
-                    Thread.currentThread().interrupt();
-                }
-            }
-            if (success < ack) {
-                sendResponse(session, new Response(Responses.NOT_ENOUGH_REPLICAS, Response.EMPTY));
-                return;
-            }
-
-            if (request.getMethod() == Request.METHOD_GET) {
-                int countNotFound = 0;
-                long freshestEntryTimestamp = -1;
-                Response freshestResponse = null;
-                for (Response item : responses) {
-                    if (item.getStatus() == HttpURLConnection.HTTP_NOT_FOUND) {
-                        countNotFound++;
-                        continue;
-                    }
-                    long timestamp = Long.parseLong(item.getHeader(TIMESTAMP_HEADER));
-                    if (timestamp > freshestEntryTimestamp) {
-                        freshestEntryTimestamp = timestamp;
-                        freshestResponse = item;
-                    }
-                }
-                Response result;
-                if (countNotFound == ack
-                        || freshestResponse == null
-                        || (freshestResponse.getBody().length == 0
-                        && freshestResponse.getHeader(X_TOMB_HEADER) != null)) {
-                    result = new Response(Response.NOT_FOUND, Response.EMPTY);
+                int finalI = i;
+                HashItem node = nodes.get(finalI);
+                if (node.url.equals(config.selfUrl())) {
+                    responses[finalI] = handleRequest(request, id);
                 } else {
-                    result = new Response(Response.OK, freshestResponse.getBody());
+                    responses[finalI] = proxyRequest(node.url, request);
                 }
-                sendResponse(session, result);
-            } else {
-                String responseStatusCode = getResponseStatusCode(responses[0].getStatus());
-                Response response = new Response(responseStatusCode, responses[0].getBody());
-                sendResponse(session, response);
-            }
+                responses[finalI].whenCompleteAsync((v, throwable) -> {
+                    responseArray.set(finalI, (Response) v);
+                    completed.incrementAndGet();
+                    if (throwable == null) {
+                        success.incrementAndGet();
+                        anySuccessIndex.set(finalI);
+                    }
+                    int curSuccess = success.get();
+                    if (completed.get() == from && curSuccess < ack) {
+                        if (requestHandled.compareAndSet(false, true)) {
+                            sendResponse(session, new Response(Responses.NOT_ENOUGH_REPLICAS, Response.EMPTY));
+                        }
+                        return;
+                    }
 
+                    if (curSuccess >= ack && requestHandled.compareAndSet(false, true)) {
+                        logger.debug("success handle request {} {} for key {}, from = {}", request.getMethod(),
+                                config.selfPort(), id, from);
+                        if (request.getMethod() == Request.METHOD_GET) {
+                            int countNotFound = 0;
+                            long freshestEntryTimestamp = -1;
+                            Response freshestResponse = null;
+                            for (int j = 0; j < from; j++) {
+                                Response item = responseArray.get(j);
+                                if (item == null) {
+                                    continue;
+                                }
+
+                                if (item.getStatus() == HttpURLConnection.HTTP_NOT_FOUND) {
+                                    countNotFound++;
+                                    continue;
+                                }
+                                long timestamp = Long.parseLong(item.getHeader(TIMESTAMP_HEADER));
+                                if (timestamp > freshestEntryTimestamp) {
+                                    freshestEntryTimestamp = timestamp;
+                                    freshestResponse = item;
+                                }
+                            }
+                            Response result;
+                            if (countNotFound == ack
+                                    || freshestResponse == null
+                                    || (freshestResponse.getBody().length == 0
+                                    && freshestResponse.getHeader(X_TOMB_HEADER) != null)) {
+                                result = new Response(Response.NOT_FOUND, Response.EMPTY);
+                            } else {
+                                result = new Response(Response.OK, freshestResponse.getBody());
+                            }
+                            sendResponse(session, result);
+                        } else {
+                            int anyIndex = anySuccessIndex.get();
+                            String responseStatusCode =
+                                    getResponseStatusCode(responseArray.get(anyIndex).getStatus());
+                            Response response =
+                                new Response(responseStatusCode, responseArray.get(anyIndex).getBody());
+                            sendResponse(session, response);
+                        }
+                    } else {
+                        logger.debug("waiting handle request {} {} for key {}, from = {}, curSuccess = {},"
+                                        + " ack ={}, reqHan= {} ", request.getMethod(), config.selfPort(), id, from,
+                                curSuccess, ack, requestHandled.get());
+                    }
+                }, aggregatorExecutor);
+            }
         });
     }
 
@@ -253,8 +291,7 @@ public class MyHttpServer extends HttpServer {
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            HashItem hashItem = (HashItem) o;
+            if (o == null || !(o instanceof HashItem hashItem)) return false;
             return hash == hashItem.hash;
         }
 
@@ -269,42 +306,50 @@ public class MyHttpServer extends HttpServer {
         }
     }
 
-    private Response handleRequest(Request request, String id) throws IOException {
-        String timestamp = request.getHeader(TIMESTAMP_HEADER);
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> {
-                Entry<String> entry = dao.get(id);
-                if (entry == null) {
-                    return new Response(Response.NOT_FOUND, Response.EMPTY);
+    private CompletableFuture<Response> handleRequest(Request request, String id) {
+        return CompletableFuture.supplyAsync(() -> {
+            String timestamp = request.getHeader(TIMESTAMP_HEADER);
+            switch (request.getMethod()) {
+                case Request.METHOD_GET -> {
+                    Entry<String> entry = null;
+                    try {
+                        entry = dao.get(id);
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                    if (entry == null) {
+                        return new Response(Response.NOT_FOUND, Response.EMPTY);
+                    }
+                    String value = entry.value();
+                    Response response;
+                    if (value == null) {
+                        response = new Response(Response.OK, Response.EMPTY);
+                        response.addHeader("X-tomb: 1");
+                    } else {
+                        char[] chars = value.toCharArray();
+                        response = new Response(Response.OK, Base64.decodeFromChars(chars));
+                    }
+                    response.addHeader(TIMESTAMP_HEADER + entry.getTimestamp());
+                    return response;
                 }
-                String value = entry.value();
-                Response response;
-                if (value == null) {
-                    response = new Response(Response.OK, Response.EMPTY);
-                    response.addHeader("X-tomb: 1");
-                } else {
-                    char[] chars = value.toCharArray();
-                    response = new Response(Response.OK, Base64.decodeFromChars(chars));
+                case Request.METHOD_PUT -> {
+                    byte[] value = request.getBody();
+                    dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value)), Long.parseLong(timestamp)));
+                    return new Response(Response.CREATED, Response.EMPTY);
                 }
-                response.addHeader(TIMESTAMP_HEADER + entry.getTimestamp());
-                return response;
+                case Request.METHOD_DELETE -> {
+                    dao.upsert(new BaseEntry<>(id, null, Long.parseLong(timestamp)));
+                    return new Response(Response.ACCEPTED, Response.EMPTY);
+                }
+                default -> {
+                    return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
+                }
             }
-            case Request.METHOD_PUT -> {
-                byte[] value = request.getBody();
-                dao.upsert(new BaseEntry<>(id, new String(Base64.encodeToChars(value)), Long.parseLong(timestamp)));
-                return new Response(Response.CREATED, Response.EMPTY);
-            }
-            case Request.METHOD_DELETE -> {
-                dao.upsert(new BaseEntry<>(id, null, Long.parseLong(timestamp)));
-                return new Response(Response.ACCEPTED, Response.EMPTY);
-            }
-            default -> {
-                return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-            }
-        }
+        }, requestsExecutor);
+
     }
 
-    private Response proxyRequest(String url, Request request) throws IOException, InterruptedException {
+    private CompletableFuture<Response> proxyRequest(String url, Request request) {
         HttpRequest proxyRequest = HttpRequest.newBuilder(URI.create(url + request.getURI()))
                 .method(
                         request.getMethodName(),
@@ -316,28 +361,25 @@ public class MyHttpServer extends HttpServer {
                 .headers("X-timestamp", request.getHeader(TIMESTAMP_HEADER))
                 .build();
 
-        HttpResponse<byte[]> response = client.send(proxyRequest, HttpResponse.BodyHandlers.ofByteArray());
-        String status = getResponseStatusCode(response.statusCode());
-        Response result = new Response(status, response.body());
-        Optional<String> headerTimestamp = response.headers().firstValue("x-timestamp");
-        Optional<String> headerTomb = response.headers().firstValue("x-tomb");
-        headerTimestamp.ifPresent(s -> result.addHeader(TIMESTAMP_HEADER + s));
-        headerTomb.ifPresent(s -> result.addHeader(X_TOMB_HEADER + s));
-        return result;
+        return client.sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
+                .thenApply(r -> {
+                    String status = getResponseStatusCode(r.statusCode());
+                    Response result = new Response(status, r.body());
+                    Optional<String> headerTimestamp = r.headers().firstValue("x-timestamp");
+                    Optional<String> headerTomb = r.headers().firstValue("x-tomb");
+                    headerTimestamp.ifPresent(s -> result.addHeader(TIMESTAMP_HEADER + s));
+                    headerTomb.ifPresent(s -> result.addHeader(X_TOMB_HEADER + s));
+                    return result;
+                });
+
     }
 
     @Override
     public synchronized void stop() {
-        requestsExecutor.shutdown();
-        try {
-            if (!requestsExecutor.awaitTermination(TIMEOUT_EXECUTOR, TimeUnit.SECONDS)) {
-                shutdownNowExecutor();
-            }
-        } catch (InterruptedException e) {
-            logger.error("InterruptedException while stopping requestExecutor", e);
-            Thread.currentThread().interrupt();
-            shutdownNowExecutor();
-        }
+        shutdownExecutor(requestsExecutor);
+        shutdownExecutor(clientExecutor);
+        shutdownExecutor(aggregatorExecutor);
+
         closeSessions();
         super.stop();
         try {
@@ -347,8 +389,21 @@ public class MyHttpServer extends HttpServer {
         }
     }
 
-    private void shutdownNowExecutor() {
-        List<Runnable> listOfRequests = requestsExecutor.shutdownNow();
+    private void shutdownExecutor(ExecutorService threadPoolExecutor) {
+        threadPoolExecutor.shutdown();
+        try {
+            if (!threadPoolExecutor.awaitTermination(TIMEOUT_EXECUTOR, TimeUnit.SECONDS)) {
+                shutdownNowExecutor(threadPoolExecutor);
+            }
+        } catch (InterruptedException e) {
+            logger.error("InterruptedException while stopping requestExecutor", e);
+            Thread.currentThread().interrupt();
+            shutdownNowExecutor(threadPoolExecutor);
+        }
+    }
+
+    private void shutdownNowExecutor(ExecutorService threadPoolExecutor) {
+        List<Runnable> listOfRequests = threadPoolExecutor.shutdownNow();
         logger.error("Can't stop executor. Shutdown now, number of requests: {}", listOfRequests.size());
     }
 
