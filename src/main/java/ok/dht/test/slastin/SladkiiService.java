@@ -205,7 +205,7 @@ public class SladkiiService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 3, week = 3, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 4, week = 4, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
