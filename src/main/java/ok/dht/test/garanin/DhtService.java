@@ -5,6 +5,7 @@ import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.garanin.db.Db;
 import ok.dht.test.garanin.db.DbException;
+import ok.dht.test.garanin.db.Value;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
@@ -16,7 +17,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -26,27 +26,37 @@ import java.nio.charset.Charset;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.util.Collections;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 public class DhtService implements Service {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DhtServer.class);
+    private static final Duration TIMEOUT = Duration.ofMillis(500);
+    private static final int MAX_PROXY_REQUEST_PER_NODE = 500;
 
     private final ServiceConfig config;
-    private final ExecutorService executorService = new ForkJoinPool();
+    private final ExecutorService selfExecutor = new ForkJoinPool();
+    private final ExecutorService proxyExecutor = new ForkJoinPool();
     private final HttpClient httpClient;
+    private final Node[] nodes;
     private HttpServer server;
     private RocksDB rocksDB;
 
     public DhtService(ServiceConfig config) {
         this.config = config;
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofMillis(500))
+                .connectTimeout(TIMEOUT)
+                .executor(proxyExecutor)
                 .build();
+        this.nodes = config.clusterUrls().stream().map(url -> new Node(hash(url), url)).toArray(Node[]::new);
     }
 
     private static int hash(String str) {
@@ -59,17 +69,16 @@ public class DhtService implements Service {
         }
     }
 
-    private String getUrl(String id) {
+    private List<Node> getUrls(String id, int count) {
         int hash = hash(id);
-        String url = config.clusterUrls().get(hash % config.clusterUrls().size());
-        if (url.equals(config.selfUrl())) {
-            return null;
+        int index = Arrays.binarySearch(nodes, new Node(hash, null), Comparator.comparing(Node::hash));
+        if (index < 0) {
+            index = (-index - 1) % nodes.length;
         }
-        return url;
-    }
-
-    private static boolean validateId(String id) {
-        return !id.isEmpty();
+        return (index + count - 1 < nodes.length
+                ? Arrays.stream(nodes)
+                : Stream.concat(Arrays.stream(nodes), Arrays.stream(nodes)))
+                .skip(index).limit(count).toList();
     }
 
     private static HttpServerConfig createConfigFromPort(int port) {
@@ -83,49 +92,48 @@ public class DhtService implements Service {
 
     @Override
     public CompletableFuture<?> start() throws IOException {
-        Collections.sort(config.clusterUrls());
         rocksDB = Db.open(config.workingDir());
         server = new DhtHttpServer(createConfigFromPort(config.selfPort()));
-        server.start();
         server.addRequestHandlers(this);
+        server.start();
         return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public CompletableFuture<?> stop() throws IOException {
+        server.stop();
         if (rocksDB != null) {
             Db.close(rocksDB);
         }
         rocksDB = null;
-        server.stop();
         return CompletableFuture.completedFuture(null);
     }
 
     public Response handleGet(String id) {
-        byte[] value;
         try {
-            value = Db.get(rocksDB, id);
+            Value value = new Value(Db.get(rocksDB, id));
+            if (value.tombstone()) {
+                return new Response(Response.NOT_FOUND, value.toBytes());
+            }
+            return new Response(Response.OK, value.toBytes());
         } catch (DbException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-        if (value == null) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        }
-        return new Response(Response.OK, value);
+
     }
 
-    public Response handlePut(Request request, String id) {
+    public Response handlePut(Request request, String id, long timestamp) {
         try {
-            Db.put(rocksDB, id, request.getBody());
+            Db.put(rocksDB, id, new Value(request.getBody(), timestamp).toBytes());
         } catch (DbException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    public Response handleDelete(String id) {
+    public Response handleDelete(String id, long timestamp) {
         try {
-            Db.delete(rocksDB, id);
+            Db.put(rocksDB, id, new Value(timestamp).toBytes());
         } catch (DbException e) {
             return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
@@ -144,6 +152,7 @@ public class DhtService implements Service {
             super(config, routers);
         }
 
+        @SuppressWarnings("FutureReturnValueIgnored")
         @Override
         public void handleRequest(Request request, HttpSession session) throws IOException {
             if (!request.getPath().equals("/v0/entity")) {
@@ -159,36 +168,68 @@ public class DhtService implements Service {
                 session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                 return;
             }
-            executorService.execute(() -> {
-                String url = getUrl(id);
-                if (url == null) {
-                    Response response = switch (request.getMethod()) {
-                        case Request.METHOD_GET -> handleGet(id);
-                        case Request.METHOD_PUT -> handlePut(request, id);
-                        case Request.METHOD_DELETE -> handleDelete(id);
-                        default -> throw new IllegalStateException();
-                    };
-                    sendResponse(session, response);
+            String ackString = request.getParameter("ack=");
+            String fromString = request.getParameter("from=");
+            String timestampString = request.getParameter("timestamp=");
+            try {
+                int ack = ackString == null ? nodes.length / 2 + 1 : Integer.parseInt(ackString);
+                int from = fromString == null ? nodes.length : Integer.parseInt(fromString);
+                if (!validateReplicasCnt(ack, from)) {
+                    session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
                     return;
                 }
-                HttpRequest proxyRequest = HttpRequest.newBuilder()
-                        .uri(URI.create(url + request.getURI()))
-                        .method(request.getMethodName(), request.getBody() == null
-                                ? HttpRequest.BodyPublishers.noBody()
-                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
-                        .build();
-                httpClient.sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
-                        .exceptionally(ex -> null)
-                        .thenAcceptAsync((response) -> {
-                            if (response != null) {
-                                sendResponse(session,
-                                        new Response(convertStatus(response.statusCode()), response.body())
-                                );
+                long timestamp = timestampString != null
+                        ? Long.parseLong(timestampString)
+                        : System.currentTimeMillis();
+                selfExecutor.execute(() -> {
+                    if (timestampString != null) {
+                        Response response = switch (request.getMethod()) {
+                            case Request.METHOD_GET -> handleGet(id);
+                            case Request.METHOD_PUT -> handlePut(request, id, timestamp);
+                            case Request.METHOD_DELETE -> handleDelete(id, timestamp);
+                            default -> throw new IllegalStateException();
+                        };
+                        sendResponse(session, response);
+                        return;
+                    }
+                    List<Node> replicas = getUrls(id, from);
+                    ResponsesMerger responseMerger = new ResponsesMerger(session, ack, from);
+                    for (Node node: replicas) {
+                        if (!node.url().equals(config.selfUrl())) {
+                            if (node.requestCount().decrementAndGet() > 0) {
+                                HttpRequest proxyRequest = HttpRequest.newBuilder()
+                                        .uri(URI.create("%s/v0/entity?id=%s&ack=1&from=1&timestamp=%s"
+                                                .formatted(node.url(), id, timestamp)))
+                                        .method(request.getMethodName(), request.getBody() == null
+                                                ? HttpRequest.BodyPublishers.noBody()
+                                                : HttpRequest.BodyPublishers.ofByteArray(request.getBody()))
+                                        .build();
+                                httpClient.sendAsync(proxyRequest, HttpResponse.BodyHandlers.ofByteArray())
+                                        .exceptionally(ex -> null)
+                                        .thenAccept(response -> {
+                                            responseMerger.acceptJava(response);
+                                            node.requestCount().incrementAndGet();
+                                        });
                             } else {
-                                sendResponse(session, new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY));
+                                responseMerger.acceptNio(null);
+                                node.requestCount().incrementAndGet();
                             }
-                        });
-            });
+                        } else {
+                            selfExecutor.execute(() -> {
+                                Response response = switch (request.getMethod()) {
+                                    case Request.METHOD_GET -> handleGet(id);
+                                    case Request.METHOD_PUT -> handlePut(request, id, timestamp);
+                                    case Request.METHOD_DELETE -> handleDelete(id, timestamp);
+                                    default -> throw new IllegalStateException();
+                                };
+                                responseMerger.acceptNio(response);
+                            });
+                        }
+                    }
+                });
+            } catch (NumberFormatException ignored) {
+                session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
+            }
         }
 
         @Override
@@ -204,6 +245,14 @@ public class DhtService implements Service {
         }
     }
 
+    private static boolean validateId(String id) {
+        return !id.isEmpty();
+    }
+
+    private boolean validateReplicasCnt(int ack, int from) {
+        return ack > 0 && ack <= from;
+    }
+
     private static void sendResponse(HttpSession session, Response response) {
         try {
             session.sendResponse(response);
@@ -213,37 +262,35 @@ public class DhtService implements Service {
         }
     }
 
-    private static String convertStatus(int statusCode) {
-        return switch (statusCode) {
-            case HttpURLConnection.HTTP_OK -> Response.OK;
-            case HttpURLConnection.HTTP_CREATED -> Response.CREATED;
-            case HttpURLConnection.HTTP_ACCEPTED -> Response.ACCEPTED;
-            case HttpURLConnection.HTTP_NO_CONTENT -> Response.NO_CONTENT;
-            case HttpURLConnection.HTTP_SEE_OTHER -> Response.SEE_OTHER;
-            case HttpURLConnection.HTTP_NOT_MODIFIED -> Response.NOT_MODIFIED;
-            case HttpURLConnection.HTTP_USE_PROXY -> Response.USE_PROXY;
-            case HttpURLConnection.HTTP_BAD_REQUEST -> Response.BAD_REQUEST;
-            case HttpURLConnection.HTTP_UNAUTHORIZED -> Response.UNAUTHORIZED;
-            case HttpURLConnection.HTTP_PAYMENT_REQUIRED -> Response.PAYMENT_REQUIRED;
-            case HttpURLConnection.HTTP_FORBIDDEN -> Response.FORBIDDEN;
-            case HttpURLConnection.HTTP_NOT_FOUND -> Response.NOT_FOUND;
-            case HttpURLConnection.HTTP_NOT_ACCEPTABLE -> Response.NOT_ACCEPTABLE;
-            case HttpURLConnection.HTTP_CONFLICT -> Response.CONFLICT;
-            case HttpURLConnection.HTTP_GONE -> Response.GONE;
-            case HttpURLConnection.HTTP_LENGTH_REQUIRED -> Response.LENGTH_REQUIRED;
-            case HttpURLConnection.HTTP_INTERNAL_ERROR -> Response.INTERNAL_ERROR;
-            case HttpURLConnection.HTTP_NOT_IMPLEMENTED -> Response.NOT_IMPLEMENTED;
-            case HttpURLConnection.HTTP_BAD_GATEWAY -> Response.BAD_GATEWAY;
-            case HttpURLConnection.HTTP_GATEWAY_TIMEOUT -> Response.GATEWAY_TIMEOUT;
-            default -> throw new IllegalArgumentException("Status code " + statusCode + " not implemented");
-        };
-    }
-
-    @ServiceFactory(stage = 3, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 5, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
         @Override
         public Service create(ServiceConfig config) {
             return new DhtService(config);
+        }
+    }
+
+    private static class Node {
+        private final int hash;
+        private final String url;
+        private final AtomicInteger requestCount;
+
+        public Node(int hash, String url) {
+            this.hash = hash;
+            this.url = url;
+            this.requestCount = new AtomicInteger(MAX_PROXY_REQUEST_PER_NODE);
+        }
+
+        public int hash() {
+            return hash;
+        }
+
+        public String url() {
+            return url;
+        }
+
+        public AtomicInteger requestCount() {
+            return requestCount;
         }
     }
 }
