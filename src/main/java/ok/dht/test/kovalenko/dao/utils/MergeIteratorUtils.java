@@ -1,6 +1,6 @@
 package ok.dht.test.kovalenko.dao.utils;
 
-import ok.dht.test.kovalenko.dao.aliases.TypedEntry;
+import ok.dht.test.kovalenko.dao.aliases.TypedTimedEntry;
 import ok.dht.test.kovalenko.dao.iterators.PeekIterator;
 
 import java.util.ArrayList;
@@ -19,11 +19,11 @@ public final class MergeIteratorUtils {
         return b == TOMBSTONE_VALUE;
     }
 
-    public static byte getTombstoneValue(TypedEntry entry) {
+    public static byte getTombstoneValue(TypedTimedEntry entry) {
         return entry.isTombstone() ? TOMBSTONE_VALUE : NORMAL_VALUE;
     }
 
-    public static void skipEntry(Queue<PeekIterator> iterators, TypedEntry toBeSkipped) {
+    public static void skipEntry(Queue<PeekIterator> iterators, TypedTimedEntry toBeSkipped) {
         List<PeekIterator> toBeRefreshed = new ArrayList<>();
         for (PeekIterator iterator : iterators) {
             if (iterator.hasNext() && DaoUtils.entryComparator.compare(iterator.peek(), toBeSkipped) == 0) {

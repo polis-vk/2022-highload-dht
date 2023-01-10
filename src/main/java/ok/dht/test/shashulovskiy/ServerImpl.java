@@ -27,7 +27,7 @@ public final class ServerImpl {
                     port,
                     url,
                     Collections.singletonList(url),
-                    Files.createTempDirectory("server")
+                    Files.createTempDirectory("server2")
             );
             new ServiceImpl(cfg).start().get(1, TimeUnit.SECONDS);
             LOG.info("Socket is ready: " + url);
