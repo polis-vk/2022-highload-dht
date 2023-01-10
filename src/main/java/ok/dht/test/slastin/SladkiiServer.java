@@ -1,7 +1,7 @@
 package ok.dht.test.slastin;
 
 import ok.dht.ServiceConfig;
-import ok.dht.test.slastin.range.SladkiiSession;
+import ok.dht.test.slastin.range.RangeHttpSession;
 import ok.dht.test.slastin.replication.ReplicasDeleteRequestHandler;
 import ok.dht.test.slastin.replication.ReplicasGetRequestHandler;
 import ok.dht.test.slastin.replication.ReplicasPutRequestHandler;
@@ -139,6 +139,10 @@ public class SladkiiServer extends HttpServer {
         }
 
         String end = request.getParameter("end=");
+        if (end != null && end.isBlank()) {
+            sendResponse(session, badRequest());
+            return;
+        }
 
         // log.info("handling range request for start = {}, end = {}", start, end);
 
@@ -157,8 +161,8 @@ public class SladkiiServer extends HttpServer {
     }
 
     @Override
-    public HttpSession createSession(Socket socket) throws RejectedSessionException {
-        return new SladkiiSession(socket, this);
+    public HttpSession createSession(Socket socket) {
+        return new RangeHttpSession(socket, this);
     }
 
     private boolean validateAckFrom(int ack, int from) {

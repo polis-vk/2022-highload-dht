@@ -134,7 +134,7 @@ public class RangeQueueItem extends Session.QueueItem {
 
     @Override
     public int remaining() {
-        return rangeIterator.isValid() || !wasEndWritten ? 1 : 0;
+        return wasEndWritten ? 0 : 1;
     }
 
     @Override

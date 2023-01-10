@@ -7,8 +7,8 @@ import one.nio.net.Socket;
 
 import java.io.IOException;
 
-public class SladkiiSession extends HttpSession {
-    public SladkiiSession(Socket socket, HttpServer server) {
+public class RangeHttpSession extends HttpSession {
+    public RangeHttpSession(Socket socket, HttpServer server) {
         super(socket, server);
     }
 
