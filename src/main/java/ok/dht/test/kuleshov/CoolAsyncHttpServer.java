@@ -1,19 +1,25 @@
 package ok.dht.test.kuleshov;
 
-import one.nio.http.HttpClient;
-import one.nio.http.HttpException;
+import ok.dht.test.kuleshov.utils.RequestsUtils;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
 import one.nio.http.Request;
 import one.nio.http.Response;
-import one.nio.net.ConnectionString;
-import one.nio.pool.PoolException;
 import one.nio.util.Hash;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableSet;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -21,56 +27,69 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import static ok.dht.test.kuleshov.Validator.isCorrectAckFrom;
+import static ok.dht.test.kuleshov.utils.RequestsUtils.getTimestampHeader;
 import static ok.dht.test.kuleshov.utils.ResponseUtils.emptyResponse;
 
 public class CoolAsyncHttpServer extends CoolHttpServer {
+    private static final String TIMESTAMP_HEADER = "timestamp";
+
     private static final int WORKER_CORE_POOL_SIZE = 4;
     private static final int WORKER_MAXIMUM_POOL_SIZE = 4;
     private static final int SENDER_CORE_POOL_SIZE = 4;
     private static final int SENDER_MAXIMUM_POOL_SIZE = 4;
 
+    private final int defaultFrom;
+    private final int defaultAck;
     private final String selfUrl;
     private ExecutorService workerExecutorService;
-    private ExecutorService senderExecutorService;
-    private final TreeSet<Integer> treeSet = new TreeSet<>();
-    private final Map<Integer, String> hashToHost = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Integer, HttpClient> hashToClient = new ConcurrentHashMap<>();
+    private final NavigableSet<Integer> treeSet = new TreeSet<>();
+    private final List<String> clusters;
+    private final Map<Integer, Integer> hashToClusterIndex = new ConcurrentHashMap<>();
+    private HttpClient httpClient;
+    private final Logger log = LoggerFactory.getLogger(CoolAsyncHttpServer.class);
 
     public CoolAsyncHttpServer(HttpServerConfig config, Service service, Object... routers) throws IOException {
         super(config, service, routers);
 
         selfUrl = service.getConfig().selfUrl();
-        List<String> clusters = service.getConfig().clusterUrls();
-
-        int n = clusters.size();
+        clusters = service.getConfig().clusterUrls();
         clusters.sort(Comparator.naturalOrder());
 
-        int startRangeSize = Integer.MAX_VALUE / n;
+        int startRangeSize = Integer.MAX_VALUE / clusters.size();
         int cur = startRangeSize;
+        defaultFrom = clusters.size();
+        defaultAck = defaultFrom / 2 + 1;
 
-        for (String cluster : clusters) {
+        for (int i = 0; i < clusters.size(); i++) {
             treeSet.add(cur);
-            hashToClient.put(cur, new HttpClient(new ConnectionString(cluster)));
-            hashToHost.put(cur, cluster);
+            hashToClusterIndex.put(cur, i);
             cur += startRangeSize;
         }
     }
 
     @Override
     public synchronized void start() {
-        super.start();
         workerExecutorService = new ThreadPoolExecutor(WORKER_CORE_POOL_SIZE,
                 WORKER_MAXIMUM_POOL_SIZE,
                 100,
                 TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>(128)
         );
-        senderExecutorService = new ThreadPoolExecutor(SENDER_CORE_POOL_SIZE,
+
+        ExecutorService senderExecutorService = new ThreadPoolExecutor(SENDER_CORE_POOL_SIZE,
                 SENDER_MAXIMUM_POOL_SIZE,
                 100,
                 TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>(128)
+                new LinkedBlockingQueue<>()
         );
+
+        httpClient = HttpClient
+                .newBuilder()
+                .executor(senderExecutorService)
+                .build();
+
+        super.start();
     }
 
     @Override
@@ -85,7 +104,8 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                 }
 
                 String path = request.getPath();
-                if (path.equals("v1/entity")) {
+
+                if (!"/v0/entity".equals(path) && !"/master/v0/entity".equals(path)) {
                     session.sendResponse(emptyResponse(Response.BAD_REQUEST));
 
                     return;
@@ -98,35 +118,21 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
                     return;
                 }
 
-                Integer number = getVirtualNodeNumber(id);
-
-                if (number == null) {
-                    session.sendResponse(emptyResponse(Response.NOT_FOUND));
+                if (path.startsWith("/master")) {
+                    Response resp = service.handle(method, id, request, getTimestampHeader(request));
+                    session.sendResponse(resp);
 
                     return;
                 }
 
-                if (!hashToHost.get(number).equals(selfUrl)) {
-                    senderExecutorService.execute(() -> {
-                        try {
-                            session.sendResponse(sendRequest(number, id, request));
-                        } catch (Exception e) {
-                            try {
-                                session.sendResponse(emptyResponse(Response.BAD_REQUEST));
-                            } catch (IOException ex) {
-                                //ignore
-                            }
-                        }
-                    });
-                    return;
-                }
-
-                session.sendResponse(service.handle(method, id, request));
+                handleRequest(id, request, session);
             } catch (Exception e) {
+                log.error("Error sending response to client: " + e.getCause());
                 try {
                     session.sendResponse(emptyResponse(Response.BAD_REQUEST));
-                } catch (IOException ex) {
-                    //ignore
+                } catch (IOException exception) {
+                    log.error("Error sending error to client: " + exception.getMessage());
+                    session.close();
                 }
             }
         });
@@ -135,76 +141,88 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
     @Override
     public synchronized void stop() {
         terminateExecutor(workerExecutorService);
-        terminateExecutor(senderExecutorService);
 
         super.stop();
     }
 
-    private Response sendRequest(
-            int node,
-            String id,
-            Request request
-    ) throws HttpException, IOException, PoolException {
-        switch (request.getMethod()) {
-            case Request.METHOD_GET -> {
-                return sendGet(node, id);
+    private void handleRequest(String id, Request request, HttpSession session) {
+        Integer parseFrom = RequestsUtils.parseInt(request.getParameter("from="));
+        Integer parseAck = RequestsUtils.parseInt(request.getParameter("ack="));
+
+        int from = parseFrom == null ? defaultFrom : parseFrom;
+        int ack = parseAck == null ? defaultAck : parseAck;
+
+        if (!isCorrectAckFrom(ack, from, clusters.size())) {
+            try {
+                session.sendResponse(emptyResponse(Response.BAD_REQUEST));
+            } catch (IOException exception) {
+                log.error(exception.getMessage());
+                session.close();
             }
-            case Request.METHOD_PUT -> {
-                return sendPut(node, id, request.getBody());
+            return;
+        }
+
+        SlaveResponseHandler slaveResponseHandler = new SlaveResponseHandler(ack, from, session);
+        long timestamp = System.currentTimeMillis();
+
+        boolean isSelf = false;
+
+        final int startIndex = hashToClusterIndex.get(getVirtualNodeHash(id));
+
+        for (int reqIndex = 0; reqIndex < from; reqIndex++) {
+            String slaveUrl = clusters.get((startIndex + reqIndex) % clusters.size());
+
+            if (slaveUrl.equals(selfUrl)) {
+                isSelf = true;
+                continue;
             }
-            case Request.METHOD_DELETE -> {
-                return sendDelete(node, id);
-            }
-            default -> {
-                return emptyResponse(Response.METHOD_NOT_ALLOWED);
-            }
+
+            HttpRequest requestToSlave = createRequestToSlave(request, slaveUrl, timestamp);
+            httpClient.sendAsync(requestToSlave,
+                    HttpResponse.BodyHandlers.ofByteArray()
+            ).whenComplete((response, exception) -> {
+                if (exception == null) {
+                    slaveResponseHandler.handleResponse(request.getMethod(), HandleResponse.fromHttpResponse(response));
+                } else {
+                    log.error("Error slave's response" + exception.getMessage());
+                    slaveResponseHandler.handleFrom();
+                }
+            });
+        }
+
+        if (isSelf) {
+            Response selfResponse = service.handle(request.getMethod(), id, request, timestamp);
+            slaveResponseHandler.handleResponse(request.getMethod(), HandleResponse.fromOneResponse(selfResponse));
         }
     }
 
-    private Response sendGet(int node, String id) throws HttpException, IOException, PoolException {
-        try {
-            return hashToClient.get(node).get("/v1/entity?id=" + id);
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-        }
-
-        return emptyResponse(Response.INTERNAL_ERROR);
+    private HttpRequest createRequestToSlave(Request request, String url, long timestamp) {
+        return HttpRequest.newBuilder()
+                .method(request.getMethodName(), HttpRequest.BodyPublishers.ofByteArray(
+                        request.getBody() == null ? new byte[0] : request.getBody()
+                ))
+                .timeout(Duration.of(2, ChronoUnit.SECONDS))
+                .header(TIMESTAMP_HEADER, String.valueOf(timestamp))
+                .uri(URI.create(url + "/master" + request.getURI()))
+                .build();
     }
 
-    private Response sendDelete(int node, String id) throws HttpException, IOException, PoolException {
-        try {
-            return hashToClient.get(node).delete("/v1/entity?id=" + id);
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-        }
-
-        return emptyResponse(Response.INTERNAL_ERROR);
-    }
-
-    private Response sendPut(int node, String id, byte[] body) throws HttpException, IOException, PoolException {
-        try {
-            return hashToClient.get(node).put("/v1/entity?id=" + id, body);
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-        }
-
-        return emptyResponse(Response.INTERNAL_ERROR);
-    }
-
-    private Integer getVirtualNodeNumber(String id) {
+    private Integer getVirtualNodeHash(String id) {
         int hash = Hash.murmur3(id);
 
         Integer next = treeSet.ceiling(hash);
 
         if (next != null) {
             return next;
-        } else {
-            return treeSet.ceiling(Integer.MIN_VALUE);
         }
+
+        return treeSet.ceiling(Integer.MIN_VALUE);
     }
 
     private static void terminateExecutor(ExecutorService executorService) {
         boolean isFinished = false;
+        executorService.shutdown();
+
         try {
             isFinished = executorService.awaitTermination(500, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
@@ -212,7 +230,7 @@ public class CoolAsyncHttpServer extends CoolHttpServer {
         }
 
         if (isFinished) {
-            executorService.shutdown();
+            executorService.shutdownNow();
         }
 
     }

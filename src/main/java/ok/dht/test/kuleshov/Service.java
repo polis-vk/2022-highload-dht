@@ -20,8 +20,10 @@ import static ok.dht.test.kuleshov.utils.ConfigUtils.createConfigFromPort;
 import static ok.dht.test.kuleshov.utils.ResponseUtils.emptyResponse;
 
 public class Service implements ok.dht.Service {
-    private final ServiceConfig config;
     private static final int DEFAULT_DAO_FLUSH_THRESHOLD = 8192;
+    private static final String TIMESTAMP_HEADER = "timestamp: ";
+
+    private final ServiceConfig config;
     private Dao<MemorySegment, Entry<MemorySegment>> memorySegmentDao;
     private HttpServer server;
     private boolean isStarted;
@@ -53,16 +55,16 @@ public class Service implements ok.dht.Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    public Response handle(int method, String id, Request request) {
+    public Response handle(int method, String id, Request request, long timestamp) {
         switch (method) {
             case Request.METHOD_GET -> {
                 return handleGet(id);
             }
             case Request.METHOD_PUT -> {
-                return handlePut(id, request);
+                return handlePut(id, request, timestamp);
             }
             case Request.METHOD_DELETE -> {
-                return handleDelete(id);
+                return handleDelete(id, timestamp);
             }
             default -> {
                 return emptyResponse(Response.BAD_REQUEST);
@@ -79,10 +81,18 @@ public class Service implements ok.dht.Service {
             Entry<MemorySegment> entry = memorySegmentDao.get(MemorySegment.ofArray(Utf8.toBytes(id)));
 
             if (!isExistValue(entry)) {
-                return emptyResponse(Response.NOT_FOUND);
+                Response response = emptyResponse(Response.NOT_FOUND);
+                if (entry != null) {
+                    response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
+                }
+
+                return response;
             }
 
-            return new Response(Response.OK, entry.value().toByteArray());
+            Response response = new Response(Response.OK, entry.value().toByteArray());
+            response.addHeader(TIMESTAMP_HEADER + entry.timestamp());
+
+            return response;
         } catch (IOException ioException) {
             return emptyResponse(Response.BAD_REQUEST);
         }
@@ -90,17 +100,19 @@ public class Service implements ok.dht.Service {
 
     public Response handlePut(
             String id,
-            Request request
+            Request request,
+            long timestamp
     ) {
-        upsertById(id, MemorySegment.ofArray(request.getBody()));
+        upsertById(id, MemorySegment.ofArray(request.getBody()), timestamp);
 
         return emptyResponse(Response.CREATED);
     }
 
     public Response handleDelete(
-            String id
+            String id,
+            long timestamp
     ) {
-        upsertById(id, null);
+        upsertById(id, null, timestamp);
 
         return emptyResponse(Response.ACCEPTED);
     }
@@ -113,10 +125,11 @@ public class Service implements ok.dht.Service {
         return entry != null && !entry.isTombstone();
     }
 
-    private void upsertById(String id, MemorySegment segment) {
+    private void upsertById(String id, MemorySegment segment, long timestamp) {
         BaseEntry<MemorySegment> entry = new BaseEntry<>(
                 MemorySegment.ofArray(Utf8.toBytes(id)),
-                segment
+                segment,
+                timestamp
         );
 
         memorySegmentDao.upsert(entry);

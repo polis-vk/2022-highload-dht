@@ -22,10 +22,15 @@ public final class StorageUtils {
 
     static long getSize(Entry<MemorySegment> entry) {
         if (entry.value() == null) {
-            return Long.BYTES + entry.key().byteSize() + Long.BYTES;
+            return Long.BYTES + entry.key().byteSize() + Long.BYTES + Long.BYTES;
         } else {
-            return Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES;
+            return Long.BYTES + entry.value().byteSize() + entry.key().byteSize() + Long.BYTES + Long.BYTES;
         }
+    }
+
+    static long writeTimestamp(MemorySegment nextSSTable, long offset, long timestamp) {
+        MemoryAccess.setLongAtOffset(nextSSTable, offset, timestamp);
+        return Long.BYTES;
     }
 
     static long writeRecord(MemorySegment nextSSTable, long offset, MemorySegment record) {
