@@ -66,9 +66,7 @@ public class ConsistentHashingManager implements ShardingManager {
         while (nodeIndices.size() != count) {
             vnodeIndex = (vnodeIndex + 1) % vnodes.size();
             int nodeIndex = nodeIndexByVnodeIndex.get(vnodeIndex);
-            if (!nodeIndices.contains(nodeIndex)) {
-                nodeIndices.add(nodeIndex);
-            }
+            nodeIndices.add(nodeIndex);
         }
 
         return nodeIndices.stream().toList();

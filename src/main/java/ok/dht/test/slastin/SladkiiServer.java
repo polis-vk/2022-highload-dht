@@ -1,7 +1,6 @@
 package ok.dht.test.slastin;
 
 import ok.dht.ServiceConfig;
-import ok.dht.test.slastin.node.Node;
 import ok.dht.test.slastin.replication.ReplicasDeleteRequestHandler;
 import ok.dht.test.slastin.replication.ReplicasGetRequestHandler;
 import ok.dht.test.slastin.replication.ReplicasPutRequestHandler;
@@ -23,7 +22,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -34,30 +33,35 @@ import static ok.dht.test.slastin.Utils.serviceUnavailable;
 
 public class SladkiiServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(SladkiiServer.class);
-    private static final Duration PROXY_REQUEST_DURATION = Duration.ofMillis(20);
+    private static final Duration PROXY_REQUEST_DURATION = Duration.ofSeconds(1);
 
+    private final ServiceConfig serviceConfig;
     private final int selfNodeIndex;
-    private final List<Node> nodes;
     private final SladkiiComponent component;
-    private final ExecutorService processors;
     private final ShardingManager shardingManager;
+    private final ExecutorService heavyExecutor;
+    private final ExecutorService lightExecutor;
     private final HttpClient client;
 
     public SladkiiServer(
             HttpServerConfig httpServerConfig,
             ServiceConfig serviceConfig,
-            List<Node> nodes,
             SladkiiComponent component,
-            ExecutorService processors,
-            ShardingManager shardingManager
+            ShardingManager shardingManager,
+            ExecutorService heavyExecutor,
+            ExecutorService lightExecutor,
+            ExecutorService httpClientExecutor
     ) throws IOException {
         super(httpServerConfig);
+        this.serviceConfig = serviceConfig;
         this.selfNodeIndex = serviceConfig.clusterUrls().indexOf(serviceConfig.selfUrl());
-        this.nodes = nodes;
         this.component = component;
-        this.processors = processors;
         this.shardingManager = shardingManager;
-        client = HttpClient.newHttpClient();
+        this.heavyExecutor = heavyExecutor;
+        this.lightExecutor = lightExecutor;
+        client = HttpClient.newBuilder()
+                .executor(httpClientExecutor)
+                .build();
     }
 
     @Path("/v0/internal/entity")
@@ -67,11 +71,12 @@ public class SladkiiServer extends HttpServer {
 
         // log.info("internal handling {} for id {}", request.getMethodName(), id);
 
-        boolean wasTaskAdded = tryAddNodeTask(session, selfNodeIndex, () ->
-                sendResponse(session, processRequestSelf(id, request))
-        );
-
-        if (!wasTaskAdded) {
+        try {
+            futureComponentRequest(id, request)
+                    // it's ok to send response in the current selector thread if db is quick
+                    .thenAccept(response -> sendResponse(session, response));
+        } catch (RejectedExecutionException e) {
+            log.error("Can not schedule task for execution", e);
             sendResponse(session, serviceUnavailable());
         }
     }
@@ -89,7 +94,7 @@ public class SladkiiServer extends HttpServer {
         try {
             String ackParameter = request.getParameter("ack=");
             if (ackParameter == null) {
-                from = nodes.size();
+                from = serviceConfig.clusterUrls().size();
                 ack = from / 2 + 1;
             } else {
                 from = Integer.parseInt(request.getParameter("from="));
@@ -128,48 +133,24 @@ public class SladkiiServer extends HttpServer {
     }
 
     private boolean validateAckFrom(int ack, int from) {
-        return 0 < ack && ack <= from && from <= nodes.size();
+        return 0 < ack && ack <= from && from <= serviceConfig.clusterUrls().size();
     }
 
     public ShardingManager getShardingManager() {
         return shardingManager;
     }
 
-    public boolean tryAddNodeTask(HttpSession session, int nodeIndex, Runnable task) {
-        boolean wasTaskAdded = nodes.get(nodeIndex).offerTask(task);
-        if (wasTaskAdded) {
-            try {
-                processors.submit(() -> {
-                    int currentNodeIndex = nodeIndex;
-                    while (true) {
-                        var currentNode = nodes.get(currentNodeIndex);
-                        var currentTask = currentNode.pollTask();
-                        if (currentTask != null) {
-                            try {
-                                currentTask.run();
-                            } finally {
-                                currentNode.finishTask();
-                            }
-                            return;
-                        }
-                        currentNodeIndex = (currentNodeIndex + 1) % nodes.size();
-                    }
-                });
-            } catch (RejectedExecutionException e) {
-                log.error("Can not schedule task for execution", e);
-                sendResponse(session, serviceUnavailable());
-            }
-        }
-        return wasTaskAdded;
-    }
-
-    public Response processRequest(int nodeIndex, String id, Request request) {
+    public CompletableFuture<Response> futureRequest(int nodeIndex, String id, Request request) {
         return nodeIndex == selfNodeIndex
-                ? processRequestSelf(id, request)
-                : processRequestProxy(shardingManager.getNodeUrlByNodeIndex(nodeIndex), id, request);
+                ? futureComponentRequest(id, request)
+                : futureProxyRequest(shardingManager.getNodeUrlByNodeIndex(nodeIndex), id, request);
     }
 
-    private Response processRequestSelf(String id, Request request) {
+    private CompletableFuture<Response> futureComponentRequest(String id, Request request) {
+        return CompletableFuture.supplyAsync(() -> processComponentRequest(id, request), heavyExecutor);
+    }
+
+    private Response processComponentRequest(String id, Request request) {
         return switch (request.getMethod()) {
             case Request.METHOD_GET -> component.get(id);
             case Request.METHOD_PUT -> component.put(id, extractTimestamp(request), request);
@@ -185,8 +166,28 @@ public class SladkiiServer extends HttpServer {
         return Long.parseLong(request.getHeader("Timestamp:"));
     }
 
-    private Response processRequestProxy(String nodeUrl, String id, Request request) {
+    private CompletableFuture<Response> futureProxyRequest(String nodeUrl, String id, Request request) {
+        CompletableFuture<Response> start = new CompletableFuture<>();
+
+        CompletableFuture<Response> end = start.thenApply(x -> makeProxyRequest(nodeUrl, id, request))
+                .thenCompose(httpRequest -> client.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofByteArray()))
+                .thenApplyAsync(httpResponse -> new Response(
+                                getResponseCodeByStatusCode(httpResponse.statusCode()), httpResponse.body()
+                        ), lightExecutor
+                )
+                .exceptionally(e -> {
+                    log.error("error while proxy request", e);
+                    return serviceUnavailable();
+                });
+
+        start.completeAsync(() -> null, lightExecutor); // trigger execution
+
+        return end;
+    }
+
+    private static HttpRequest makeProxyRequest(String nodeUrl, String id, Request request) {
         var builder = HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/internal/entity?id=" + id));
+
         builder.timeout(PROXY_REQUEST_DURATION);
 
         var bodyPublishers = request.getBody() == null
@@ -199,16 +200,7 @@ public class SladkiiServer extends HttpServer {
             builder.setHeader("Timestamp", timestamp);
         }
 
-        try {
-            var httpResponse = client.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
-            return new Response(getResponseCodeByStatusCode(httpResponse.statusCode()), httpResponse.body());
-        } catch (IOException e) {
-            log.error("can not reach {}", nodeUrl, e);
-            return serviceUnavailable();
-        } catch (InterruptedException e) {
-            log.error("error occurred while handling http response", e);
-            return serviceUnavailable();
-        }
+        return builder.build();
     }
 
     public void sendResponse(HttpSession session, Response response) {
@@ -220,6 +212,7 @@ public class SladkiiServer extends HttpServer {
         }
     }
 
+    @Override
     public synchronized void stop() {
         closeAllSessions();
         super.stop();
@@ -227,11 +220,11 @@ public class SladkiiServer extends HttpServer {
 
     private void closeAllSessions() {
         for (var selectorThread : selectors) {
-            selectorThread.selector.forEach(this::closeSession);
+            selectorThread.selector.forEach(SladkiiServer::closeSession);
         }
     }
 
-    private void closeSession(Session session) {
+    private static void closeSession(Session session) {
         try {
             session.close();
         } catch (Exception e) {

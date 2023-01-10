@@ -1,35 +1,30 @@
 package ok.dht.test.slastin;
 
 import ok.dht.ServiceConfig;
-import ok.dht.test.slastin.node.NodeConfig;
 import ok.dht.test.slastin.sharding.ShardingManager;
 import one.nio.http.HttpServerConfig;
 import org.rocksdb.Options;
 
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
-
-import static ok.dht.test.slastin.SladkiiService.makeDefaultHttpServerConfigSupplier;
-import static ok.dht.test.slastin.SladkiiService.makeDefaultNodeConfigs;
-import static ok.dht.test.slastin.SladkiiService.makeDefaultProcessorsSupplier;
-import static ok.dht.test.slastin.SladkiiService.makeDefaultShardingManagerSupplier;
 
 public class SladkiiServiceBuilder {
     private final ServiceConfig serviceConfig;
     private Supplier<Options> dbOptionsSupplier;
-    private Supplier<ExecutorService> processorsSupplier;
+    private Supplier<ExecutorService> heavyExecutorSupplier;
+    private Supplier<ExecutorService> lightExecutorSupplier;
+    private Supplier<ExecutorService> httpClientExecutorSupplier;
     private Supplier<ShardingManager> shardingManagerSupplier;
     private Supplier<HttpServerConfig> httpServerConfigSupplier;
-    private List<NodeConfig> nodeConfigs;
 
     SladkiiServiceBuilder(ServiceConfig serviceConfig) {
         this.serviceConfig = serviceConfig;
         this.dbOptionsSupplier = SladkiiService.DEFAULT_OPTIONS_SUPPLIER;
-        this.processorsSupplier = makeDefaultProcessorsSupplier(serviceConfig);
-        this.shardingManagerSupplier = makeDefaultShardingManagerSupplier(serviceConfig);
-        this.httpServerConfigSupplier = makeDefaultHttpServerConfigSupplier(serviceConfig);
-        this.nodeConfigs = makeDefaultNodeConfigs(serviceConfig);
+        this.heavyExecutorSupplier = SladkiiService.makeDefaultHeavyExecutorSupplier(serviceConfig);
+        this.lightExecutorSupplier = SladkiiService.makeDefaultLightExecutorSupplier(serviceConfig);
+        this.httpClientExecutorSupplier = SladkiiService.makeDefaultHttpClientExecutorSupplier(serviceConfig);
+        this.shardingManagerSupplier = SladkiiService.makeDefaultShardingManagerSupplier(serviceConfig);
+        this.httpServerConfigSupplier = SladkiiService.makeDefaultHttpServerConfigSupplier(serviceConfig);
     }
 
     SladkiiServiceBuilder setDbOptionsSupplier(Supplier<Options> dbOptionsSupplier) {
@@ -37,8 +32,18 @@ public class SladkiiServiceBuilder {
         return this;
     }
 
-    SladkiiServiceBuilder setProcessorsSupplier(Supplier<ExecutorService> processorsSupplier) {
-        this.processorsSupplier = processorsSupplier;
+    SladkiiServiceBuilder setHeavyExecutorSupplier(Supplier<ExecutorService> heavyExecutorSupplier) {
+        this.heavyExecutorSupplier = heavyExecutorSupplier;
+        return this;
+    }
+
+    SladkiiServiceBuilder setLightExecutorSupplier(Supplier<ExecutorService> lightExecutorSupplier) {
+        this.lightExecutorSupplier = lightExecutorSupplier;
+        return this;
+    }
+
+    SladkiiServiceBuilder setHttpClientExecutorSupplier(Supplier<ExecutorService> httpClientExecutorSupplier) {
+        this.httpClientExecutorSupplier = httpClientExecutorSupplier;
         return this;
     }
 
@@ -52,19 +57,15 @@ public class SladkiiServiceBuilder {
         return this;
     }
 
-    SladkiiServiceBuilder setNodeConfigs(List<NodeConfig> nodeConfigs) {
-        this.nodeConfigs = nodeConfigs;
-        return this;
-    }
-
     SladkiiService build() {
         return new SladkiiService(
                 serviceConfig,
                 dbOptionsSupplier,
-                processorsSupplier,
+                heavyExecutorSupplier,
+                lightExecutorSupplier,
+                httpClientExecutorSupplier,
                 shardingManagerSupplier,
-                httpServerConfigSupplier,
-                nodeConfigs
+                httpServerConfigSupplier
         );
     }
 }

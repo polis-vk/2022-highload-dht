@@ -4,6 +4,7 @@ import ok.dht.test.slastin.SladkiiServer;
 import one.nio.http.Response;
 
 import java.net.HttpURLConnection;
+import java.util.concurrent.CompletableFuture;
 
 import static ok.dht.test.slastin.Utils.accepted;
 
@@ -13,21 +14,20 @@ public class ReplicasDeleteRequestHandler extends ReplicasRequestHandler {
     }
 
     @Override
-    protected void before() {
+    protected void tune() {
         long timestamp = System.currentTimeMillis();
         request.addHeader("Timestamp: " + timestamp);
     }
 
     @Override
-    protected Runnable createNodeTask(int nodeIndex) {
-        return () -> {
-            Response response = sladkiiServer.processRequest(nodeIndex, id, request);
-            if (response.getStatus() == HttpURLConnection.HTTP_ACCEPTED) {
+    protected void whenComplete(CompletableFuture<Response> futureResponse) {
+        futureResponse.whenComplete((r, t) -> {
+            if (t == null && r.getStatus() == HttpURLConnection.HTTP_ACCEPTED) {
                 doAck();
             } else {
                 doFail();
             }
-        };
+        });
     }
 
     @Override
