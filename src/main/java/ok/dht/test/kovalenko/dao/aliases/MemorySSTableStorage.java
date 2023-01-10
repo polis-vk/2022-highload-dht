@@ -13,8 +13,8 @@ public final class MemorySSTableStorage
         super(capacity);
     }
 
-    public TypedEntry get(ByteBuffer key) {
-        TypedEntry res = null;
+    public TypedTimedEntry get(ByteBuffer key) {
+        TypedTimedEntry res = null;
         for (Iterator<MemorySSTable> it = this.descendingIterator(); it.hasNext(); ) {
             MemorySSTable memorySSTable = it.next();
             if ((res = memorySSTable.get(key)) != null) {

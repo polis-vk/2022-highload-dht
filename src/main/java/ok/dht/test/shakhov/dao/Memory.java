@@ -8,9 +8,9 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class Memory {
+class Memory {
 
-    public static final Memory EMPTY = new Memory(-1);
+    static final Memory EMPTY = new Memory(-1);
     private final AtomicLong size = new AtomicLong();
     private final AtomicBoolean oversized = new AtomicBoolean();
 
@@ -19,7 +19,7 @@ public class Memory {
 
     private final long sizeThreshold;
 
-    public Memory(long sizeThreshold) {
+    Memory(long sizeThreshold) {
         this.sizeThreshold = sizeThreshold;
     }
 
@@ -36,9 +36,9 @@ public class Memory {
             throw new UnsupportedOperationException("Read-only map");
         }
         Entry<MemorySegment> segmentEntry = delegate.put(key, entry);
-        long sizeDelta = StorageController.getSizeOnDisk(entry);
+        long sizeDelta = StorageUtils.getSizeOnDisk(entry);
         if (segmentEntry != null) {
-            sizeDelta -= StorageController.getSizeOnDisk(segmentEntry);
+            sizeDelta -= StorageUtils.getSizeOnDisk(segmentEntry);
         }
         long newSize = size.addAndGet(sizeDelta);
         if (newSize > sizeThreshold) {
