@@ -29,4 +29,12 @@ public class PeekIterator<E> implements Iterator<E> {
         peek = null;
         return result;
     }
+
+    public static <E> PeekIterator<E> wrap(Iterator<E> iterator) {
+        if (iterator instanceof PeekIterator) {
+            return (PeekIterator<E>) iterator;
+        }
+        return new PeekIterator<>(iterator);
+    }
+
 }
