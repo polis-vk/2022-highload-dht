@@ -1,6 +1,6 @@
 cnt = 0
 
-request = function ()
+request = function()
     path = "/v0/entity?id=" .. cnt
     wrk.method = "PUT"
     wrk.headers["X-cnt"] = cnt

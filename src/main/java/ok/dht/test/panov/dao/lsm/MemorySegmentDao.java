@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -37,15 +36,15 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
 
     public MemorySegmentDao(Config config) throws IOException {
         this.config = config;
-        this.state = State.newState(config, Storage.load(config));
+        this.state = State.newState(config, StorageCompanionObject.load(config));
     }
 
     @Override
     public Iterator<Entry<MemorySegment>> get(MemorySegment from, MemorySegment to) {
-        return getTombstoneFilteringIterator(from == null ? VERY_FIRST_KEY : from, to);
+        return getIterator(from == null ? VERY_FIRST_KEY : from, to);
     }
 
-    private TombstoneFilteringIterator getTombstoneFilteringIterator(MemorySegment from, MemorySegment to) {
+    private Iterator<Entry<MemorySegment>> getIterator(MemorySegment from, MemorySegment to) {
         State curState = accessState();
 
         List<Iterator<Entry<MemorySegment>>> iterators = curState.storage.iterate(from, to);
@@ -53,9 +52,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         iterators.add(curState.flushing.get(from, to));
         iterators.add(curState.memory.get(from, to));
 
-        Iterator<Entry<MemorySegment>> mergeIterator = MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
-
-        return new TombstoneFilteringIterator(mergeIterator);
+        return MergeIterator.of(iterators, EntryKeyComparator.INSTANCE);
     }
 
     @Override
@@ -67,7 +64,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
             result = curState.storage.get(key);
         }
 
-        return (result == null || result.isTombstone()) ? null : result;
+        return result;
     }
 
     @Override
@@ -111,8 +108,8 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 State curState = accessState();
 
                 Storage storage = curState.storage;
-                Storage.save(config, storage, curState.flushing.values());
-                Storage load = Storage.load(config);
+                StorageCompanionObject.save(config, storage, curState.flushing.values());
+                Storage load = StorageCompanionObject.load(config);
 
                 upsertLock.writeLock().lock();
                 try {
@@ -167,7 +164,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                 return null;
             }
 
-            Storage.compact(
+            StorageCompanionObject.compact(
                     config,
                     () -> MergeIterator.of(
                             curState.storage.iterate(VERY_FIRST_KEY,
@@ -177,7 +174,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
                     )
             );
 
-            Storage storage = Storage.load(config);
+            Storage storage = StorageCompanionObject.load(config);
 
             upsertLock.writeLock().lock();
             try {
@@ -231,47 +228,6 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         if (curState.memory.isEmpty()) {
             return;
         }
-        Storage.save(config, curState.storage, curState.memory.values());
-    }
-
-    private static class TombstoneFilteringIterator implements Iterator<Entry<MemorySegment>> {
-
-        private final Iterator<Entry<MemorySegment>> iterator;
-        private Entry<MemorySegment> current;
-
-        public TombstoneFilteringIterator(Iterator<Entry<MemorySegment>> iterator) {
-            this.iterator = iterator;
-        }
-
-        public Entry<MemorySegment> peek() {
-            return hasNext() ? current : null;
-        }
-
-        @Override
-        public boolean hasNext() {
-            if (current != null) {
-                return true;
-            }
-
-            while (iterator.hasNext()) {
-                Entry<MemorySegment> entry = iterator.next();
-                if (!entry.isTombstone()) {
-                    this.current = entry;
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        @Override
-        public Entry<MemorySegment> next() {
-            if (!hasNext()) {
-                throw new NoSuchElementException("...");
-            }
-            Entry<MemorySegment> next = current;
-            current = null;
-            return next;
-        }
+        StorageCompanionObject.save(config, curState.storage, curState.memory.values());
     }
 }

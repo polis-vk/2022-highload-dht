@@ -14,13 +14,12 @@ import java.util.concurrent.TimeoutException;
 
 public final class RequestExecutorService {
 
-    public static final int QUEUE_CAPACITY = 5;
+    public static final int QUEUE_CAPACITY = 100;
     public static final int AWAIT_TERMINATION_SECONDS = 60;
     public static final int THREADS_NUMBER = calculateThreadNumber();
     private static final Logger LOG = LoggerFactory.getLogger(RequestExecutorService.class);
 
     private RequestExecutorService() {
-
     }
 
     public static ThreadPoolExecutor requestExecutorDiscard() {

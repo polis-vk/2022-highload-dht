@@ -5,7 +5,7 @@ import jdk.incubator.foreign.MemorySegment;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-public class TombstoneFilteringIterator implements Iterator<Entry<MemorySegment>> {
+class TombstoneFilteringIterator implements Iterator<Entry<MemorySegment>> {
     private final Iterator<Entry<MemorySegment>> iterator;
     private Entry<MemorySegment> current;
 
