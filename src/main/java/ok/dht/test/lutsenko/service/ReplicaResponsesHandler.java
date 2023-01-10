@@ -1,6 +1,5 @@
 package ok.dht.test.lutsenko.service;
 
-import one.nio.http.HttpSession;
 import one.nio.http.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +20,7 @@ public final class ReplicaResponsesHandler {
     private ReplicaResponsesHandler() {
     }
 
-    public static void handle(HttpSession session,
+    public static void handle(ExtendedSession session,
                               RequestParser requestParser,
                               List<CompletableFuture<Response>> responsesFutures) {
         // Может возникнуть вопрос зачем нужны счетчики, ведь можно использовать размер мапы responses?
@@ -32,8 +31,8 @@ public final class ReplicaResponsesHandler {
         // Если мапа пустая и CustomHeaders.REQUEST_TIME отсутствует, то requestTime принимаем за 0 и делаем одну
         // запись в мапу. Также счетчики позволяют немедленно выполнить запросы как Continue к другим репликам если
         // кворум уже набран или количество отказов гарантированно не позволит его собрать и эти задачи еще не начались.
-        int ack = requestParser.ack();
-        int failLimit = requestParser.from() - ack + 1;
+        int ack = requestParser.getParam(RequestParser.ACK_PARAM_NAME).asInt();
+        int failLimit = requestParser.getParam(RequestParser.FROM_PARAM_NAME).asInt() - ack + 1;
         AtomicInteger failsCounter = new AtomicInteger(0);
         AtomicInteger successCounter = new AtomicInteger(0);
         NavigableMap<Long, Response> responses = new ConcurrentSkipListMap<>();
@@ -60,7 +59,7 @@ public final class ReplicaResponsesHandler {
     private static void finishIfSuccess(int successCounter,
                                         int ack,
                                         NavigableMap<Long, Response> responses,
-                                        HttpSession session,
+                                        ExtendedSession session,
                                         List<CompletableFuture<Response>> responsesFutures) {
         if (successCounter == ack) {
             ServiceUtils.sendResponse(session, responses.lastEntry().getValue());
@@ -70,7 +69,7 @@ public final class ReplicaResponsesHandler {
 
     private static void finishIfFailed(int failsCounter,
                                        int failLimit,
-                                       HttpSession session,
+                                       ExtendedSession session,
                                        List<CompletableFuture<Response>> responsesFutures) {
         if (failsCounter == failLimit) {
             ServiceUtils.sendResponse(session, NOT_ENOUGH_REPLICAS);

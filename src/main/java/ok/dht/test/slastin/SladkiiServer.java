@@ -2,13 +2,14 @@ package ok.dht.test.slastin;
 
 import ok.dht.ServiceConfig;
 import ok.dht.test.slastin.node.Node;
+import ok.dht.test.slastin.replication.ReplicasDeleteRequestHandler;
+import ok.dht.test.slastin.replication.ReplicasGetRequestHandler;
+import ok.dht.test.slastin.replication.ReplicasPutRequestHandler;
 import ok.dht.test.slastin.sharding.ShardingManager;
 import one.nio.http.HttpServer;
 import one.nio.http.HttpServerConfig;
 import one.nio.http.HttpSession;
-import one.nio.http.Param;
 import one.nio.http.Path;
-import one.nio.http.PathMapper;
 import one.nio.http.Request;
 import one.nio.http.RequestHandler;
 import one.nio.http.Response;
@@ -17,22 +18,25 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
+import static ok.dht.test.slastin.Utils.badMethod;
+import static ok.dht.test.slastin.Utils.badRequest;
 import static ok.dht.test.slastin.Utils.getResponseCodeByStatusCode;
+import static ok.dht.test.slastin.Utils.serviceUnavailable;
 
 public class SladkiiServer extends HttpServer {
     private static final Logger log = LoggerFactory.getLogger(SladkiiServer.class);
+    private static final Duration PROXY_REQUEST_DURATION = Duration.ofMillis(20);
 
-    private final PathMapper defaultMapper;
-    private final ServiceConfig serviceConfig;
+    private final int selfNodeIndex;
     private final List<Node> nodes;
     private final SladkiiComponent component;
     private final ExecutorService processors;
@@ -48,8 +52,7 @@ public class SladkiiServer extends HttpServer {
             ShardingManager shardingManager
     ) throws IOException {
         super(httpServerConfig);
-        defaultMapper = extractDefaultMapper();
-        this.serviceConfig = serviceConfig;
+        this.selfNodeIndex = serviceConfig.clusterUrls().indexOf(serviceConfig.selfUrl());
         this.nodes = nodes;
         this.component = component;
         this.processors = processors;
@@ -57,70 +60,65 @@ public class SladkiiServer extends HttpServer {
         client = HttpClient.newHttpClient();
     }
 
-    private PathMapper extractDefaultMapper() {
-        try {
-            Field field = HttpServer.class.getDeclaredField("defaultMapper");
-            field.setAccessible(true);
-            return (PathMapper) field.get(this);
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            log.error("error occurred while extracting default mapper", e);
-            throw new RuntimeException(e.getMessage());
+    @Path("/v0/internal/entity")
+    public void handleInternalRequest(Request request, HttpSession session) {
+        // supposes that previous node checked client's id
+        String id = request.getParameter("id=");
+
+        // log.info("internal handling {} for id {}", request.getMethodName(), id);
+
+        boolean wasTaskAdded = tryAddNodeTask(session, selfNodeIndex, () ->
+                sendResponse(session, processRequestSelf(id, request))
+        );
+
+        if (!wasTaskAdded) {
+            sendResponse(session, serviceUnavailable());
         }
     }
 
-    @Override
-    public void handleRequest(Request request, HttpSession session) throws IOException {
-        RequestHandler handler = defaultMapper.find(request.getPath(), request.getMethod());
-        if (handler == null) {
-            handleDefault(request, session);
+    @Path("/v0/entity")
+    public void handleClientRequest(Request request, HttpSession session) throws IOException {
+        String id = request.getParameter("id=");
+        if (id == null || id.isBlank()) {
+            sendResponse(session, badRequest());
             return;
         }
 
-        String id = request.getParameter("id=");
-        if (id == null) {
+        int ack;
+        int from;
+        try {
+            String ackParameter = request.getParameter("ack=");
+            if (ackParameter == null) {
+                from = nodes.size();
+                ack = from / 2 + 1;
+            } else {
+                from = Integer.parseInt(request.getParameter("from="));
+                ack = Integer.parseInt(ackParameter);
+            }
+        } catch (NumberFormatException e) {
+            sendResponse(session, badRequest());
+            return;
+        }
+
+        if (!validateAckFrom(ack, from)) {
             sendResponse(session, badRequest());
             return;
         }
 
         // log.info("handling {} for id {}", request.getMethodName(), id);
 
-        String currentNodeUrl = shardingManager.getNodeUrlByKey(id);
-        int currentNodeIndex = serviceConfig.clusterUrls().indexOf(currentNodeUrl);
-
-        boolean wasTaskAdded = nodes.get(currentNodeIndex).offerTask(() -> {
-            try {
-                processRequest(currentNodeUrl, id, request, session);
-            } catch (Exception e) {
-                log.error("Exception occurred while handling request", e);
-                sendResponse(session, internalError());
+        RequestHandler replicasRequestHandler = switch (request.getMethod()) {
+            case Request.METHOD_GET -> new ReplicasGetRequestHandler(id, ack, from, this);
+            case Request.METHOD_PUT -> new ReplicasPutRequestHandler(id, ack, from, this);
+            case Request.METHOD_DELETE -> new ReplicasDeleteRequestHandler(id, ack, from, this);
+            default -> {
+                sendResponse(session, badMethod());
+                yield null;
             }
-        });
+        };
 
-        if (!wasTaskAdded) {
-            sendResponse(session, serviceUnavailable());
-            return;
-        }
-
-        try {
-            processors.submit(() -> {
-                int nodeIndex = currentNodeIndex;
-                while (true) {
-                    var node = nodes.get(nodeIndex);
-                    var task = node.pollTask();
-                    if (task != null) {
-                        try {
-                            task.run();
-                        } finally {
-                            node.finishTask();
-                        }
-                        return;
-                    }
-                    nodeIndex = (nodeIndex + 1) % nodes.size();
-                }
-            });
-        } catch (RejectedExecutionException e) {
-            log.error("Can not schedule task for execution", e);
-            sendResponse(session, serviceUnavailable());
+        if (replicasRequestHandler != null) {
+            replicasRequestHandler.handleRequest(request, session);
         }
     }
 
@@ -129,47 +127,91 @@ public class SladkiiServer extends HttpServer {
         sendResponse(session, badRequest());
     }
 
-    private void processRequest(String nodeUrl, String id, Request request, HttpSession session) {
-        if (nodeUrl.equals(serviceConfig.selfUrl())) {
-            sendResponse(session, processRequestSelf(id, request));
-        } else {
-            processRequestProxy(nodeUrl, request, session);
-        }
+    private boolean validateAckFrom(int ack, int from) {
+        return 0 < ack && ack <= from && from <= nodes.size();
     }
 
-    @Path("/v0/entity")
-    public Response processRequestSelf(@Param(value = "id", required = true) String id, Request request) {
-        if (id.isBlank()) {
-            return badRequest();
+    public ShardingManager getShardingManager() {
+        return shardingManager;
+    }
+
+    public boolean tryAddNodeTask(HttpSession session, int nodeIndex, Runnable task) {
+        boolean wasTaskAdded = nodes.get(nodeIndex).offerTask(task);
+        if (wasTaskAdded) {
+            try {
+                processors.submit(() -> {
+                    int currentNodeIndex = nodeIndex;
+                    while (true) {
+                        var currentNode = nodes.get(currentNodeIndex);
+                        var currentTask = currentNode.pollTask();
+                        if (currentTask != null) {
+                            try {
+                                currentTask.run();
+                            } finally {
+                                currentNode.finishTask();
+                            }
+                            return;
+                        }
+                        currentNodeIndex = (currentNodeIndex + 1) % nodes.size();
+                    }
+                });
+            } catch (RejectedExecutionException e) {
+                log.error("Can not schedule task for execution", e);
+                sendResponse(session, serviceUnavailable());
+            }
         }
+        return wasTaskAdded;
+    }
+
+    public Response processRequest(int nodeIndex, String id, Request request) {
+        return nodeIndex == selfNodeIndex
+                ? processRequestSelf(id, request)
+                : processRequestProxy(shardingManager.getNodeUrlByNodeIndex(nodeIndex), id, request);
+    }
+
+    private Response processRequestSelf(String id, Request request) {
         return switch (request.getMethod()) {
             case Request.METHOD_GET -> component.get(id);
-            case Request.METHOD_PUT -> component.put(id, request);
-            case Request.METHOD_DELETE -> component.delete(id);
-            default -> badMethod();
+            case Request.METHOD_PUT -> component.put(id, extractTimestamp(request), request);
+            case Request.METHOD_DELETE -> component.delete(id, extractTimestamp(request));
+            default -> {
+                log.error("unsupported method={}", request.getMethod());
+                yield badMethod();
+            }
         };
     }
 
-    private void processRequestProxy(String nodeUrl, Request request, HttpSession session) {
-        var builder = HttpRequest.newBuilder(URI.create(nodeUrl + request.getURI()));
+    private static Long extractTimestamp(Request request) {
+        return Long.parseLong(request.getHeader("Timestamp:"));
+    }
+
+    private Response processRequestProxy(String nodeUrl, String id, Request request) {
+        var builder = HttpRequest.newBuilder(URI.create(nodeUrl + "/v0/internal/entity?id=" + id));
+        builder.timeout(PROXY_REQUEST_DURATION);
+
         var bodyPublishers = request.getBody() == null
                 ? HttpRequest.BodyPublishers.noBody()
                 : HttpRequest.BodyPublishers.ofByteArray(request.getBody());
         builder.method(request.getMethodName(), bodyPublishers);
 
+        String timestamp = request.getHeader("Timestamp:");
+        if (timestamp != null) {
+            builder.setHeader("Timestamp", timestamp);
+        }
+
         try {
             var httpResponse = client.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
-            var response = new Response(getResponseCodeByStatusCode(httpResponse.statusCode()), httpResponse.body());
-            sendResponse(session, response);
+            return new Response(getResponseCodeByStatusCode(httpResponse.statusCode()), httpResponse.body());
         } catch (IOException e) {
             log.error("can not reach {}", nodeUrl, e);
-            sendResponse(session, serviceUnavailable());
+            return serviceUnavailable();
         } catch (InterruptedException e) {
             log.error("error occurred while handling http response", e);
+            return serviceUnavailable();
         }
     }
 
-    private void sendResponse(HttpSession session, Response response) {
+    public void sendResponse(HttpSession session, Response response) {
         try {
             session.sendResponse(response);
         } catch (IOException e) {
@@ -178,7 +220,6 @@ public class SladkiiServer extends HttpServer {
         }
     }
 
-    @Override
     public synchronized void stop() {
         closeAllSessions();
         super.stop();
@@ -196,33 +237,5 @@ public class SladkiiServer extends HttpServer {
         } catch (Exception e) {
             log.error("failed to close session", e);
         }
-    }
-
-    static Response serviceUnavailable() {
-        return new Response(Response.SERVICE_UNAVAILABLE, Response.EMPTY);
-    }
-
-    static Response badMethod() {
-        return new Response(Response.METHOD_NOT_ALLOWED, Response.EMPTY);
-    }
-
-    static Response badRequest() {
-        return new Response(Response.BAD_REQUEST, Response.EMPTY);
-    }
-
-    static Response internalError() {
-        return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
-    }
-
-    static Response notFound() {
-        return new Response(Response.NOT_FOUND, Response.EMPTY);
-    }
-
-    static Response created() {
-        return new Response(Response.CREATED, Response.EMPTY);
-    }
-
-    static Response accepted() {
-        return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 }
