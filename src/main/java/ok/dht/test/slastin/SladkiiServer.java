@@ -1,6 +1,7 @@
 package ok.dht.test.slastin;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.slastin.range.RangeHttpSession;
 import ok.dht.test.slastin.replication.ReplicasDeleteRequestHandler;
 import ok.dht.test.slastin.replication.ReplicasGetRequestHandler;
 import ok.dht.test.slastin.replication.ReplicasPutRequestHandler;
@@ -13,6 +14,8 @@ import one.nio.http.Request;
 import one.nio.http.RequestHandler;
 import one.nio.http.Response;
 import one.nio.net.Session;
+import one.nio.net.Socket;
+import one.nio.server.RejectedSessionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -127,9 +130,39 @@ public class SladkiiServer extends HttpServer {
         }
     }
 
+    @Path("/v0/entities")
+    public void handleRangeRequest(Request request, HttpSession session) {
+        String start = request.getParameter("start=");
+        if (start == null || start.isBlank()) {
+            sendResponse(session, badRequest());
+            return;
+        }
+
+        String end = request.getParameter("end=");
+        if (end != null && end.isBlank()) {
+            sendResponse(session, badRequest());
+            return;
+        }
+
+        // log.info("handling range request for start = {}, end = {}", start, end);
+
+        try {
+            CompletableFuture.supplyAsync(() -> component.range(start, end), heavyExecutor)
+                    .thenAccept(rangeResponse -> sendResponse(session, rangeResponse));
+        } catch (RejectedExecutionException e) {
+            log.error("Can not schedule task for execution", e);
+            sendResponse(session, serviceUnavailable());
+        }
+    }
+
     @Override
     public void handleDefault(Request request, HttpSession session) {
         sendResponse(session, badRequest());
+    }
+
+    @Override
+    public HttpSession createSession(Socket socket) {
+        return new RangeHttpSession(socket, this);
     }
 
     private boolean validateAckFrom(int ack, int from) {
