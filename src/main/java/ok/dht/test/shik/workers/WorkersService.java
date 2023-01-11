@@ -7,7 +7,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -31,7 +30,7 @@ public class WorkersService {
 
         pool = new ThreadPoolExecutor(config.getCorePoolSize(), config.getMaxPoolSize(),
             config.getKeepAliveTime(), config.getUnit(), new ArrayBlockingQueue<>(config.getQueueCapacity()),
-            Executors.defaultThreadFactory(), rejectedHandler);
+            r -> new Thread(r, "workersServiceThread"), rejectedHandler);
     }
 
     // В данный момент мой HttpServer не использует возвращаемое значение
@@ -57,5 +56,9 @@ public class WorkersService {
 
     public void submitTask(Runnable runnable) {
          pool.submit(runnable);
+    }
+
+    public ExecutorService getExecutorReference() {
+        return pool;
     }
 }

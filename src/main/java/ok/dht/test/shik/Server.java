@@ -1,6 +1,7 @@
 package ok.dht.test.shik;
 
 import ok.dht.ServiceConfig;
+import ok.dht.test.shik.consistency.InconsistencyStrategyType;
 import ok.dht.test.shik.sharding.ShardingConfig;
 import ok.dht.test.shik.workers.WorkersConfig;
 import org.apache.commons.logging.Log;
@@ -21,7 +22,7 @@ public final class Server {
 
     private static final Log LOG = LogFactory.getLog(Server.class);
     private static final Path DEFAULT_DATABASE_DIR =
-        Paths.get("/var/folders/85/g8ft9y9d1kb9z88s8kgjh21m0000gp/T/server11");
+        Paths.get("/var/folders/85/g8ft9y9d1kb9z88s8kgjh21m0000gp/T/server1");
     private static final int DEFAULT_PORT1 = 19234;
     private static final int DEFAULT_PORT2 = 19876;
     private static final int DEFAULT_PORT3 = 19877;
@@ -39,7 +40,9 @@ public final class Server {
         ),
         DEFAULT_DATABASE_DIR
     );
-    private static final int MAX_WORKERS = 8;
+    private static final int CORE_WORKERS = 2;
+    private static final int MAX_WORKERS = 4;
+    private static final int HTTP_CLIENT_MAX_WORKERS = 4;
     private static final long KEEP_ALIVE_TIME = 20;
     private static final WorkersConfig.QueuePolicy QUEUE_POLICY = WorkersConfig.QueuePolicy.FIFO;
     private static final int QUEUE_CAPACITY = 100;
@@ -50,9 +53,18 @@ public final class Server {
         .queuePolicy(QUEUE_POLICY)
         .queueCapacity(QUEUE_CAPACITY)
         .build();
+    private static final WorkersConfig HTTP_CLIENT_WORKERS_CONFIG = new WorkersConfig.Builder()
+        .corePoolSize(CORE_WORKERS)
+        .maxPoolSize(HTTP_CLIENT_MAX_WORKERS)
+        .keepAliveTime(KEEP_ALIVE_TIME)
+        .queuePolicy(QUEUE_POLICY)
+        .queueCapacity(QUEUE_CAPACITY)
+        .build();
     private static final int V_NODES_NUMBER = 50;
     private static final ShardingConfig SHARDING_CONFIG = new ShardingConfig(V_NODES_NUMBER);
     private static final int TIMEOUT_SECONDS = 10;
+    private static final InconsistencyStrategyType INCONSISTENCY_STRATEGY_TYPE
+        = InconsistencyStrategyType.READ_REPAIR;
 
     private Server() {
         // Only main method
@@ -60,7 +72,8 @@ public final class Server {
 
     public static void main(String[] args) throws IOException,
         ExecutionException, InterruptedException, TimeoutException {
-        new ServiceImpl(DEFAULT_CONFIG1, WORKERS_CONFIG, SHARDING_CONFIG)
+        new ServiceImpl(DEFAULT_CONFIG1, WORKERS_CONFIG, HTTP_CLIENT_WORKERS_CONFIG,
+            SHARDING_CONFIG, INCONSISTENCY_STRATEGY_TYPE)
             .start().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         LOG.info("Socket is ready: " + DEFAULT_URL1);
     }
