@@ -3,18 +3,26 @@ package ok.dht.test.ilin.service;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.ilin.config.ConsistentHashingConfig;
 import ok.dht.test.ilin.config.ExpandableHttpServerConfig;
+import ok.dht.test.ilin.domain.Entity;
+import ok.dht.test.ilin.domain.Headers;
+import ok.dht.test.ilin.domain.Serializer;
+import ok.dht.test.ilin.hashing.impl.ConsistentHashing;
+import ok.dht.test.ilin.replica.ReplicasHandler;
 import ok.dht.test.ilin.servers.ExpandableHttpServer;
+import ok.dht.test.ilin.session.ExpandableHttpSession;
+import ok.dht.test.ilin.sharding.ShardHandler;
+import ok.dht.test.ilin.utils.TimestampUtils;
 import one.nio.http.HttpServer;
-import one.nio.http.Param;
-import one.nio.http.Path;
+import one.nio.http.HttpSession;
 import one.nio.http.Request;
-import one.nio.http.RequestMethod;
 import one.nio.http.Response;
 import one.nio.server.AcceptorConfig;
 import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
+import org.rocksdb.RocksIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,7 +51,16 @@ public class EntityService implements Service {
             logger.error("Error initializing RocksDB");
             throw new IOException(ex);
         }
-        server = new ExpandableHttpServer(createConfigFromPort(config.selfPort()));
+        ConsistentHashingConfig consistentHashingConfig = new ConsistentHashingConfig();
+        ConsistentHashing consistentHashing = new ConsistentHashing(config.clusterUrls(), consistentHashingConfig);
+        ShardHandler shardHandler = new ShardHandler(config.selfUrl(), consistentHashing);
+        ReplicasHandler replicasHandler = new ReplicasHandler(config.selfUrl(), this, consistentHashing, shardHandler);
+        server = new ExpandableHttpServer(
+            this,
+            replicasHandler,
+            config.clusterUrls().size(),
+            createConfigFromPort(config.selfPort())
+        );
         server.addRequestHandlers(this);
         server.start();
         return CompletableFuture.completedFuture(null);
@@ -56,9 +73,7 @@ public class EntityService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_GET)
-    public Response getEntity(@Param(value = "id", required = true) String id) {
+    public Response getEntity(String id) {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
@@ -67,53 +82,101 @@ public class EntityService implements Service {
             if (result == null) {
                 return new Response(Response.NOT_FOUND, Response.EMPTY);
             }
-            return new Response(Response.OK, result);
+            Entity entity = Serializer.deserializeEntity(result);
+            if (entity == null) {
+                logger.error("Failed to deserialize entity.");
+                return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+            }
+            if (entity.tombstone()) {
+                Response response = new Response(Response.NOT_FOUND, entity.data());
+                response.addHeader(Headers.TOMBSTONE_HEADER);
+                response.addHeader(Headers.TIMESTAMP_HEADER + entity.timestamp());
+                return response;
+            }
+            Response response = new Response(Response.OK, entity.data());
+            response.addHeader(Headers.TIMESTAMP_HEADER + entity.timestamp());
+            return response;
         } catch (RocksDBException e) {
             logger.error("Error get entry in RocksDB");
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+        } catch (IOException | ClassNotFoundException e) {
+            logger.error("Failed to deserialize entity: {}", e.getMessage());
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
-        return new Response(Response.NOT_FOUND, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_PUT)
-    public Response upsertEntity(@Param(value = "id", required = true) String id, Request request) {
+    public Response upsertEntity(String id, Request request) {
         byte[] body = request.getBody();
         if (id.isEmpty() || body == null) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         try {
-            rocksDB.put(id.getBytes(StandardCharsets.UTF_8), body);
+            rocksDB.put(
+                id.getBytes(StandardCharsets.UTF_8),
+                Serializer.serializeEntity(new Entity(TimestampUtils.extractTimestamp(request), false, body))
+            );
         } catch (RocksDBException e) {
             logger.error("Error saving entry in RocksDB");
+        } catch (IOException e) {
+            logger.error("Failed to serialize entity: {}", e.getMessage());
+            return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
         }
         return new Response(Response.CREATED, Response.EMPTY);
     }
 
-    @Path("/v0/entity")
-    @RequestMethod(Request.METHOD_DELETE)
-    public Response deleteEntity(@Param(value = "id", required = true) String id) {
+    public Response deleteEntity(String id, Request request) {
         if (id.isEmpty()) {
             return new Response(Response.BAD_REQUEST, Response.EMPTY);
         }
         try {
-            rocksDB.delete(id.getBytes(StandardCharsets.UTF_8));
+            rocksDB.put(
+                id.getBytes(StandardCharsets.UTF_8),
+                Serializer.serializeEntity(new Entity(TimestampUtils.extractTimestamp(request), true, new byte[0]))
+            );
         } catch (RocksDBException e) {
             logger.error("Error delete entry in RocksDB");
+        } catch (IOException e) {
+            logger.error("Failed to serialize entity: {}", e.getMessage());
         }
         return new Response(Response.ACCEPTED, Response.EMPTY);
     }
 
+    public void listEntries(HttpSession session, String start, String end) {
+        if (start.isEmpty()) {
+            ExpandableHttpServer.sendBadRequest(session);
+            return;
+        }
+
+        RocksIterator iterator = rocksDB.newIterator();
+        iterator.seek(start.getBytes(StandardCharsets.UTF_8));
+        Response response = new Response(Response.OK);
+
+        if (session instanceof ExpandableHttpSession) {
+            try {
+                ((ExpandableHttpSession) session).sendChunkedResponse(
+                    response,
+                    new ChunkProcessor(iterator, end)::process
+                );
+            } catch (IOException e) {
+                logger.error("failed to send chunked response: " + e.getMessage());
+                ExpandableHttpServer.sendInternalError(session);
+            }
+        } else {
+            ExpandableHttpServer.sendInternalError(session);
+        }
+    }
+
     private static ExpandableHttpServerConfig createConfigFromPort(int port) {
-        ExpandableHttpServerConfig httpConfig = new ExpandableHttpServerConfig();
         AcceptorConfig acceptor = new AcceptorConfig();
         acceptor.port = port;
         acceptor.reusePort = true;
+        ExpandableHttpServerConfig httpConfig = new ExpandableHttpServerConfig();
         httpConfig.acceptors = new AcceptorConfig[]{acceptor};
         httpConfig.selectors = 2;
         return httpConfig;
     }
 
-    @ServiceFactory(stage = 2, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 6, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

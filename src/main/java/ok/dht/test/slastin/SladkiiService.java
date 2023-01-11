@@ -3,9 +3,16 @@ package ok.dht.test.slastin;
 import ok.dht.Service;
 import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
+import ok.dht.test.slastin.sharding.ConsistentHashingManager;
+import ok.dht.test.slastin.sharding.ShardingManager;
+import one.nio.async.CustomThreadFactory;
 import one.nio.http.HttpServerConfig;
 import one.nio.server.AcceptorConfig;
+import one.nio.util.Hash;
+import org.rocksdb.BlockBasedTableConfig;
+import org.rocksdb.BloomFilter;
 import org.rocksdb.Options;
+import org.rocksdb.RocksDB;
 import org.rocksdb.util.SizeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,10 +23,8 @@ import java.nio.file.Path;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 import java.util.function.Supplier;
 
 public class SladkiiService implements Service {
@@ -33,54 +38,116 @@ public class SladkiiService implements Service {
             .setWriteBufferSize(DEFAULT_MEMTABLE_SIZE)
             .setLevelCompactionDynamicLevelBytes(true);
 
-    public static final Supplier<ExecutorService> DEFAULT_PROCESSORS_SUPPLIER = () -> {
-        int cores = Runtime.getRuntime().availableProcessors();
-        return new ThreadPoolExecutor(
-                cores / 2, cores,
-                30, TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(1024),
-                Executors.defaultThreadFactory(),
-                new ThreadPoolExecutor.DiscardOldestPolicy()
-        );
-    };
-
-    public static final Function<ServiceConfig, HttpServerConfig> DEFAULT_HTTP_CONFIG_MAPPER = cfg -> {
-        AcceptorConfig acceptor = new AcceptorConfig();
-        acceptor.port = cfg.selfPort();
-        acceptor.reusePort = true;
-        acceptor.threads = 2;
-
-        HttpServerConfig httpConfig = new HttpServerConfig();
-        httpConfig.acceptors = new AcceptorConfig[]{acceptor};
-        return httpConfig;
+    public static final Supplier<Options> DEFAULT_OPTIONS_WITH_BLOOM_SUPPLIER = () -> {
+        var tableConfig = new BlockBasedTableConfig().setFilterPolicy(new BloomFilter(10.0, false));
+        return DEFAULT_OPTIONS_SUPPLIER.get().setTableFormatConfig(tableConfig);
     };
 
     private final ServiceConfig serviceConfig;
     private final Supplier<Options> dbOptionsSupplier;
-    private final Supplier<ExecutorService> processorsSupplier;
-    private final Function<ServiceConfig, HttpServerConfig> httpConfigMapper;
+    private final Supplier<ExecutorService> heavyExecutorSupplier;
+    private final Supplier<ExecutorService> lightExecutorSupplier;
+    private final Supplier<ExecutorService> httpClientExecutorSupplier;
+    private final Supplier<ShardingManager> shardingManagerSupplier;
+    private final Supplier<HttpServerConfig> httpServerConfigSupplier;
 
     private Options dbOptions;
     private SladkiiComponent component;
-    private ExecutorService processors;
+    private ExecutorService heavyExecutor;
+    private ExecutorService lightExecutor;
+    private ExecutorService httpClientExecutor;
+    private ShardingManager shardingManager;
     private SladkiiServer server;
 
     private boolean isClosed;
 
+    static {
+        // to enable bloom filter and more rocksdb features
+        RocksDB.loadLibrary();
+    }
+
+    public static Supplier<HttpServerConfig> makeDefaultHttpServerConfigSupplier(ServiceConfig serviceConfig) {
+        return () -> {
+            AcceptorConfig acceptor = new AcceptorConfig();
+            acceptor.port = serviceConfig.selfPort();
+            acceptor.reusePort = true;
+            acceptor.threads = 2;
+
+            HttpServerConfig httpConfig = new HttpServerConfig();
+            httpConfig.acceptors = new AcceptorConfig[]{acceptor};
+            return httpConfig;
+        };
+    }
+
+    public static Supplier<ExecutorService> makeDefaultHeavyExecutorSupplier(ServiceConfig serviceConfig) {
+        int cores = Runtime.getRuntime().availableProcessors();
+        int cnt = Math.max(1, (int) Math.ceil(cores * 0.5));
+
+        return () -> new ThreadPoolExecutor(
+                cnt, cnt,
+                30, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(1024),
+                new CustomThreadFactory(serviceConfig.selfUrl() + "-heavy")
+        );
+    }
+
+    public static Supplier<ExecutorService> makeDefaultLightExecutorSupplier(ServiceConfig serviceConfig) {
+        int cores = Runtime.getRuntime().availableProcessors();
+        int from = Math.max(1, (int) Math.ceil(cores * 0.25));
+        int to = Math.max(1, (int) Math.ceil(cores * 0.5));
+
+        return () -> new ThreadPoolExecutor(
+                from, to,
+                10, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(2048),
+                new CustomThreadFactory(serviceConfig.selfUrl() + "-light")
+        );
+    }
+
+    public static Supplier<ExecutorService> makeDefaultHttpClientExecutorSupplier(ServiceConfig serviceConfig) {
+        int cores = Runtime.getRuntime().availableProcessors();
+        int from = Math.max(1, (int) Math.ceil(cores * 0.25));
+        int to = Math.max(1, (int) Math.ceil(cores * 0.5));
+
+        return () -> new ThreadPoolExecutor(
+                from, to,
+                10, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(1024),
+                new CustomThreadFactory(serviceConfig.selfUrl() + "-httpclient")
+        );
+    }
+
+    public static Supplier<ShardingManager> makeDefaultShardingManagerSupplier(ServiceConfig serviceConfig) {
+        return () -> new ConsistentHashingManager(serviceConfig.clusterUrls(), 50, Hash::murmur3);
+    }
+
     public SladkiiService(ServiceConfig serviceConfig) {
-        this(serviceConfig, DEFAULT_OPTIONS_SUPPLIER, DEFAULT_PROCESSORS_SUPPLIER, DEFAULT_HTTP_CONFIG_MAPPER);
+        this(serviceConfig,
+                DEFAULT_OPTIONS_SUPPLIER,
+                makeDefaultHeavyExecutorSupplier(serviceConfig),
+                makeDefaultLightExecutorSupplier(serviceConfig),
+                makeDefaultHttpClientExecutorSupplier(serviceConfig),
+                makeDefaultShardingManagerSupplier(serviceConfig),
+                makeDefaultHttpServerConfigSupplier(serviceConfig)
+        );
     }
 
     public SladkiiService(
             ServiceConfig serviceConfig,
             Supplier<Options> dbOptionsSupplier,
-            Supplier<ExecutorService> processorsSupplier,
-            Function<ServiceConfig, HttpServerConfig> httpConfigSupplier
+            Supplier<ExecutorService> heavyExecutorSupplier,
+            Supplier<ExecutorService> lightExecutorSupplier,
+            Supplier<ExecutorService> httpclientExecutorSupplier,
+            Supplier<ShardingManager> shardingManagerSupplier,
+            Supplier<HttpServerConfig> httpServerConfigSupplier
     ) {
         this.serviceConfig = serviceConfig;
         this.dbOptionsSupplier = dbOptionsSupplier;
-        this.processorsSupplier = processorsSupplier;
-        this.httpConfigMapper = httpConfigSupplier;
+        this.heavyExecutorSupplier = heavyExecutorSupplier;
+        this.lightExecutorSupplier = lightExecutorSupplier;
+        this.httpClientExecutorSupplier = httpclientExecutorSupplier;
+        this.shardingManagerSupplier = shardingManagerSupplier;
+        this.httpServerConfigSupplier = httpServerConfigSupplier;
     }
 
     @Override
@@ -88,33 +155,57 @@ public class SladkiiService implements Service {
         isClosed = false;
 
         dbOptions = dbOptionsSupplier.get();
-        component = makeComponent(dbOptions, serviceConfig.workingDir());
+        component = makeSladkiiComponent();
 
-        processors = processorsSupplier.get();
+        heavyExecutor = heavyExecutorSupplier.get();
+        lightExecutor = lightExecutorSupplier.get();
+        httpClientExecutor = httpClientExecutorSupplier.get();
 
-        server = new SladkiiServer(httpConfigMapper.apply(serviceConfig), component, processors);
+        shardingManager = shardingManagerSupplier.get();
+
+        server = new SladkiiServer(
+                httpServerConfigSupplier.get(), serviceConfig, component, shardingManager,
+                heavyExecutor, lightExecutor, httpClientExecutor
+        );
         server.start();
 
         return CompletableFuture.completedFuture(null);
     }
 
-    private static SladkiiComponent makeComponent(Options dbOptions, Path serverDirectory) throws IOException {
-        Path location = serverDirectory.resolve(DEFAULT_DB_DIRECTORY);
-        if (Files.notExists(location)) {
-            Files.createDirectories(location);
+    Path getDbLocation() {
+        return serviceConfig.workingDir()
+                .resolve("node" + serviceConfig.clusterUrls().indexOf(serviceConfig.selfUrl()))
+                .resolve(DEFAULT_DB_DIRECTORY);
+    }
+
+    private SladkiiComponent makeSladkiiComponent() throws IOException {
+        Path dbLocation = getDbLocation();
+
+        if (Files.notExists(dbLocation)) {
+            Files.createDirectories(dbLocation);
         }
-        return new SladkiiComponent(dbOptions, location.toString());
+
+        return new SladkiiComponent(dbOptions, dbLocation.toString());
     }
 
     @Override
     public CompletableFuture<?> stop() {
         if (!isClosed) {
-            // firstly close processors (before server) to give a chance to return response to the last queries
-            shutdownAndAwaitTermination(processors, 1, TimeUnit.MINUTES);
-            processors = null;
+            // firstly close executors (before server) to give a chance to return response to the last queries
+
+            gracefulShutdown(lightExecutor, 30, TimeUnit.SECONDS);
+            lightExecutor = null;
+
+            gracefulShutdown(httpClientExecutor, 30, TimeUnit.SECONDS);
+            httpClientExecutor = null;
+
+            gracefulShutdown(heavyExecutor, 30, TimeUnit.SECONDS);
+            heavyExecutor = null;
 
             server.stop();
             server = null;
+
+            shardingManager = null;
 
             component.close();
             component = null;
@@ -128,7 +219,7 @@ public class SladkiiService implements Service {
         return CompletableFuture.completedFuture(null);
     }
 
-    private static void shutdownAndAwaitTermination(ExecutorService service, int timeOut, TimeUnit unit) {
+    private static void gracefulShutdown(ExecutorService service, int timeOut, TimeUnit unit) {
         service.shutdown();
         try {
             if (!service.awaitTermination(timeOut, unit)) {
@@ -144,7 +235,7 @@ public class SladkiiService implements Service {
         }
     }
 
-    @ServiceFactory(stage = 2, week = 2, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 6, week = 6, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override

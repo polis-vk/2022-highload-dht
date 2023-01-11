@@ -28,6 +28,7 @@ public class MergeIterator implements Iterator<BaseEntry<String>> {
     private BaseEntry<String> polledEntry;
     private boolean hasNextCalled;
     private boolean hasNextResult;
+    private volatile int lastPosition;
 
     public MergeIterator(PersistenceRangeDao dao, String from, String to, boolean includingMemory) {
         this.to = to;
@@ -82,7 +83,7 @@ public class MergeIterator implements Iterator<BaseEntry<String>> {
             throw new RuntimeException("Fail to read new Entry after" + polledEntry, e);
         }
         hasNextCalled = true;
-        hasNextResult = polledEntry.value() != null && (isToNull || polledEntry.key().compareTo(to) < 0);
+        hasNextResult = (isToNull || polledEntry.key().compareTo(to) < 0);
         return hasNextResult;
     }
 
@@ -112,7 +113,11 @@ public class MergeIterator implements Iterator<BaseEntry<String>> {
             return;
         }
         for (FileInfo fileInfo : filesToRead) {
+            if (fileInfo.position.get() == null) {
+                fileInfo.position.set(lastPosition);
+            }
             BaseEntry<String> newEntry = DaoUtils.readEntry(fileInfo.mappedByteBuffer, fileInfo.position);
+            lastPosition = fileInfo.position.get();
             if (newEntry == null) {
                 continue;
             }
