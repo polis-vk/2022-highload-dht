@@ -21,7 +21,7 @@ public final class Server {
 
     private static final Log LOG = LogFactory.getLog(Server.class);
     private static final Path DEFAULT_DATABASE_DIR =
-        Paths.get("/var/folders/85/g8ft9y9d1kb9z88s8kgjh21m0000gp/T/server11");
+        Paths.get("/var/folders/85/g8ft9y9d1kb9z88s8kgjh21m0000gp/T/server1");
     private static final int DEFAULT_PORT1 = 19234;
     private static final int DEFAULT_PORT2 = 19876;
     private static final int DEFAULT_PORT3 = 19877;

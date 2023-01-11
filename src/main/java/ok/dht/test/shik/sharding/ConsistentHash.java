@@ -6,10 +6,13 @@ import org.apache.commons.logging.LogFactory;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.PriorityQueue;
+import java.util.Set;
 
 public class ConsistentHash {
 
@@ -59,17 +62,31 @@ public class ConsistentHash {
         }
     }
 
-    public String getShardUrlByKey(byte[] key) {
+    public List<String> getShardUrlByKey(byte[] key, int nodesCount) {
         byte[] hash = DIGEST.get().digest(key);
         int insertionPoint = Arrays.binarySearch(hashes, convertToIntHash(hash));
         if (insertionPoint >= 0) {
-            return clusterUrls.get(nodeIndex[insertionPoint]);
+            return getFromOffset(insertionPoint, nodesCount);
         }
         insertionPoint = -insertionPoint - 2;
         if (insertionPoint >= 0) {
-            return clusterUrls.get(nodeIndex[insertionPoint]);
+            return getFromOffset(insertionPoint, nodesCount);
         }
-        return clusterUrls.get(nodeIndex[nodeIndex.length - 1]);
+        return getFromOffset(nodeIndex.length - 1, nodesCount);
+    }
+
+    private List<String> getFromOffset(int offset, int nodesCount) {
+        Set<Integer> nodes = new HashSet<>(nodesCount);
+        int i = offset;
+        while (nodes.size() < nodesCount) {
+            nodes.add(nodeIndex[i]);
+            i = (i + 1) % nodeIndex.length;
+        }
+        List<String> result = new ArrayList<>(nodesCount);
+        for (int nodeId : nodes) {
+            result.add(clusterUrls.get(nodeId));
+        }
+        return result;
     }
 
     private int convertToIntHash(byte[] sha256) {

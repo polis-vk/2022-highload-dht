@@ -5,6 +5,11 @@ import ok.dht.ServiceConfig;
 import ok.dht.test.ServiceFactory;
 import ok.dht.test.shik.events.HandlerRequest;
 import ok.dht.test.shik.events.HandlerResponse;
+import ok.dht.test.shik.events.HandlerTimedRequest;
+import ok.dht.test.shik.events.LeaderRequestState;
+import ok.dht.test.shik.model.DBValue;
+import ok.dht.test.shik.serialization.ByteArraySerializer;
+import ok.dht.test.shik.serialization.ByteArraySerializerFactory;
 import ok.dht.test.shik.sharding.ShardingConfig;
 import ok.dht.test.shik.workers.WorkersConfig;
 import one.nio.http.HttpServerConfig;
@@ -20,16 +25,19 @@ import org.iq80.leveldb.impl.Iq80DBFactory;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 public class ServiceImpl implements CustomService {
 
     private static final Log LOG = LogFactory.getLog(ServiceImpl.class);
     private static final Options LEVELDB_OPTIONS = new Options();
+    private static final String NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
 
     private final ServiceConfig config;
     private final WorkersConfig workersConfig;
     private final ShardingConfig shardingConfig;
+    private final ByteArraySerializer serializer;
 
     private CustomHttpServer server;
     private DB levelDB;
@@ -42,6 +50,7 @@ public class ServiceImpl implements CustomService {
         this.config = config;
         this.workersConfig = workersConfig;
         this.shardingConfig = shardingConfig;
+        serializer = ByteArraySerializerFactory.latest();
     }
 
     @Override
@@ -70,24 +79,58 @@ public class ServiceImpl implements CustomService {
     }
 
     @Override
-    public void handleGet(HandlerRequest request, HandlerResponse response) {
-        byte[] key = request.getId().getBytes(StandardCharsets.UTF_8);
-        byte[] value = levelDB.get(key);
-        response.setResponse(value == null ? new Response(Response.NOT_FOUND, Response.EMPTY) : Response.ok(value));
+    public void handleLeaderGet(HandlerRequest request, HandlerResponse response) {
+        if (!request.getState().isSuccess()) {
+            response.setResponse(new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+            return;
+        }
+
+        Optional<byte[]> latestValue = ((LeaderRequestState) request.getState()).getShardResponses().stream()
+            .filter(resp -> resp.getBody().length != 0)
+            .map(resp -> ByteArraySerializerFactory.latest().deserialize(resp.getBody()))
+            .max(DBValue.COMPARATOR)
+            .map(DBValue::getValue);
+        response.setResponse(latestValue.map(Response::ok)
+            .orElseGet(() -> new Response(Response.NOT_FOUND, Response.EMPTY)));
     }
 
     @Override
-    public void handlePut(HandlerRequest request, HandlerResponse response) {
-        byte[] value = request.getRequest().getBody();
-        byte[] key = request.getId().getBytes(StandardCharsets.UTF_8);
-        levelDB.put(key, value);
+    public void handleGet(HandlerRequest request, HandlerResponse response) {
+        byte[] key = request.getState().getId().getBytes(StandardCharsets.UTF_8);
+        byte[] value = levelDB.get(key);
+        if (value == null) {
+            response.setResponse(new Response(Response.NOT_FOUND, Response.EMPTY));
+            return;
+        }
+
+        response.setResponse(Response.ok(value));
+    }
+
+    @Override
+    public void handleLeaderPut(HandlerRequest request, HandlerResponse response) {
+        response.setResponse(request.getState().isSuccess()
+            ? new Response(Response.CREATED, Response.EMPTY) : new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+    }
+
+    @Override
+    public void handlePut(HandlerTimedRequest request, HandlerResponse response) {
+        byte[] key = request.getState().getId().getBytes(StandardCharsets.UTF_8);
+        byte[] dbValue = serializer.serialize(
+            new DBValue(request.getState().getRequest().getBody(), request.getTimestamp()));
+        levelDB.put(key, dbValue);
         response.setResponse(new Response(Response.CREATED, Response.EMPTY));
     }
 
     @Override
-    public void handleDelete(HandlerRequest request, HandlerResponse response) {
-        byte[] key = request.getId().getBytes(StandardCharsets.UTF_8);
-        levelDB.delete(key);
+    public void handleLeaderDelete(HandlerRequest request, HandlerResponse response) {
+        response.setResponse(request.getState().isSuccess()
+            ? new Response(Response.ACCEPTED, Response.EMPTY) : new Response(NOT_ENOUGH_REPLICAS, Response.EMPTY));
+    }
+
+    @Override
+    public void handleDelete(HandlerTimedRequest request, HandlerResponse response) {
+        byte[] key = request.getState().getId().getBytes(StandardCharsets.UTF_8);
+        levelDB.put(key, serializer.serialize(new DBValue(null, request.getTimestamp())));
         response.setResponse(new Response(Response.ACCEPTED, Response.EMPTY));
     }
 
@@ -100,7 +143,7 @@ public class ServiceImpl implements CustomService {
         return httpServerConfig;
     }
 
-    @ServiceFactory(stage = 3, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
+    @ServiceFactory(stage = 4, week = 1, bonuses = "SingleNodeTest#respectFileFolder")
     public static class Factory implements ServiceFactory.Factory {
 
         @Override
