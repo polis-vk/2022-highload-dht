@@ -70,6 +70,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         return (result == null || result.isTombstone()) ? null : result;
     }
 
+    @SuppressWarnings("FutureReturnValueIgnored")
     @Override
     public void upsert(Entry<MemorySegment> entry) {
         State currentState = accessState();
@@ -191,7 +192,7 @@ public class MemorySegmentDao implements Dao<MemorySegment, Entry<MemorySegment>
         awaitAndUnwrap(future);
     }
 
-    private void awaitAndUnwrap(Future<?> future) throws IOException {
+    private void awaitAndUnwrap(Future<?> future) {
         try {
             future.get();
         } catch (ExecutionException | InterruptedException e) {
